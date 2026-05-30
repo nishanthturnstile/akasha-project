@@ -24,7 +24,7 @@
     "status": "completed"
   },
   {
-    "content": "Phase 2: Add infra/railway per-service railway.json + ENV_MATRIX.md + deploy notes + root railway.json (web)",
+    "content": "Phase 2: Add infra/railway per-service railway.json + ENV_MATRIX.md + deploy notes + root railway.json + root .dockerignore",
     "status": "completed"
   },
   {
@@ -36,15 +36,15 @@
     "status": "completed"
   },
   {
-    "content": "Phase 1+2: scripts/validate_slice0.py + smoke-test.py created; validator PASSED 94/0; api unit tests 6/6",
+    "content": "Phase 1+2: validate_slice0.py PASSED 94/0; api unit tests 6/6; smoke-test 4/0; python+js lint clean",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Build live CRA Service Skeleton Status Dashboard (mission-control theme, loading/empty/error states)",
-    "status": "in_progress"
+    "content": "Phase 2: Build live CRA Service Skeleton Status Dashboard",
+    "status": "completed"
   },
   {
-    "content": "Phase 2: End-to-end testing of live api + dashboard via testing agent; fix all issues",
-    "status": "pending"
+    "content": "Phase 2: End-to-end testing via testing_agent_v3 — PASSED 16/16 (backend 7/7, frontend 9/9), no issues",
+    "status": "completed"
   }
 ]

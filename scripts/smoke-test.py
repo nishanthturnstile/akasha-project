@@ -27,7 +27,13 @@ passed = failed = 0
 
 def _get(path: str, timeout: float = 10.0):
     url = f"{BASE}{path}"
-    req = urllib.request.Request(url, headers={"Accept": "*/*"})
+    # A browser-like User-Agent avoids edge/CDN bot filters (some reject the
+    # default Python-urllib agent with HTTP 403).
+    headers = {
+        "Accept": "*/*",
+        "User-Agent": "akasha-smoke-test/1.0 (+https://github.com) Mozilla/5.0",
+    }
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read()
         return resp.status, body

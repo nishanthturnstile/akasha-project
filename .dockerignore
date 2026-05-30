@@ -1,0 +1,36 @@
+# Root build-context ignore — primarily for the `web` (gateway) image whose
+# build context is the repository root (infra/gateway/Dockerfile builds
+# apps/frontend). Keeps node_modules, build output, caches, and secrets out.
+
+.git
+.gitignore
+
+# Node / frontend
+**/node_modules
+**/dist
+**/build
+**/.cache
+**/*.tsbuildinfo
+
+# Python
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.venv
+
+# Secrets (keep examples out of images too)
+**/.env
+**/.env.*
+
+# Logs / local data
+*.log
+infra/docker/data/
+
+# Emergent / tooling artifacts (not part of the deployable app)
+.emergent
+test_reports
+backend_test.py
+test_result.md
+plan.md

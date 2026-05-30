@@ -1,0 +1,50 @@
+[
+  {
+    "content": "Phase 1: Create monorepo folder structure (apps, services, infra, scripts)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Implement canonical apps/api FastAPI skeleton (/health + /api/_skeleton/*)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Build infra/gateway (Caddyfile + multi-stage Dockerfile) — web public service",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Scaffold apps/frontend Vite+React+TS deployable skeleton",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Add services/titiler, services/stac-api, services/ingestion (Dockerfiles + railway.json + .env.example + READMEs)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Add infra/docker/docker-compose.yml (7 services, healthchecks, volumes) + .env.example",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Add infra/railway per-service railway.json + ENV_MATRIX.md + deploy notes + root railway.json (web)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Add shared conventions (pyproject.toml, .editorconfig, .prettierrc, Makefile, .gitignore, README)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Wire live Emergent backend (/app/backend/server.py) to mount canonical apps/api app",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1+2: scripts/validate_slice0.py + smoke-test.py created; validator PASSED 94/0; api unit tests 6/6",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Build live CRA Service Skeleton Status Dashboard (mission-control theme, loading/empty/error states)",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 2: End-to-end testing of live api + dashboard via testing agent; fix all issues",
+    "status": "pending"
+  }
+]

@@ -1,0 +1,46 @@
+# Akasha web gateway (Caddy) — Slice 0
+#
+# The ONLY publicly reachable service. It serves the built React SPA and
+# reverse-proxies same-origin /api -> api and /tiles -> titiler. FastAPI,
+# TiTiler, STAC API, PostGIS and MinIO are never given a public domain.
+#
+# PORT is provided by Railway in production; defaults to 80 for local Docker.
+# Upstreams default to the docker-compose service names and are overridden on
+# Railway with *.railway.internal reference variables.
+
+{
+	admin off
+	persist_config off
+}
+
+:{$PORT:80} {
+	encode gzip zstd
+
+	# Liveness endpoint for Railway / Docker Compose health checks.
+	handle /health {
+		respond "ok" 200
+	}
+
+	# BFF API (same-origin). Path is preserved; the api service serves /api/*.
+	handle /api/* {
+		reverse_proxy {$API_UPSTREAM_URL:http://api:8000}
+	}
+
+	# Raster tiles -> TiTiler (same-origin). Native-route rewriting is added in
+	# Slice 2; Slice 0 only wires the public route so the contract is preserved.
+	handle /tiles/* {
+		reverse_proxy {$TITILER_UPSTREAM_URL:http://titiler:8000}
+	}
+
+	# Static React SPA with history-API fallback.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# --- Optional shared-secret gate (Wave 1) -----------------------------
+	# To require HTTP Basic auth for the whole demo, set GATEWAY_BASIC_AUTH and
+	# replace the line below with a `basic_auth` block using a bcrypt hash.
+	# Empty GATEWAY_BASIC_AUTH = off (default). See infra/railway/ENV_MATRIX.md.
+}

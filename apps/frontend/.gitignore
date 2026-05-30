@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+.yarn/
+
+# build output
+dist/
+
+# local env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log

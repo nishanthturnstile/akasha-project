@@ -1,0 +1,19 @@
+# Shared Python tooling for the Akasha monorepo (api + ingestion services).
+# Run from the repo root: `ruff check .` / `black .` / `isort .`
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["node_modules", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["B008"]  # FastAPI uses callables in argument defaults (Depends)
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100

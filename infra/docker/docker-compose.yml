@@ -1,0 +1,207 @@
+name: akasha
+
+# Akasha — local development topology (Slice 0).
+#
+# Mirrors the Railway services so the same architecture is portable to
+# Docker Compose / on-prem. Only `web` publishes a host port; every other
+# service is private to the `akasha` network. Persistent volumes back postgis
+# and minio (never store state in ephemeral container filesystems).
+#
+# Usage:
+#   cp .env.example .env   # then edit secrets
+#   docker compose up --build
+#   open http://localhost:${WEB_PORT:-8080}/health
+#
+# NOTE: This Compose file is the LOCAL DEV / on-prem portability artifact.
+# On Railway, each service is deployed separately using its own railway.json
+# (do NOT run this as a single production appliance).
+
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/gateway/Dockerfile
+    image: akasha-web:slice0
+    environment:
+      PORT: "80"
+      API_UPSTREAM_URL: "http://api:8000"
+      TITILER_UPSTREAM_URL: "http://titiler:8000"
+      PUBLIC_APP_NAME: "${PUBLIC_APP_NAME:-Akasha}"
+      PUBLIC_DEFAULT_AOI_NAME: "${PUBLIC_DEFAULT_AOI_NAME:-Bangalore}"
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+      titiler:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    image: akasha-api:slice0
+    environment:
+      APP_ENV: "development"
+      PORT: "8000"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      STAC_API_URL: "http://stac-api:8080"
+      TITILER_URL: "http://titiler:8000"
+      DEFAULT_SOURCE_ID: "sentinel-2-l2a"
+      DEFAULT_AOI_ID: "bangalore"
+      USABLE_PIXEL_THRESHOLD_PERCENT: "70"
+      MAX_POLYGON_AREA_HA: "50"
+      MAX_POLYGON_VERTICES: "5000"
+      INDEX_REQUEST_TIMEOUT_SECONDS: "30"
+      RATE_LIMIT_INDEX_PER_MINUTE: "30"
+      MAX_REQUEST_BODY_BYTES: "1048576"
+      CORS_ALLOWED_ORIGINS: "http://localhost:${WEB_PORT:-8080}"
+    expose:
+      - "8000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  titiler:
+    build:
+      context: ../../services/titiler
+      dockerfile: Dockerfile
+    image: akasha-titiler:slice0
+    environment:
+      AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
+      AWS_S3_ENDPOINT: "minio:9000"
+      AWS_VIRTUAL_HOSTING: "FALSE"
+      AWS_HTTPS: "NO"
+      AWS_REGION: "us-east-1"
+      GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
+    expose:
+      - "8000"
+    depends_on:
+      minio:
+        condition: service_started
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  stac-api:
+    build:
+      context: ../../services/stac-api
+      dockerfile: Dockerfile
+    image: akasha-stac-api:slice0
+    environment:
+      POSTGRES_HOST_READER: "postgis"
+      POSTGRES_HOST_WRITER: "postgis"
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASS: "${POSTGRES_PASSWORD}"
+      POSTGRES_DBNAME: "${POSTGRES_DB}"
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+    expose:
+      - "8080"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/_mgmt/health').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  postgis:
+    image: postgis/postgis:16-3.5
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-10-15T17-29-55Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_BROWSER: "off"
+    volumes:
+      - minio_data:/data
+    expose:
+      - "9000"
+      - "9001"
+    healthcheck:
+      # Liveness via the documented endpoint. If your MinIO image lacks curl,
+      # switch to: ["CMD", "mc", "ready", "local"].
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ingestion-worker:
+    build:
+      context: ../../services/ingestion
+      dockerfile: Dockerfile
+    image: akasha-ingestion:slice0
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      STAC_API_URL: "http://stac-api:8080"
+      S3_ENDPOINT_URL: "http://minio:9000"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
+      AOI_CONFIG_PATH: "/app/config/aoi/bangalore.geojson"
+    depends_on:
+      postgis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    # One-shot skeleton: prints config and exits. Real ingestion is Slice 1+.
+    restart: "no"
+
+volumes:
+  postgis_data:
+  minio_data:

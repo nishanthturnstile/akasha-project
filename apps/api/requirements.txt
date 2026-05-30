@@ -1,0 +1,6 @@
+# Akasha BFF (api) — Slice 0 skeleton dependencies.
+# Pinned for reproducible Railway builds. Raster deps (rasterio/rio-tiler) are
+# intentionally NOT added until Slice 2.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1

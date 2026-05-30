@@ -1,0 +1,257 @@
+"""Canonical Slice 0 skeleton metadata for the Akasha Railway MVP.
+
+This module is the single source of truth for:
+  * the multi-service topology (service registry)
+  * pinned container image versions
+  * the documented environment-variable matrix (placeholders only)
+  * the slice/phase roadmap and explicit in/out-of-scope lists
+
+It is intentionally pure data + tiny helpers so it can be imported by the
+live Emergent preview backend AND shipped inside the `api` container image
+identically (no filesystem dependency).
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+APP_NAME = "Akasha"
+SLICE = 0
+SLICE_NAME = "Skeleton"
+
+# --------------------------------------------------------------------------
+# Pinned container images (engineering-dos-donts.md: pin GDAL/rasterio/
+# rio-tiler/TiTiler; do not use floating `latest` for raster services).
+# --------------------------------------------------------------------------
+PINNED_IMAGES: Dict[str, str] = {
+    "gateway (web)": "caddy:2.8-alpine",
+    "api base": "python:3.11-slim",
+    "titiler": "ghcr.io/developmentseed/titiler:1.0.0",
+    "stac-api": "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2",
+    "postgis": "postgis/postgis:16-3.5",
+    "minio": "minio/minio:RELEASE.2025-10-15T17-29-55Z",
+    "ingestion base": "python:3.11-slim",
+    "frontend build": "node:20-alpine",
+}
+
+# --------------------------------------------------------------------------
+# Service registry (railway-deployment-guide.md topology). Only `web` is
+# publicly reachable; everything else is private (railway.internal).
+# `internalPort` is the port the service listens on inside the private network.
+# --------------------------------------------------------------------------
+SERVICES: List[Dict[str, Any]] = [
+    {
+        "id": "web",
+        "name": "Web Gateway",
+        "role": "Serves the built React SPA and reverse-proxies /api -> api and /tiles -> titiler. The only public origin.",
+        "public": True,
+        "runtime": "Caddy + static React (Vite build)",
+        "image": "caddy:2.8-alpine",
+        "build": "infra/gateway/Dockerfile (multi-stage: build apps/frontend, serve via Caddy)",
+        "internalPort": 80,
+        "healthPath": "/health",
+        "healthType": "http",
+        "persistentVolume": False,
+        "dependsOn": ["api", "titiler"],
+    },
+    {
+        "id": "api",
+        "name": "FastAPI BFF",
+        "role": "App config, catalog queries, plot CRUD, index orchestration, masked statistics (later slices). Thin BFF only.",
+        "public": False,
+        "runtime": "Uvicorn / FastAPI",
+        "image": "python:3.11-slim",
+        "build": "apps/api/Dockerfile",
+        "internalPort": 8000,
+        "healthPath": "/health",
+        "healthType": "http",
+        "persistentVolume": False,
+        "dependsOn": ["postgis", "stac-api", "titiler"],
+    },
+    {
+        "id": "titiler",
+        "name": "TiTiler",
+        "role": "RGB display tiles + optional index display overlays from COGs in MinIO. Not used for masked statistics.",
+        "public": False,
+        "runtime": "TiTiler (rio-tiler / GDAL)",
+        "image": "ghcr.io/developmentseed/titiler:1.0.0",
+        "build": "services/titiler/Dockerfile",
+        "internalPort": 8000,
+        "healthPath": "/healthz",
+        "healthType": "http",
+        "persistentVolume": False,
+        "dependsOn": ["minio"],
+    },
+    {
+        "id": "stac-api",
+        "name": "STAC API (pgSTAC)",
+        "role": "Catalog collections/items, date/source discovery, asset metadata via stac-fastapi-pgstac.",
+        "public": False,
+        "runtime": "stac-fastapi-pgstac",
+        "image": "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2",
+        "build": "services/stac-api/Dockerfile",
+        "internalPort": 8080,
+        "healthPath": "/_mgmt/health",
+        "healthType": "http",
+        "persistentVolume": False,
+        "dependsOn": ["postgis"],
+    },
+    {
+        "id": "postgis",
+        "name": "PostgreSQL + PostGIS",
+        "role": "Stored plots, pgSTAC catalog backend, app metadata.",
+        "public": False,
+        "runtime": "PostgreSQL 16 + PostGIS 3.5",
+        "image": "postgis/postgis:16-3.5",
+        "build": "image (no custom Dockerfile)",
+        "internalPort": 5432,
+        "healthPath": None,
+        "healthType": "pg_isready",
+        "persistentVolume": True,
+        "dependsOn": [],
+    },
+    {
+        "id": "minio",
+        "name": "MinIO",
+        "role": "S3-compatible COG object storage. Console disabled; private only.",
+        "public": False,
+        "runtime": "MinIO (S3-compatible)",
+        "image": "minio/minio:RELEASE.2025-10-15T17-29-55Z",
+        "build": "image (no custom Dockerfile)",
+        "internalPort": 9000,
+        "healthPath": "/minio/health/live",
+        "healthType": "http",
+        "persistentVolume": True,
+        "dependsOn": [],
+    },
+    {
+        "id": "ingestion-worker",
+        "name": "Ingestion Worker",
+        "role": "Manual/seed ingestion first; scheduled CDSE/Bhoonidhi ingestion later. No public HTTP surface.",
+        "public": False,
+        "runtime": "Python worker (CLI)",
+        "image": "python:3.11-slim",
+        "build": "services/ingestion/Dockerfile",
+        "internalPort": None,
+        "healthPath": None,
+        "healthType": "process",
+        "persistentVolume": False,
+        "dependsOn": ["postgis", "stac-api", "minio"],
+    },
+]
+
+# --------------------------------------------------------------------------
+# Environment variable matrix (railway-deployment-guide.md). Placeholders only.
+# Do NOT add aliases beyond this matrix (per the deployment guide).
+# --------------------------------------------------------------------------
+ENV_MATRIX: Dict[str, Dict[str, str]] = {
+    "web": {
+        "PUBLIC_APP_NAME": "Akasha",
+        "PUBLIC_DEFAULT_AOI_NAME": "Bangalore",
+        "API_UPSTREAM_URL": "http://api.railway.internal:8000",
+        "TITILER_UPSTREAM_URL": "http://titiler.railway.internal:8000",
+        "VITE_BASEMAP_STYLE_URL": "<operator-provided MapLibre style URL>",
+        "GATEWAY_BASIC_AUTH": "",
+    },
+    "api": {
+        "APP_ENV": "production",
+        "DATABASE_URL": "postgresql://<user>:<password>@postgis.railway.internal:5432/<db>",
+        "STAC_API_URL": "http://stac-api.railway.internal:8080",
+        "TITILER_URL": "http://titiler.railway.internal:8000",
+        "DEFAULT_SOURCE_ID": "sentinel-2-l2a",
+        "DEFAULT_AOI_ID": "bangalore",
+        "USABLE_PIXEL_THRESHOLD_PERCENT": "70",
+        "MAX_POLYGON_AREA_HA": "50",
+        "MAX_POLYGON_VERTICES": "5000",
+        "INDEX_REQUEST_TIMEOUT_SECONDS": "30",
+        "RATE_LIMIT_INDEX_PER_MINUTE": "30",
+        "MAX_REQUEST_BODY_BYTES": "1048576",
+        "CORS_ALLOWED_ORIGINS": "https://<web-public-domain>",
+    },
+    "titiler": {
+        "AWS_ACCESS_KEY_ID": "<minio-access-key>",
+        "AWS_SECRET_ACCESS_KEY": "<minio-secret-key>",
+        "AWS_S3_ENDPOINT": "minio.railway.internal:9000",
+        "AWS_VIRTUAL_HOSTING": "FALSE",
+        "AWS_HTTPS": "NO",
+        "AWS_REGION": "us-east-1",
+        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+        "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
+    },
+    "stac-api": {
+        "POSTGRES_HOST_READER": "postgis.railway.internal",
+        "POSTGRES_HOST_WRITER": "postgis.railway.internal",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_USER": "<user>",
+        "POSTGRES_PASS": "<password>",
+        "POSTGRES_DBNAME": "<db>",
+    },
+    "postgis": {
+        "POSTGRES_USER": "<generated>",
+        "POSTGRES_PASSWORD": "<generated>",
+        "POSTGRES_DB": "<db>",
+    },
+    "minio": {
+        "MINIO_ROOT_USER": "<generated-user>",
+        "MINIO_ROOT_PASSWORD": "<generated-password>",
+        "MINIO_BROWSER": "off",
+        "MINIO_SERVER_URL": "http://minio.railway.internal:9000",
+    },
+    "ingestion-worker": {
+        "DATABASE_URL": "postgresql://<user>:<password>@postgis.railway.internal:5432/<db>",
+        "STAC_API_URL": "http://stac-api.railway.internal:8080",
+        "S3_ENDPOINT_URL": "http://minio.railway.internal:9000",
+        "S3_ACCESS_KEY": "<access-key>",
+        "S3_SECRET_KEY": "<secret-key>",
+        "AOI_CONFIG_PATH": "/app/config/aoi/bangalore.geojson",
+    },
+}
+
+# --------------------------------------------------------------------------
+# Slice / phase roadmap (mvp-execution-plan.md). Slice 0 is active.
+# --------------------------------------------------------------------------
+ROADMAP: List[Dict[str, str]] = [
+    {"id": "slice0", "phase": "Phase 0", "name": "Repository & service skeleton", "status": "active"},
+    {"id": "slice1", "phase": "Phase 1", "name": "Database, catalog & object storage", "status": "planned"},
+    {"id": "slice2", "phase": "Phase 2", "name": "Raster de-risk (tile + masked NDVI stat)", "status": "planned"},
+    {"id": "slice3", "phase": "Phase 3", "name": "BFF API implementation", "status": "planned"},
+    {"id": "slice4", "phase": "Phase 4", "name": "Frontend map & layer UX", "status": "planned"},
+    {"id": "slice5", "phase": "Phase 5", "name": "Plot & index UX", "status": "planned"},
+    {"id": "slice6", "phase": "Phase 6", "name": "Railway deployment hardening", "status": "planned"},
+    {"id": "slice7", "phase": "Phase 7", "name": "Acceptance & QA", "status": "planned"},
+]
+
+IN_SCOPE: List[str] = [
+    "Monorepo structure: apps/{frontend,api}, services/{titiler,stac-api,ingestion}, infra/{gateway,railway,docker}, docs, scripts",
+    "Dockerfile per deployable service (web gateway, api, titiler, stac-api, ingestion)",
+    "Local docker-compose.yml mirroring the Railway topology (private networking + volumes)",
+    "Railway-ready per-service configuration examples (railway.json + env matrix)",
+    ".env.example files with placeholders only (no secrets / no default credentials)",
+    "Health endpoints + documented health paths for web, api, titiler, stac-api",
+    "Shared formatting/linting conventions (ruff/black/isort, prettier, editorconfig)",
+]
+
+OUT_OF_SCOPE: List[str] = [
+    "Storage/catalog logic: PostGIS schema, pgSTAC migrations, MinIO bucket structure (Slice 1)",
+    "Raster: COG/SCL handling, TiTiler expressions, masked statistics, index math (Slice 2)",
+    "BFF product contracts: /api/config, /api/sources, /api/layers/default, plot CRUD, /api/indices/statistics (Slice 3)",
+    "Frontend product UX: MapLibre map, Terra Draw, layer/index panels (Slices 4-5)",
+    "Railway hardening & full smoke test, custom domains (Slice 6)",
+    "Wave 2 features, user accounts/roles, ISRO/SAR sources, automated ingestion",
+]
+
+
+def service_registry(live_service_id: str = "api") -> List[Dict[str, Any]]:
+    """Return the service registry with a runtime `status` overlay.
+
+    Only the currently-running service (the `api` answering this request) is
+    reported as `live`. Every other service is `defined` because it only runs
+    under Docker Compose (local) or as a separate Railway service. This is
+    intentionally honest: we do not fake health for services that are not up.
+    """
+    out: List[Dict[str, Any]] = []
+    for svc in SERVICES:
+        item = dict(svc)
+        item["status"] = "live" if svc["id"] == live_service_id else "defined"
+        item["liveInThisEnvironment"] = svc["id"] == live_service_id
+        out.append(item)
+    return out

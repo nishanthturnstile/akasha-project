@@ -1,0 +1,4 @@
+# Akasha ingestion worker — Slice 0 skeleton dependencies.
+# Heavy raster/ingestion deps (rasterio, rio-cogeo, pystac, boto3) are added in
+# Slice 1/2 alongside the actual ingestion logic. Kept minimal for now.
+python-dotenv==1.0.1

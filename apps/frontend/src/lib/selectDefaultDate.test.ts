@@ -46,4 +46,13 @@ describe('selectDefaultDate', () => {
     ];
     expect(selectDefaultDate(dates, 70)?.acquisitionDate).toBe('2025-09-20');
   });
+
+  it('does not depend on the API returning dates newest-first', () => {
+    const dates = [
+      makeDate({ acquisitionDate: '2025-09-01', usablePixelPercent: 95 }),
+      makeDate({ acquisitionDate: '2025-09-20', usablePixelPercent: 30 }),
+      makeDate({ acquisitionDate: '2025-09-14', usablePixelPercent: 75 }),
+    ];
+    expect(selectDefaultDate(dates, 70)?.acquisitionDate).toBe('2025-09-14');
+  });
 });

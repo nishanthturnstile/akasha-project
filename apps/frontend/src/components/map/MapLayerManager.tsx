@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import type { BasemapStyle } from '@/map/basemap';
 import {
   applySatelliteLayer,
+  isValidSceneBounds,
   setSatelliteOpacity,
   setSatelliteVisibility,
   SAT_LAYER_ID,
@@ -14,11 +15,50 @@ import {
 /** MapLibre's Map satisfies the narrow MapLayerHost structural surface at runtime. */
 const asHost = (m: maplibregl.Map): MapLayerHost => m as unknown as MapLayerHost;
 
+const SCENE_FIT_PADDING = { top: 96, bottom: 80, left: 360, right: 260 };
+
+function sceneLayerKey(scene: SatelliteScene | null): string | null {
+  if (!scene) return null;
+  return [
+    scene.tileUrlTemplate,
+    scene.bounds?.join(',') ?? '',
+    scene.minzoom ?? '',
+    scene.maxzoom ?? '',
+  ].join('|');
+}
+
+function viewportIntersectsScene(map: maplibregl.Map, scene: SatelliteScene): boolean {
+  if (!isValidSceneBounds(scene.bounds)) return true;
+  const [west, south, east, north] = scene.bounds;
+  const viewport = map.getBounds();
+  return (
+    west <= viewport.getEast() &&
+    east >= viewport.getWest() &&
+    south <= viewport.getNorth() &&
+    north >= viewport.getSouth()
+  );
+}
+
+function fitSceneBoundsIfNeeded(map: maplibregl.Map, scene: SatelliteScene): void {
+  if (!isValidSceneBounds(scene.bounds) || viewportIntersectsScene(map, scene)) return;
+  const [west, south, east, north] = scene.bounds;
+  map.fitBounds(
+    [
+      [west, south],
+      [east, north],
+    ],
+    {
+      padding: SCENE_FIT_PADDING,
+      maxZoom: Math.min(scene.maxzoom ?? 14, 14),
+      duration: 650,
+    },
+  );
+}
+
 interface MapLayerManagerProps {
   basemapStyle: BasemapStyle;
   center: [number, number];
   zoom: number;
-  maxBounds?: [[number, number], [number, number]];
   scene: SatelliteScene | null;
   /** 0..1 */
   opacity: number;
@@ -29,13 +69,13 @@ interface MapLayerManagerProps {
 /**
  * Owns the MapLibre instance for its full lifecycle. The basemap style is set once
  * on creation; subsequent acquisition-date changes only swap the raster source/layer
- * (see lib/satelliteLayer) so the basemap and camera are never disturbed.
+ * (see lib/satelliteLayer). If the active satellite footprint is completely off
+ * screen, the camera is gently fitted to it so toggling the layer reveals imagery.
  */
 export function MapLayerManager({
   basemapStyle,
   center,
   zoom,
-  maxBounds,
   scene,
   opacity,
   visible,
@@ -49,6 +89,7 @@ export function MapLayerManager({
   sceneRef.current = scene;
   const stateRef = useRef({ opacity, visible });
   stateRef.current = { opacity, visible };
+  const sceneKey = sceneLayerKey(scene);
 
   // Create the map exactly once.
   useEffect(() => {
@@ -58,7 +99,6 @@ export function MapLayerManager({
       style: basemapStyle as maplibregl.StyleSpecification,
       center,
       zoom,
-      maxBounds,
       attributionControl: false,
       pitchWithRotate: false,
     });
@@ -68,7 +108,10 @@ export function MapLayerManager({
     map.on('load', () => {
       loadedRef.current = true;
       const s = sceneRef.current;
-      if (s) applySatelliteLayer(asHost(map), s, stateRef.current);
+      if (s) {
+        applySatelliteLayer(asHost(map), s, stateRef.current);
+        if (stateRef.current.visible) fitSceneBoundsIfNeeded(map, s);
+      }
       onMapReady?.(map);
     });
 
@@ -86,12 +129,13 @@ export function MapLayerManager({
     if (!map || !loadedRef.current) return;
     if (scene) {
       applySatelliteLayer(asHost(map), scene, { opacity, visible });
+      if (visible) fitSceneBoundsIfNeeded(map, scene);
     } else {
       if (map.getLayer(SAT_LAYER_ID)) map.removeLayer(SAT_LAYER_ID);
       if (map.getSource(SAT_SOURCE_ID)) map.removeSource(SAT_SOURCE_ID);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene?.tileUrlTemplate]);
+  }, [sceneKey]);
 
   // Live opacity (no layer rebuild).
   useEffect(() => {
@@ -102,9 +146,12 @@ export function MapLayerManager({
   // Visibility toggle (independent of basemap).
   useEffect(() => {
     const map = mapRef.current;
-    if (map && loadedRef.current) setSatelliteVisibility(asHost(map), visible, opacity);
+    if (map && loadedRef.current) {
+      setSatelliteVisibility(asHost(map), visible, opacity);
+      if (visible && sceneRef.current) fitSceneBoundsIfNeeded(map, sceneRef.current);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  return <div ref={containerRef} className="absolute inset-0" data-testid="map-canvas" />;
+  return <div ref={ containerRef } className="absolute inset-0" data-testid="map-canvas" />;
 }

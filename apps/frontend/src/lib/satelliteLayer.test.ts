@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applySatelliteLayer,
+  isValidSceneBounds,
   resolveTileUrl,
   SAT_LAYER_ID,
   SAT_SOURCE_ID,
@@ -39,12 +40,33 @@ describe('resolveTileUrl', () => {
     ).toBe('http://localhost/api/tiles/s/d/rgb/{z}/{x}/{y}.png');
   });
 
-  it('leaves an already-absolute URL unchanged', () => {
-    expect(resolveTileUrl('https://x/y/{z}.png', 'http://localhost')).toBe('https://x/y/{z}.png');
+  it('allows an already-absolute same-origin /api/tiles URL', () => {
+    expect(
+      resolveTileUrl('http://localhost/api/tiles/s/d/rgb/{z}/{x}/{y}.png', 'http://localhost'),
+    ).toBe('http://localhost/api/tiles/s/d/rgb/{z}/{x}/{y}.png');
+  });
+
+  it('rejects external absolute tile URLs', () => {
+    expect(() => resolveTileUrl('https://tiles.example.com/y/{z}.png', 'http://localhost')).toThrow(
+      /same-origin/,
+    );
+  });
+
+  it('rejects same-origin paths outside the /api/tiles contract', () => {
+    expect(() => resolveTileUrl('/tiles/s/d/{z}.png', 'http://localhost')).toThrow(
+      /\/api\/tiles/,
+    );
   });
 });
 
 describe('applySatelliteLayer (date change touches only the raster layer)', () => {
+  it('validates scene bounds before using them in a raster source', () => {
+    expect(isValidSceneBounds([77.7, 11.6, 78.8, 12.7])).toBe(true);
+    expect(isValidSceneBounds([78.8, 11.6, 77.7, 12.7])).toBe(false);
+    expect(isValidSceneBounds([77.7, 12.7, 78.8, 11.6])).toBe(false);
+    expect(isValidSceneBounds(undefined)).toBe(false);
+  });
+
   it('adds the raster source+layer and never calls setStyle', () => {
     const map = createMockMap();
     applySatelliteLayer(
@@ -60,6 +82,22 @@ describe('applySatelliteLayer (date change touches only the raster layer)', () =
     );
     expect(map.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({ id: SAT_LAYER_ID, type: 'raster' }),
+    );
+  });
+
+  it('passes valid scene bounds to MapLibre so out-of-footprint tiles are not requested', () => {
+    const map = createMockMap();
+    const bounds: [number, number, number, number] = [77.751, 11.647, 78.771, 12.65];
+    applySatelliteLayer(
+      map as unknown as MapLayerHost,
+      { tileUrlTemplate: '/api/tiles/a/2025-09-14/rgb/{z}/{x}/{y}.png', bounds },
+      { opacity: 1, visible: true },
+      'http://localhost',
+    );
+
+    expect(map.addSource).toHaveBeenCalledWith(
+      SAT_SOURCE_ID,
+      expect.objectContaining({ bounds }),
     );
   });
 

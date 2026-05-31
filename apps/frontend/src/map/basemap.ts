@@ -2,19 +2,29 @@ import type { StyleSpecification } from 'maplibre-gl';
 import type { AppConfig } from '@/types/api';
 
 /**
- * Local "ink" fallback basemap — a plain dark background with NO external sources,
- * so the app never reaches a public CDN/OSM and the satellite overlay stays usable.
- * Colour matches the design-system dark page background (`--background` 222 38% 7%).
+ * Default basemap: OpenStreetMap raster tiles, full world coverage (zooms 0–19).
+ * This is the development default so the whole world is visible out of the box and
+ * zooming in reveals street-level detail. For production, set `VITE_BASEMAP_STYLE_URL`
+ * (or `config.basemapStyleUrl`) to a self-hosted style — see `resolveBasemapStyle`.
  */
-export const INK_FALLBACK_STYLE: StyleSpecification = {
+export const OSM_RASTER_STYLE: StyleSpecification = {
   version: 8,
-  name: 'Akasha Ink (offline fallback)',
-  sources: {},
+  name: 'OpenStreetMap',
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 19,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
   layers: [
     {
-      id: 'akasha-ink-background',
-      type: 'background',
-      paint: { 'background-color': '#0b1019' },
+      id: 'osm',
+      type: 'raster',
+      source: 'osm',
     },
   ],
 };
@@ -25,7 +35,7 @@ export type BasemapStyle = string | StyleSpecification;
  * Resolve the basemap style by precedence:
  *   1) config.basemapStyleUrl (operator-provided, if non-empty)
  *   2) VITE_BASEMAP_STYLE_URL (build-time override, if set)
- *   3) bundled local ink fallback style (no public CDN)
+ *   3) OpenStreetMap raster world basemap (default; self-host in production)
  */
 export function resolveBasemapStyle(config: AppConfig | undefined): BasemapStyle {
   const fromConfig = config?.basemapStyleUrl?.trim();
@@ -34,5 +44,18 @@ export function resolveBasemapStyle(config: AppConfig | undefined): BasemapStyle
   const fromEnv = import.meta.env.VITE_BASEMAP_STYLE_URL?.trim();
   if (fromEnv && !fromEnv.startsWith('<')) return fromEnv;
 
-  return INK_FALLBACK_STYLE;
+  return OSM_RASTER_STYLE;
+}
+
+/**
+ * Human-readable credit for the basemap that `resolveBasemapStyle` would select,
+ * so the on-map attribution always matches what is actually rendered.
+ */
+export function basemapAttribution(config: AppConfig | undefined): string {
+  if (config?.basemapStyleUrl?.trim()) return 'Operator basemap';
+
+  const fromEnv = import.meta.env.VITE_BASEMAP_STYLE_URL?.trim();
+  if (fromEnv && !fromEnv.startsWith('<')) return 'Operator basemap';
+
+  return '© OpenStreetMap contributors';
 }

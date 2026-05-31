@@ -2,7 +2,7 @@ import type { SceneDate } from '@/types/api';
 
 /**
  * Choose the default-selected acquisition date.
- * Precedence (dates assumed newest-first, the API's order):
+ * Precedence:
  *   1) the date flagged `isLatestUsable`
  *   2) else the newest date with usablePixelPercent >= threshold
  *   3) else the newest date (caller surfaces the marginal/empty state)
@@ -14,13 +14,15 @@ export function selectDefaultDate(
 ): SceneDate | null {
   if (!dates || dates.length === 0) return null;
 
-  const latestUsable = dates.find((d) => d.isLatestUsable);
+  const newestFirst = [...dates].sort((a, b) => b.acquisitionDate.localeCompare(a.acquisitionDate));
+
+  const latestUsable = newestFirst.find((d) => d.isLatestUsable);
   if (latestUsable) return latestUsable;
 
-  const overThreshold = dates.find(
+  const overThreshold = newestFirst.find(
     (d) => d.usablePixelPercent != null && d.usablePixelPercent >= thresholdPercent,
   );
   if (overThreshold) return overThreshold;
 
-  return dates[0];
+  return newestFirst[0];
 }

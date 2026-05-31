@@ -22,6 +22,8 @@ export interface SatelliteLayerState {
   visible: boolean;
 }
 
+export type SceneBounds = [number, number, number, number];
+
 /** Minimal structural surface so the swap logic is unit-testable without real MapLibre. */
 export interface MapLayerHost {
   getSource(id: string): unknown;
@@ -34,12 +36,36 @@ export interface MapLayerHost {
   setLayoutProperty(layerId: string, name: string, value: unknown): void;
 }
 
+export function isValidSceneBounds(bounds?: SatelliteScene['bounds']): bounds is SceneBounds {
+  if (!bounds || bounds.length !== 4) return false;
+  const [west, south, east, north] = bounds;
+  return [west, south, east, north].every(Number.isFinite) && west < east && south < north;
+}
+
 /** Resolve the API tile template to a same-origin absolute URL for MapLibre. */
 export function resolveTileUrl(template: string, origin?: string): string {
-  if (/^https?:\/\//i.test(template)) return template;
-  const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  const base = (origin ?? (typeof window !== 'undefined' ? window.location.origin : '')).replace(
+    /\/$/,
+    '',
+  );
+
+  if (/^https?:\/\//i.test(template)) {
+    const url = new URL(template);
+    if (base && url.origin !== base) {
+      throw new Error('Satellite tile template must be same-origin.');
+    }
+    if (!url.pathname.startsWith('/api/tiles/')) {
+      throw new Error('Satellite tile template must use the /api/tiles contract.');
+    }
+    return template;
+  }
+
   const path = template.startsWith('/') ? template : `/${template}`;
-  return `${base}${path}`;
+  if (!path.startsWith('/api/tiles/')) {
+    throw new Error('Satellite tile template must use the /api/tiles contract.');
+  }
+
+  return base ? `${base}${path}` : path;
 }
 
 /**
@@ -59,7 +85,10 @@ export function applySatelliteLayer(
     tiles: [resolveTileUrl(scene.tileUrlTemplate, origin)],
     tileSize: 256,
   };
-  if (scene.bounds) source.bounds = scene.bounds;
+  // Constrain requests to the STAC footprint. TiTiler returns 404 for tiles outside
+  // the COG footprint, which MapLibre surfaces as tile errors; bounds prevent the
+  // UI from asking for imagery where this scene cannot render.
+  if (isValidSceneBounds(scene.bounds)) source.bounds = scene.bounds;
   if (scene.minzoom != null) source.minzoom = scene.minzoom;
   if (scene.maxzoom != null) source.maxzoom = scene.maxzoom;
   if (scene.attribution) source.attribution = scene.attribution;

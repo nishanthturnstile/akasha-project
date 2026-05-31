@@ -3,7 +3,7 @@ import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
 import { ApiError, composeTileTemplate } from '@/lib/api';
 import { useConfig, useDates, useDefaultLayer, useSources } from '@/lib/queries';
-import { resolveBasemapStyle } from '@/map/basemap';
+import { basemapAttribution, resolveBasemapStyle } from '@/map/basemap';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
@@ -29,7 +29,7 @@ function FullScreenLoading() {
     >
       <div className="glass w-[320px] p-6">
         <div className="mb-4 flex items-center gap-2 text-primary">
-          <Satellite className="size-5" strokeWidth={1.75} />
+          <Satellite className="size-5" strokeWidth={ 1.75 } />
           <span className="font-display text-lg font-semibold tracking-[-0.01em] text-foreground">
             Akasha
           </span>
@@ -53,14 +53,14 @@ function FullScreenError({ message, onRetry }: { message: string; onRetry: () =>
     >
       <div className="glass flex w-[360px] max-w-[90vw] flex-col items-start gap-3 p-6">
         <div className="flex items-center gap-2 text-destructive">
-          <AlertTriangle className="size-5" strokeWidth={1.75} />
+          <AlertTriangle className="size-5" strokeWidth={ 1.75 } />
           <h1 className="font-display text-lg font-semibold tracking-[-0.01em]">
             Unable to load
           </h1>
         </div>
-        <p className="text-[13px] leading-5 text-muted-foreground">{message}</p>
-        <Button variant="primary" size="sm" onClick={onRetry} data-testid="app-error-retry">
-          <RefreshCw className="size-4" strokeWidth={1.75} /> Try again
+        <p className="text-[13px] leading-5 text-muted-foreground">{ message }</p>
+        <Button variant="primary" size="sm" onClick={ onRetry } data-testid="app-error-retry">
+          <RefreshCw className="size-4" strokeWidth={ 1.75 } /> Try again
         </Button>
       </div>
     </div>
@@ -100,17 +100,6 @@ export default function MapPage() {
 
   const basemapStyle = useMemo(() => resolveBasemapStyle(configQ.data), [configQ.data]);
 
-  const maxBounds = useMemo<[[number, number], [number, number]] | undefined>(() => {
-    if (!configQ.data) return undefined;
-    const [w, s, e, n] = configQ.data.aoi.bounds;
-    const padX = (e - w) * 1.5;
-    const padY = (n - s) * 1.5;
-    return [
-      [w - padX, s - padY],
-      [e + padX, n + padY],
-    ];
-  }, [configQ.data]);
-
   const scene = useMemo<SatelliteScene | null>(() => {
     if (!selectedDate || !effectiveSourceId) return null;
     const dl = defaultLayerQ.data;
@@ -147,87 +136,87 @@ export default function MapPage() {
 
   if (configQ.isLoading) return <FullScreenLoading />;
   if (configQ.isError || !configQ.data) {
-    return <FullScreenError message={messageFor(configQ.error)} onRetry={() => configQ.refetch()} />;
+    return <FullScreenError message={ messageFor(configQ.error) } onRetry={ () => configQ.refetch() } />;
   }
 
   const config = configQ.data;
   const attribution = scene?.attribution ?? 'Copernicus Sentinel-2';
+  const basemapCredit = basemapAttribution(configQ.data);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background" data-testid="map-page">
       <MapLayerManager
-        basemapStyle={basemapStyle}
-        center={config.aoi.center}
-        zoom={config.aoi.zoom}
-        maxBounds={maxBounds}
-        scene={scene}
-        opacity={opacity / 100}
-        visible={visible}
-        onMapReady={setMap}
+        basemapStyle={ basemapStyle }
+        center={ config.aoi.center }
+        zoom={ config.aoi.zoom }
+        scene={ scene }
+        opacity={ opacity / 100 }
+        visible={ visible }
+        onMapReady={ setMap }
       />
 
-      {/* Top-left: plot tools (Phase 5 placeholder) */}
+      {/* Top-left: plot tools (Phase 5 placeholder) */ }
       <div className="absolute left-4 top-4 z-20">
         <PlotToolbar />
       </div>
 
-      {/* Top-center: brand wordmark */}
+      {/* Top-center: brand wordmark */ }
       <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2">
         <div
           className="glass flex items-center gap-2 rounded-pill px-3.5 py-1.5"
           data-testid="brand-mark"
         >
-          <Satellite className="size-4 text-primary" strokeWidth={1.75} />
+          <Satellite className="size-4 text-primary" strokeWidth={ 1.75 } />
           <span className="font-display text-[15px] font-semibold tracking-[-0.01em]">
-            {config.appName}
+            { config.appName }
           </span>
           <span className="hidden text-[12px] text-muted-foreground sm:inline">
-            · {config.aoi.name}
+            · { config.aoi.name }
           </span>
         </div>
       </div>
 
-      {/* Top-right: theme toggle */}
+      {/* Top-right: theme toggle */ }
       <div className="absolute right-4 top-4 z-20">
         <ThemeToggle />
       </div>
 
-      {/* Left: layer panel */}
+      {/* Left: layer panel */ }
       <div className="absolute left-4 top-[76px] z-20">
         <LayerPanel
-          sources={sourcesQ.data}
-          selectedSourceId={effectiveSourceId}
-          onSourceChange={handleSourceChange}
-          dates={datesQ.data}
-          datesLoading={datesQ.isLoading}
-          datesError={datesQ.isError ? messageFor(datesQ.error) : null}
-          onDatesRetry={() => datesQ.refetch()}
-          selectedDate={selectedDate}
-          onDateSelect={setDateOverride}
-          visible={visible}
-          onVisibleChange={setVisible}
-          opacity={opacity}
-          onOpacityChange={setOpacity}
-          marginalNote={marginalNote}
+          sources={ sourcesQ.data }
+          selectedSourceId={ effectiveSourceId }
+          onSourceChange={ handleSourceChange }
+          dates={ datesQ.data }
+          datesLoading={ datesQ.isLoading }
+          datesError={ datesQ.isError ? messageFor(datesQ.error) : null }
+          onDatesRetry={ () => datesQ.refetch() }
+          selectedDate={ selectedDate }
+          onDateSelect={ setDateOverride }
+          visible={ visible }
+          onVisibleChange={ setVisible }
+          opacity={ opacity }
+          onOpacityChange={ setOpacity }
+          marginalNote={ marginalNote }
         />
       </div>
 
-      {/* Right: index panel (Phase 5 placeholder) */}
-      <div className="absolute right-4 top-[76px] z-10">
+      {/* Right: index panel (Phase 5 placeholder) */ }
+      <div className="absolute right-4 top-[76px] z-10 hidden xl:block">
         <IndexPanel />
       </div>
 
-      {/* Bottom-right: map controls */}
+      {/* Bottom-right: map controls */ }
       <div className="absolute bottom-8 right-4 z-20">
-        <MapControls map={map} />
+        <MapControls map={ map } />
       </div>
 
-      {/* Bottom-left: attribution (muted, on-map) */}
+      {/* Bottom-left: attribution (muted, on-map) */ }
       <div
         className="pointer-events-none absolute bottom-7 left-3 z-20 max-w-[60vw] truncate text-[11px] text-foreground/70 on-map-text"
         data-testid="attribution"
       >
-        {attribution} · Akasha ink basemap
+        { attribution } · { basemapCredit }
       </div>
     </div>
   );

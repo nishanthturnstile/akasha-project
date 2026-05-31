@@ -28,11 +28,11 @@
     "status": "completed"
   },
   {
-    "content": "Phase G: Docs updates (mvp-execution-plan, scripts/README, emergent-context, api/README, data/seed/README)",
+    "content": "Phase G: Docs updates",
     "status": "completed"
   },
   {
-    "content": "Final: lint + full validator/pytest sweep + restart backend + testing agent",
-    "status": "in_progress"
+    "content": "Final: lint + full validator/pytest sweep + restart backend + testing agent (13/13)",
+    "status": "completed"
   }
 ]

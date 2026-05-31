@@ -6,6 +6,7 @@ python-dotenv==1.0.1
 # Slice 1: app-schema migration CLI only (no product DB endpoints yet).
 # Imported lazily so `app.main` (runtime/preview) never requires a DB driver.
 psycopg[binary]>=3.2,<4
+boto3==1.43.18
 # Slice 2 (Phase 2 raster de-risk): BFF masked-statistics + RGB tile proxy.
 # rasterio reads the analytic + SCL COG windows; numpy does the masked index
 # math; shapely/pyproj validate geometry + compute area. rio-tiler is available

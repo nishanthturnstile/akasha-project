@@ -215,9 +215,9 @@ from app.raster.tiles import build_rgb_tile_url  # noqa: E402
 
 url = build_rgb_tile_url(
     analytic_href="s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif",
-    rgb_positions=[1, 8, 9], z=12, x=2937, y=1881, titiler_url="http://titiler:8000",
+    rgb_positions=[1, 8, 9], z=12, x=2937, y=1909, titiler_url="http://titiler:8000",
 )
-check("/cog/tiles/WebMercatorQuad/12/2937/1881.png" in url, "TiTiler 1.0 COG tile route")
+check("/cog/tiles/WebMercatorQuad/12/2937/1909.png" in url, "TiTiler 1.0 COG tile route")
 check(url.count("bidx=1") == 1 and "bidx=8" in url and "bidx=9" in url, "bidx for RGB [1,8,9]")
 check("rescale=" in url and "url=" in url, "rescale + url query params present")
 

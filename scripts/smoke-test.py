@@ -138,7 +138,7 @@ check("default layer", "/api/layers/default", expect_json=True, want_key="tileUr
 
 print("\n> Phase 2 raster path (pass on render; BLOCKED without real COGs/TiTiler)")
 check_allow_blocked(
-    "rgb tile", "/api/tiles/sentinel-2-l2a/2025-09-14/rgb/12/2937/1881.png"
+    "rgb tile", "/api/tiles/sentinel-2-l2a/2025-09-14/rgb/12/2937/1909.png"
 )
 check_allow_blocked(
     "index statistics",

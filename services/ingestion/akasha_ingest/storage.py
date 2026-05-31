@@ -9,6 +9,7 @@ boto3 is imported lazily so this module imports cleanly without it installed.
 """
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 
 from . import config
@@ -73,19 +74,23 @@ def _strip_scheme(url: str) -> str:
 
 
 def _gdal_s3_options() -> dict[str, str]:
-    endpoint = _strip_scheme(config.S3_ENDPOINT_URL)
-    opts = {
-        "AWS_ACCESS_KEY_ID": config.S3_ACCESS_KEY,
-        "AWS_SECRET_ACCESS_KEY": config.S3_SECRET_KEY,
-        "AWS_REGION": config.S3_REGION,
-        "AWS_VIRTUAL_HOSTING": "FALSE",
-        "AWS_HTTPS": "NO",
+    return {
         "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
         "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
     }
-    if endpoint:
-        opts["AWS_S3_ENDPOINT"] = endpoint
-    return {key: value for key, value in opts.items() if value}
+
+
+def _rasterio_aws_session():
+    from rasterio.session import AWSSession  # lazy; uses boto3-backed credentials
+
+    os.environ.setdefault("AWS_VIRTUAL_HOSTING", "FALSE")
+    os.environ.setdefault("AWS_HTTPS", "NO")
+    return AWSSession(
+        aws_access_key_id=config.S3_ACCESS_KEY,
+        aws_secret_access_key=config.S3_SECRET_KEY,
+        region_name=config.S3_REGION,
+        endpoint_url=_strip_scheme(config.S3_ENDPOINT_URL) or None,
+    )
 
 
 def _verify_cog_metadata(scene: SceneIdentity) -> tuple[bool, str]:
@@ -95,7 +100,7 @@ def _verify_cog_metadata(scene: SceneIdentity) -> tuple[bool, str]:
 
         analytic_path = f"/vsis3/{config.BUCKET}/{scene.analytic_key}"
         scl_path = f"/vsis3/{config.BUCKET}/{scene.scl_key}"
-        with rasterio.Env(**_gdal_s3_options()):
+        with rasterio.Env(_rasterio_aws_session(), **_gdal_s3_options()):
             with rasterio.open(analytic_path) as analytic, rasterio.open(scl_path) as scl:
                 problems: list[str] = []
                 if analytic.count != 9:

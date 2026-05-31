@@ -36,36 +36,43 @@ class WindowRead:
 
 
 def gdal_s3_options() -> dict[str, str]:
-    """GDAL/S3 options for reading MinIO COGs (server-side only).
+    """Non-credential GDAL options for reading MinIO COGs (server-side only).
 
-    Mirrors the documented TiTiler env (AWS_S3_ENDPOINT, AWS_HTTPS,
-    AWS_VIRTUAL_HOSTING, ...). Credentials come from the api service env and are
+    Rasterio/GDAL's AWS credential options must be supplied via AWSSession, not
+    directly in rasterio.Env. Credentials come from the api service env and are
     never exposed to the browser.
     """
-    opts: dict[str, str] = {
+    return {
         "GDAL_DISABLE_READDIR_ON_OPEN": os.environ.get("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR"),
         "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": os.environ.get(
             "CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif,.tiff"
         ),
-        "AWS_VIRTUAL_HOSTING": os.environ.get("AWS_VIRTUAL_HOSTING", "FALSE"),
-        "AWS_HTTPS": os.environ.get("AWS_HTTPS", "NO"),
     }
-    # Endpoint + creds (support both GDAL-style and Akasha-style var names).
-    endpoint = os.environ.get("AWS_S3_ENDPOINT") or _strip_scheme(
-        os.environ.get("S3_ENDPOINT_URL", "")
+
+
+def _s3_endpoint_url() -> str | None:
+    endpoint_url = os.environ.get("S3_ENDPOINT_URL", "").strip()
+    if endpoint_url:
+        return _strip_scheme(endpoint_url)
+    endpoint = os.environ.get("AWS_S3_ENDPOINT", "").strip()
+    if not endpoint:
+        return None
+    return _strip_scheme(endpoint)
+
+
+def rasterio_aws_session():
+    """Build a Rasterio AWSSession for authenticated MinIO/S3 COG reads."""
+    from rasterio.session import AWSSession  # lazy; pulls boto3 only when needed
+
+    os.environ.setdefault("AWS_VIRTUAL_HOSTING", "FALSE")
+    os.environ.setdefault("AWS_HTTPS", "NO")
+    return AWSSession(
+        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("S3_ACCESS_KEY"),
+        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY")
+        or os.environ.get("S3_SECRET_KEY"),
+        region_name=os.environ.get("AWS_REGION") or os.environ.get("S3_REGION", "us-east-1"),
+        endpoint_url=_s3_endpoint_url(),
     )
-    if endpoint:
-        opts["AWS_S3_ENDPOINT"] = endpoint
-    access = os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("S3_ACCESS_KEY", "")
-    secret = os.environ.get("AWS_SECRET_ACCESS_KEY") or os.environ.get("S3_SECRET_KEY", "")
-    region = os.environ.get("AWS_REGION") or os.environ.get("S3_REGION", "us-east-1")
-    if access:
-        opts["AWS_ACCESS_KEY_ID"] = access
-    if secret:
-        opts["AWS_SECRET_ACCESS_KEY"] = secret
-    if region:
-        opts["AWS_REGION"] = region
-    return opts
 
 
 def _strip_scheme(url: str) -> str:
@@ -114,7 +121,7 @@ def read_index_windows(
     env_opts = gdal_s3_options()
 
     try:
-        with rasterio.Env(**env_opts):
+        with rasterio.Env(rasterio_aws_session(), **env_opts):
             with rasterio.open(a_path) as a_ds:
                 analytic_crs = a_ds.crs
                 analytic_transform = a_ds.transform

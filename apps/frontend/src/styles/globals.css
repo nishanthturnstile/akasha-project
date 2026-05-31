@@ -1,0 +1,219 @@
+/* Akasha design system — "Calm Instrument, Living Earth".
+ * Tokens are copied verbatim from docs/design-system.md (§2.6, §3, §4, §6).
+ * Default theme is DARK (imagery reads best on ink); light "haze" is the alternate.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surfaces — warm haze paper */
+    --background: 40 30% 98%;
+    --foreground: 222 28% 12%;
+    --card: 40 33% 99%;
+    --card-foreground: 222 28% 12%;
+    --popover: 40 33% 99%;
+    --popover-foreground: 222 28% 12%;
+
+    /* Brand — Solar Amber / Saffron */
+    --primary: 32 95% 52%;
+    --primary-foreground: 24 75% 12%;
+
+    --secondary: 40 16% 93%;
+    --secondary-foreground: 222 25% 18%;
+    --muted: 40 16% 94%;
+    --muted-foreground: 220 12% 42%;
+    --accent: 32 92% 94%;
+    --accent-foreground: 24 70% 24%;
+
+    /* Semantic */
+    --success: 152 55% 38%;
+    --warning: 40 90% 48%;
+    --info: 205 80% 45%;
+    --destructive: 4 84% 56%;
+    --destructive-foreground: 40 33% 99%;
+    --nodata: 220 9% 46%;
+
+    --border: 40 14% 88%;
+    --input: 40 14% 88%;
+    --ring: 32 95% 52%;
+    --radius: 0.75rem;
+
+    /* Orbital glass / map overlay */
+    --panel: 40 33% 99%;
+    --panel-alpha: 0.72;
+    --panel-blur: 16px;
+    --on-map-ring: 0 0% 100%;
+    --on-map-ring-alpha: 0.55;
+    --halo: 222 30% 10%;
+    --halo-alpha: 0.18;
+    --scrim-from: 222 30% 8% / 0;
+    --scrim-to: 222 30% 8% / 0.55;
+
+    /* Typography */
+    --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+    /* Elevation (designed to read on imagery) */
+    --shadow-e1: 0 1px 2px hsl(var(--halo) / var(--halo-alpha));
+    --shadow-e2: 0 8px 28px -6px hsl(var(--halo) / calc(var(--halo-alpha) + 0.08)),
+      0 2px 6px hsl(var(--halo) / var(--halo-alpha));
+    --shadow-e3: 0 16px 48px -8px hsl(var(--halo) / calc(var(--halo-alpha) + 0.14));
+    --ring-onmap: inset 0 0 0 1px hsl(var(--on-map-ring) / var(--on-map-ring-alpha));
+
+    /* Signature motif — contour lines (≤ 6% opacity) */
+    --contour: repeating-radial-gradient(
+      circle at 30% 120%,
+      transparent 0 14px,
+      hsl(var(--foreground) / 0.05) 14px 15px
+    );
+
+    /* Motion */
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+    --ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+    --ease-emphasis: cubic-bezier(0.2, 0, 0, 1.1);
+    --dur-instant: 80ms;
+    --dur-fast: 140ms;
+    --dur-base: 220ms;
+    --dur-slow: 360ms;
+    --dur-deliberate: 540ms;
+  }
+
+  .dark {
+    --background: 222 38% 7%;
+    --foreground: 210 28% 92%;
+    --card: 222 32% 10%;
+    --card-foreground: 210 28% 92%;
+    --popover: 222 32% 10%;
+    --popover-foreground: 210 28% 92%;
+
+    --primary: 33 96% 56%;
+    --primary-foreground: 24 80% 8%;
+
+    --secondary: 220 24% 16%;
+    --secondary-foreground: 210 28% 92%;
+    --muted: 220 22% 15%;
+    --muted-foreground: 215 16% 62%;
+    --accent: 30 55% 18%;
+    --accent-foreground: 33 90% 75%;
+
+    --success: 152 50% 45%;
+    --warning: 40 88% 55%;
+    --info: 200 75% 55%;
+    --destructive: 4 70% 48%;
+    --destructive-foreground: 210 30% 96%;
+    --nodata: 220 10% 55%;
+
+    --border: 220 20% 18%;
+    --input: 220 20% 18%;
+    --ring: 33 96% 56%;
+
+    --panel: 222 30% 12%;
+    --panel-alpha: 0.62;
+    --panel-blur: 18px;
+    --on-map-ring: 0 0% 100%;
+    --on-map-ring-alpha: 0.1;
+    --halo: 0 0% 0%;
+    --halo-alpha: 0.45;
+    --scrim-from: 222 40% 4% / 0;
+    --scrim-to: 222 40% 4% / 0.7;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    margin: 0;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+  /* Saffron selection + focus visibility */
+  ::selection {
+    background: hsl(var(--primary) / 0.28);
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Orbital-glass surface recipe (design system §4). */
+  .glass {
+    background: hsl(var(--panel) / var(--panel-alpha));
+    backdrop-filter: blur(var(--panel-blur)) saturate(1.1);
+    -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(1.1);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-e2), var(--ring-onmap);
+  }
+  .contour {
+    background-image: var(--contour);
+  }
+  /* Text rendered directly on imagery gets a halo. */
+  .on-map-text {
+    text-shadow: 0 0 2px hsl(var(--halo) / 0.9), 0 1px 1px hsl(var(--halo) / 0.6);
+  }
+  .scrim {
+    background: linear-gradient(to top, hsl(var(--scrim-to)), hsl(var(--scrim-from)));
+  }
+}
+
+/* Loading "scan sweep" motif (replaces generic spinners). */
+@layer utilities {
+  .scan-sweep {
+    position: relative;
+    overflow: hidden;
+  }
+  .scan-sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.14) 45%,
+      hsl(var(--primary) / 0.22) 50%,
+      hsl(var(--primary) / 0.14) 55%,
+      transparent 100%
+    );
+    transform: translateX(-100%);
+    animation: akasha-scan 1.6s var(--ease-standard) infinite;
+  }
+}
+
+@keyframes akasha-scan {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .scan-sweep::after {
+    animation: none;
+    opacity: 0.5;
+  }
+}

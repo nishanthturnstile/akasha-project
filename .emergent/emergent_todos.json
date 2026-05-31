@@ -1,38 +1,42 @@
 [
   {
-    "content": "Pre-check baseline green",
-    "status": "completed"
+    "content": "Install Phase 4 deps in apps/frontend (maplibre-gl, react-query, tailwind v3 + shadcn deps, radix, fontsource, vitest)",
+    "status": "in_progress"
   },
   {
-    "content": "Phase B: migration 002_plots_polygon_multipolygon.sql",
-    "status": "completed"
+    "content": "Tooling: tailwind.config.ts, postcss.config.js, vite.config (allowedHosts/hmr/vitest), tsconfig, globals.css (design tokens + glass + motion), fonts",
+    "status": "pending"
   },
   {
-    "content": "Phase C: errors.py plots_backend_unavailable() (503)",
-    "status": "completed"
+    "content": "Data layer: types/api.ts, lib/api.ts (typed client + error mapping), lib/queryClient.ts, lib/utils.ts (cn)",
+    "status": "pending"
   },
   {
-    "content": "Phase D: plots_repo.py persistence (raw SQL, lazy psycopg)",
-    "status": "completed"
+    "content": "UI primitives: restyle shadcn (button, card, slider, switch, tooltip, badge, scroll-area, skeleton, separator) to tokens",
+    "status": "pending"
   },
   {
-    "content": "Phase E: plots.py router + Pydantic v2 + CRUD + import/export",
-    "status": "completed"
+    "content": "Map: basemap.ts (style precedence + local ink fallback), MapLayerManager (raster swap, basemap untouched), MapControls",
+    "status": "pending"
   },
   {
-    "content": "Phase F: register router in main.py + APP_VERSION 0.3.0-slice3 + docstring",
-    "status": "completed"
+    "content": "Layer panel: LayerPanel, SourceSelector, DateList, CloudUsabilityChip, OpacitySlider, VisibilityToggle + default-date logic + states",
+    "status": "pending"
   },
   {
-    "content": "Phase G: tests/test_slice3.py (21 passed; 12 required cases + security)",
-    "status": "completed"
+    "content": "Scaffolding placeholders: PlotToolbar (top-left), IndexPanel (right) disabled glass; MapPage + App + main wiring",
+    "status": "pending"
   },
   {
-    "content": "Phase H: apps/api/README Slice 3 section",
-    "status": "completed"
+    "content": "Tests (Vitest): chip color mapping, default-date selection, api error mapping, date-change-only-raster assertion",
+    "status": "pending"
   },
   {
-    "content": "Final: lint clean + pytest 45/45 + validators green + live 503 verified + testing agent 100%",
-    "status": "completed"
+    "content": "Validate: yarn lint + yarn build + yarn test green; grep no hardcoded backend/COG URLs",
+    "status": "pending"
+  },
+  {
+    "content": "Repoint Emergent preview: /app/frontend start -> apps/frontend vite on :3000; restart; screenshot verify",
+    "status": "pending"
   }
 ]

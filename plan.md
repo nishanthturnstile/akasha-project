@@ -14,11 +14,13 @@
 - Provide a polished **LIVE Emergent “Service Skeleton Status Dashboard”** (existing CRA frontend) backed by the API skeleton endpoints (`/api/_skeleton/*`).
 - Validate Slice 0 artifacts via **parse/lint + file/contract checks** (since Emergent has no Docker daemon). Runtime validation is deferred to **Railway / local Docker**.
 
-**Status (now):** All Slice 0 deliverables are implemented and validated, including **formal E2E validation** via `testing_agent_v3` and a smoke test compatible with edge/CDN filters.
+**Status (now):** All Slice 0 deliverables are implemented and validated, including formal E2E validation via `testing_agent_v3` and a smoke test compatible with edge/CDN filters.
 
 > **Slice 1 context:** Slice 1 (Storage/Catalog) is complete as artifact-generation + static validation (runtime checks deferred to Railway).
 >
-> **Slice 2 context:** Slice 2 (Raster de-risk) is also complete as code/artifacts + static/synthetic validation (runtime checks involving real COGs/MinIO/TiTiler deferred to Railway/local Docker).
+> **Slice 2 context:** Slice 2 (Raster de-risk) is complete as code/artifacts + static/synthetic validation (runtime checks involving real COGs/MinIO/TiTiler deferred to Railway/local Docker).
+>
+> **Slice 3 context:** Slice 3 (BFF API implementation) is **next**. Phase 2 already delivered config/sources/dates/layers/tiles/statistics + standard error shape + polygon validation. Slice 3 adds **only Plot CRUD + GeoJSON import/export**.
 
 ---
 
@@ -26,7 +28,7 @@
 
 ### Phase 1 — Core POC (Isolated): “Skeleton Integrity + Health Contract”
 
-Core workflow (Slice 0): generate the full multi-service skeleton artifacts and prove their **health contracts** + **Railway readiness** without running Docker.
+Core workflow (Slice 0): generate the full multi-service skeleton artifacts and prove their health contracts + Railway readiness without running Docker.
 
 User stories:
 1. As a developer, I want `scripts/validate_slice0.py` to fail fast if any required service Dockerfile/config is missing.
@@ -43,17 +45,17 @@ Steps (COMPLETED):
   - `GET /api/_skeleton/services` (service registry: public rule, health paths, live/defined)
   - `GET /api/_skeleton/manifest` (slice metadata, pinned images, scope, optional repo tree)
   - `GET /api/_skeleton/env-matrix` (env var names per service; placeholders only)
-  - Uses FastAPI **lifespan** handler (no deprecated `on_event`).
+  - Uses FastAPI lifespan handler (no deprecated `on_event`).
 - ✅ Added `scripts/validate_slice0.py`:
   - Parses `infra/docker/docker-compose.yml`
-  - Verifies required services exist (7) and only `web` publishes host ports
+  - Verifies required services exist and only `web` publishes host ports
   - Verifies healthchecks + persistent volumes for `postgis`/`minio`
   - Verifies pinned image tags + pinned base images in Dockerfiles
   - Verifies Railway healthcheck paths in `railway.json` files
   - Ensures `.env.example` values for secret-like vars are placeholders
 - ✅ Ran POC checks in Emergent:
-  - `scripts/validate_slice0.py` **PASSED 94/0**
-  - `apps/api` unit tests **6/6 passed**
+  - `scripts/validate_slice0.py` PASSED (94/0)
+  - `apps/api` unit tests passed
 
 ### Phase 2 — V1 App Development (Slice 0 deliverables)
 
@@ -65,59 +67,21 @@ User stories:
 5. As a developer, I want the live Emergent dashboard to clearly show service status, required env vars, and what’s intentionally out of scope.
 
 Steps (COMPLETED):
-- ✅ **Web gateway (Railway public only)**
-  - `infra/gateway/Caddyfile`:
-    - `/health` → `200 ok`
-    - `/api/*` → reverse-proxy to `api`
-    - `/tiles/*` → reverse-proxy to `titiler`
-    - `/*` → static SPA + history fallback
-  - `infra/gateway/Dockerfile` (multi-stage): build `apps/frontend` → serve via `caddy:2.10-alpine`.
-- ✅ **apps/frontend (Railway-deployable skeleton; NOT the live preview)**
-  - Vite + React + TypeScript placeholder landing page.
-  - Proves same-origin contract by fetching `/api/_skeleton/services`.
-  - Includes Dockerfile (optional standalone), `.env.example`, and a generated `yarn.lock`.
-- ✅ **apps/api (Railway-deployable skeleton)**
-  - Dockerfile (`python:3.11-slim`) + pinned minimal deps.
-  - Skeleton endpoints + `_skeleton` contracts.
-- ✅ **services/titiler**
-  - Wrapper Dockerfile pinned to `ghcr.io/developmentseed/titiler:1.0.0`.
-  - Health path documented/used: `/healthz`.
-- ✅ **services/stac-api**
-  - Dockerfile pinned to `ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2`.
-  - Health path documented/used: `/_mgmt/ping`.
-- ✅ **services/ingestion**
-  - Worker CLI (no public HTTP surface).
-  - Slice 0: `info` and `healthcheck`.
-- ✅ **postgis + minio**
-  - Compose uses pinned images:
-    - `postgis/postgis:16-3.5` health = `pg_isready`.
-    - `minio/minio:RELEASE.2025-09-07T16-13-09Z` health = `/minio/health/live`.
-  - Persistent volumes: `postgis_data`, `minio_data`.
-  - `MINIO_BROWSER=off`.
-- ✅ **infra/docker**
-  - `infra/docker/docker-compose.yml` defines 7 services with healthchecks.
-  - Only `web` publishes a host port.
-  - `infra/docker/.env.example` provides non-default placeholders.
-- ✅ **infra/railway**
-  - `infra/railway/README.md` includes service→config matrix and deployment sequence.
-  - `infra/railway/ENV_MATRIX.md` matches the deployment guide (no aliases).
-  - `infra/railway/web.railway.json` and root `/railway.json` exist.
-  - Per-service `railway.json` exists in each code service folder.
-- ✅ **Shared conventions**
-  - `pyproject.toml` (ruff/black/isort), `.editorconfig`, `.prettierrc.json`, `Makefile`, `.gitignore`, root `README.md`.
-  - ✅ Root `.dockerignore` added to reduce web build context and exclude secrets and operator rasters.
-- ✅ **LIVE Emergent preview**
-  - `/app/backend/server.py` mounts the canonical `apps/api` FastAPI app (DRY).
-  - `/api/*` endpoints reachable and returning 200 in the live preview.
-  - CRA “Service Skeleton Status Dashboard” implemented and left as-is for subsequent slices.
+- ✅ Web gateway (Railway public only) via Caddy (`/health`, `/api/*`, `/tiles/*`, SPA fallback)
+- ✅ `apps/frontend` Vite skeleton (Railway-deployable target)
+- ✅ `apps/api` skeleton with health + `_skeleton` endpoints
+- ✅ `services/titiler`, `services/stac-api` wrapper configs
+- ✅ `services/ingestion` worker skeleton + CLI
+- ✅ `postgis` + `minio` docker-compose layout + pinned images + volumes
+- ✅ `infra/docker` + `infra/railway` deployment artifacts
+- ✅ Shared formatting/linting conventions
+- ✅ Live Emergent preview wiring (FastAPI + React Service Dashboard)
 
 Conclude Phase 2 (COMPLETED):
-- ✅ Ran `scripts/validate_slice0.py` (PASSED 94/0).
-- ✅ Ran unit tests for api skeleton.
-- ✅ Confirmed live endpoints and dashboard rendering.
-- ✅ `scripts/smoke-test.py` exists for Slice 0 and later evolved for Slice 2.
+- ✅ `scripts/validate_slice0.py` passes
+- ✅ Dashboard works; skeleton endpoints stable
 
-**Emergent ingress note (for test planning):** In the Emergent preview, externally reachable health is `GET /api/health` (ingress routes `/api/*`). `GET /health` is a Railway/container health path intended for the `api` service itself and may not be reachable on the preview URL.
+**Emergent ingress note (for test planning):** In the Emergent preview, externally reachable health is `GET /api/health` (ingress routes `/api/*`). `GET /health` is a Railway/container health path intended for the `api` service itself.
 
 ---
 
@@ -127,53 +91,47 @@ Conclude Phase 2 (COMPLETED):
 
 1. ✅ Ran formal E2E testing via `testing_agent_v3`.
 2. ✅ Confirmed smoke test behavior against the live preview base URL.
-3. ✅ (Workflow) Push to GitHub and deploy on Railway for runtime validation.
+3. ✅ Push to GitHub and deploy on Railway for runtime validation.
 
 ### Slice 1 next actions (Storage/Catalog — runtime checks deferred to Railway)
 
-Even though Slice 1 artifacts are complete, the following runtime checks must be executed on Railway/local Docker to satisfy Slice 1 exit criteria:
+Even though Slice 1 artifacts are complete, runtime exit criteria must be executed on Railway/local Docker:
 
-1. Apply api-owned app schema (plots) once PostGIS is provisioned:
+1. Apply api-owned app schema:
    - `python -m app.cli migrate`
-   - Verify: `python -m app.cli check` (prints `SELECT postgis_version()` and confirms `akasha.plots` exists)
-2. Seed catalog + storage (idempotent):
-   - `python worker.py seed` (pgSTAC migrate → load STAC collection+item → ensure MinIO bucket+keys)
-3. Verify Slice 1 exit criteria in one command:
+   - `python -m app.cli check`
+2. Seed catalog + storage:
+   - `python worker.py seed`
+3. Verify Slice 1:
    - `python worker.py verify`
-     - checks PostGIS version
-     - checks STAC API returns `/collections/sentinel-2-l2a`
-     - checks MinIO bucket is reachable and deterministic keys exist
 
 ### Slice 2 next actions (Raster de-risk — runtime checks deferred to Railway/local Docker)
 
-Even though Slice 2 code/artifacts are complete and **statically + synthetically validated** (no Docker in Emergent), the following runtime checks must be executed on Railway/local Docker to satisfy Phase 2 exit criteria:
+Even though Slice 2 code/artifacts are complete and statically + synthetically validated, runtime exit criteria must be executed on Railway/local Docker:
 
-1. Upload **real (non-empty)** COGs to MinIO:
+1. Upload real (non-empty) COGs to MinIO:
    - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif`
    - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/scl.tif`
-   - (COG prep runbook: `docs/sentinel-2-l2a-cog-prep-runbook.md`)
-2. Verify real COG presence (not Slice 1 placeholders):
+2. Verify real COG presence:
    - `python services/ingestion/worker.py verify-cogs`
-3. Render one real RGB tile (gateway/BFF→TiTiler proxy):
-   - `GET /api/tiles/sentinel-2-l2a/2025-09-14/rgb/12/2937/1881.png` returns PNG.
+3. Render one real RGB tile:
+   - `GET /api/tiles/sentinel-2-l2a/2025-09-14/rgb/12/2937/1881.png`
 4. Compute one real masked NDVI statistic and compare to QGIS/notebook reference:
-   - `POST /api/indices/statistics` with `data/seed/phase2-ndvi-sample-polygon.geojson`.
+   - `POST /api/indices/statistics` with `data/seed/phase2-ndvi-sample-polygon.geojson`
+
+### Slice 3 next actions (Phase 3 — BFF API implementation)
+
+Proceed with Slice 3 only after confirming Slice 0/1/2 validation remains green.
 
 ---
 
 ## 4) Success Criteria (Slice 0 exit)
 
-- ✅ Repo structure matches docs: `apps/*`, `services/*`, `infra/*`, `docs/*`, `scripts/*`.
-- ✅ All required Dockerfiles exist; image versions are pinned as specified.
-- ✅ `infra/docker/docker-compose.yml` is valid YAML and defines: web, api, titiler, stac-api, postgis, minio, ingestion-worker.
-- ✅ Only `web` publishes a host port; `postgis` and `minio` have persistent volumes.
-- ✅ `.env.example` files exist per service and contain placeholders only (no default creds).
-- ✅ Live preview:
-  - `GET /api/health` returns 200
-  - `GET /api/_skeleton/services` returns expected JSON
-  - `GET /api/_skeleton/manifest` returns pinned images + scope
-  - Dashboard renders and shows topology/health/pinned images/repo tree/scope/roadmap/env matrix.
-- ✅ No out-of-scope endpoints/features are implemented **for Slice 0**.
+- ✅ Repo structure matches docs
+- ✅ Required Dockerfiles exist; images pinned
+- ✅ docker-compose is valid and respects public/private service rules
+- ✅ `.env.example` placeholders only
+- ✅ Live preview `/api/health` and `_skeleton` endpoints work
 
 ---
 
@@ -181,82 +139,52 @@ Even though Slice 2 code/artifacts are complete and **statically + synthetically
 
 ## 1) Objectives
 
-- Stand up the **data foundation** (as Railway-compatible artifacts) while preserving Slice 0 service boundaries:
-  - PostGIS **app schema** owned by the `api` for plots (named polygons) and app settings.
-  - pgSTAC schema management owned by the ingestion worker (via **pypgstac**) backing `stac-api`.
-  - Deterministic MinIO **bucket/key layout** for COG assets (`akasha-cogs`, keys under `sentinel-2-l2a/{acquisitionDate}/...`).
-- Provide **idempotent seeding** keyed on:
-  - `{satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}`
-- Seed a Sentinel‑2 L2A **STAC collection + sample item** that matches:
-  - Frozen 9-band analytic order: `[B04,B08,B05,B06,B07,B11,B12,B03,B02]`
-  - True-colour RGB band positions: `[1,8,9]`
-  - Reflectance convention: raw uint16 DN; `scale=0.0001`, `offset=-0.1`
-  - SCL: uint8 categorical with classes `0..11`; default excluded classes `0,1,2,3,7,8,9,10,11`
-  - Required extensions: `eo`, `raster`, `projection`, `classification`
-- Keep secrets safe:
-  - `.env.example` placeholders only
-  - No default credentials
-  - Only `web` is public
+- Stand up the data foundation (Railway-ready artifacts): PostGIS app schema, pgSTAC catalog, MinIO bucket/key layout, STAC seeds.
+- Keep secrets safe; only `web` is public.
 
-**Status (now):** Slice 1 deliverables are implemented and statically validated in Emergent. Runtime exit criteria remain deferred to Railway/local Docker.
+**Status (now):** Slice 1 deliverables are implemented and statically validated in Emergent. Runtime exit criteria deferred to Railway/local Docker.
 
 ## 2) Implementation Steps
 
 ### Phase 1 — App schema (plots) owned by `api` (DONE)
 
-- ✅ `apps/api/migrations/001_app_schema.sql` (idempotent) creating:
-  - `akasha.plots`, `akasha.index_requests`, `akasha.app_settings`.
-- ✅ `apps/api/app/{db.py,cli.py}` with lazy psycopg import:
-  - `python -m app.cli migrate`
-  - `python -m app.cli check`.
+- ✅ `apps/api/migrations/001_app_schema.sql` creates `akasha.plots`, `akasha.index_requests`, `akasha.app_settings`.
+- ✅ `apps/api/app/{db.py,cli.py}` provide lazy psycopg migration CLI.
 
 ### Phase 2 — Catalog (pgSTAC) + seed STAC collection/item (DONE)
 
-- ✅ `services/ingestion/akasha_ingest/catalog.py` (pypgstac migrate + upsert loaders).
-- ✅ Seed STAC JSON:
-  - `data/seed/stac/sentinel-2-l2a-collection.json`
-  - `data/seed/stac/sentinel-2-l2a-sample-item.json` (updated in Slice 2 to real 2025-09-14/43PHP scene).
+- ✅ Ingestion worker manages pgSTAC.
+- ✅ STAC seed JSON exists under `data/seed/stac/`.
 
 ### Phase 3 — Object storage (MinIO) deterministic bucket/key layout (DONE)
 
-- ✅ `services/ingestion/akasha_ingest/storage.py`:
-  - `ensure_bucket()`
-  - `seed_keys()` uploads local rasters if present else placeholder objects
-  - `bucket_reachable(required_keys=...)` verifies deterministic keys exist.
+- ✅ MinIO bucket `akasha-cogs` + deterministic keys.
 
 ### Phase 4 — Idempotent seeding orchestration + exit-criteria verifier (DONE)
 
-- ✅ `services/ingestion/akasha_ingest/scene.py` (`SceneIdentity`, deterministic keys).
-- ✅ `services/ingestion/akasha_ingest/seed.py` orchestration.
-- ✅ `services/ingestion/akasha_ingest/verify.py` runtime checks.
-- ✅ Worker CLI supports: migrate-catalog, seed-stac, seed-minio, seed, verify.
+- ✅ Ingestion worker `seed` + `verify`.
 
-### Phase 5 — Wiring, Railway/Compose alignment, and static validation (DONE)
+### Phase 5 — Wiring and static validation (DONE)
 
-- ✅ Updated docker-compose wiring + `.env.example` placeholders.
-- ✅ Added `scripts/validate_slice1.py` and kept `scripts/validate_slice0.py` green.
+- ✅ `scripts/validate_slice1.py` exists and passes.
 
 ## 3) Next Actions
 
-Runtime validation deferred to Railway/local Docker:
-
-1. `python -m app.cli migrate`
-2. `python worker.py seed`
-3. `python worker.py verify`
+Runtime checks on Railway/local Docker:
+- `python -m app.cli migrate`
+- `python worker.py seed`
+- `python worker.py verify`
 
 ## 4) Success Criteria (Slice 1 exit)
 
-**Artifacts (done in Emergent):**
-- ✅ App schema migration exists + is idempotent.
-- ✅ pgSTAC migration + STAC seed tooling exists (idempotent upsert).
-- ✅ STAC seed conforms to frozen band order and reflectance conventions.
-- ✅ MinIO bucket/key layout + placeholders implemented.
-- ✅ `validate_slice0.py` and `validate_slice1.py` pass.
+Artifacts:
+- ✅ Schema/migrations + seeds exist
+- ✅ `validate_slice0.py` and `validate_slice1.py` pass
 
-**Runtime (must be executed on Railway/local Docker):**
-- ⏳ PostGIS verified.
-- ⏳ STAC API returns collection.
-- ⏳ MinIO reachable and deterministic keys exist.
+Runtime (Railway/local Docker):
+- ⏳ PostGIS verified
+- ⏳ STAC API returns collection
+- ⏳ MinIO reachable and keys exist
 
 ---
 
@@ -264,192 +192,213 @@ Runtime validation deferred to Railway/local Docker:
 
 ## 1) Objectives
 
-Implement **Phase 2 — Raster de-risk milestone** only (per `docs/prompts/phase-2-raster-de-risk-emergent-prompt.md`).
-
-Primary deliverables:
-1. Update the seed scene identity and STAC sample item to match the real generated scene **2025‑09‑14 / 43PHP / processing baseline 05.11**.
-2. Add the minimal BFF APIs needed to:
-   - expose config/source/date/layer metadata
-   - proxy a same-origin RGB tile request to TiTiler
-   - compute SCL-masked, offset/scale-corrected index statistics **in the BFF** (not TiTiler statistics)
-3. Add a **repeatable validation path**:
-   - keep Slice 0/1 validators green
-   - add a Slice 2 validator that is meaningful in Emergent **without** real COGs
-
-**Important constraint (current environment):**
-- In Emergent, the real COG rasters are **missing** (git-ignored, ~2.24 GiB) and Docker services (MinIO/TiTiler) are unavailable.
-- Therefore runtime validation of “real RGB tile PNG” and “real masked NDVI for the real scene” is **BLOCKED** here.
-- The BFF explicitly returns a clean `503 RASTER_BACKEND_UNAVAILABLE` when the raster backend is absent.
+Implement Phase 2 raster proof path: BFF endpoints for config/sources/dates/layers, a BFF→TiTiler RGB tile proxy, and a BFF-computed SCL-masked, offset/scale-corrected index statistics endpoint.
 
 **Status (now):** Slice 2 deliverables are complete and verified:
-- `validate_slice0.py` **94/0**
-- `validate_slice1.py` **67/0** (updated for the real scene)
-- `validate_slice2.py` **76/0** (includes synthetic dual-COG E2E proof)
-- `pytest` **24/24**
-- smoke-test **8 passed / 0 failed / 2 blocked** (tile/stat blocked as expected)
-- `testing_agent_v3`: backend **13/13** (100%), no bugs; expected 503s confirmed.
+- `validate_slice0.py` 94/0
+- `validate_slice1.py` 67/0
+- `validate_slice2.py` 76/0
+- pytest 24/24
+- smoke-test passes with blocked raster steps in Emergent
 
-Out of scope (unchanged):
-- Full frontend map UX/auth/custom domains
-- Plot CRUD UX (later slice)
-- Wave 2 automation
-- Production hardening
+Runtime exit criteria remain deferred to Railway/local Docker due to missing real COGs/MinIO/TiTiler in the Emergent environment.
 
 ## 2) Implementation Steps
 
-> Pre-step: re-run `python scripts/validate_slice0.py` and `python scripts/validate_slice1.py` and fix any regressions before proceeding.
+All Slice 2 phases are DONE (see prior sections in this plan). No further work in Slice 2 unless integrating with later slices.
 
-### Phase A — Scene/catalog metadata alignment (2025-09-14 real scene) (DONE)
+## 3) Next Actions
 
-- ✅ Updated `services/ingestion/akasha_ingest/scene.py`:
-  - `mgrs_tile="43PHP"`
-  - `acquisition_datetime="2025-09-14T05:06:49.024000Z"`
-  - `processing_baseline="05.11"`
-- ✅ Updated `data/seed/stac/sentinel-2-l2a-sample-item.json` to the real scene:
-  - id: `sentinel-2-l2a_43PHP_20250914_0511`
-  - bbox/geometry footprint polygon
-  - properties: platform `sentinel-2b`, `eo:cloud_cover=17.153746`, full `proj:*`
-  - assets: `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/{analytic,scl}.tif`
-  - frozen analytic band order `[B04,B08,B05,B06,B07,B11,B12,B03,B02]`
-- ✅ Updated `data/seed/stac/sentinel-2-l2a-collection.json` extent to contain the real scene bbox.
-- ✅ Updated `data/seed/README.md` deterministic scene section.
-- ✅ Updated `scripts/validate_slice1.py` expected constants so it stays green.
-
-Exit:
-- ✅ `python scripts/validate_slice1.py` passes (**67/0**).
-
-### Phase B — BFF raster/stat core modules (backend-only; testable) (DONE)
-
-- ✅ Added `apps/api/app/raster/` package implementing:
-  - `indices.py`: supported indices registry (NDVI/NDRE/NDMI/NDWI_GREEN_NIR), band-name→position mapping, RGB positions `[1,8,9]`.
-  - `statistics_core.py`: **pure numpy** masked statistics engine (offset/scale + SCL mask + pixel accounting + min/max/mean/stddev).
-  - `catalog_resolver.py`: STAC API resolution (when configured) + seed JSON fallback.
-  - `raster_reader.py`: lazy rasterio dual-COG window read + geometry mask + GDAL/S3 env.
-  - `geo_validate.py`: lazy shapely/pyproj geometry validation + geodesic area guardrail.
-  - `tiles.py`: TiTiler RGB tile URL builder + server-side fetch.
-  - `errors.py`: standard Akasha error shape + exception handler.
-  - `models.py`: Pydantic request/response models.
-  - `service.py`: orchestration glue.
-
-Constraints satisfied:
-- ✅ All heavy deps are lazily imported so importing the FastAPI app stays safe.
-
-Exit:
-- ✅ Unit tests + `validate_slice2.py` prove offset/scale correctness and mask/pixel accounting.
-
-### Phase C — Minimal Phase 2 BFF endpoints/contracts (DONE)
-
-- ✅ Implemented endpoints (router `apps/api/app/product.py` + wired into `main.py`):
-  - `GET /api/config`
-  - `GET /api/sources`
-  - `GET /api/sources/{sourceId}/dates`
-  - `GET /api/layers/default`
-  - `GET /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png` (BFF→TiTiler proxy)
-  - `POST /api/indices/statistics` (masked index statistics)
-- ✅ Design decision preserved: tile route is under `/api/tiles/...` (Emergent ingress compatibility).
-- ✅ Standard error response shape enforced globally:
-  - `{ "error": {"code": "...", "message": "...", "details": {...}} }`.
-
-Exit:
-- ✅ Live preview verified for config/sources/dates/layers, and the tile/stat routes return clean 503 when the raster backend is absent.
-
-### Phase D — Dependencies + infra wiring (Docker/Compose/Railway artifacts) (DONE)
-
-- ✅ Updated `apps/api/requirements.txt` with pinned raster deps:
-  - `rasterio`, `rio-tiler`, `shapely`, `pyproj`, `numpy`.
-- ✅ Updated `apps/api/Dockerfile` with `libexpat1` runtime lib.
-- ✅ Updated `infra/docker/docker-compose.yml`:
-  - TiTiler `PORT=8000`
-  - `api` has AWS/GDAL env so rasterio can read MinIO
-  - `AKASHA_RGB_RESCALE` exposed to api.
-- ✅ Updated env docs/examples:
-  - `apps/api/.env.example`
-  - `infra/railway/ENV_MATRIX.md`
-  - `apps/api/app/skeleton.py` env matrix
-  - ROADMAP advanced: slice0+slice1 done, slice2 active.
-
-Exit:
-- ✅ `validate_slice0.py` remains green.
-
-### Phase E — Storage seeding quality: distinguish real COGs vs placeholders (DONE)
-
-- ✅ Enhanced `services/ingestion/akasha_ingest/storage.py`:
-  - real uploads tagged (`akasha-placeholder=false`)
-  - placeholders explicitly tagged and detected.
-  - `verify_real_cogs()` asserts objects exist and are non-empty + not placeholders.
-- ✅ Enhanced `services/ingestion/akasha_ingest/verify.py`:
-  - `run_phase2()` includes non-empty real COG checks.
-- ✅ Worker CLI:
-  - `python worker.py verify-cogs`.
-
-Exit:
-- ✅ Static validation in `validate_slice2.py` confirms these symbols + CLI command exist.
-
-### Phase F — Fixtures + tests + validation scripts (DONE)
-
-- ✅ Added in-footprint polygon fixture:
-  - `data/seed/phase2-ndvi-sample-polygon.geojson`.
-- ✅ Added pytest suite:
-  - `apps/api/tests/test_slice2.py` (18 tests)
-  - Full test suite: **24/24**.
-- ✅ Added `scripts/validate_slice2.py`:
-  - static checks + pure numpy NDVI reference
-  - in-process TestClient contract checks
-  - synthetic dual-COG rasterio E2E (when rasterio is available)
-  - BLOCKED runtime checklist.
-- ✅ Extended `scripts/smoke-test.py`:
-  - Phase 2 product endpoints must pass
-  - tile/stat are treated as BLOCKED (not failure) when 502/503.
-
-Exit:
-- ✅ `validate_slice0.py` **94/0**, `validate_slice1.py` **67/0**, `validate_slice2.py` **76/0**.
-- ✅ smoke-test: **8/0 + 2 blocked**.
-- ✅ `testing_agent_v3`: **13/13** backend.
-
-### Phase G — Documentation updates (DONE)
-
-- ✅ Updated `docs/emergent-context.md` with Phase 2 handoff and blocked criteria.
-- ✅ Updated `docs/mvp-execution-plan.md` Phase 2 status block.
-- ✅ Updated `scripts/README.md` with `validate_slice2.py` + smoke behavior.
-- ✅ Updated `apps/api/README.md` to document Slice 2 endpoints.
-- ✅ Updated `data/seed/README.md` deterministic scene section.
-
-## 3) Next Actions (for operator / Railway or local Docker)
-
-Once real COGs are uploaded to MinIO:
-
-1. Build images:
-   - `docker compose -f infra/docker/docker-compose.yml build ingestion-worker api`
-2. Start services:
-   - `docker compose -f infra/docker/docker-compose.yml up -d postgis minio stac-api titiler api web`
-3. Apply app schema:
-   - `docker compose -f infra/docker/docker-compose.yml run --rm api python -m app.cli migrate`
-4. Seed STAC + ensure MinIO keys exist:
-   - `docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker python worker.py seed --force`
-5. Verify storage/catalog (Slice 1):
-   - `docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker python worker.py verify`
-6. Verify Phase 2 real COG presence:
-   - `docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker python worker.py verify-cogs`
-7. Prove Phase 2 end-to-end:
-   - `python scripts/smoke-test.py http://localhost:8080` (or Railway URL)
-   - Confirm real RGB tile returns PNG
-   - Confirm `POST /api/indices/statistics` returns JSON
-   - Compare NDVI against QGIS/notebook reference for `data/seed/phase2-ndvi-sample-polygon.geojson`.
+On Railway/local Docker only:
+- Upload real COGs
+- `worker.py verify-cogs`
+- Verify one RGB tile and one masked NDVI statistic
 
 ## 4) Success Criteria (Slice 2 exit)
 
-**Artifacts + static/synthetic validation (must pass in Emergent):**
-- ✅ Real scene identity + STAC item updated to 2025-09-14/43PHP/05.11.
-- ✅ Deterministic keys match `sentinel-2-l2a/2025-09-14/{analytic,scl}.tif`.
-- ✅ Slice 0 and Slice 1 validators remain green.
-- ✅ `validate_slice2.py` exists and passes (static + synthetic NDVI de-risk).
-- ✅ New endpoints exist with stable response shapes.
-- ✅ Heavy deps are lazily imported so the live preview stays healthy.
-- ✅ No secrets or large rasters are committed.
+Artifacts + synthetic validation:
+- ✅ endpoints exist and return stable contracts
+- ✅ no secrets committed
 
-**Runtime (Railway/local Docker; blocked in Emergent due to missing real COGs):**
-- ⏳ `worker.py verify-cogs` passes (non-empty real COG objects in MinIO).
-- ⏳ STAC API returns the updated real STAC item with correct assets.
-- ⏳ One RGB tile returns a PNG through the gateway/BFF→TiTiler path.
-- ⏳ `POST /api/indices/statistics` returns cloud/SCL-masked NDVI JSON for an in-footprint polygon.
-- ⏳ NDVI result compared against a QGIS/notebook reference for the same polygon.
+Runtime (Railway/local Docker):
+- ⏳ real RGB tile returns PNG
+- ⏳ real masked NDVI stats match reference
+
+---
+
+# Slice 3 Plan (Phase 3 — BFF API implementation) — Akasha Railway MVP (NEW)
+
+## 1) Objectives
+
+Implement **Phase 3 — BFF API implementation** for the FastAPI backend, focusing **only** on:
+
+- Plot CRUD endpoints
+- GeoJSON import/export endpoints
+- Database migration to support both `Polygon` and `MultiPolygon`
+
+**Do NOT** redo or regress already completed Phase 2 endpoints:
+- `GET /api/config`
+- `GET /api/sources`
+- `GET /api/sources/{sourceId}/dates`
+- `GET /api/layers/default`
+- `GET /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png`
+- `POST /api/indices/statistics`
+
+**Constraints:**
+- No Docker/PostGIS available in Emergent: Plot endpoints must return a clean **503 `PLOTS_BACKEND_UNAVAILABLE`** when DB is unreachable.
+- Unit tests must not require a live DB; they must monkeypatch a persistence layer.
+- Never leak `DATABASE_URL`, internal service URLs, MinIO/STAC/TiTiler URLs, credentials, raw COG paths, SQL text, or stack traces to API responses.
+
+## 2) Implementation Steps
+
+### Phase A — Pre-check regressions (MUST STAY GREEN)
+
+- Re-run:
+  - `python scripts/validate_slice0.py`
+  - `python scripts/validate_slice1.py`
+  - `python scripts/validate_slice2.py`
+  - `cd apps/api && python -m pytest -q tests/test_health.py tests/test_slice2.py`
+
+### Phase B — DB migration: allow Polygon + MultiPolygon
+
+Create:
+- `apps/api/migrations/002_plots_polygon_multipolygon.sql`
+
+Requirements:
+1. Idempotent; use `--;;` separators.
+2. Preserve existing rows.
+3. Keep SRID 4326.
+4. Allow both POLYGON and MULTIPOLYGON.
+5. Keep validity check.
+6. Preserve/recreate GIST index.
+
+Recommended approach:
+- `ALTER TABLE akasha.plots ALTER COLUMN geometry TYPE geometry(Geometry, 4326) USING ST_SetSRID(geometry,4326);`
+- Drop/replace constraint to enforce:
+  - `GeometryType(geometry) IN ('POLYGON','MULTIPOLYGON') AND ST_IsValid(geometry)`
+- Ensure `plots_geometry_gix` exists.
+
+### Phase C — Error handling extension
+
+- Extend `apps/api/app/raster/errors.py` with:
+  - `plots_backend_unavailable()` → 503 `PLOTS_BACKEND_UNAVAILABLE`.
+
+### Phase D — Persistence layer (raw SQL; lazy psycopg)
+
+Create:
+- `apps/api/app/plots_repo.py`
+
+Responsibilities:
+- Raw SQL only, parameter binding only (no string formatting).
+- Lazy psycopg import.
+- Functions:
+  - `list_plots()` (newest first)
+  - `get_plot(plot_id)`
+  - `create_plot(name, geometry_geojson)`
+  - `update_plot(plot_id, name?, geometry?)`
+  - `delete_plot(plot_id)`
+  - `create_plots_bulk([{name, geometry}, ...])`
+- Write geometry with:
+  - `ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)`
+- Read geometry with:
+  - `ST_AsGeoJSON(geometry)` parsed to object
+- Return rows normalized to frontend contract:
+  - `id`, `name`, `geometry` (dict), `areaHa`, `createdAt`, `updatedAt`.
+
+### Phase E — Router + models: Plot CRUD + GeoJSON import/export
+
+Create:
+- `apps/api/app/plots.py`
+
+Implementation details:
+- APIRouter under `/api`.
+- Use Pydantic v2 request/response models.
+- Use `validate_polygon()` for geometry validation, area computation, and to enforce:
+  - `settings.max_polygon_area_ha`
+  - `settings.max_polygon_vertices`
+- Run blocking DB calls in `anyio.to_thread.run_sync`.
+- DB unavailable/unreachable → sanitized 503 via `plots_backend_unavailable()`.
+
+Endpoints:
+- `GET /api/plots` → list plots (newest first)
+- `POST /api/plots` → 201, create plot
+- `GET /api/plots/{plotId}` → 200 or 404
+- `PATCH /api/plots/{plotId}` → update name and/or geometry; if neither provided → 400 `NO_UPDATE_FIELDS`
+- `DELETE /api/plots/{plotId}` → 204 or 404
+- `POST /api/plots/import/geojson` → accept FeatureCollection / Feature / raw Polygon/MultiPolygon; partial import with `imported` + `rejected` and bounded maximum feature count (e.g. 500)
+- `GET /api/plots/{plotId}/export.geojson` → GeoJSON Feature, `application/geo+json`
+
+Optional (only if simple):
+- `GET /api/plots/export.geojson` → FeatureCollection
+
+Import rules:
+- Only Polygon/MultiPolygon in EPSG:4326.
+- Name precedence: `properties.name` → `properties.Name` → `properties.title` → `Imported plot N`.
+- Sanitize/trim names; reject blank.
+- Do not echo huge payloads on reject.
+
+### Phase F — Wire router and version bump
+
+- Register plots router in `apps/api/app/main.py`.
+- Bump `APP_VERSION` to `0.3.0-slice3` **only if** tests pass.
+- Update module docstring to include Slice 3 endpoints.
+
+### Phase G — Tests (no DB required)
+
+Create:
+- `apps/api/tests/test_slice3.py`
+
+Test strategy:
+- Monkeypatch `plots_repo` functions with an in-memory store.
+- Validate API contracts + error shapes.
+
+Required coverage (from prompt):
+1. POST /api/plots returns 201 typed payload
+2. GET /api/plots returns list typed payloads
+3. GET /api/plots/{id} returns plot or 404 standard error
+4. PATCH updates name and/or geometry
+5. PATCH with no fields → 400 `NO_UPDATE_FIELDS`
+6. DELETE returns 204, missing returns 404
+7. invalid geometry → 422 `INVALID_GEOMETRY`
+8. oversized → 413 `POLYGON_TOO_LARGE`
+9. too many vertices → 400 `TOO_MANY_VERTICES`
+10. import endpoint partial success: imported + rejected
+11. export.geojson media type is `application/geo+json`
+12. security scan: responses never contain `DATABASE_URL`, `AWS_SECRET_ACCESS_KEY`, `S3_ENDPOINT_URL`, `MINIO`, raw COG paths, private internal service URLs, stack traces, or SQL
+
+Also run regression tests:
+- `apps/api/tests/test_health.py`
+- `apps/api/tests/test_slice2.py`
+
+### Phase H — Documentation (brief)
+
+- Update `apps/api/README.md` to add a small Slice 3 section listing the new endpoints.
+
+## 3) Validation Commands
+
+From repo root:
+
+```bash
+python scripts/validate_slice0.py
+python scripts/validate_slice1.py
+python scripts/validate_slice2.py
+```
+
+From `apps/api`:
+
+```bash
+python -m pytest tests/test_health.py tests/test_slice2.py tests/test_slice3.py -q
+```
+
+## 4) Success Criteria (Slice 3 exit)
+
+- Plot CRUD endpoints exist and return typed frontend-ready JSON.
+- GeoJSON import/export endpoints exist and match the specified contracts.
+- Invalid polygons fail with standard error shape.
+- Oversized polygons fail with `POLYGON_TOO_LARGE`.
+- Polygon + MultiPolygon are supported via DB migration (preferred) and validated.
+- No credential/internal URL leakage in responses.
+- Regression: Slice 2 endpoints unchanged; tests stay green.
+- All tests pass without needing Docker/PostGIS in Emergent.
+
+**Runtime note (preview/dev):** If `DATABASE_URL` is missing/unreachable, plot endpoints return `503 PLOTS_BACKEND_UNAVAILABLE` (sanitized).

@@ -1,38 +1,38 @@
 [
   {
-    "content": "Pre-check + raster libs installed",
+    "content": "Pre-check baseline green",
     "status": "completed"
   },
   {
-    "content": "Phase A: scene.py + STAC item + collection + README + validate_slice1 constants",
+    "content": "Phase B: migration 002_plots_polygon_multipolygon.sql",
     "status": "completed"
   },
   {
-    "content": "Phase B: BFF raster/stat core modules",
+    "content": "Phase C: errors.py plots_backend_unavailable() (503)",
     "status": "completed"
   },
   {
-    "content": "Phase C: BFF endpoints wired in main.py + verified live",
+    "content": "Phase D: plots_repo.py persistence (raw SQL, lazy psycopg)",
     "status": "completed"
   },
   {
-    "content": "Phase D: Deps + Dockerfile + docker-compose + .env.example + ENV_MATRIX + skeleton.py",
+    "content": "Phase E: plots.py router + Pydantic v2 + CRUD + import/export",
     "status": "completed"
   },
   {
-    "content": "Phase E: Storage real-COG vs placeholder + verify-cogs",
+    "content": "Phase F: register router in main.py + APP_VERSION 0.3.0-slice3 + docstring",
     "status": "completed"
   },
   {
-    "content": "Phase F: Fixtures + pytest (24/24) + validate_slice2.py (76/0) + smoke-test",
+    "content": "Phase G: tests/test_slice3.py (21 passed; 12 required cases + security)",
     "status": "completed"
   },
   {
-    "content": "Phase G: Docs updates",
+    "content": "Phase H: apps/api/README Slice 3 section",
     "status": "completed"
   },
   {
-    "content": "Final: lint + full validator/pytest sweep + restart backend + testing agent (13/13)",
-    "status": "completed"
+    "content": "Final: lint clean + pytest 45/45 + validators green + live 503 verified + testing agent",
+    "status": "in_progress"
   }
 ]

@@ -73,5 +73,15 @@ def raster_backend_unavailable(message: str, **details: Any) -> AkashaError:
     return AkashaError("RASTER_BACKEND_UNAVAILABLE", message, 503, details or None)
 
 
+def plots_backend_unavailable(message: str, **details: Any) -> AkashaError:
+    """503: the plots database (PostGIS) is unreachable from this environment.
+
+    Used (e.g.) in the Emergent preview/dev where PostGIS is not provisioned;
+    the code path is real but the runtime dependency is absent. The message must
+    stay sanitized (no DSN, credentials, hostnames, or driver text).
+    """
+    return AkashaError("PLOTS_BACKEND_UNAVAILABLE", message, 503, details or None)
+
+
 async def akasha_error_handler(_: Request, exc: AkashaError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.to_payload())

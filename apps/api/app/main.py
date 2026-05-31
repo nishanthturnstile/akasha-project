@@ -11,6 +11,9 @@ Scope:
     * GET  /api/layers/default
     * GET  /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png  (BFF->TiTiler proxy)
     * POST /api/indices/statistics                                      (BFF masked NDVI)
+  Slice 3 (Phase 3 BFF API) — plots:
+    * GET/POST /api/plots, GET/PATCH/DELETE /api/plots/{plotId}
+    * POST /api/plots/import/geojson, GET /api/plots[/{plotId}]/export.geojson
 
 The `_skeleton` namespace stays separate from the product API so contracts stay
 clean. Heavy geospatial deps (rasterio/shapely/pyproj) are imported lazily in
@@ -31,6 +34,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import skeleton
 from .config import settings
+from .plots import router as plots_router
 from .product import router as product_router
 from .raster.errors import AkashaError, akasha_error_handler
 
@@ -40,7 +44,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("akasha.api")
 
-APP_VERSION = "0.2.0-slice2"
+APP_VERSION = "0.3.0-slice3"
 LIVE_SERVICE_ID = "api"
 
 
@@ -214,6 +218,9 @@ app.include_router(skeleton_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)
+
+# --- Plot API (Slice 3: plot CRUD + GeoJSON import/export) -----------------
+app.include_router(plots_router)
 
 # Standard Akasha error shape: { "error": { code, message, details } }.
 app.add_exception_handler(AkashaError, akasha_error_handler)

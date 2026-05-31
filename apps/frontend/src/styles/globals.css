@@ -217,3 +217,32 @@
     opacity: 0.5;
   }
 }
+
+
+/* --- MapLibre GL control restyle (design-system §5.4) ---------------------- */
+/* The default Mapbox/MapLibre chrome is replaced with the calm "orbital glass"
+ * scale bar + muted on-map attribution so nothing reads as generic GIS. */
+.maplibregl-ctrl-scale {
+  background: hsl(var(--panel) / var(--panel-alpha));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-sm, 6px);
+  color: hsl(var(--foreground) / 0.85);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  padding: 1px 6px;
+  box-shadow: var(--shadow-e1);
+}
+
+.maplibregl-ctrl-attrib {
+  background: transparent;
+  color: hsl(var(--foreground) / 0.6);
+  font-size: 10px;
+}
+
+/* MapLibre canvas should never show a focus outline ring over imagery. */
+.maplibregl-canvas:focus {
+  outline: none;
+}

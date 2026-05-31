@@ -402,3 +402,72 @@ python -m pytest tests/test_health.py tests/test_slice2.py tests/test_slice3.py 
 - All tests pass without needing Docker/PostGIS in Emergent.
 
 **Runtime note (preview/dev):** If `DATABASE_URL` is missing/unreachable, plot endpoints return `503 PLOTS_BACKEND_UNAVAILABLE` (sanitized).
+
+---
+
+# Slice 4 Plan (Phase 4 — Frontend Map & Layer UX) — Akasha Railway MVP (NEW)
+
+## 1) Objectives
+
+Build the first real product UI in `apps/frontend` (Vite + React 18 + TS): a MapLibre map over
+Bangalore, a Sentinel-2 true-colour raster overlay driven by API tile metadata, and an
+orbital-glass `LayerPanel` (source selector, date list with cloud-usability chips, visibility
+toggle, opacity slider). Follow `docs/design-system.md` exactly (default **dark**, with an in-app
+light/dark toggle per user request).
+
+**Confirmed user decisions (this session):**
+- Repoint the Emergent preview: `/app/frontend` (readonly supervisor runs `yarn start` on port 3000)
+  must launch the Vite app from `apps/frontend` on port 3000.
+- Basemap: `config.basemapStyleUrl` → `VITE_BASEMAP_STYLE_URL` → bundled **local ink fallback** style
+  (no public CDN/OSM).
+- Pin latest stable deps (already installed in `apps/frontend`).
+- Default **dark**, toggleable to light.
+- Offline behaviour OK: tiles return `503` locally (no TiTiler/MinIO) → only the ink basemap + full
+  panel UX is shown locally; real imagery renders on Railway.
+
+## 2) Implementation Steps
+
+### Phase A — Data foundation (DONE criteria: typed, no `any` on API boundary)
+- `src/types/api.ts` — AppConfig, Source, SceneDate, DefaultLayer, ApiErrorShape.
+- `src/lib/api.ts` — typed same-origin client (getConfig/getSources/getDates/getDefaultLayer) +
+  `ApiError` carrying `code`/`message`.
+- `src/lib/queryClient.ts`, `src/lib/queries.ts` — TanStack Query client + hooks.
+- `src/lib/usability.ts` — cloud-usability mapping (`>=70 success / 40–70 warning / <40 destructive /
+  missing nodata`).
+- `src/lib/selectDefaultDate.ts` — isLatestUsable → threshold fallback → newest.
+- `src/lib/satelliteLayer.ts` — pure map-layer swap util (raster source/layer only; never setStyle).
+- `src/map/basemap.ts` — style resolution + local ink fallback `StyleSpecification`.
+- `src/lib/utils.ts` — `cn`.
+
+### Phase B — UI primitives (shadcn, restyled to tokens)
+- `src/components/ui/{button,card,slider,switch,tooltip,badge,scroll-area,skeleton,separator}.tsx`.
+
+### Phase C — Map + Layer components
+- `components/map/MapLayerManager.tsx` (MapLibre lifecycle; date change swaps raster only).
+- `components/map/MapControls.tsx`.
+- `components/layers/{LayerPanel,SourceSelector,DateList,CloudUsabilityChip,OpacitySlider,VisibilityToggle}.tsx`.
+- `components/scaffold/{PlotToolbar,IndexPanel}.tsx` (disabled glass placeholders for Phase 5).
+- `components/ThemeToggle.tsx`.
+
+### Phase D — Wiring
+- `pages/MapPage.tsx`, `App.tsx`, `main.tsx` (QueryClientProvider, fonts, maplibre css, default dark).
+- `index.html` title; `tsconfig.json` + `vite.config.ts` (`@` alias, vitest config, allowedHosts).
+
+### Phase E — Repoint preview
+- Edit `/app/frontend/package.json` `start` → `cd /app/apps/frontend && yarn dev --host 0.0.0.0 --port 3000`.
+- `supervisorctl restart frontend`; verify on preview URL.
+
+### Phase F — Tests
+- Vitest + Testing Library: cloud chip mapping, default-date selection, api error mapping,
+  layer-swap-does-not-touch-basemap.
+
+## 3) Exit Criteria
+- Map centered on Bangalore; basemap via precedence rule (ink fallback offline; no public CDN).
+- Latest usable scene selected by default; date change swaps only the raster layer.
+- LayerPanel: source/date/cloud chip/visibility/opacity, all per design system.
+- Loading/empty/error states implemented and calm.
+- No hard-coded COG/MinIO/STAC/TiTiler URLs (grep clean).
+- `yarn lint`, `yarn build`, `yarn test` succeed.
+- Live preview serves the Vite MapPage on port 3000.
+
+**Status (now): IN PROGRESS.**

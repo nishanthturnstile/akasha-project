@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
     "preview": "vite preview --host",
-    "lint": "eslint . --ext ts,tsx"
+    "lint": "eslint . --ext ts,tsx",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
+    "@testing-library/dom": "^10",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

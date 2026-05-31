@@ -1,42 +1,38 @@
 [
   {
-    "content": "Install Phase 4 deps in apps/frontend (maplibre-gl, react-query, tailwind v3 + shadcn deps, radix, fontsource, vitest)",
+    "content": "Update plan.md with Phase 4 (Slice 4) section",
+    "status": "completed"
+  },
+  {
+    "content": "Build data foundation: types, api client, queryClient, queries, usability + default-date logic, basemap fallback, satellite layer swap util",
+    "status": "completed"
+  },
+  {
+    "content": "Create shadcn UI primitives restyled to tokens (button, card, slider, switch, tooltip, badge, scroll-area, skeleton, separator)",
+    "status": "completed"
+  },
+  {
+    "content": "Build map components (MapLayerManager, MapControls), layer panel components, scaffold placeholders (PlotToolbar, IndexPanel), theme toggle",
+    "status": "completed"
+  },
+  {
+    "content": "Wire MapPage + App.tsx + main.tsx + index.html + tsconfig/vite config (alias, vitest)",
+    "status": "completed"
+  },
+  {
+    "content": "Lint + typecheck/build (tsc/vite build) and fix errors",
+    "status": "completed"
+  },
+  {
+    "content": "Repoint /app/frontend start script to launch Vite app on port 3000; restart frontend",
+    "status": "completed"
+  },
+  {
+    "content": "Write Vitest tests (cloud chip, default-date, api error, layer-swap) and run",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend testing agent: verify interactions (date list, visibility, opacity, source tab, collapse, theme toggle, map controls)",
     "status": "in_progress"
-  },
-  {
-    "content": "Tooling: tailwind.config.ts, postcss.config.js, vite.config (allowedHosts/hmr/vitest), tsconfig, globals.css (design tokens + glass + motion), fonts",
-    "status": "pending"
-  },
-  {
-    "content": "Data layer: types/api.ts, lib/api.ts (typed client + error mapping), lib/queryClient.ts, lib/utils.ts (cn)",
-    "status": "pending"
-  },
-  {
-    "content": "UI primitives: restyle shadcn (button, card, slider, switch, tooltip, badge, scroll-area, skeleton, separator) to tokens",
-    "status": "pending"
-  },
-  {
-    "content": "Map: basemap.ts (style precedence + local ink fallback), MapLayerManager (raster swap, basemap untouched), MapControls",
-    "status": "pending"
-  },
-  {
-    "content": "Layer panel: LayerPanel, SourceSelector, DateList, CloudUsabilityChip, OpacitySlider, VisibilityToggle + default-date logic + states",
-    "status": "pending"
-  },
-  {
-    "content": "Scaffolding placeholders: PlotToolbar (top-left), IndexPanel (right) disabled glass; MapPage + App + main wiring",
-    "status": "pending"
-  },
-  {
-    "content": "Tests (Vitest): chip color mapping, default-date selection, api error mapping, date-change-only-raster assertion",
-    "status": "pending"
-  },
-  {
-    "content": "Validate: yarn lint + yarn build + yarn test green; grep no hardcoded backend/COG URLs",
-    "status": "pending"
-  },
-  {
-    "content": "Repoint Emergent preview: /app/frontend start -> apps/frontend vite on :3000; restart; screenshot verify",
-    "status": "pending"
   }
 ]

@@ -12,6 +12,7 @@ Usage:
     python worker.py seed-minio [--force]
     python worker.py seed [--method ...] [--force]   # full idempotent seed
     python worker.py verify                    # Slice 1 exit criteria
+    python worker.py verify-cogs               # Phase 2: + non-empty real COGs
     python worker.py healthcheck               # required env vars present
 """
 from __future__ import annotations
@@ -112,6 +113,12 @@ def cmd_verify(_: argparse.Namespace) -> int:
     return verify.run()
 
 
+def cmd_verify_cogs(_: argparse.Namespace) -> int:
+    from akasha_ingest import verify
+
+    return verify.run_phase2()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Akasha ingestion worker.")
     sub = parser.add_subparsers(dest="command")
@@ -136,6 +143,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_seed.add_argument("--force", action="store_true")
     p_seed.set_defaults(func=cmd_seed)
     sub.add_parser("verify", help="Verify Slice 1 exit criteria.").set_defaults(func=cmd_verify)
+    sub.add_parser(
+        "verify-cogs",
+        help="Verify Phase 2 raster de-risk: Slice 1 criteria + non-empty real COGs.",
+    ).set_defaults(func=cmd_verify_cogs)
     return parser
 
 

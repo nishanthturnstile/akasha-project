@@ -1,9 +1,18 @@
 # Akasha BFF (api) — dependencies.
-# Pinned for reproducible Railway builds. Raster deps (rasterio/rio-tiler) are
-# intentionally NOT added until Slice 2.
+# Pinned for reproducible Railway builds.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-dotenv==1.0.1
 # Slice 1: app-schema migration CLI only (no product DB endpoints yet).
 # Imported lazily so `app.main` (runtime/preview) never requires a DB driver.
 psycopg[binary]>=3.2,<4
+# Slice 2 (Phase 2 raster de-risk): BFF masked-statistics + RGB tile proxy.
+# rasterio reads the analytic + SCL COG windows; numpy does the masked index
+# math; shapely/pyproj validate geometry + compute area. rio-tiler is available
+# for raster helpers. All imported LAZILY in app.raster.* so importing app.main
+# (the live preview) never requires these geospatial wheels.
+numpy>=1.26,<3
+rasterio>=1.4.3,<1.5
+rio-tiler>=7.0,<10
+shapely>=2.0,<3
+pyproj>=3.6,<4

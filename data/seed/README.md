@@ -35,12 +35,18 @@ excluded classes: `0,1,2,3,7,8,9,10,11` (class 6 water kept).
 
 ## Deterministic scene
 
+Slice 2 uses the real prepared Sentinel-2 L2A scene (see
+[`../../docs/sentinel-2-l2a-cog-prep-runbook.md`](../../docs/sentinel-2-l2a-cog-prep-runbook.md)).
+Source product: `S2B_MSIL2A_20250914T050649_N0511_R019_T43PHP_20250914T074457.SAFE`.
+
 ```text
-scene key : sentinel-2-l2a:L2A:43PGQ:2026-01-15T05:20:00Z:05.00
-item id   : sentinel-2-l2a_43PGQ_20260115_0500
+scene key : sentinel-2-l2a:L2A:43PHP:2025-09-14T05:06:49.024000Z:05.11
+item id   : sentinel-2-l2a_43PHP_20250914_0511
 bucket    : akasha-cogs
-keys      : sentinel-2-l2a/2026-01-15/analytic.tif
-            sentinel-2-l2a/2026-01-15/scl.tif
+keys      : sentinel-2-l2a/2025-09-14/analytic.tif
+            sentinel-2-l2a/2025-09-14/scl.tif
+footprint : EPSG:32643, shape 10980x10980, 10 m, bbox4326
+            [77.7513, 11.6470, 78.7709, 12.6502]
 ```
 
 ## Seeding (run on Railway / local Docker — see infra/railway/README.md)

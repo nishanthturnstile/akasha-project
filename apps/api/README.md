@@ -16,10 +16,28 @@ This is the **skeleton** only. Implemented endpoints:
 | GET | `/api/_skeleton/manifest` | Slice metadata, pinned images, scope, repo tree. |
 | GET | `/api/_skeleton/env-matrix` | Documented env-var matrix (placeholders only). |
 
-**Not implemented yet** (later slices, contracts preserved): `/api/config`,
-`/api/sources`, `/api/sources/{id}/dates`, `/api/layers/default`, plot CRUD,
-GeoJSON import/export, `/api/indices/statistics`. No database / STAC / TiTiler
-calls in Slice 0.
+**Not implemented yet** (later slices, contracts preserved): plot CRUD,
+GeoJSON import/export.
+
+## Slice 2 scope (Phase 2 — raster de-risk)
+
+Product surface for the raster proof path. Heavy geospatial deps
+(`rasterio`/`shapely`/`pyproj`) are imported **lazily** in `app.raster.*`, so
+importing the app never requires them.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/config` | AOI, map defaults, limits, supported indices. |
+| GET | `/api/sources` | Satellite/product sources (STAC collections). |
+| GET | `/api/sources/{id}/dates` | Acquisition dates + cloud/usable-pixel %. |
+| GET | `/api/layers/default` | Default source/date + same-origin RGB tile template. |
+| GET | `/api/tiles/{sourceId}/{date}/rgb/{z}/{x}/{y}.png` | BFF→TiTiler proxy; true-colour RGB (`bidx=1,8,9`). COG url/creds stay server-side. |
+| POST | `/api/indices/statistics` | Cloud/SCL-masked, offset-corrected index stats computed in the BFF (reads analytic + SCL COG windows with rasterio). |
+
+TiTiler serves RGB display tiles only; masked statistics are computed in the
+BFF. When MinIO/COGs/TiTiler are unavailable the tile/stat routes return a
+clean `503 RASTER_BACKEND_UNAVAILABLE`. Validate with
+`python scripts/validate_slice2.py` and `python -m pytest -q tests`.
 
 ## Run locally (standalone)
 

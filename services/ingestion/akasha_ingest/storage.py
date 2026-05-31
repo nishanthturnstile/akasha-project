@@ -54,8 +54,27 @@ def _object_exists(client, key: str) -> bool:
         return False
 
 
+def object_status(client, key: str) -> dict:
+    """Return {exists, size, placeholder} for one object (head_object)."""
+    from botocore.exceptions import ClientError  # lazy
+
+    try:
+        head = client.head_object(Bucket=config.BUCKET, Key=key)
+    except ClientError:
+        return {"key": key, "exists": False, "size": 0, "placeholder": None}
+    size = int(head.get("ContentLength", 0))
+    meta = head.get("Metadata", {}) or {}
+    placeholder = meta.get("akasha-placeholder") == "true" or size == 0
+    return {"key": key, "exists": True, "size": size, "placeholder": placeholder}
+
+
 def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[str]:
-    """Upload operator rasters if present, else create empty key placeholders."""
+    """Upload operator rasters if present, else create empty key placeholders.
+
+    Real COG uploads are tagged with metadata so Phase 2 verification can
+    distinguish them from Slice 1 empty placeholders (ContentLength > 0 and no
+    `akasha-placeholder` marker).
+    """
     client = _client()
     results: list[str] = []
     raster_dir = config.raster_source_dir(scene.acquisition_date)
@@ -65,8 +84,20 @@ def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[
             continue
         local = raster_dir / asset
         if local.is_file():
-            client.upload_file(str(local), config.BUCKET, key)
-            results.append(f"uploaded raster: {key} <- {local}")
+            size = local.stat().st_size
+            client.upload_file(
+                str(local),
+                config.BUCKET,
+                key,
+                ExtraArgs={
+                    "Metadata": {
+                        "akasha-asset": asset.split(".")[0],
+                        "akasha-scene-key": scene.scene_key,
+                        "akasha-placeholder": "false",
+                    }
+                },
+            )
+            results.append(f"uploaded real COG: {key} <- {local} ({size:,} bytes)")
         else:
             client.put_object(
                 Bucket=config.BUCKET,
@@ -76,6 +107,32 @@ def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[
             )
             results.append(f"placeholder created (operator COG pending): {key}")
     return results
+
+
+def verify_real_cogs(scene: SceneIdentity = SAMPLE_SCENE) -> tuple[bool, str]:
+    """Phase 2 check: deterministic COG objects exist AND are non-empty real COGs.
+
+    Fails if either object is missing, empty (ContentLength == 0), or still
+    marked as a Slice 1 placeholder.
+    """
+    try:
+        client = _client()
+        client.head_bucket(Bucket=config.BUCKET)
+        problems: list[str] = []
+        sizes: list[str] = []
+        for key in (scene.analytic_key, scene.scl_key):
+            st = object_status(client, key)
+            if not st["exists"]:
+                problems.append(f"missing: {key}")
+            elif st["placeholder"]:
+                problems.append(f"placeholder/empty (ContentLength={st['size']}): {key}")
+            else:
+                sizes.append(f"{key}={st['size']:,}B")
+        if problems:
+            return False, "real COG check failed -> " + "; ".join(problems)
+        return True, "real COGs present (non-empty): " + ", ".join(sizes)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"real COG check error: {exc}"
 
 
 def bucket_reachable(required_keys: Sequence[str] | None = None) -> tuple[bool, str]:

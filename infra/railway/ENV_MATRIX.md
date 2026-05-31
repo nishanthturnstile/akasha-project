@@ -23,6 +23,17 @@ DATABASE_URL=postgresql://...
 STAC_API_URL=http://stac-api.railway.internal:8080
 TITILER_URL=http://titiler.railway.internal:8000
 S3_ENDPOINT_URL=http://minio.railway.internal:9000
+# Slice 2: server-side S3/GDAL so the BFF (rasterio) can read MinIO COG windows
+# for masked statistics. Never exposed to the browser.
+AWS_ACCESS_KEY_ID=<minio-access-key>
+AWS_SECRET_ACCESS_KEY=<minio-secret-key>
+AWS_S3_ENDPOINT=minio.railway.internal:9000     # no scheme; GDAL uses AWS_HTTPS
+AWS_VIRTUAL_HOSTING=FALSE
+AWS_HTTPS=NO
+AWS_REGION=us-east-1
+GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff
+AKASHA_RGB_RESCALE=0,3000                        # true-colour DN rescale min,max
 DEFAULT_SOURCE_ID=sentinel-2-l2a
 DEFAULT_AOI_ID=bangalore
 USABLE_PIXEL_THRESHOLD_PERCENT=70

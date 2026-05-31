@@ -19,7 +19,7 @@
     { "name": "Akasha", "roles": ["processor"] }
   ],
   "extent": {
-    "spatial": { "bbox": [[77.4, 12.8, 77.8, 13.2]] },
+    "spatial": { "bbox": [[77.4, 11.647042899643449, 78.77093931726162, 13.2]] },
     "temporal": { "interval": [["2015-06-23T00:00:00Z", null]] }
   },
   "summaries": {

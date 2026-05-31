@@ -121,12 +121,12 @@ if item:
 # --------------------------------------------------------------------------
 section("Idempotency key (scene module)")
 check(
-    SAMPLE_SCENE.scene_key == "sentinel-2-l2a:L2A:43PGQ:2026-01-15T05:20:00Z:05.00",
+    SAMPLE_SCENE.scene_key == "sentinel-2-l2a:L2A:43PHP:2025-09-14T05:06:49.024000Z:05.11",
     f"scene_key == {SAMPLE_SCENE.scene_key}",
 )
-check(SAMPLE_SCENE.item_id == "sentinel-2-l2a_43PGQ_20260115_0500", f"item_id == {SAMPLE_SCENE.item_id}")
-check(SAMPLE_SCENE.analytic_key == "sentinel-2-l2a/2026-01-15/analytic.tif", "analytic_key layout")
-check(SAMPLE_SCENE.scl_key == "sentinel-2-l2a/2026-01-15/scl.tif", "scl_key layout")
+check(SAMPLE_SCENE.item_id == "sentinel-2-l2a_43PHP_20250914_0511", f"item_id == {SAMPLE_SCENE.item_id}")
+check(SAMPLE_SCENE.analytic_key == "sentinel-2-l2a/2025-09-14/analytic.tif", "analytic_key layout")
+check(SAMPLE_SCENE.scl_key == "sentinel-2-l2a/2025-09-14/scl.tif", "scl_key layout")
 
 # --------------------------------------------------------------------------
 section("PostGIS app schema")

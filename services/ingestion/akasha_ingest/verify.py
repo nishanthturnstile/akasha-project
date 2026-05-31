@@ -44,14 +44,34 @@ def check_minio() -> tuple[bool, str]:
     return storage.bucket_reachable()
 
 
+def check_real_cogs() -> tuple[bool, str]:
+    """Phase 2: deterministic COG objects exist AND are non-empty real COGs."""
+    return storage.verify_real_cogs()
+
+
 def run() -> int:
     checks = [
         ("PostGIS (SELECT postgis_version())", check_postgis),
         (f"STAC API collection '{config.COLLECTION_ID}'", check_stac_collection),
         (f"MinIO bucket '{config.BUCKET}' reachable", check_minio),
     ]
+    return _run_checks("Akasha Slice 1 — exit-criteria verification", checks)
+
+
+def run_phase2() -> int:
+    """Phase 2 verification: Slice 1 criteria PLUS non-empty real COG objects."""
+    checks = [
+        ("PostGIS (SELECT postgis_version())", check_postgis),
+        (f"STAC API collection '{config.COLLECTION_ID}'", check_stac_collection),
+        (f"MinIO bucket '{config.BUCKET}' reachable", check_minio),
+        ("MinIO real (non-empty) COG objects", check_real_cogs),
+    ]
+    return _run_checks("Akasha Slice 2 (Phase 2) — raster de-risk verification", checks)
+
+
+def _run_checks(title: str, checks) -> int:
     print("=" * 60)
-    print(" Akasha Slice 1 — exit-criteria verification")
+    print(f" {title}")
     print("=" * 60)
     failed = 0
     for label, fn in checks:

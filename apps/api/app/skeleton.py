@@ -159,6 +159,15 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "STAC_API_URL": "http://stac-api.railway.internal:8080",
         "TITILER_URL": "http://titiler.railway.internal:8000",
         "S3_ENDPOINT_URL": "http://minio.railway.internal:9000",
+        "AWS_ACCESS_KEY_ID": "<minio-access-key>",
+        "AWS_SECRET_ACCESS_KEY": "<minio-secret-key>",
+        "AWS_S3_ENDPOINT": "minio.railway.internal:9000",
+        "AWS_VIRTUAL_HOSTING": "FALSE",
+        "AWS_HTTPS": "NO",
+        "AWS_REGION": "us-east-1",
+        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+        "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
+        "AKASHA_RGB_RESCALE": "0,3000",
         "DEFAULT_SOURCE_ID": "sentinel-2-l2a",
         "DEFAULT_AOI_ID": "bangalore",
         "USABLE_PIXEL_THRESHOLD_PERCENT": "70",
@@ -213,9 +222,9 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
 # Slice / phase roadmap (mvp-execution-plan.md). Slice 0 is active.
 # --------------------------------------------------------------------------
 ROADMAP: list[dict[str, str]] = [
-    {"id": "slice0", "phase": "Phase 0", "name": "Repository & service skeleton", "status": "active"},
-    {"id": "slice1", "phase": "Phase 1", "name": "Database, catalog & object storage", "status": "planned"},
-    {"id": "slice2", "phase": "Phase 2", "name": "Raster de-risk (tile + masked NDVI stat)", "status": "planned"},
+    {"id": "slice0", "phase": "Phase 0", "name": "Repository & service skeleton", "status": "done"},
+    {"id": "slice1", "phase": "Phase 1", "name": "Database, catalog & object storage", "status": "done"},
+    {"id": "slice2", "phase": "Phase 2", "name": "Raster de-risk (tile + masked NDVI stat)", "status": "active"},
     {"id": "slice3", "phase": "Phase 3", "name": "BFF API implementation", "status": "planned"},
     {"id": "slice4", "phase": "Phase 4", "name": "Frontend map & layer UX", "status": "planned"},
     {"id": "slice5", "phase": "Phase 5", "name": "Plot & index UX", "status": "planned"},

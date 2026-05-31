@@ -3,7 +3,9 @@
 | Script | Purpose | Needs Docker? |
 |---|---|---|
 | `validate_slice0.py` | Static validation of all Slice 0 skeleton artifacts (files, pinned images, compose structure, health-check wiring, railway configs, env-secret hygiene). | No |
-| `smoke-test.py` | Hits the live health/skeleton endpoints in order. Future-slice checks are listed as SKIPPED. | No (needs a running gateway/api) |
+| `validate_slice1.py` | Static validation of Slice 1 storage/catalog artifacts (PostGIS schema, STAC seeds, MinIO layout, ingestion CLI). | No |
+| `validate_slice2.py` | Static + **synthetic** validation of Slice 2 (Phase 2 raster de-risk): scene/STAC metadata, BFF raster package, deps/infra, a pure-numpy NDVI reference, in-process TestClient endpoint contracts, and a full synthetic dual-COG read→mask→stat pipeline (when rasterio is installed). Lists the runtime tile/stat checks that are BLOCKED until operator COGs are in MinIO. | No |
+| `smoke-test.py` | Hits the live health/skeleton + Phase 2 product endpoints in order. The RGB-tile and statistics steps are reported as BLOCKED (not failed) when real COGs/MinIO/TiTiler are unavailable. | No (needs a running gateway/api) |
 | `download_sentinel2_l2a_product.py` | Searches CDSE `sentinel-2-l2a` and downloads a complete native L2A SAFE ZIP containing the bands/SCL needed for Slice 2 COG preparation. | No |
 | `prepare_sentinel2_l2a_cogs.py` | Converts a downloaded Sentinel-2 L2A SAFE ZIP into Akasha Slice 2 `analytic.tif` and `scl.tif` COGs. | No, but run via ingestion Docker image to avoid local GDAL setup |
 
@@ -14,6 +16,8 @@ See [`../docs/sentinel-2-l2a-cog-prep-runbook.md`](../docs/sentinel-2-l2a-cog-pr
 ```bash
 # Static artifact validation (works in any environment)
 python scripts/validate_slice0.py
+python scripts/validate_slice1.py
+python scripts/validate_slice2.py   # Phase 2: static + synthetic NDVI de-risk
 
 # Smoke test against a running stack (local Docker Compose default :8080)
 python scripts/smoke-test.py http://localhost:8080
@@ -35,4 +39,6 @@ docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker pyth
 ```
 
 `smoke-test.py` uses only the Python standard library. `validate_slice0.py`
-requires `pyyaml`.
+requires `pyyaml`. `validate_slice2.py` runs fully on its static + numpy-only
+checks; its synthetic dual-COG E2E section runs only when `rasterio`/`pyproj`
+are installed (otherwise it is skipped, since that path is covered on Railway).

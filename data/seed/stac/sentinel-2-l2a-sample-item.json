@@ -7,53 +7,56 @@
     "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
     "https://stac-extensions.github.io/classification/v1.1.0/schema.json"
   ],
-  "id": "sentinel-2-l2a_43PGQ_20260115_0500",
+  "id": "sentinel-2-l2a_43PHP_20250914_0511",
   "collection": "sentinel-2-l2a",
-  "bbox": [77.4, 12.8, 77.8, 13.2],
+  "bbox": [77.75127791535229, 11.647042899643449, 78.77093931726162, 12.65022495916365],
   "geometry": {
     "type": "Polygon",
     "coordinates": [
       [
-        [77.4, 12.8],
-        [77.8, 12.8],
-        [77.8, 13.2],
-        [77.4, 13.2],
-        [77.4, 12.8]
+        [77.75127791535229, 11.65842813454628],
+        [78.7570038087712, 11.647042899643449],
+        [78.77093931726162, 12.63784146528649],
+        [77.76149663867514, 12.65022495916365],
+        [77.75127791535229, 11.65842813454628]
       ]
     ]
   },
   "properties": {
-    "datetime": "2026-01-15T05:20:00Z",
-    "created": "2026-01-15T08:00:00Z",
-    "platform": "sentinel-2a",
+    "datetime": "2025-09-14T05:06:49.024000Z",
+    "created": "2025-09-14T08:00:00Z",
+    "platform": "sentinel-2b",
     "constellation": "sentinel-2",
     "instruments": ["msi"],
     "gsd": 10,
-    "eo:cloud_cover": 12.6,
+    "eo:cloud_cover": 17.153746,
     "proj:epsg": 32643,
-    "proj:shape": [4400, 4400],
-    "proj:transform": [10, 0, 758000, 0, -10, 1460000, 0, 0, 1],
-    "proj:bbox": [758000, 1416000, 802000, 1460000],
+    "proj:shape": [10980, 10980],
+    "proj:transform": [10, 0, 799980, 0, -10, 1400040, 0, 0, 1],
+    "proj:bbox": [799980, 1290240, 909780, 1400040],
     "s2:product_level": "L2A",
-    "s2:mgrs_tile": "43PGQ",
-    "s2:processing_baseline": "05.00",
-    "akasha:scene_key": "sentinel-2-l2a:L2A:43PGQ:2026-01-15T05:20:00Z:05.00",
-    "akasha:acquisition_date": "2026-01-15",
-    "akasha:usable_pixel_percent": 87.4,
-    "akasha:cloud_masked_percent": 12.6,
+    "s2:mgrs_tile": "43PHP",
+    "s2:processing_baseline": "05.11",
+    "akasha:scene_key": "sentinel-2-l2a:L2A:43PHP:2025-09-14T05:06:49.024000Z:05.11",
+    "akasha:acquisition_date": "2025-09-14",
+    "akasha:usable_pixel_percent": 82.85,
+    "akasha:cloud_masked_percent": 17.15,
     "akasha:coverage_percent": 100.0,
-    "akasha:is_latest_usable": true
+    "akasha:is_latest_usable": true,
+    "akasha:metrics_provisional": true,
+    "akasha:metrics_note": "usable/cloud/coverage are provisional (derived from scene-level eo:cloud_cover); recompute per-AOI from the SCL COG during ingestion (data-ingestion-and-satellite-rules.md 'Pixel accounting and percentages')."
   },
   "assets": {
     "analytic": {
-      "href": "s3://akasha-cogs/sentinel-2-l2a/2026-01-15/analytic.tif",
+      "href": "s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif",
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "title": "Analytic reflectance COG (raw uint16 DN, frozen 9-band order)",
       "roles": ["data", "reflectance"],
       "gsd": 10,
       "proj:epsg": 32643,
-      "proj:shape": [4400, 4400],
-      "proj:transform": [10, 0, 758000, 0, -10, 1460000, 0, 0, 1],
+      "proj:shape": [10980, 10980],
+      "proj:transform": [10, 0, 799980, 0, -10, 1400040, 0, 0, 1],
+      "proj:bbox": [799980, 1290240, 909780, 1400040],
       "eo:bands": [
         { "name": "B04", "common_name": "red", "center_wavelength": 0.665, "full_width_half_max": 0.038 },
         { "name": "B08", "common_name": "nir", "center_wavelength": 0.842, "full_width_half_max": 0.145 },
@@ -78,14 +81,15 @@
       ]
     },
     "scl": {
-      "href": "s3://akasha-cogs/sentinel-2-l2a/2026-01-15/scl.tif",
+      "href": "s3://akasha-cogs/sentinel-2-l2a/2025-09-14/scl.tif",
       "type": "image/tiff; application=geotiff; profile=cloud-optimized",
       "title": "Scene Classification Layer COG (categorical, nearest resampling)",
       "roles": ["metadata", "data-mask"],
       "gsd": 10,
       "proj:epsg": 32643,
-      "proj:shape": [4400, 4400],
-      "proj:transform": [10, 0, 758000, 0, -10, 1460000, 0, 0, 1],
+      "proj:shape": [10980, 10980],
+      "proj:transform": [10, 0, 799980, 0, -10, 1400040, 0, 0, 1],
+      "proj:bbox": [799980, 1290240, 909780, 1400040],
       "raster:bands": [
         { "data_type": "uint8", "nodata": 0, "spatial_resolution": 10 }
       ],

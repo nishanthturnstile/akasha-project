@@ -1,26 +1,38 @@
 [
   {
-    "content": "Slice 1: App schema SQL (plots + index_requests + app_settings, PostGIS) + api migrate CLI (lazy psycopg, no new product endpoints)",
+    "content": "Pre-check + raster libs installed",
     "status": "completed"
   },
   {
-    "content": "Slice 1: Ingestion worker package — scene identity/idempotency, pgSTAC migrate, STAC load (upsert), MinIO bucket/keys, verify (exit criteria)",
+    "content": "Phase A: scene.py + STAC item + collection + README + validate_slice1 constants",
     "status": "completed"
   },
   {
-    "content": "Slice 1: data/seed artifacts — GeoJSON AOI + plot, STAC collection + sample item (frozen 9-band order, scale 0.0001/offset -0.1, SCL classes)",
+    "content": "Phase B: BFF raster/stat core modules",
     "status": "completed"
   },
   {
-    "content": "Slice 1: Wire Docker/Railway — ingestion build context, pins (pypgstac 0.9.x, boto3, psycopg), Dockerfiles, .env examples, bootstrap/seeding docs",
+    "content": "Phase C: BFF endpoints wired in main.py + verified live",
     "status": "completed"
   },
   {
-    "content": "Slice 1: scripts/validate_slice1.py — PASSED 61/0; Slice 0 validator 94/0 (no regression); lint clean; api tests 6/6; live preview intact",
+    "content": "Phase D: Deps + Dockerfile + docker-compose + .env.example + ENV_MATRIX + skeleton.py",
     "status": "completed"
   },
   {
-    "content": "Slice 1: README/infra-railway docs updated with storage/catalog bootstrap + exit-criteria sequence",
+    "content": "Phase E: Storage real-COG vs placeholder + verify-cogs",
     "status": "completed"
+  },
+  {
+    "content": "Phase F: Fixtures + pytest (24/24) + validate_slice2.py (76/0) + smoke-test",
+    "status": "completed"
+  },
+  {
+    "content": "Phase G: Docs updates (mvp-execution-plan, scripts/README, emergent-context, api/README, data/seed/README)",
+    "status": "completed"
+  },
+  {
+    "content": "Final: lint + full validator/pytest sweep + restart backend + testing agent",
+    "status": "in_progress"
   }
 ]

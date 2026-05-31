@@ -1,16 +1,21 @@
-"""Akasha BFF (FastAPI) — Slice 0 skeleton.
+"""Akasha BFF (FastAPI).
 
-Scope (Slice 0):
-  * GET /health                       -> liveness for Railway/Compose health checks
-  * GET /api/health                   -> same payload, reachable through the gateway/ingress
-  * GET /api/_skeleton/services       -> multi-service topology + live status overlay
-  * GET /api/_skeleton/manifest       -> slice metadata, pinned images, scope, repo tree
-  * GET /api/_skeleton/env-matrix     -> documented env-var matrix (placeholders only)
+Scope:
+  Slice 0 (skeleton):
+    * GET /health, GET /api/health
+    * GET /api/_skeleton/{services,manifest,env-matrix}
+  Slice 2 (Phase 2 raster de-risk) — product surface:
+    * GET  /api/config
+    * GET  /api/sources
+    * GET  /api/sources/{sourceId}/dates
+    * GET  /api/layers/default
+    * GET  /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png  (BFF->TiTiler proxy)
+    * POST /api/indices/statistics                                      (BFF masked NDVI)
 
-Intentionally NOT implemented in Slice 0 (later slices): /api/config, /api/sources,
-/api/layers/default, plot CRUD, /api/indices/statistics, and any raster/catalog logic.
-The `_skeleton` namespace keeps these ops endpoints separate from the future product
-API contract so contracts stay clean.
+The `_skeleton` namespace stays separate from the product API so contracts stay
+clean. Heavy geospatial deps (rasterio/shapely/pyproj) are imported lazily in
+`app.raster.*` so importing this module never requires them (keeps the live
+Emergent preview healthy).
 """
 from __future__ import annotations
 
@@ -25,6 +30,8 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import skeleton
 from .config import settings
+from .product import router as product_router
+from .raster.errors import AkashaError, akasha_error_handler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,7 +39,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("akasha.api")
 
-APP_VERSION = "0.0.0-slice0"
+APP_VERSION = "0.2.0-slice2"
 LIVE_SERVICE_ID = "api"
 
 
@@ -185,3 +192,9 @@ async def get_manifest() -> dict[str, Any]:
 
 app.include_router(api_router)
 app.include_router(skeleton_router)
+
+# --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
+app.include_router(product_router)
+
+# Standard Akasha error shape: { "error": { code, message, details } }.
+app.add_exception_handler(AkashaError, akasha_error_handler)

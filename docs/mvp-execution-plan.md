@@ -78,6 +78,43 @@ Exit criteria:
 
 This phase is the biggest technical risk reducer. Complete it before major frontend work.
 
+### Phase 2 status — Emergent build (statically + synthetically validated)
+
+DELIVERED & validated (no Docker required):
+
+- STAC sample item re-pointed to the **real** scene
+  `S2B_MSIL2A_20250914T050649_N0511_R019_T43PHP` (key
+  `sentinel-2-l2a:L2A:43PHP:2025-09-14T05:06:49.024000Z:05.11`), with correct
+  `proj:*`, frozen 9-band `eo:bands`, and `raster:bands` scale `0.0001`/offset `-0.1`.
+- BFF raster package `apps/api/app/raster/*`: index registry (NDVI/NDRE/NDMI/
+  NDWI_GREEN_NIR), STAC band-name→position mapping (RGB = `[1,8,9]`), a
+  **pure-numpy masked-statistics engine** (offset/scale correction + SCL mask +
+  pixel accounting), a lazy rasterio dual-COG window reader, a geometry
+  validator (area/vertex guardrails), and the standard `{error:{code,message,
+  details}}` shape.
+- Product endpoints: `GET /api/config`, `/api/sources`, `/api/sources/{id}/dates`,
+  `/api/layers/default`, `GET /api/tiles/{sourceId}/{date}/rgb/{z}/{x}/{y}.png`
+  (BFF→TiTiler proxy, RGB `bidx=1,8,9`, COG url/creds kept server-side), and
+  `POST /api/indices/statistics`.
+- TiTiler `PORT=8000` fix + api S3/GDAL env so rasterio can read MinIO COGs.
+- De-risk proof: the NDVI math is verified against a hand-computed reference
+  (red_dn 2000→0.1, nir_dn 4000→0.3 ⇒ **NDVI 0.5**, offset *does not* cancel) and
+  a **full synthetic dual-COG read→reproject→mask→stat pipeline** in
+  `scripts/validate_slice2.py` and `apps/api/tests/test_slice2.py`.
+
+BLOCKED until operator COGs are uploaded to MinIO on Railway / local Docker
+(the live Emergent container has neither Docker, MinIO, nor the 2.24 GiB COGs):
+
+- Render a real RGB PNG tile through TiTiler/gateway.
+- Compute the real cloud-masked NDVI statistic for the reference polygon and
+  compare it against a QGIS/notebook reference.
+- Verify with `python services/ingestion/worker.py verify-cogs` (asserts both
+  COG objects exist and are non-empty real COGs, not Slice 1 placeholders).
+
+The BFF returns a clean `503 RASTER_BACKEND_UNAVAILABLE` for the tile/stat routes
+in any environment where MinIO/COGs are absent, so the contract is exercisable
+end-to-end without fabricating raster data.
+
 ## Phase 3 — BFF API implementation
 
 Deliverables:

@@ -54,6 +54,7 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
       STAC_API_URL: "http://stac-api:8080"
       TITILER_URL: "http://titiler:8000"
+      S3_ENDPOINT_URL: "http://minio:9000"
       DEFAULT_SOURCE_ID: "sentinel-2-l2a"
       DEFAULT_AOI_ID: "bangalore"
       USABLE_PIXEL_THRESHOLD_PERCENT: "70"

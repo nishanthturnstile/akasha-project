@@ -19,9 +19,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import List
 
-REQUIRED_ENV: List[str] = [
+REQUIRED_ENV: list[str] = [
     "DATABASE_URL",
     "STAC_API_URL",
     "S3_ENDPOINT_URL",

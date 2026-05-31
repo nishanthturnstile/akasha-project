@@ -3,10 +3,9 @@
 Covers: health contract, error/shape of skeleton endpoints, and the
 service-registry / env-matrix invariants required by the deployment docs.
 """
-from fastapi.testclient import TestClient
-
-from app.main import app
 from app import skeleton
+from app.main import app
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 

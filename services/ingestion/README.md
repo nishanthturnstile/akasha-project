@@ -4,7 +4,7 @@ Python worker for getting Sentinel-2 data into the catalog + object store.
 **Private, no public HTTP surface.** Runs on demand (manual/seed first;
 scheduled CDSE/Bhoonidhi ingestion later).
 
-- Base image: `python:3.11-slim`.
+- Base image: `python:3.11.14-slim-bookworm`.
 - No HTTP health endpoint; `worker.py healthcheck` validates required env vars.
 
 ## Slice 0 (skeleton)

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import List
 
 
 def _get(name: str, default: str = "") -> str:
@@ -40,7 +39,9 @@ class Settings:
     titiler_url: str = field(default_factory=lambda: _get("TITILER_URL", ""))
 
     # AOI / source defaults
-    default_source_id: str = field(default_factory=lambda: _get("DEFAULT_SOURCE_ID", "sentinel-2-l2a"))
+    default_source_id: str = field(
+        default_factory=lambda: _get("DEFAULT_SOURCE_ID", "sentinel-2-l2a")
+    )
     default_aoi_id: str = field(default_factory=lambda: _get("DEFAULT_AOI_ID", "bangalore"))
 
     # Guardrail limits (enforced in Slice 3+, surfaced here for readiness)
@@ -48,7 +49,9 @@ class Settings:
         default_factory=lambda: _get_int("USABLE_PIXEL_THRESHOLD_PERCENT", 70)
     )
     max_polygon_area_ha: int = field(default_factory=lambda: _get_int("MAX_POLYGON_AREA_HA", 50))
-    max_polygon_vertices: int = field(default_factory=lambda: _get_int("MAX_POLYGON_VERTICES", 5000))
+    max_polygon_vertices: int = field(
+        default_factory=lambda: _get_int("MAX_POLYGON_VERTICES", 5000)
+    )
     index_request_timeout_seconds: int = field(
         default_factory=lambda: _get_int("INDEX_REQUEST_TIMEOUT_SECONDS", 30)
     )
@@ -60,7 +63,7 @@ class Settings:
     )
 
     @property
-    def cors_allowed_origins(self) -> List[str]:
+    def cors_allowed_origins(self) -> list[str]:
         """Comma-separated origins. Supports CORS_ALLOWED_ORIGINS (doc name)
         and CORS_ORIGINS (Emergent template name). Defaults to '*' for the
         local skeleton preview only.

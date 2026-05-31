@@ -12,9 +12,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import urllib.request
 from pathlib import Path
-from typing import List
 
 STATEMENT_SEP = "\n--;;\n"
 
@@ -23,7 +24,7 @@ def _migrations_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "migrations"
 
 
-def _split_statements(sql: str) -> List[str]:
+def _split_statements(sql: str) -> list[str]:
     return [chunk.strip() for chunk in sql.split(STATEMENT_SEP) if chunk.strip()]
 
 
@@ -54,15 +55,35 @@ def cmd_check(_: argparse.Namespace) -> int:
         postgis = cur.fetchone()[0]
         cur.execute("SELECT to_regclass('akasha.plots') IS NOT NULL")
         plots_ok = cur.fetchone()[0]
+    minio_ok = _check_minio_liveness()
     print(f"PostGIS: {postgis}")
     print(f"akasha.plots present: {plots_ok}")
-    return 0 if plots_ok else 1
+    print(f"MinIO reachable from api: {minio_ok}")
+    return 0 if plots_ok and minio_ok else 1
+
+
+def _check_minio_liveness() -> bool:
+    endpoint = os.environ.get("S3_ENDPOINT_URL", "").rstrip("/")
+    if not endpoint:
+        print(
+            "S3_ENDPOINT_URL is not set; cannot verify API -> MinIO reachability",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        with urllib.request.urlopen(f"{endpoint}/minio/health/live", timeout=10) as resp:
+            return resp.status == 200
+    except Exception as exc:  # noqa: BLE001
+        print(f"MinIO liveness check failed: {exc}", file=sys.stderr)
+        return False
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Akasha BFF database CLI (Slice 1).")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("migrate", help="Apply app-schema SQL migrations.").set_defaults(func=cmd_migrate)
+    sub.add_parser("migrate", help="Apply app-schema SQL migrations.").set_defaults(
+        func=cmd_migrate
+    )
     sub.add_parser("check", help="Verify PostGIS + plots table.").set_defaults(func=cmd_check)
     return parser
 

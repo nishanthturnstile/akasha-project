@@ -58,7 +58,7 @@ scripts/             validate_slice0.py + smoke-test.py
 | stac-api | no | 8080 | `GET /_mgmt/ping` | `ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2` |
 | postgis | no | 5432 | `pg_isready` | `postgis/postgis:16-3.5` |
 | minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
-| ingestion-worker | no | — | CLI | `python:3.11-slim` |
+| ingestion-worker | no | — | CLI | `python:3.11.14-slim-bookworm` |
 
 ## Run locally (Docker Compose)
 
@@ -89,7 +89,8 @@ Railway / local Docker (see [`data/seed/README.md`](data/seed/README.md) and
 python -m app.cli migrate
 # 2) catalog + storage: pgSTAC migrate -> load collection/item -> MinIO (ingestion)
 python worker.py seed
-# 3) Slice 1 exit criteria: postgis_version(), STAC collection, MinIO bucket
+# 3) Slice 1 exit criteria: postgis_version(), API->MinIO liveness,
+#    STAC collection, MinIO bucket + deterministic keys
 python worker.py verify
 ```
 

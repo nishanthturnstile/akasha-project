@@ -9,13 +9,13 @@ wires health checks, exposes only the gateway publicly, and leaks no secrets.
 Run:  python scripts/validate_slice0.py
 Exit: 0 if everything passes, 1 otherwise.
 """
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
 import re
 import sys
 from pathlib import Path
-from typing import List
 
 try:
     import yaml  # type: ignore
@@ -33,7 +33,8 @@ PIN_STAC = "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2"
 PIN_POSTGIS = "postgis/postgis:16-3.5"
 PIN_MINIO = "minio/minio:RELEASE.2025-09-07T16-13-09Z"
 PIN_CADDY = "caddy:2.10-alpine"
-PIN_PY = "python:3.11-slim"
+PIN_API_PY = "python:3.11-slim"
+PIN_INGESTION_PY = "python:3.11.14-slim-bookworm"
 PIN_NODE = "node:24-alpine"
 
 EXPECTED_SERVICES = {
@@ -116,7 +117,7 @@ PLACEHOLDER_TOKENS = ("<", "CHANGE_ME", "operator-provided")
 # Hard-banned default credentials anywhere in env examples.
 BANNED_TOKENS = ["minioadmin", "postgres:postgres", "password123"]
 
-results: List[tuple] = []  # (ok: bool, message: str)
+results: list[tuple] = []  # (ok: bool, message: str)
 
 
 def check(ok: bool, msg: str) -> None:
@@ -194,8 +195,11 @@ check(dockerfile_has("services/titiler/Dockerfile", PIN_TITILER), f"titiler FROM
 check(dockerfile_has("services/stac-api/Dockerfile", PIN_STAC), f"stac-api FROM {PIN_STAC}")
 check(dockerfile_has("infra/gateway/Dockerfile", PIN_CADDY), f"gateway uses {PIN_CADDY}")
 check(dockerfile_has("infra/gateway/Dockerfile", PIN_NODE), f"gateway builds with {PIN_NODE}")
-check(dockerfile_has("apps/api/Dockerfile", PIN_PY), f"api FROM {PIN_PY}")
-check(dockerfile_has("services/ingestion/Dockerfile", PIN_PY), f"ingestion FROM {PIN_PY}")
+check(dockerfile_has("apps/api/Dockerfile", PIN_API_PY), f"api FROM {PIN_API_PY}")
+check(
+    dockerfile_has("services/ingestion/Dockerfile", PIN_INGESTION_PY),
+    f"ingestion FROM {PIN_INGESTION_PY}",
+)
 
 
 # --------------------------------------------------------------------------

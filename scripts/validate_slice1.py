@@ -10,6 +10,7 @@ tooling wiring.
 Run:  python scripts/validate_slice1.py
 Exit: 0 if everything passes, 1 otherwise.
 """
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
@@ -161,6 +162,8 @@ api_req = (REPO / "apps/api/requirements.txt").read_text()
 check("psycopg" in api_req, "api requirements include psycopg (migration CLI)")
 api_docker = (REPO / "apps/api/Dockerfile").read_text()
 check("COPY migrations" in api_docker, "api Dockerfile copies migrations/")
+api_cli = (REPO / "apps/api/app/cli.py").read_text()
+check("S3_ENDPOINT_URL" in api_cli and "minio/health/live" in api_cli, "api check verifies API -> MinIO liveness")
 
 ing_req = (REPO / "services/ingestion/requirements.txt").read_text()
 check("pypgstac" in ing_req, "ingestion requirements include pypgstac")
@@ -171,10 +174,16 @@ check("COPY data/seed" in ing_docker, "ingestion Dockerfile copies data/seed")
 compose = (REPO / "infra/docker/docker-compose.yml").read_text()
 check("context: ../.." in compose, "compose ingestion build context is repo root")
 check("AKASHA_COG_BUCKET" in compose, "compose wires AKASHA_COG_BUCKET")
+check('S3_ENDPOINT_URL: "http://minio:9000"' in compose, "compose wires S3_ENDPOINT_URL into api")
+
+storage_py = (REPO / "services/ingestion/akasha_ingest/storage.py").read_text()
+check("missing expected key" in storage_py, "MinIO verify fails if deterministic keys are missing")
 
 # --------------------------------------------------------------------------
 section("Secret hygiene (ingestion .env.example)")
 env_raw = (REPO / "services/ingestion/.env.example").read_text()
+for required in ["S3_REGION", "AKASHA_COG_BUCKET", "SEED_DATA_DIR"]:
+    check(required in env_raw, f"ingestion .env.example documents {required}")
 bad = []
 for line in env_raw.splitlines():
     line = line.strip()

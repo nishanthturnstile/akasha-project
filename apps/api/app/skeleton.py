@@ -10,9 +10,10 @@ It is intentionally pure data + tiny helpers so it can be imported by the
 live Emergent preview backend AND shipped inside the `api` container image
 identically (no filesystem dependency).
 """
+# ruff: noqa: E501
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 APP_NAME = "Akasha"
 SLICE = 0
@@ -22,14 +23,14 @@ SLICE_NAME = "Skeleton"
 # Pinned container images (engineering-dos-donts.md: pin GDAL/rasterio/
 # rio-tiler/TiTiler; do not use floating `latest` for raster services).
 # --------------------------------------------------------------------------
-PINNED_IMAGES: Dict[str, str] = {
+PINNED_IMAGES: dict[str, str] = {
     "gateway (web)": "caddy:2.10-alpine",
     "api base": "python:3.11-slim",
     "titiler": "ghcr.io/developmentseed/titiler:1.0.0",
     "stac-api": "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2",
     "postgis": "postgis/postgis:16-3.5",
     "minio": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
-    "ingestion base": "python:3.11-slim",
+    "ingestion base": "python:3.11.14-slim-bookworm",
     "frontend build": "node:24-alpine",
 }
 
@@ -38,7 +39,7 @@ PINNED_IMAGES: Dict[str, str] = {
 # publicly reachable; everything else is private (railway.internal).
 # `internalPort` is the port the service listens on inside the private network.
 # --------------------------------------------------------------------------
-SERVICES: List[Dict[str, Any]] = [
+SERVICES: list[dict[str, Any]] = [
     {
         "id": "web",
         "name": "Web Gateway",
@@ -59,7 +60,7 @@ SERVICES: List[Dict[str, Any]] = [
         "role": "App config, catalog queries, plot CRUD, index orchestration, masked statistics (later slices). Thin BFF only.",
         "public": False,
         "runtime": "Uvicorn / FastAPI",
-        "image": "python:3.11-slim",
+        "image": "python:3.11.14-slim-bookworm",
         "build": "apps/api/Dockerfile",
         "internalPort": 8000,
         "healthPath": "/health",
@@ -143,7 +144,7 @@ SERVICES: List[Dict[str, Any]] = [
 # Environment variable matrix (railway-deployment-guide.md). Placeholders only.
 # Do NOT add aliases beyond this matrix (per the deployment guide).
 # --------------------------------------------------------------------------
-ENV_MATRIX: Dict[str, Dict[str, str]] = {
+ENV_MATRIX: dict[str, dict[str, str]] = {
     "web": {
         "PUBLIC_APP_NAME": "Akasha",
         "PUBLIC_DEFAULT_AOI_NAME": "Bangalore",
@@ -157,6 +158,7 @@ ENV_MATRIX: Dict[str, Dict[str, str]] = {
         "DATABASE_URL": "postgresql://<user>:<password>@postgis.railway.internal:5432/<db>",
         "STAC_API_URL": "http://stac-api.railway.internal:8080",
         "TITILER_URL": "http://titiler.railway.internal:8000",
+        "S3_ENDPOINT_URL": "http://minio.railway.internal:9000",
         "DEFAULT_SOURCE_ID": "sentinel-2-l2a",
         "DEFAULT_AOI_ID": "bangalore",
         "USABLE_PIXEL_THRESHOLD_PERCENT": "70",
@@ -210,7 +212,7 @@ ENV_MATRIX: Dict[str, Dict[str, str]] = {
 # --------------------------------------------------------------------------
 # Slice / phase roadmap (mvp-execution-plan.md). Slice 0 is active.
 # --------------------------------------------------------------------------
-ROADMAP: List[Dict[str, str]] = [
+ROADMAP: list[dict[str, str]] = [
     {"id": "slice0", "phase": "Phase 0", "name": "Repository & service skeleton", "status": "active"},
     {"id": "slice1", "phase": "Phase 1", "name": "Database, catalog & object storage", "status": "planned"},
     {"id": "slice2", "phase": "Phase 2", "name": "Raster de-risk (tile + masked NDVI stat)", "status": "planned"},
@@ -221,7 +223,7 @@ ROADMAP: List[Dict[str, str]] = [
     {"id": "slice7", "phase": "Phase 7", "name": "Acceptance & QA", "status": "planned"},
 ]
 
-IN_SCOPE: List[str] = [
+IN_SCOPE: list[str] = [
     "Monorepo structure: apps/{frontend,api}, services/{titiler,stac-api,ingestion}, infra/{gateway,railway,docker}, docs, scripts",
     "Dockerfile per deployable service (web gateway, api, titiler, stac-api, ingestion)",
     "Local docker-compose.yml mirroring the Railway topology (private networking + volumes)",
@@ -231,7 +233,7 @@ IN_SCOPE: List[str] = [
     "Shared formatting/linting conventions (ruff/black/isort, prettier, editorconfig)",
 ]
 
-OUT_OF_SCOPE: List[str] = [
+OUT_OF_SCOPE: list[str] = [
     "Storage/catalog logic: PostGIS schema, pgSTAC migrations, MinIO bucket structure (Slice 1)",
     "Raster: COG/SCL handling, TiTiler expressions, masked statistics, index math (Slice 2)",
     "BFF product contracts: /api/config, /api/sources, /api/layers/default, plot CRUD, /api/indices/statistics (Slice 3)",
@@ -241,7 +243,7 @@ OUT_OF_SCOPE: List[str] = [
 ]
 
 
-def service_registry(live_service_id: str = "api") -> List[Dict[str, Any]]:
+def service_registry(live_service_id: str = "api") -> list[dict[str, Any]]:
     """Return the service registry with a runtime `status` overlay.
 
     Only the currently-running service (the `api` answering this request) is
@@ -249,7 +251,7 @@ def service_registry(live_service_id: str = "api") -> List[Dict[str, Any]]:
     under Docker Compose (local) or as a separate Railway service. This is
     intentionally honest: we do not fake health for services that are not up.
     """
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for svc in SERVICES:
         item = dict(svc)
         item["status"] = "live" if svc["id"] == live_service_id else "defined"

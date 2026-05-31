@@ -22,6 +22,7 @@ APP_ENV=production
 DATABASE_URL=postgresql://...
 STAC_API_URL=http://stac-api.railway.internal:8080
 TITILER_URL=http://titiler.railway.internal:8000
+S3_ENDPOINT_URL=http://minio.railway.internal:9000
 DEFAULT_SOURCE_ID=sentinel-2-l2a
 DEFAULT_AOI_ID=bangalore
 USABLE_PIXEL_THRESHOLD_PERCENT=70
@@ -83,6 +84,9 @@ STAC_API_URL=http://stac-api.railway.internal:8080
 S3_ENDPOINT_URL=http://minio.railway.internal:9000
 S3_ACCESS_KEY=<access-key>
 S3_SECRET_KEY=<secret-key>
-AOI_CONFIG_PATH=/app/config/aoi/bangalore.geojson
+S3_REGION=us-east-1
+AKASHA_COG_BUCKET=akasha-cogs
+SEED_DATA_DIR=/app/data/seed
+AOI_CONFIG_PATH=/app/data/seed/bangalore-aoi.geojson
 # CDSE_CLIENT_ID / CDSE_CLIENT_SECRET only when Wave 2 automated ingestion is built
 ```

@@ -9,7 +9,7 @@ boto3 is imported lazily so this module imports cleanly without it installed.
 """
 from __future__ import annotations
 
-from typing import List, Tuple
+from collections.abc import Sequence
 
 from . import config
 from .scene import SAMPLE_SCENE, SceneIdentity
@@ -54,10 +54,10 @@ def _object_exists(client, key: str) -> bool:
         return False
 
 
-def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> List[str]:
+def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[str]:
     """Upload operator rasters if present, else create empty key placeholders."""
     client = _client()
-    results: List[str] = []
+    results: list[str] = []
     raster_dir = config.raster_source_dir(scene.acquisition_date)
     for asset, key in (("analytic.tif", scene.analytic_key), ("scl.tif", scene.scl_key)):
         if _object_exists(client, key) and not force:
@@ -78,13 +78,28 @@ def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> List[
     return results
 
 
-def bucket_reachable() -> Tuple[bool, str]:
-    """Exit-criterion check: bucket reachable + list keys."""
+def bucket_reachable(required_keys: Sequence[str] | None = None) -> tuple[bool, str]:
+    """Exit-criterion check: bucket reachable + deterministic keys present.
+
+    Empty placeholder objects are acceptable in Slice 1, but the expected keys
+    must exist so Slice 2 can replace them with validated COGs deterministically.
+    """
     try:
         client = _client()
         client.head_bucket(Bucket=config.BUCKET)
         resp = client.list_objects_v2(Bucket=config.BUCKET, Prefix=f"{config.COLLECTION_ID}/")
         keys = [obj["Key"] for obj in resp.get("Contents", [])]
-        return True, f"bucket '{config.BUCKET}' reachable; {len(keys)} key(s) under {config.COLLECTION_ID}/"
+        expected = list(required_keys or [SAMPLE_SCENE.analytic_key, SAMPLE_SCENE.scl_key])
+        missing = [key for key in expected if key not in keys]
+        if missing:
+            return (
+                False,
+                f"bucket '{config.BUCKET}' reachable but missing expected key(s): {missing}",
+            )
+        return (
+            True,
+            f"bucket '{config.BUCKET}' reachable; expected keys present; "
+            f"{len(keys)} key(s) under {config.COLLECTION_ID}/",
+        )
     except Exception as exc:  # noqa: BLE001
         return False, f"bucket unreachable: {exc}"

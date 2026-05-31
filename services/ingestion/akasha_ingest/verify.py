@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import json
 import urllib.request
-from typing import Tuple
 
 from . import config, storage
 
 
-def check_postgis() -> Tuple[bool, str]:
+def check_postgis() -> tuple[bool, str]:
     try:
         import psycopg  # lazy
 
@@ -28,7 +27,7 @@ def check_postgis() -> Tuple[bool, str]:
         return False, f"PostGIS check failed: {exc}"
 
 
-def check_stac_collection() -> Tuple[bool, str]:
+def check_stac_collection() -> tuple[bool, str]:
     try:
         url = config.STAC_API_URL.rstrip("/") + f"/collections/{config.COLLECTION_ID}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
@@ -41,7 +40,7 @@ def check_stac_collection() -> Tuple[bool, str]:
         return False, f"STAC collection check failed: {exc}"
 
 
-def check_minio() -> Tuple[bool, str]:
+def check_minio() -> tuple[bool, str]:
     return storage.bucket_reachable()
 
 

@@ -18,13 +18,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
-from .config import settings
 from . import skeleton
+from .config import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,7 +66,7 @@ app.add_middleware(
 # Railway/Compose health checks hit `/health` directly on the api container.
 
 
-def _health_payload() -> Dict[str, Any]:
+def _health_payload() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "api",
@@ -79,7 +79,7 @@ def _health_payload() -> Dict[str, Any]:
 
 
 @app.get("/health", tags=["health"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     return _health_payload()
 
 
@@ -88,7 +88,7 @@ api_router = APIRouter(prefix="/api")
 
 
 @api_router.get("/health", tags=["health"])
-async def api_health() -> Dict[str, Any]:
+async def api_health() -> dict[str, Any]:
     """Same liveness payload, reachable through the gateway/ingress (`/api/*`)."""
     return _health_payload()
 
@@ -98,12 +98,15 @@ skeleton_router = APIRouter(prefix="/api/_skeleton", tags=["skeleton"])
 
 
 @skeleton_router.get("/services")
-async def get_services() -> Dict[str, Any]:
-    services: List[Dict[str, Any]] = skeleton.service_registry(LIVE_SERVICE_ID)
+async def get_services() -> dict[str, Any]:
+    services: list[dict[str, Any]] = skeleton.service_registry(LIVE_SERVICE_ID)
     return {
         "app": skeleton.APP_NAME,
         "slice": skeleton.SLICE,
-        "publicRule": "Only the `web` gateway is publicly reachable; /api/* and /tiles/* are proxied same-origin to internal services.",
+        "publicRule": (
+            "Only the `web` gateway is publicly reachable; /api/* and /tiles/* "
+            "are proxied same-origin to internal services."
+        ),
         "liveServiceId": LIVE_SERVICE_ID,
         "count": len(services),
         "services": services,
@@ -111,14 +114,17 @@ async def get_services() -> Dict[str, Any]:
 
 
 @skeleton_router.get("/env-matrix")
-async def get_env_matrix() -> Dict[str, Any]:
+async def get_env_matrix() -> dict[str, Any]:
     return {
-        "note": "Placeholders only. Do not add aliases beyond this matrix (railway-deployment-guide.md).",
+        "note": (
+            "Placeholders only. Do not add aliases beyond this matrix "
+            "(railway-deployment-guide.md)."
+        ),
         "services": skeleton.ENV_MATRIX,
     }
 
 
-def _find_repo_root() -> Optional[Path]:
+def _find_repo_root() -> Path | None:
     """Walk up from this file looking for the monorepo root.
 
     The root is identified by containing both `docs/` and `apps/`. Returns None
@@ -139,15 +145,15 @@ def _find_repo_root() -> Optional[Path]:
     return None
 
 
-def _repo_tree(root: Path) -> Dict[str, Any]:
+def _repo_tree(root: Path) -> dict[str, Any]:
     """Shallow, bounded tree (2 levels) of the monorepo for the dashboard."""
     top = ["apps", "services", "infra", "docs", "scripts"]
-    tree: Dict[str, Any] = {}
+    tree: dict[str, Any] = {}
     for name in top:
         d = root / name
         if not d.is_dir():
             continue
-        children: List[str] = []
+        children: list[str] = []
         try:
             for child in sorted(d.iterdir()):
                 if child.name.startswith("."):
@@ -160,7 +166,7 @@ def _repo_tree(root: Path) -> Dict[str, Any]:
 
 
 @skeleton_router.get("/manifest")
-async def get_manifest() -> Dict[str, Any]:
+async def get_manifest() -> dict[str, Any]:
     root = _find_repo_root()
     repo_tree = _repo_tree(root) if root else None
     return {

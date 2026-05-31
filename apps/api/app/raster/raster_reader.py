@@ -19,7 +19,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import raster_backend_unavailable
+from .errors import AkashaError, raster_backend_unavailable, upstream_error
 
 
 @dataclass
@@ -51,7 +51,9 @@ def gdal_s3_options() -> dict[str, str]:
         "AWS_HTTPS": os.environ.get("AWS_HTTPS", "NO"),
     }
     # Endpoint + creds (support both GDAL-style and Akasha-style var names).
-    endpoint = os.environ.get("AWS_S3_ENDPOINT") or _strip_scheme(os.environ.get("S3_ENDPOINT_URL", ""))
+    endpoint = os.environ.get("AWS_S3_ENDPOINT") or _strip_scheme(
+        os.environ.get("S3_ENDPOINT_URL", "")
+    )
     if endpoint:
         opts["AWS_S3_ENDPOINT"] = endpoint
     access = os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("S3_ACCESS_KEY", "")
@@ -114,6 +116,10 @@ def read_index_windows(
     try:
         with rasterio.Env(**env_opts):
             with rasterio.open(a_path) as a_ds:
+                analytic_crs = a_ds.crs
+                analytic_transform = a_ds.transform
+                analytic_width = a_ds.width
+                analytic_height = a_ds.height
                 geom_ds = transform_geom("EPSG:4326", a_ds.crs, geometry)
                 minx, miny, maxx, maxy = feature_bounds(geom_ds)
                 inv = ~a_ds.transform
@@ -137,15 +143,29 @@ def read_index_windows(
                     [geom_ds], out_shape=(height, width), transform=wt, invert=True
                 )
             with rasterio.open(s_path) as s_ds:
+                if (
+                    s_ds.crs != analytic_crs
+                    or s_ds.transform != analytic_transform
+                    or s_ds.width != analytic_width
+                    or s_ds.height != analytic_height
+                ):
+                    raise upstream_error(
+                        "Analytic and SCL rasters are not on the same pixel grid.",
+                        code="RASTER_GRID_MISMATCH",
+                        analyticCrs=str(analytic_crs),
+                        sclCrs=str(s_ds.crs),
+                        analyticShape=[analytic_height, analytic_width],
+                        sclShape=[s_ds.height, s_ds.width],
+                    )
                 scl = s_ds.read(1, window=Window(col_off, row_off, width, height))
+    except AkashaError:
+        raise
     except Exception as exc:  # noqa: BLE001
         # rasterio raises RasterioIOError (and friends) when MinIO/COGs are
         # unreachable — the expected Emergent-preview state.
         raise raster_backend_unavailable(
             "Could not read COG window from object storage.",
             reason=str(exc),
-            analytic=analytic_href,
-            scl=scl_href,
         ) from exc
 
     # Ensure SCL matches the analytic window shape (defensive).

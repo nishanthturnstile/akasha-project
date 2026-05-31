@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -120,10 +121,16 @@ for mod in [
 
 from app.raster import indices  # noqa: E402
 
-check(set(indices.INDEX_REGISTRY) == {"NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"}, "4 supported indices")
+check(
+    set(indices.INDEX_REGISTRY) == {"NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"},
+    "4 supported indices",
+)
 ndvi = indices.get_index("NDVI")
 check(ndvi.band_a == "B08" and ndvi.band_b == "B04", "NDVI = (B08 - B04)/(B08 + B04)")
-check(indices.rgb_band_positions(indices.FROZEN_ANALYTIC_BANDS) == [1, 8, 9], "RGB positions [1,8,9]")
+check(
+    indices.rgb_band_positions(indices.FROZEN_ANALYTIC_BANDS) == [1, 8, 9],
+    "RGB positions [1,8,9]",
+)
 check(indices.DEFAULT_SCALE == 0.0001 and indices.DEFAULT_OFFSET == -0.1, "default scale/offset")
 check(
     indices.DEFAULT_EXCLUDED_SCL_CLASSES == (0, 1, 2, 3, 7, 8, 9, 10, 11),
@@ -132,7 +139,7 @@ check(
 
 # ---------------------------------------------------------------- numeric de-risk
 section("Statistics engine numeric de-risk (pure numpy)")
-import numpy as np  # noqa: E402
+import numpy as np  # noqa: E402,I001
 
 from app.raster.statistics_core import compute_index_statistics  # noqa: E402
 
@@ -160,7 +167,7 @@ check(abs(0.5 - no_off) > 0.1, f"offset materially changes NDVI (no-offset={roun
 # ---------------------------------------------------------------- endpoints
 section("Product endpoints (in-process TestClient)")
 try:
-    from fastapi.testclient import TestClient
+    from fastapi.testclient import TestClient  # noqa: I001
 
     from app.main import app
 
@@ -219,15 +226,27 @@ section("Dependencies & infrastructure")
 reqs = read("apps/api/requirements.txt")
 for dep in ["rasterio", "rio-tiler", "shapely", "pyproj", "numpy"]:
     check(dep in reqs, f"apps/api/requirements.txt declares {dep}")
-check("libexpat1" in read("apps/api/Dockerfile"), "api Dockerfile installs libexpat1 (GDAL runtime)")
+check(
+    "libexpat1" in read("apps/api/Dockerfile"),
+    "api Dockerfile installs libexpat1 (GDAL runtime)",
+)
 compose = read("infra/docker/docker-compose.yml")
-check('PORT: "8000"' in compose, "docker-compose titiler PORT=8000 (image defaults to 80 otherwise)")
+check(
+    'PORT: "8000"' in compose,
+    "docker-compose titiler PORT=8000 (image defaults to 80 otherwise)",
+)
 check("AWS_ACCESS_KEY_ID:" in compose, "docker-compose api has AWS_ACCESS_KEY_ID")
 check("AWS_S3_ENDPOINT:" in compose, "docker-compose api has AWS_S3_ENDPOINT")
-check("GDAL_DISABLE_READDIR_ON_OPEN:" in compose, "docker-compose api has GDAL_DISABLE_READDIR_ON_OPEN")
+check(
+    "GDAL_DISABLE_READDIR_ON_OPEN:" in compose,
+    "docker-compose api has GDAL_DISABLE_READDIR_ON_OPEN",
+)
 check("PORT=8000" in read("services/titiler/.env.example"), "titiler .env.example PORT=8000")
 api_env = read("apps/api/.env.example")
-check("AWS_ACCESS_KEY_ID=" in api_env and "AKASHA_RGB_RESCALE=" in api_env, "api .env.example S3/RGB vars")
+check(
+    "AWS_ACCESS_KEY_ID=" in api_env and "AKASHA_RGB_RESCALE=" in api_env,
+    "api .env.example S3/RGB vars",
+)
 check("AWS_S3_ENDPOINT" in read("infra/railway/ENV_MATRIX.md"), "ENV_MATRIX api S3 vars")
 
 # ---------------------------------------------------------------- storage Phase 2
@@ -240,19 +259,20 @@ check(hasattr(verify, "run_phase2"), "verify.run_phase2 exists")
 worker_src = read("services/ingestion/worker.py")
 check("verify-cogs" in worker_src, "worker.py exposes verify-cogs command")
 storage_src = read("services/ingestion/akasha_ingest/storage.py")
-check('"akasha-placeholder": "false"' in storage_src, "seed_keys tags real uploads (placeholder=false)")
+check(
+    '"akasha-placeholder": "false"' in storage_src,
+    "seed_keys tags real uploads (placeholder=false)",
+)
 
 # ---------------------------------------------------------------- synthetic E2E
 section("Synthetic dual-COG E2E (rasterio)")
 try:
-    import rasterio  # noqa: F401
+    import rasterio  # noqa: F401,I001
     from pyproj import Transformer
     from rasterio.transform import from_origin
 
     from app.raster import catalog_resolver as catalog
     from app.raster.service import compute_statistics
-
-    import tempfile
 
     tmp = Path(tempfile.mkdtemp())
     crs = "EPSG:32643"
@@ -287,7 +307,10 @@ try:
         geometry=poly, source_id="sentinel-2-l2a", acquisition_date="2025-09-14",
         index_type="NDVI", max_area_ha=50, max_vertices=5000,
     )
-    check(abs(resp["statistics"]["mean"] - 0.5) < 1e-6, f"synthetic E2E NDVI mean 0.5 [{resp['statistics']['mean']}]")
+    check(
+        abs(resp["statistics"]["mean"] - 0.5) < 1e-6,
+        f"synthetic E2E NDVI mean 0.5 [{resp['statistics']['mean']}]",
+    )
     check(resp["pixelCounts"]["validPixels"] > 0, "synthetic E2E has valid pixels")
     check(resp["statistics"]["validPixelPercent"] == 100.0, "synthetic E2E validPixelPercent 100")
 except ImportError:

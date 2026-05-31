@@ -19,16 +19,19 @@ Design notes:
 """
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 from typing import Any
 
-from fastapi import APIRouter, Body
+import anyio
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import Response
 
 from .config import settings
 from .raster import catalog_resolver as catalog
 from .raster import tiles
-from .raster.errors import bad_request
+from .raster.errors import bad_request, index_timeout, rate_limited, upstream_error
 from .raster.indices import DEFAULT_INDEX, SUPPORTED_INDICES, rgb_band_positions
 from .raster.models import StatisticsRequest
 from .raster.service import compute_statistics
@@ -45,10 +48,35 @@ _AOI = {
     "bounds": [77.4, 12.8, 77.8, 13.2],
 }
 _ATTRIBUTION = "Copernicus Sentinel-2"
+_RATE_BUCKETS: dict[str, list[float]] = {}
 
 
 def _basemap_style_url() -> str:
     return os.environ.get("VITE_BASEMAP_STYLE_URL") or os.environ.get("BASEMAP_STYLE_URL", "")
+
+
+def _client_id(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+    if forwarded:
+        return forwarded
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_index_rate_limit(request: Request) -> None:
+    limit = settings.rate_limit_index_per_minute
+    if limit <= 0:
+        return
+    now = time.monotonic()
+    cutoff = now - 60.0
+    client_id = _client_id(request)
+    hits = [ts for ts in _RATE_BUCKETS.get(client_id, []) if ts >= cutoff]
+    if len(hits) >= limit:
+        raise rate_limited(
+            "Too many index-statistics requests. Please retry later.",
+            limitPerMinute=limit,
+        )
+    hits.append(now)
+    _RATE_BUCKETS[client_id] = hits
 
 
 @router.get("/config")
@@ -92,7 +120,9 @@ async def get_default_layer() -> dict[str, Any]:
     source_id = catalog.COLLECTION_ID
     item = catalog.latest_item(source_id)
     props = item.get("properties", {})
-    acquisition_date = props.get("akasha:acquisition_date") or (props.get("datetime", "") or "")[:10]
+    acquisition_date = props.get("akasha:acquisition_date") or (
+        props.get("datetime", "") or ""
+    )[:10]
     return {
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
@@ -119,7 +149,15 @@ async def get_rgb_tile(
     the browser. Raises AkashaError (502/503) if TiTiler/MinIO is unavailable.
     """
     assets = catalog.resolve_assets(source_id, acquisition_date)
-    positions = rgb_band_positions(assets["bandNames"])
+    try:
+        positions = rgb_band_positions(assets["bandNames"])
+    except KeyError as exc:
+        raise upstream_error(
+            "STAC analytic asset is missing a required true-colour RGB band.",
+            code="MISSING_RGB_BANDS",
+            missingBand=str(exc).strip("'"),
+            availableBands=assets.get("bandNames", []),
+        ) from exc
     url = tiles.build_rgb_tile_url(
         analytic_href=assets["analyticHref"],
         rgb_positions=positions,
@@ -127,12 +165,14 @@ async def get_rgb_tile(
         x=x,
         y=y,
     )
-    body, content_type = tiles.fetch_tile(url)
+    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
 
 
 @router.post("/indices/statistics")
-async def post_index_statistics(payload: StatisticsRequest = Body(...)) -> dict[str, Any]:
+async def post_index_statistics(
+    request: Request, payload: StatisticsRequest = Body(...)
+) -> dict[str, Any]:
     """Compute cloud/SCL-masked, offset-corrected index statistics in the BFF.
 
     Reads the analytic + SCL COG windows for the request polygon via rasterio,
@@ -142,11 +182,25 @@ async def post_index_statistics(payload: StatisticsRequest = Body(...)) -> dict[
     geometry = payload.geometry.model_dump()
     if not payload.sourceId:
         raise bad_request("sourceId is required.", code="MISSING_SOURCE")
-    return compute_statistics(
-        geometry=geometry,
-        source_id=payload.sourceId,
-        acquisition_date=payload.acquisitionDate,
-        index_type=payload.indexType or DEFAULT_INDEX,
-        max_area_ha=settings.max_polygon_area_ha,
-        max_vertices=settings.max_polygon_vertices,
-    )
+    _enforce_index_rate_limit(request)
+
+    def _compute() -> dict[str, Any]:
+        return compute_statistics(
+            geometry=geometry,
+            source_id=payload.sourceId,
+            acquisition_date=payload.acquisitionDate,
+            index_type=payload.indexType or DEFAULT_INDEX,
+            max_area_ha=settings.max_polygon_area_ha,
+            max_vertices=settings.max_polygon_vertices,
+        )
+
+    try:
+        return await asyncio.wait_for(
+            anyio.to_thread.run_sync(_compute),
+            timeout=settings.index_request_timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise index_timeout(
+            "Index-statistics request exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+            timeoutSeconds=settings.index_request_timeout_seconds,
+        ) from exc

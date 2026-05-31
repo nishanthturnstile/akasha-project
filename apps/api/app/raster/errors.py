@@ -56,6 +56,14 @@ def upstream_error(message: str, code: str = "UPSTREAM_ERROR", **details: Any) -
     return AkashaError(code, message, 502, details or None)
 
 
+def rate_limited(message: str, **details: Any) -> AkashaError:
+    return AkashaError("RATE_LIMITED", message, 429, details or None)
+
+
+def index_timeout(message: str, **details: Any) -> AkashaError:
+    return AkashaError("INDEX_TIMEOUT", message, 504, details or None)
+
+
 def raster_backend_unavailable(message: str, **details: Any) -> AkashaError:
     """503: COG/MinIO/TiTiler backend not reachable from this environment.
 

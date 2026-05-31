@@ -25,7 +25,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from . import skeleton
@@ -68,6 +69,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def enforce_max_request_body(request: Request, call_next):
+    """Reject oversized JSON bodies before raster/stat work starts."""
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > settings.max_request_body_bytes:
+        return JSONResponse(
+            status_code=413,
+            content={
+                "error": {
+                    "code": "REQUEST_TOO_LARGE",
+                    "message": "Request body exceeds MAX_REQUEST_BODY_BYTES.",
+                    "details": {"maxRequestBodyBytes": settings.max_request_body_bytes},
+                }
+            },
+        )
+    return await call_next(request)
 
 # --- Health (root) ---------------------------------------------------------
 # Railway/Compose health checks hit `/health` directly on the api container.

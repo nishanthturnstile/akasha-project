@@ -68,6 +68,65 @@ def object_status(client, key: str) -> dict:
     return {"key": key, "exists": True, "size": size, "placeholder": placeholder}
 
 
+def _strip_scheme(url: str) -> str:
+    return url.split("://", 1)[-1] if "://" in url else url
+
+
+def _gdal_s3_options() -> dict[str, str]:
+    endpoint = _strip_scheme(config.S3_ENDPOINT_URL)
+    opts = {
+        "AWS_ACCESS_KEY_ID": config.S3_ACCESS_KEY,
+        "AWS_SECRET_ACCESS_KEY": config.S3_SECRET_KEY,
+        "AWS_REGION": config.S3_REGION,
+        "AWS_VIRTUAL_HOSTING": "FALSE",
+        "AWS_HTTPS": "NO",
+        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+        "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
+    }
+    if endpoint:
+        opts["AWS_S3_ENDPOINT"] = endpoint
+    return {key: value for key, value in opts.items() if value}
+
+
+def _verify_cog_metadata(scene: SceneIdentity) -> tuple[bool, str]:
+    """Open analytic+SCL via rasterio and verify basic COG/grid contracts."""
+    try:
+        import rasterio  # lazy
+
+        analytic_path = f"/vsis3/{config.BUCKET}/{scene.analytic_key}"
+        scl_path = f"/vsis3/{config.BUCKET}/{scene.scl_key}"
+        with rasterio.Env(**_gdal_s3_options()):
+            with rasterio.open(analytic_path) as analytic, rasterio.open(scl_path) as scl:
+                problems: list[str] = []
+                if analytic.count != 9:
+                    problems.append(f"analytic band count {analytic.count} != 9")
+                if scl.count != 1:
+                    problems.append(f"SCL band count {scl.count} != 1")
+                if analytic.crs != scl.crs:
+                    problems.append(f"CRS mismatch analytic={analytic.crs} scl={scl.crs}")
+                if analytic.transform != scl.transform:
+                    problems.append("transform mismatch")
+                if (analytic.width, analytic.height) != (scl.width, scl.height):
+                    problems.append(
+                        "shape mismatch "
+                        f"analytic={analytic.width}x{analytic.height} "
+                        f"scl={scl.width}x{scl.height}"
+                    )
+                if not analytic.overviews(1):
+                    problems.append("analytic COG has no band-1 overviews")
+                if not scl.overviews(1):
+                    problems.append("SCL COG has no band-1 overviews")
+                if problems:
+                    return False, "; ".join(problems)
+                return (
+                    True,
+                    "rasterio metadata OK: analytic=9 bands, SCL=1 band, "
+                    "aligned grid, overviews present",
+                )
+    except Exception as exc:  # noqa: BLE001
+        return False, f"rasterio COG metadata check failed: {exc}"
+
+
 def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[str]:
     """Upload operator rasters if present, else create empty key placeholders.
 
@@ -130,7 +189,10 @@ def verify_real_cogs(scene: SceneIdentity = SAMPLE_SCENE) -> tuple[bool, str]:
                 sizes.append(f"{key}={st['size']:,}B")
         if problems:
             return False, "real COG check failed -> " + "; ".join(problems)
-        return True, "real COGs present (non-empty): " + ", ".join(sizes)
+        meta_ok, meta_detail = _verify_cog_metadata(scene)
+        if not meta_ok:
+            return False, "real COG metadata check failed -> " + meta_detail
+        return True, "real COGs present (non-empty + valid metadata): " + ", ".join(sizes)
     except Exception as exc:  # noqa: BLE001
         return False, f"real COG check error: {exc}"
 

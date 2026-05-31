@@ -220,7 +220,7 @@ def test_statistics_unsupported_index_returns_400_error_shape():
 def test_synthetic_dual_cog_statistics_end_to_end(tmp_path, monkeypatch):
     rasterio = pytest.importorskip("rasterio")
     pytest.importorskip("pyproj")
-    from pyproj import Transformer
+    from pyproj import Transformer  # noqa: I001
     from rasterio.transform import from_origin
 
     from app.raster import catalog_resolver as catalog

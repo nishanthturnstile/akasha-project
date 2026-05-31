@@ -184,7 +184,9 @@ def supported_indices(source_id: str = COLLECTION_ID) -> list[str]:
         coll = get_collection(source_id)
     except Exception:  # noqa: BLE001
         coll = {}
-    return coll.get("akasha:supported_indices") or SUPPORTED_INDICES
+    advertised = coll.get("akasha:supported_indices") or SUPPORTED_INDICES
+    supported = [idx for idx in advertised if idx in SUPPORTED_INDICES]
+    return supported or SUPPORTED_INDICES
 
 
 def default_index(source_id: str = COLLECTION_ID) -> str:

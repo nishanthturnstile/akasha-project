@@ -33,7 +33,7 @@ PIN_STAC = "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2"
 PIN_POSTGIS = "postgis/postgis:16-3.5"
 PIN_MINIO = "minio/minio:RELEASE.2025-09-07T16-13-09Z"
 PIN_CADDY = "caddy:2.10-alpine"
-PIN_API_PY = "python:3.11-slim"
+PIN_API_PY = "python:3.11.14-slim-bookworm"
 PIN_INGESTION_PY = "python:3.11.14-slim-bookworm"
 PIN_NODE = "node:24-alpine"
 

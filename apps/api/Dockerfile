@@ -1,6 +1,6 @@
 # Akasha BFF (api) — image.
 # Thin FastAPI orchestration layer. Private service (never public).
-FROM python:3.11-slim
+FROM python:3.11.14-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -11,8 +11,8 @@ psycopg[binary]>=3.2,<4
 # math; shapely/pyproj validate geometry + compute area. rio-tiler is available
 # for raster helpers. All imported LAZILY in app.raster.* so importing app.main
 # (the live preview) never requires these geospatial wheels.
-numpy>=1.26,<3
-rasterio>=1.4.3,<1.5
-rio-tiler>=7.0,<10
-shapely>=2.0,<3
-pyproj>=3.6,<4
+numpy==2.4.6
+rasterio==1.4.3
+rio-tiler==9.0.6
+shapely==2.1.2
+pyproj==3.7.2

@@ -12,8 +12,9 @@ clean 502/503 and this script reports the step as BLOCKED (not a failure), so
 the contract is exercised end-to-end without fabricating raster data.
 
 Usage:
-    python scripts/smoke-test.py [BASE_URL]
+    python scripts/smoke-test.py [BASE_URL] [--require-raster]
     BASE_URL env var also supported. Default: http://localhost:8080
+    --require-raster (or REQUIRE_RASTER=1) turns BLOCKED tile/stat checks into failures.
 """
 from __future__ import annotations
 
@@ -23,7 +24,9 @@ import sys
 import urllib.request
 from urllib.error import HTTPError, URLError
 
-BASE = (len(sys.argv) > 1 and sys.argv[1]) or os.environ.get("BASE_URL", "http://localhost:8080")
+ARGS = [arg for arg in sys.argv[1:] if arg != "--require-raster"]
+REQUIRE_RASTER = "--require-raster" in sys.argv[1:] or os.environ.get("REQUIRE_RASTER") == "1"
+BASE = (ARGS[0] if ARGS else None) or os.environ.get("BASE_URL", "http://localhost:8080")
 BASE = BASE.rstrip("/")
 
 passed = failed = blocked = 0
@@ -95,8 +98,18 @@ def check_allow_blocked(
             code = json.loads(payload).get("error", {}).get("code", "")
         except Exception:  # noqa: BLE001
             pass
-        print(f"  [-] BLOCKED {name}: {path} -> HTTP {status} {code} (needs real COGs/MinIO/TiTiler)")
-        blocked += 1
+        if REQUIRE_RASTER:
+            print(
+                f"  [x] {name}: {path} -> HTTP {status} {code} "
+                "(raster required; needs real COGs/MinIO/TiTiler)"
+            )
+            failed += 1
+        else:
+            print(
+                f"  [-] BLOCKED {name}: {path} -> HTTP {status} {code} "
+                "(needs real COGs/MinIO/TiTiler)"
+            )
+            blocked += 1
     else:
         print(f"  [x] {name}: {path} -> HTTP {status}")
         failed += 1

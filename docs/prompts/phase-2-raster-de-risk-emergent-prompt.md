@@ -179,9 +179,44 @@ sentinel-2-l2a/2025-09-14/analytic.tif
 sentinel-2-l2a/2025-09-14/scl.tif
 ```
 
+## Raster artifact availability model
+
+Large raster artifacts are intentionally **not** checked into git and will not be
+available in normal Railway builds.
+
+Treat the paths as different lifecycle stages:
+
+| Stage | Path | Git? | Runtime source of truth? | Purpose |
+|---|---|---:|---:|---|
+| Raw SAFE ZIP | `data/raw/sentinel-2-l2a/...SAFE.zip` | No | No | Local/operator reproducible source download |
+| Local generated COG staging | `data/seed/rasters/2025-09-14/*.tif` | No | No, except during local seed/upload | Local operator-produced COGs used by `worker.py seed --force` |
+| Runtime COGs | `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/*.tif` | No | Yes | MinIO/S3 assets read by TiTiler and the BFF |
+
+For local development, if `data/seed/rasters/2025-09-14/analytic.tif` and
+`data/seed/rasters/2025-09-14/scl.tif` exist, ingestion can upload them to MinIO.
+
+For Emergent or Railway builds, do **not** assume these local files exist. Code
+must be written so runtime uses STAC asset hrefs/object-storage keys. If local
+COGs are missing during validation, report runtime tile/stat validation as
+blocked and point to `docs/sentinel-2-l2a-cog-prep-runbook.md` or an operator
+upload step. Do not replace missing COGs with fake committed files.
+
+For Railway specifically, use one of these deployment/operator flows before the
+Phase 2 smoke test:
+
+1. Preferred MVP path: upload the validated COGs to the Railway MinIO volume or
+  compatible object storage at the object keys above, then seed/register STAC
+  metadata pointing to those keys.
+2. Acceptable local-dev path only: mount/use `data/seed/rasters/...` and run
+  `worker.py seed --force` to upload real COGs into local MinIO.
+3. Avoid for now: downloading the SAFE ZIP and generating COGs inside Railway;
+  this is CPU/disk heavy and requires CDSE credentials at runtime.
+
 ## Important constraints
 
 - Do not commit or copy large raster files into git.
+- Do not make application runtime depend on `data/raw/`, `data/work/`, or local
+  `data/seed/rasters/` paths. Runtime must resolve COGs from STAC/MinIO/S3.
 - Do not commit `.env` or secrets.
 - Do not rely on deleted/obsolete `data/sentinel-2-global-mosaics` data.
 - Do not use `sentinel-2-global-mosaics` for Phase 2 analytic/SCL work.
@@ -379,6 +414,10 @@ Update relevant docs after implementation:
 
 Start from repo root.
 
+These commands assume the ignored local COG staging files exist. If they do not,
+do not fabricate them; either run the runbook locally or report the runtime
+validation portion as blocked on operator-provided raster artifacts.
+
 Build raster/API images after dependency changes:
 
 ```bash
@@ -462,6 +501,11 @@ docker compose -f infra/docker/docker-compose.yml stop
 - Phase 2 validation/smoke command is documented and passes locally.
 - No secrets or large rasters are committed.
 - Existing Slice 0/1 checks are not broken.
+
+If Emergent cannot access ignored raster files, it should still implement the
+code/docs/static validation pieces and explicitly mark only the runtime
+tile/stat smoke checks as blocked on operator COG upload. It should not downgrade
+the requirements or create fake raster assets.
 
 ## Out of scope
 

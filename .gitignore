@@ -31,6 +31,9 @@ logs/
 
 # ---- Local data volumes ----
 infra/docker/data/
+data/raw/
+data/work/
+*.part
 *.local
 
 # ---- Misc ----

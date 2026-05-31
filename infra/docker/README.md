@@ -28,7 +28,7 @@ curl http://localhost:8080/api/_skeleton/services
 | web (Caddy + SPA) | yes (`${WEB_PORT}`) | 80 | `GET /health` | — |
 | api (FastAPI BFF) | no | 8000 | `GET /health` | — |
 | titiler | no | 8000 | `GET /healthz` | — |
-| stac-api | no | 8080 | `GET /_mgmt/health` | — |
+| stac-api | no | 8080 | `GET /_mgmt/ping` | — |
 | postgis | no | 5432 | `pg_isready` | `postgis_data` |
 | minio | no | 9000/9001 | `/minio/health/live` | `minio_data` |
 | ingestion-worker | no | — | one-shot CLI | — |

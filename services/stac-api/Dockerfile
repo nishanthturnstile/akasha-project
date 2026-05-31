@@ -3,7 +3,7 @@
 # Catalog collections/items, date/source discovery, asset metadata.
 # Backed by pgSTAC in the PostGIS service.
 #
-# Health endpoint: GET /_mgmt/health (built into stac-fastapi).
+# Health endpoint: GET /_mgmt/ping (built into stac-fastapi-pgstac 5.0.2).
 FROM ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2
 
 # stac-fastapi reads its bind host/port from APP_HOST/APP_PORT. Pin to 8080 to

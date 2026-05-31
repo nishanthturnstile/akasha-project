@@ -31,10 +31,10 @@ REPO = Path(__file__).resolve().parents[1]
 PIN_TITILER = "ghcr.io/developmentseed/titiler:1.0.0"
 PIN_STAC = "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2"
 PIN_POSTGIS = "postgis/postgis:16-3.5"
-PIN_MINIO = "minio/minio:RELEASE.2025-10-15T17-29-55Z"
-PIN_CADDY = "caddy:2.8-alpine"
+PIN_MINIO = "minio/minio:RELEASE.2025-09-07T16-13-09Z"
+PIN_CADDY = "caddy:2.10-alpine"
 PIN_PY = "python:3.11-slim"
-PIN_NODE = "node:20-alpine"
+PIN_NODE = "node:24-alpine"
 
 EXPECTED_SERVICES = {
     "web",
@@ -206,7 +206,7 @@ RAILWAY_EXPECT = {
     "railway.json": ("/health", "infra/gateway/Dockerfile"),
     "apps/api/railway.json": ("/health", "Dockerfile"),
     "services/titiler/railway.json": ("/healthz", "Dockerfile"),
-    "services/stac-api/railway.json": ("/_mgmt/health", "Dockerfile"),
+    "services/stac-api/railway.json": ("/_mgmt/ping", "Dockerfile"),
 }
 for rel, (hc, dockerfile) in RAILWAY_EXPECT.items():
     p = REPO / rel

@@ -10,7 +10,7 @@
   - Gateway: `GET /health` (inside the `web` service)
   - API: `GET /health` (container/railway health) and `GET /api/health` (same-origin gateway/ingress)
   - TiTiler: `GET /healthz`
-  - STAC API: `GET /_mgmt/health`
+  - STAC API: `GET /_mgmt/ping`
 - Provide a polished **LIVE Emergent “Service Skeleton Status Dashboard”** (existing CRA frontend) backed by the API skeleton endpoints (`/api/_skeleton/*`).
 - Validate Slice 0 artifacts via **parse/lint + file/contract checks** (since Emergent has no Docker daemon). Runtime validation is deferred to **Railway / local Docker**.
 
@@ -67,7 +67,7 @@ Steps (COMPLETED):
     - `/api/*` → reverse-proxy to `api`
     - `/tiles/*` → reverse-proxy to `titiler`
     - `/*` → static SPA + history fallback
-  - `infra/gateway/Dockerfile` (multi-stage): build `apps/frontend` → serve via `caddy:2.8-alpine`.
+  - `infra/gateway/Dockerfile` (multi-stage): build `apps/frontend` → serve via `caddy:2.10-alpine`.
 - ✅ **apps/frontend (Railway-deployable skeleton; NOT the live preview)**
   - Vite + React + TypeScript placeholder landing page.
   - Proves same-origin contract by fetching `/api/_skeleton/services`.
@@ -80,14 +80,14 @@ Steps (COMPLETED):
   - Health path documented/used: `/healthz`.
 - ✅ **services/stac-api**
   - Dockerfile pinned to `ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2`.
-  - Health path documented/used: `/_mgmt/health`.
+  - Health path documented/used: `/_mgmt/ping`.
 - ✅ **services/ingestion**
   - Worker CLI (no public HTTP surface).
   - Slice 0: `info` and `healthcheck`.
 - ✅ **postgis + minio**
   - Compose uses pinned images:
     - `postgis/postgis:16-3.5` health = `pg_isready`.
-    - `minio/minio:RELEASE.2025-10-15T17-29-55Z` health = `/minio/health/live`.
+    - `minio/minio:RELEASE.2025-09-07T16-13-09Z` health = `/minio/health/live`.
   - Persistent volumes: `postgis_data`, `minio_data`.
   - `MINIO_BROWSER=off`.
 - ✅ **infra/docker**

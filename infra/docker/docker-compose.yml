@@ -81,11 +81,12 @@ services:
     restart: unless-stopped
 
   titiler:
-    build:
-      context: ../../services/titiler
-      dockerfile: Dockerfile
-    image: akasha-titiler:slice0
+    # Local Compose uses the pinned upstream image directly because the
+    # Slice 0 Dockerfile is a no-op wrapper. Railway still builds the service
+    # from services/titiler/Dockerfile.
+    image: ghcr.io/developmentseed/titiler:1.0.0
     environment:
+      PORT: "8000"
       AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
       AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
       AWS_S3_ENDPOINT: "minio:9000"
@@ -112,10 +113,10 @@ services:
     restart: unless-stopped
 
   stac-api:
-    build:
-      context: ../../services/stac-api
-      dockerfile: Dockerfile
-    image: akasha-stac-api:slice0
+    # Local Compose uses the pinned upstream image directly because the
+    # Slice 0 Dockerfile is a no-op wrapper. Railway still builds the service
+    # from services/stac-api/Dockerfile.
+    image: ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2
     environment:
       POSTGRES_HOST_READER: "postgis"
       POSTGRES_HOST_WRITER: "postgis"
@@ -135,7 +136,7 @@ services:
         - "CMD"
         - "python"
         - "-c"
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/_mgmt/health').status==200 else 1)"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/_mgmt/ping').status==200 else 1)"
       interval: 30s
       timeout: 5s
       retries: 5
@@ -161,7 +162,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:RELEASE.2025-10-15T17-29-55Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
@@ -175,7 +176,11 @@ services:
     healthcheck:
       # Liveness via the documented endpoint. If your MinIO image lacks curl,
       # switch to: ["CMD", "mc", "ready", "local"].
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -197,6 +202,10 @@ services:
       AKASHA_COG_BUCKET: "akasha-cogs"
       SEED_DATA_DIR: "/app/data/seed"
       AOI_CONFIG_PATH: "/app/data/seed/bangalore-aoi.geojson"
+    volumes:
+      # Local Slice 2 raster prep needs ignored raw SAFE ZIPs and writes ignored COGs.
+      - ../../data:/app/data
+      - ../../scripts:/app/scripts:ro
     depends_on:
       postgis:
         condition: service_healthy

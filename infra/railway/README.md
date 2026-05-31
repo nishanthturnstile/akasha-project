@@ -11,9 +11,9 @@ single production appliance.
 | `web` | repo root | `/railway.json` | `infra/gateway/Dockerfile` | `/health` | **yes** | no |
 | `api` | `apps/api` | `apps/api/railway.json` | `Dockerfile` | `/health` | no | no |
 | `titiler` | `services/titiler` | `services/titiler/railway.json` | `Dockerfile` | `/healthz` | no | no |
-| `stac-api` | `services/stac-api` | `services/stac-api/railway.json` | `Dockerfile` | `/_mgmt/health` | no | no |
+| `stac-api` | `services/stac-api` | `services/stac-api/railway.json` | `Dockerfile` | `/_mgmt/ping` | no | no |
 | `postgis` | image-based | — | `postgis/postgis:16-3.5` | `pg_isready` | no | **yes** |
-| `minio` | image-based | — | `minio/minio:RELEASE.2025-10-15T17-29-55Z` | `/minio/health/live` | no | **yes** |
+| `minio` | image-based | — | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | `/minio/health/live` | no | **yes** |
 | `ingestion-worker` | repo root | `services/ingestion/railway.json` | `services/ingestion/Dockerfile` | n/a (worker) | no | optional temp |
 
 > `ingestion-worker` builds from the repository root so the committed

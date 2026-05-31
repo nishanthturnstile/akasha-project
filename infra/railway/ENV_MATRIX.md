@@ -36,6 +36,7 @@ CORS_ALLOWED_ORIGINS=https://<web-public-domain>
 ## `titiler`
 
 ```text
+PORT=8000
 AWS_ACCESS_KEY_ID=<minio-access-key>
 AWS_SECRET_ACCESS_KEY=<minio-secret-key>
 AWS_S3_ENDPOINT=minio.railway.internal:9000     # no scheme; GDAL uses AWS_HTTPS

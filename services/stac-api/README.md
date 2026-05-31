@@ -5,7 +5,7 @@ BFF reads this catalog; it does **not** duplicate STAC metadata into app tables.
 **Private service.**
 
 - Image: `ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2`.
-- Internal port: `8080`. Health: `GET /_mgmt/health`.
+- Internal port: `8080`. Health: `GET /_mgmt/ping`.
 - Database: pgSTAC inside the `postgis` service (vars use the real
   `POSTGRES_HOST_READER/WRITER/PORT/USER/PASS/DBNAME` names).
 

@@ -23,14 +23,14 @@ SLICE_NAME = "Skeleton"
 # rio-tiler/TiTiler; do not use floating `latest` for raster services).
 # --------------------------------------------------------------------------
 PINNED_IMAGES: Dict[str, str] = {
-    "gateway (web)": "caddy:2.8-alpine",
+    "gateway (web)": "caddy:2.10-alpine",
     "api base": "python:3.11-slim",
     "titiler": "ghcr.io/developmentseed/titiler:1.0.0",
     "stac-api": "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2",
     "postgis": "postgis/postgis:16-3.5",
-    "minio": "minio/minio:RELEASE.2025-10-15T17-29-55Z",
+    "minio": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
     "ingestion base": "python:3.11-slim",
-    "frontend build": "node:20-alpine",
+    "frontend build": "node:24-alpine",
 }
 
 # --------------------------------------------------------------------------
@@ -45,7 +45,7 @@ SERVICES: List[Dict[str, Any]] = [
         "role": "Serves the built React SPA and reverse-proxies /api -> api and /tiles -> titiler. The only public origin.",
         "public": True,
         "runtime": "Caddy + static React (Vite build)",
-        "image": "caddy:2.8-alpine",
+        "image": "caddy:2.10-alpine",
         "build": "infra/gateway/Dockerfile (multi-stage: build apps/frontend, serve via Caddy)",
         "internalPort": 80,
         "healthPath": "/health",
@@ -90,7 +90,7 @@ SERVICES: List[Dict[str, Any]] = [
         "image": "ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2",
         "build": "services/stac-api/Dockerfile",
         "internalPort": 8080,
-        "healthPath": "/_mgmt/health",
+        "healthPath": "/_mgmt/ping",
         "healthType": "http",
         "persistentVolume": False,
         "dependsOn": ["postgis"],
@@ -115,7 +115,7 @@ SERVICES: List[Dict[str, Any]] = [
         "role": "S3-compatible COG object storage. Console disabled; private only.",
         "public": False,
         "runtime": "MinIO (S3-compatible)",
-        "image": "minio/minio:RELEASE.2025-10-15T17-29-55Z",
+        "image": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
         "build": "image (no custom Dockerfile)",
         "internalPort": 9000,
         "healthPath": "/minio/health/live",
@@ -168,6 +168,7 @@ ENV_MATRIX: Dict[str, Dict[str, str]] = {
         "CORS_ALLOWED_ORIGINS": "https://<web-public-domain>",
     },
     "titiler": {
+        "PORT": "8000",
         "AWS_ACCESS_KEY_ID": "<minio-access-key>",
         "AWS_SECRET_ACCESS_KEY": "<minio-secret-key>",
         "AWS_S3_ENDPOINT": "minio.railway.internal:9000",

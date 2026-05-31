@@ -7,6 +7,10 @@
 # TiTiler 1.0.0 pairs with rio-tiler 8.x. Health endpoint: GET /healthz.
 FROM ghcr.io/developmentseed/titiler:1.0.0
 
+# The upstream image defaults to port 80. Pin the service contract to 8000 so
+# Railway private URLs, Docker Compose, and health checks stay consistent.
+ENV PORT=8000
+
 # GDAL S3 / MinIO access is configured entirely via environment variables
 # (see .env.example and infra/docker/docker-compose.yml). No custom
 # expressions/extensions in Slice 0; raster wiring lands in Slice 2.

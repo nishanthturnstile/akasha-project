@@ -27,6 +27,8 @@
 # Logs / local data
 *.log
 infra/docker/data/
+data/raw/
+data/work/
 
 # Operator-provided rasters (large; never in images or git)
 data/seed/rasters/

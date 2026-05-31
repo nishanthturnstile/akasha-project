@@ -52,12 +52,12 @@ scripts/             validate_slice0.py + smoke-test.py
 
 | Service | Public | Internal port | Health | Image (pinned) |
 |---|---:|---:|---|---|
-| web (gateway) | yes | 80 | `GET /health` | `caddy:2.8-alpine` + React build |
+| web (gateway) | yes | 80 | `GET /health` | `caddy:2.10-alpine` + React build |
 | api (FastAPI BFF) | no | 8000 | `GET /health` | `python:3.11-slim` |
 | titiler | no | 8000 | `GET /healthz` | `ghcr.io/developmentseed/titiler:1.0.0` |
-| stac-api | no | 8080 | `GET /_mgmt/health` | `ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2` |
+| stac-api | no | 8080 | `GET /_mgmt/ping` | `ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2` |
 | postgis | no | 5432 | `pg_isready` | `postgis/postgis:16-3.5` |
-| minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-10-15T17-29-55Z` |
+| minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
 | ingestion-worker | no | — | CLI | `python:3.11-slim` |
 
 ## Run locally (Docker Compose)

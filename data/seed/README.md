@@ -56,3 +56,6 @@ python worker.py verify       # checks the 3 Slice 1 exit criteria
 Real COGs are operator-provided. If `rasters/{date}/*.tif` are absent, the MinIO
 seed creates **empty placeholder objects** at the deterministic keys so the
 layout is established; Slice 2 replaces them with validated COGs.
+
+For the repeatable Sentinel-2 L2A SAFE ZIP → `analytic.tif` + `scl.tif` process,
+see [`../../docs/sentinel-2-l2a-cog-prep-runbook.md`](../../docs/sentinel-2-l2a-cog-prep-runbook.md).

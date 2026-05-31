@@ -24,6 +24,7 @@ Do not include every document in every Emergent prompt; use the prompt-slice tab
 | Product goals, UX, acceptance criteria | `product-plan.md` |
 | Services, architecture, stack, API shape | `architecture-tech-stack.md` |
 | Sentinel-2, COGs, STAC metadata, index math | `data-ingestion-and-satellite-rules.md` |
+| Sentinel-2 L2A SAFE ZIP → analytic/SCL COG runbook | `sentinel-2-l2a-cog-prep-runbook.md` |
 | Railway service setup and runtime operations | `railway-deployment-guide.md` |
 | Implementation order | `mvp-execution-plan.md` |
 | Engineering rules and anti-patterns | `engineering-dos-donts.md` |

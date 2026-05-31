@@ -171,6 +171,8 @@ Every scene/date item must include:
 
 ### Wave 1 manual path
 
+Detailed repeatable runbook: [`sentinel-2-l2a-cog-prep-runbook.md`](./sentinel-2-l2a-cog-prep-runbook.md).
+
 1. Start with provided Bangalore `.tif` or manually downloaded Sentinel-2 L2A products.
 2. Convert inputs into analytic reflectance COG and SCL COG.
 3. Validate COGs.

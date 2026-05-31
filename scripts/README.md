@@ -7,6 +7,8 @@
 | `download_sentinel2_l2a_product.py` | Searches CDSE `sentinel-2-l2a` and downloads a complete native L2A SAFE ZIP containing the bands/SCL needed for Slice 2 COG preparation. | No |
 | `prepare_sentinel2_l2a_cogs.py` | Converts a downloaded Sentinel-2 L2A SAFE ZIP into Akasha Slice 2 `analytic.tif` and `scl.tif` COGs. | No, but run via ingestion Docker image to avoid local GDAL setup |
 
+See [`../docs/sentinel-2-l2a-cog-prep-runbook.md`](../docs/sentinel-2-l2a-cog-prep-runbook.md) for the full SAFE ZIP → analytic/SCL COG runbook, validation checks, and cleanup steps.
+
 ## Run
 
 ```bash

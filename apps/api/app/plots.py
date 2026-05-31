@@ -102,7 +102,7 @@ async def _run_repo(func, *args, **kwargs):
     except AkashaError:
         raise
     except Exception as exc:  # noqa: BLE001
-        logger.warning("plots backend unavailable: %s: %s", type(exc).__name__, exc)
+        logger.warning("plots backend unavailable: %s", type(exc).__name__)
         raise plots_backend_unavailable(
             "Plot storage is not available in this environment."
         ) from exc

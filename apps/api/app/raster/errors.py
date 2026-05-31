@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
@@ -85,3 +86,43 @@ def plots_backend_unavailable(message: str, **details: Any) -> AkashaError:
 
 async def akasha_error_handler(_: Request, exc: AkashaError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
+
+
+def _sanitized_validation_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
+    """Return FastAPI/Pydantic validation errors without echoing request input.
+
+    Pydantic's raw error objects can include the rejected `input` value. That is
+    helpful locally but unsafe for the BFF contract because clients may submit
+    secrets or bulky GeoJSON payloads. Keep only stable machine-readable fields.
+    """
+    sanitized: list[dict[str, Any]] = []
+    for err in exc.errors():
+        sanitized.append(
+            {
+                "type": err.get("type"),
+                "loc": list(err.get("loc", [])),
+                "msg": err.get("msg"),
+            }
+        )
+    return sanitized
+
+
+async def request_validation_error_handler(
+    _: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Standardize framework-level request validation failures.
+
+    Keeps the API-wide error shape `{error:{code,message,details}}` even when a
+    request fails before our route handler runs (for example missing required
+    JSON fields or invalid body type).
+    """
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed.",
+                "details": {"errors": _sanitized_validation_errors(exc)},
+            }
+        },
+    )

@@ -4,6 +4,7 @@ No live PostGIS is required: `app.plots_repo` is monkeypatched with an in-memory
 store, so these tests exercise the full router/validation/serialization path and
 the standard error shapes without a database.
 """
+import logging
 import math
 import uuid
 from datetime import datetime, timezone
@@ -129,6 +130,17 @@ def test_create_plot_blank_name_400(store):
     r = client.post("/api/plots", json={"name": "   ", "geometry": VALID_POLY})
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "INVALID_NAME"
+
+
+def test_create_plot_missing_geometry_uses_standard_error_shape(store):
+    r = client.post("/api/plots", json={"name": "Missing geometry"})
+    assert r.status_code == 422
+    body = r.json()
+    assert set(body) == {"error"}
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["message"] == "Request validation failed."
+    assert body["error"]["details"]["errors"]
+    assert "Missing geometry" not in r.text
 
 
 # --------------------------------------------------------------------------
@@ -306,7 +318,7 @@ def test_export_all_plots_feature_collection(store):
 # --------------------------------------------------------------------------
 # 12) security: responses never leak secrets / internals / SQL / stack traces
 # --------------------------------------------------------------------------
-def test_no_secret_or_internal_leakage_in_503(monkeypatch):
+def test_no_secret_or_internal_leakage_in_503(monkeypatch, caplog):
     # Simulate a DB driver failure whose message embeds a DSN-like secret.
     secret_dsn = "postgresql://akasha:s3cr3t@postgis.railway.internal:5432/akasha"
 
@@ -314,13 +326,16 @@ def test_no_secret_or_internal_leakage_in_503(monkeypatch):
         raise RuntimeError(f"connection failed: {secret_dsn}")
 
     monkeypatch.setattr(plots_repo, "list_plots", boom)
-    r = client.get("/api/plots")
+    with caplog.at_level(logging.WARNING, logger="akasha.api.plots"):
+        r = client.get("/api/plots")
     assert r.status_code == 503
     body = r.json()
     assert body["error"]["code"] == "PLOTS_BACKEND_UNAVAILABLE"
     text = r.text
     for leak in ["postgresql://", "s3cr3t", "railway.internal", "Traceback", "RuntimeError"]:
         assert leak not in text, f"leaked '{leak}' in 503 body"
+    for leak in ["postgresql://", "s3cr3t", "railway.internal"]:
+        assert leak not in caplog.text, f"leaked '{leak}' in plots warning log"
 
 
 def test_no_internal_leakage_in_success_paths(store, monkeypatch):

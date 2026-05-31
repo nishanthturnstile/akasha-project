@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
@@ -36,7 +37,11 @@ from . import skeleton
 from .config import settings
 from .plots import router as plots_router
 from .product import router as product_router
-from .raster.errors import AkashaError, akasha_error_handler
+from .raster.errors import (
+    AkashaError,
+    akasha_error_handler,
+    request_validation_error_handler,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -224,3 +229,4 @@ app.include_router(plots_router)
 
 # Standard Akasha error shape: { "error": { code, message, details } }.
 app.add_exception_handler(AkashaError, akasha_error_handler)
+app.add_exception_handler(RequestValidationError, request_validation_error_handler)

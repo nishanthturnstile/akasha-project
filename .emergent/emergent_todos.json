@@ -33,6 +33,6 @@
   },
   {
     "content": "Frontend testing agent: verify interactions (date list, visibility, opacity, source tab, collapse, theme toggle, map controls)",
-    "status": "in_progress"
+    "status": "completed"
   }
 ]

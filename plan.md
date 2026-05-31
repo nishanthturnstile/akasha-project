@@ -470,4 +470,13 @@ light/dark toggle per user request).
 - `yarn lint`, `yarn build`, `yarn test` succeed.
 - Live preview serves the Vite MapPage on port 3000.
 
-**Status (now): IN PROGRESS.**
+**Status (now): COMPLETED.**
+
+### Phase 4 outcome (verified)
+- Live preview repointed: `/app/frontend` supervisor now runs the Vite app on port 3000 (verified HTTP 200; serves `/src/main.tsx`).
+- `/api/config` returns 200 through the preview origin (ingress → BFF); fonts self-hosted (200 `font/woff2`, no CDN).
+- Default-selected scene = latest usable (2025-09-14, 83% usable → success chip). Tiles 503 offline → dark ink fallback basemap shown (expected; agreed).
+- Quality gates: `yarn tsc` 0 errors, `yarn lint` 0 errors (2 non-blocking react-refresh warnings), `yarn build` green, `yarn test` 21/21 pass.
+- Grep confirms no hard-coded COG/MinIO/STAC/TiTiler URLs in `src/`.
+- Frontend testing agent: 100% pass, no UI/integration/design bugs (iteration_4.json).
+- Follow-up (non-blocking): main JS bundle ~1.37MB (MapLibre) — consider manualChunks/code-split in a later slice.

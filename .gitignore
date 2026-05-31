@@ -36,3 +36,8 @@ infra/docker/data/
 # ---- Misc ----
 .idea/
 .vscode/
+*.env
+credentials.json
+*.pem
+*.key
+.credentials

@@ -1,50 +1,26 @@
 [
   {
-    "content": "Phase 1: Create monorepo folder structure (apps, services, infra, scripts)",
+    "content": "Slice 1: App schema SQL (plots + index_requests + app_settings, PostGIS) + api migrate CLI (lazy psycopg, no new product endpoints)",
     "status": "completed"
   },
   {
-    "content": "Phase 1: Implement canonical apps/api FastAPI skeleton (/health + /api/_skeleton/*)",
+    "content": "Slice 1: Ingestion worker package — scene identity/idempotency, pgSTAC migrate, STAC load (upsert), MinIO bucket/keys, verify (exit criteria)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Build infra/gateway (Caddyfile + multi-stage Dockerfile) — web public service",
+    "content": "Slice 1: data/seed artifacts — GeoJSON AOI + plot, STAC collection + sample item (frozen 9-band order, scale 0.0001/offset -0.1, SCL classes)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Scaffold apps/frontend Vite+React+TS deployable skeleton",
+    "content": "Slice 1: Wire Docker/Railway — ingestion build context, pins (pypgstac 0.9.x, boto3, psycopg), Dockerfiles, .env examples, bootstrap/seeding docs",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Add services/titiler, services/stac-api, services/ingestion (Dockerfiles + railway.json + .env.example + READMEs)",
+    "content": "Slice 1: scripts/validate_slice1.py — PASSED 61/0; Slice 0 validator 94/0 (no regression); lint clean; api tests 6/6; live preview intact",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Add infra/docker/docker-compose.yml (7 services, healthchecks, volumes) + .env.example",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Add infra/railway per-service railway.json + ENV_MATRIX.md + deploy notes + root railway.json + root .dockerignore",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Add shared conventions (pyproject.toml, .editorconfig, .prettierrc, Makefile, .gitignore, README)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Wire live Emergent backend (/app/backend/server.py) to mount canonical apps/api app",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 1+2: validate_slice0.py PASSED 94/0; api unit tests 6/6; smoke-test 4/0; python+js lint clean",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: Build live CRA Service Skeleton Status Dashboard",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: End-to-end testing via testing_agent_v3 — PASSED 16/16 (backend 7/7, frontend 9/9), no issues",
+    "content": "Slice 1: README/infra-railway docs updated with storage/catalog bootstrap + exit-criteria sequence",
     "status": "completed"
   }
 ]

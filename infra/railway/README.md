@@ -14,7 +14,11 @@ single production appliance.
 | `stac-api` | `services/stac-api` | `services/stac-api/railway.json` | `Dockerfile` | `/_mgmt/health` | no | no |
 | `postgis` | image-based | — | `postgis/postgis:16-3.5` | `pg_isready` | no | **yes** |
 | `minio` | image-based | — | `minio/minio:RELEASE.2025-10-15T17-29-55Z` | `/minio/health/live` | no | **yes** |
-| `ingestion-worker` | `services/ingestion` | `services/ingestion/railway.json` | `Dockerfile` | n/a (worker) | no | optional temp |
+| `ingestion-worker` | repo root | `services/ingestion/railway.json` | `services/ingestion/Dockerfile` | n/a (worker) | no | optional temp |
+
+> `ingestion-worker` builds from the repository root so the committed
+> `data/seed` assets are included in the image. Set its Railway **Root
+> Directory = repository root**.
 
 `postgis` and `minio` are added as **image-based** Railway services (no custom
 Dockerfile) with persistent volumes attached.
@@ -37,14 +41,28 @@ canonical name per concept; do not add aliases.
 1. Push the monorepo to GitHub.
 2. Create a Railway project.
 3. Add `postgis` (persistent volume).
-4. Add `minio` (persistent volume, private only).
-5. Add `stac-api` (run pgSTAC/STAC migrations — Slice 1).
-6. Add `titiler` (GDAL S3/MinIO vars).
-7. Add `api` (database/STAC/TiTiler vars).
+4. Add `minio` (persistent volume, private only; `MINIO_BROWSER=off`).
+5. Add `api` and run the app-schema migration once PostGIS is up:
+   `python -m app.cli migrate` (creates the PostGIS extension + `akasha.plots`).
+6. Add `stac-api`.
+7. Add `titiler` (GDAL S3/MinIO vars).
 8. Add `web` as the only public service.
 9. Configure health checks for `web`, `api`, `titiler`, `stac-api`.
-10. Seed COGs + STAC items (Slices 1–2).
-11. Run `scripts/smoke-test.py` against the public web URL.
+10. Run the catalog + storage seed from `ingestion-worker` (idempotent):
+    `python worker.py seed` (pgSTAC migrate → load collection/item → MinIO bucket/keys).
+11. Verify the Slice 1 exit criteria: `python worker.py verify`
+    (PostGIS `postgis_version()`, STAC `sentinel-2-l2a` collection, MinIO bucket reachable).
+12. (Slices 1–2) Replace MinIO placeholder keys with operator-provided COGs.
+13. Run `scripts/smoke-test.py` against the public web URL.
+
+### Slice 1 exit criteria
+
+```bash
+# (1) PostGIS
+python -m app.cli check                       # prints postgis_version()
+# (2) STAC collection + (3) MinIO bucket
+python worker.py verify                        # all three checks in one command
+```
 
 ## PostgreSQL/PostGIS note
 

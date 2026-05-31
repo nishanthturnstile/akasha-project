@@ -28,6 +28,9 @@
 *.log
 infra/docker/data/
 
+# Operator-provided rasters (large; never in images or git)
+data/seed/rasters/
+
 # Emergent / tooling artifacts (not part of the deployable app)
 .emergent
 test_reports

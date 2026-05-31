@@ -1,4 +1,4 @@
-# Akasha BFF (api) — Slice 0 skeleton image.
+# Akasha BFF (api) — image.
 # Thin FastAPI orchestration layer. Private service (never public).
 FROM python:3.11-slim
 
@@ -12,8 +12,9 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code.
+# Application code + DB migrations (applied via `python -m app.cli migrate`).
 COPY app ./app
+COPY migrations ./migrations
 
 # Railway/Compose health check target: GET /health
 # The service listens on $PORT (defaults to 8000 to match the documented

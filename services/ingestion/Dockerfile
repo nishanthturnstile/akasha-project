@@ -1,7 +1,7 @@
-# Akasha ingestion worker — Slice 0 (skeleton).
-#
-# Manual/seed ingestion first; scheduled CDSE/Bhoonidhi ingestion later.
-# No public HTTP surface. Runs on demand (one-shot commands).
+# Akasha ingestion worker — Slice 1 image.
+# Manual/seed ingestion: pgSTAC migrate, idempotent STAC + MinIO seeding.
+# No public HTTP surface. Build context = repository ROOT (needs data/seed).
+#   docker build -f services/ingestion/Dockerfile -t akasha-ingestion .
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -10,12 +10,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY requirements.txt ./
+# Install dependencies first for better layer caching.
+COPY services/ingestion/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY worker.py ./
+# Worker code + ingestion package + committed seed assets (no large rasters).
+COPY services/ingestion/worker.py ./
+COPY services/ingestion/akasha_ingest ./akasha_ingest
+COPY data/seed ./data/seed
 
-# Default command prints the worker's resolved configuration and exits.
-# Real ingestion subcommands (COG conversion, STAC registration, MinIO upload)
-# are implemented in Slice 1+.
+# Default command prints resolved config + sample scene, then exits.
+# Seeding/verification are run on demand:
+#   python worker.py seed     (idempotent: pgSTAC migrate -> load -> MinIO)
+#   python worker.py verify   (Slice 1 exit criteria)
 CMD ["python", "worker.py", "info"]

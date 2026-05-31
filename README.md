@@ -4,11 +4,15 @@ Geospatial MVP for browsing true-colour Sentinel-2 imagery over an Area of
 Interest (Bangalore) and computing cloud-masked vegetation-index statistics for
 user-drawn plots. Railway-first, but fully portable to Docker Compose / on-prem.
 
-> **Status: Slice 0 — Skeleton.** This repository currently contains the
-> multi-service skeleton only: monorepo structure, per-service Dockerfiles,
-> health endpoints, local Docker Compose, Railway configuration examples, and
-> `.env.example` placeholders. Storage/catalog, raster, BFF product contracts,
-> and the map UX are delivered in later slices (see the roadmap below).
+> **Status: Slice 1 — Storage / Catalog.** The multi-service skeleton (Slice 0)
+> is complete, and the storage/catalog foundation is now in place: the
+> PostgreSQL/PostGIS **app schema** (plots), **pgSTAC + STAC API** setup, a
+> **Sentinel-2 L2A STAC collection seed** (frozen 9-band order; reflectance
+> `scale 0.0001` / `offset -0.1`), the **MinIO `akasha-cogs`** bucket/key layout,
+> and **idempotent seeding** keyed on
+> `{satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}`.
+> Raster/index math, BFF product contracts, and the map UX are delivered in later
+> slices (see the roadmap below).
 
 ## Architecture (one public service)
 
@@ -67,11 +71,31 @@ curl http://localhost:8080/api/health
 python ../../scripts/smoke-test.py http://localhost:8080
 ```
 
-## Validate the skeleton (no Docker required)
+## Validate (no Docker required)
 
 ```bash
-python scripts/validate_slice0.py
+python scripts/validate_slice0.py     # skeleton artifacts (Slice 0)
+python scripts/validate_slice1.py     # storage/catalog artifacts (Slice 1)
 ```
+
+## Storage & catalog bootstrap (Slice 1)
+
+The data foundation is seeded deterministically and idempotently. Run on
+Railway / local Docker (see [`data/seed/README.md`](data/seed/README.md) and
+[`infra/railway/README.md`](infra/railway/README.md)):
+
+```bash
+# 1) app schema: PostGIS + akasha.plots (api service)
+python -m app.cli migrate
+# 2) catalog + storage: pgSTAC migrate -> load collection/item -> MinIO (ingestion)
+python worker.py seed
+# 3) Slice 1 exit criteria: postgis_version(), STAC collection, MinIO bucket
+python worker.py verify
+```
+
+Frozen analytic band order `[B04,B08,B05,B06,B07,B11,B12,B03,B02]`; true-colour
+RGB = bands `[1,8,9]`; reflectance `scale 0.0001` / `offset -0.1`. Real COGs are
+operator-provided (not committed); absent rasters get empty placeholder keys.
 
 ## Deploy to Railway
 
@@ -84,8 +108,8 @@ and the deployment sequence.
 
 | Slice | Focus | Status |
 |---|---|---|
-| 0 | Repository & service skeleton | **done (this slice)** |
-| 1 | Database, catalog & object storage foundation | planned |
+| 0 | Repository & service skeleton | **done** |
+| 1 | Database, catalog & object storage foundation | **done (this slice)** |
 | 2 | Raster de-risk (tile + masked NDVI statistic) | planned |
 | 3 | BFF API implementation | planned |
 | 4 | Frontend map & layer UX | planned |

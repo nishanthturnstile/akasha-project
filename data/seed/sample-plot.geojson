@@ -1,0 +1,19 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "North field",
+    "role": "sample-plot"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [77.585, 12.965],
+        [77.594, 12.965],
+        [77.594, 12.973],
+        [77.585, 12.973],
+        [77.585, 12.965]
+      ]
+    ]
+  }
+}

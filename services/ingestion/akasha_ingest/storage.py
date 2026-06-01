@@ -9,8 +9,11 @@ boto3 is imported lazily so this module imports cleanly without it installed.
 """
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 
 from . import config
 from .scene import SAMPLE_SCENE, SceneIdentity
@@ -132,6 +135,23 @@ def _verify_cog_metadata(scene: SceneIdentity) -> tuple[bool, str]:
         return False, f"rasterio COG metadata check failed: {exc}"
 
 
+def _read_manifest(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _manifest_asset_path(manifest_path: Path, manifest: dict[str, Any], asset: str) -> Path:
+    outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
+    value = outputs.get(asset)
+    if isinstance(value, dict):
+        value = value.get("path") or value.get("href")
+    if not value:
+        value = manifest.get(f"{asset}_path") or manifest.get(f"{asset}Path")
+    path = Path(str(value)) if value else manifest_path.parent / f"{asset}.tif"
+    if path.is_absolute():
+        return path
+    return (manifest_path.parent / path).resolve()
+
+
 def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[str]:
     """Upload operator rasters if present, else create empty key placeholders.
 
@@ -173,6 +193,37 @@ def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[
     return results
 
 
+def seed_manifest_cogs(manifest_paths: list[Path], force: bool = False) -> list[str]:
+    """Upload prepared analytic/SCL COGs using dynamic, collision-safe object keys."""
+    client = _client()
+    results: list[str] = []
+    for manifest_path in manifest_paths:
+        manifest = _read_manifest(Path(manifest_path))
+        scene = SceneIdentity.from_prepare_manifest(manifest)
+        for asset, key in (("analytic", scene.analytic_key), ("scl", scene.scl_key)):
+            if _object_exists(client, key) and not force:
+                results.append(f"skip (exists): {key}")
+                continue
+            local = _manifest_asset_path(Path(manifest_path), manifest, asset)
+            if not local.is_file():
+                raise FileNotFoundError(f"prepared {asset} COG not found: {local}")
+            size = local.stat().st_size
+            client.upload_file(
+                str(local),
+                config.BUCKET,
+                key,
+                ExtraArgs={
+                    "Metadata": {
+                        "akasha-asset": asset,
+                        "akasha-scene-key": scene.scene_key,
+                        "akasha-placeholder": "false",
+                    }
+                },
+            )
+            results.append(f"uploaded prepared COG: {key} <- {local} ({size:,} bytes)")
+    return results
+
+
 def verify_real_cogs(scene: SceneIdentity = SAMPLE_SCENE) -> tuple[bool, str]:
     """Phase 2 check: deterministic COG objects exist AND are non-empty real COGs.
 
@@ -200,6 +251,40 @@ def verify_real_cogs(scene: SceneIdentity = SAMPLE_SCENE) -> tuple[bool, str]:
         return True, "real COGs present (non-empty + valid metadata): " + ", ".join(sizes)
     except Exception as exc:  # noqa: BLE001
         return False, f"real COG check error: {exc}"
+
+
+def verify_manifest_cogs(manifest_paths: list[Path]) -> tuple[bool, str]:
+    """Verify all manifest scenes have non-empty COG objects and raster metadata."""
+    if not manifest_paths:
+        return False, "no prepared manifests found"
+    try:
+        client = _client()
+        client.head_bucket(Bucket=config.BUCKET)
+        problems: list[str] = []
+        verified: list[str] = []
+        for manifest_path in manifest_paths:
+            manifest = _read_manifest(Path(manifest_path))
+            scene = SceneIdentity.from_prepare_manifest(manifest)
+            sizes: list[str] = []
+            for key in (scene.analytic_key, scene.scl_key):
+                st = object_status(client, key)
+                if not st["exists"]:
+                    problems.append(f"{scene.item_id}: missing {key}")
+                elif st["placeholder"]:
+                    problems.append(f"{scene.item_id}: placeholder/empty {key}")
+                else:
+                    sizes.append(f"{key}={st['size']:,}B")
+            if sizes:
+                meta_ok, meta_detail = _verify_cog_metadata(scene)
+                if not meta_ok:
+                    problems.append(f"{scene.item_id}: {meta_detail}")
+                else:
+                    verified.append(f"{scene.item_id} ({', '.join(sizes)})")
+        if problems:
+            return False, "manifest COG verification failed -> " + "; ".join(problems)
+        return True, f"verified {len(verified)} manifest scene(s): " + "; ".join(verified)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"manifest COG verification error: {exc}"
 
 
 def bucket_reachable(required_keys: Sequence[str] | None = None) -> tuple[bool, str]:

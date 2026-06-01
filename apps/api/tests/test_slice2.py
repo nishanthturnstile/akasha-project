@@ -196,6 +196,172 @@ def test_layers_default_tile_template_is_same_origin_api_route():
     )
 
 
+def _stac_item(item_id, acquisition_date, bbox, analytic_href, scl_href, usable=80.0):
+    return {
+        "type": "Feature",
+        "id": item_id,
+        "collection": "sentinel-2-l2a",
+        "bbox": bbox,
+        "properties": {
+            "datetime": f"{acquisition_date}T05:00:00Z",
+            "akasha:acquisition_date": acquisition_date,
+            "akasha:usable_pixel_percent": usable,
+            "akasha:cloud_masked_percent": 100.0 - usable,
+            "akasha:coverage_percent": 100.0,
+            "akasha:is_latest_usable": True,
+            "akasha:metrics_provisional": True,
+            "proj:epsg": 32643,
+        },
+        "assets": {
+            "analytic": {
+                "href": analytic_href,
+                "eo:bands": [{"name": name} for name in indices.FROZEN_ANALYTIC_BANDS],
+                "raster:bands": [{"scale": 0.0001, "offset": -0.1, "nodata": 0}],
+                "proj:epsg": 32643,
+            },
+            "scl": {"href": scl_href},
+        },
+    }
+
+
+def test_dates_endpoint_deduplicates_same_date_scenes_with_merged_bounds(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-2-l2a": [
+            _stac_item(
+                "scene-a",
+                "2026-01-15",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://a",
+                "s3://scl-a",
+                80.0,
+            ),
+            _stac_item(
+                "scene-b",
+                "2026-01-15",
+                [78.0, 11.5, 79.0, 13.5],
+                "s3://b",
+                "s3://scl-b",
+                90.0,
+            ),
+        ],
+    )
+
+    r = client.get("/api/sources/sentinel-2-l2a/dates")
+    assert r.status_code == 200
+    dates = r.json()
+    assert len(dates) == 1
+    assert dates[0]["acquisitionDate"] == "2026-01-15"
+    assert dates[0]["sceneCount"] == 2
+    assert dates[0]["bounds"] == [77.0, 11.5, 79.0, 13.5]
+    assert dates[0]["usablePixelPercent"] == pytest.approx(85.0)
+
+
+def test_layers_default_uses_merged_bounds_for_latest_date(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-2-l2a": [
+            _stac_item("scene-a", "2026-01-15", [77.0, 12.0, 78.0, 13.0], "s3://a", "s3://scl-a"),
+            _stac_item("scene-b", "2026-01-15", [78.0, 11.5, 79.0, 13.5], "s3://b", "s3://scl-b"),
+        ],
+    )
+
+    r = client.get("/api/layers/default")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["acquisitionDate"] == "2026-01-15"
+    assert body["sceneCount"] == 2
+    assert body["bounds"] == [77.0, 11.5, 79.0, 13.5]
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/sentinel-2-l2a/2026-01-15/rgb/{z}/{x}/{y}.png"
+    )
+
+
+def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    captured = {}
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "scene-a",
+                "analyticHref": "s3://akasha-cogs/a/analytic.tif",
+                "sclHref": "s3://akasha-cogs/a/scl.tif",
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "scale": 0.0001,
+                "offset": -0.1,
+                "nodata": 0,
+                "epsg": 32643,
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+            }
+        ],
+    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+
+    r = client.get("/api/tiles/sentinel-2-l2a/2026-01-15/rgb/3/4/5.png")
+    assert r.status_code == 200
+    assert r.content == b"png-bytes"
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fa%2Fanalytic.tif&bidx=1&bidx=8&bidx=9&"
+        "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
+    )
+
+
+def test_tile_route_multi_scene_fails_without_leaking_cog_hrefs(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "scene-a",
+                "analyticHref": "s3://secret-bucket/a/analytic.tif",
+                "sclHref": "s3://secret-bucket/a/scl.tif",
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+            },
+            {
+                "itemId": "scene-b",
+                "analyticHref": "s3://secret-bucket/b/analytic.tif",
+                "sclHref": "s3://secret-bucket/b/scl.tif",
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+            },
+        ],
+    )
+
+    def fail_fetch_tile(url):
+        raise AssertionError(f"multi-scene route must not call TiTiler URL: {url}")
+
+    monkeypatch.setattr(tiles, "fetch_tile", fail_fetch_tile)
+
+    r = client.get("/api/tiles/sentinel-2-l2a/2026-01-15/rgb/3/4/5.png")
+
+    assert r.status_code == 503
+    body = r.json()
+    assert body["error"]["code"] == "MOSAIC_TILES_UNAVAILABLE"
+    assert body["error"]["details"] == {"sceneCount": 2, "supportedSceneCount": 1}
+    assert "s3://" not in r.text
+    assert "secret-bucket" not in r.text
+    assert "/mosaicjson/tiles" not in r.text
+
+
 def test_statistics_invalid_geometry_returns_422_error_shape():
     r = client.post(
         "/api/indices/statistics",
@@ -212,6 +378,158 @@ def test_statistics_unsupported_index_returns_400_error_shape():
     )
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "UNSUPPORTED_INDEX"
+
+
+def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypatch):
+    pytest.importorskip("shapely")
+    pytest.importorskip("pyproj")
+    from app.raster import catalog_resolver as catalog
+    from app.raster import service
+    from app.raster.raster_reader import WindowRead
+
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("statistics must resolve all same-date assets")
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "scene-a",
+                "analyticHref": "s3://secret-bucket/a/analytic.tif",
+                "sclHref": "s3://secret-bucket/a/scl.tif",
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "scale": 0.0001,
+                "offset": -0.1,
+                "nodata": 0,
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+            },
+            {
+                "itemId": "scene-b",
+                "analyticHref": "s3://secret-bucket/b/analytic.tif",
+                "sclHref": "s3://secret-bucket/b/scl.tif",
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "scale": 0.0001,
+                "offset": -0.1,
+                "nodata": 0,
+                "bbox": [78.0, 12.0, 79.0, 13.0],
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        catalog,
+        "supported_indices",
+        lambda source_id="sentinel-2-l2a": ["NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"],
+    )
+
+    read_hrefs = []
+
+    def fake_read_index_windows(*, analytic_href, scl_href, geometry, positions):
+        read_hrefs.append(analytic_href)
+        return WindowRead(
+            band_arrays={
+                1: np.full((1, 1), 2000, dtype="uint16"),
+                2: np.full((1, 1), 4000, dtype="uint16"),
+            },
+            scl=np.full((1, 1), 4, dtype="uint8"),
+            geometry_mask=np.ones((1, 1), dtype=bool),
+            nodata=0,
+            height=1,
+            width=1,
+            intersects=True,
+        )
+
+    monkeypatch.setattr(service, "read_index_windows", fake_read_index_windows)
+
+    resp = service.compute_statistics(
+        geometry=IN_FOOTPRINT_POLY,
+        source_id="sentinel-2-l2a",
+        acquisition_date="2026-01-15",
+        index_type="NDVI",
+        max_area_ha=50,
+        max_vertices=5000,
+    )
+
+    assert read_hrefs == ["s3://secret-bucket/b/analytic.tif"]
+    assert resp["metadata"]["itemId"] == "scene-b"
+    assert resp["statistics"]["mean"] == pytest.approx(0.5)
+
+
+def test_statistics_multi_scene_overlap_fails_without_leaking_hrefs(monkeypatch):
+    pytest.importorskip("shapely")
+    pytest.importorskip("pyproj")
+    from app.raster import catalog_resolver as catalog
+    from app.raster import service
+    from app.raster.raster_reader import WindowRead
+
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "scene-a",
+                "analyticHref": "s3://secret-bucket/a/analytic.tif",
+                "sclHref": "s3://secret-bucket/a/scl.tif",
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "scale": 0.0001,
+                "offset": -0.1,
+                "nodata": 0,
+                "bbox": [78.0, 12.0, 79.0, 13.0],
+            },
+            {
+                "itemId": "scene-b",
+                "analyticHref": "s3://secret-bucket/b/analytic.tif",
+                "sclHref": "s3://secret-bucket/b/scl.tif",
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "scale": 0.0001,
+                "offset": -0.1,
+                "nodata": 0,
+                "bbox": [78.0, 12.0, 79.0, 13.0],
+            },
+        ],
+    )
+
+    def fake_read_index_windows(*, analytic_href, scl_href, geometry, positions):
+        return WindowRead(
+            band_arrays={
+                1: np.full((1, 1), 2000, dtype="uint16"),
+                2: np.full((1, 1), 4000, dtype="uint16"),
+            },
+            scl=np.full((1, 1), 4, dtype="uint8"),
+            geometry_mask=np.ones((1, 1), dtype=bool),
+            nodata=0,
+            height=1,
+            width=1,
+            intersects=True,
+        )
+
+    monkeypatch.setattr(service, "read_index_windows", fake_read_index_windows)
+
+    r = client.post(
+        "/api/indices/statistics",
+        json={
+            "geometry": IN_FOOTPRINT_POLY,
+            "sourceId": "sentinel-2-l2a",
+            "acquisitionDate": "2026-01-15",
+            "indexType": "NDVI",
+        },
+    )
+
+    assert r.status_code == 503
+    body = r.json()
+    assert body["error"]["code"] == "MULTI_SCENE_STATISTICS_UNAVAILABLE"
+    assert body["error"]["details"] == {
+        "sceneCount": 2,
+        "intersectingSceneCount": 2,
+        "supportedSceneCount": 1,
+    }
+    assert "s3://" not in r.text
+    assert "secret-bucket" not in r.text
+    assert "analytic.tif" not in r.text
 
 
 # --------------------------------------------------------------------------
@@ -254,12 +572,21 @@ def test_synthetic_dual_cog_statistics_end_to_end(tmp_path, monkeypatch):
         dst.write(scl, 1)
 
     monkeypatch.setattr(
-        catalog, "resolve_assets",
-        lambda source_id, acquisition_date: {
-            "itemId": "synthetic", "analyticHref": str(a_path), "sclHref": str(s_path),
-            "bandNames": indices.FROZEN_ANALYTIC_BANDS, "scale": 0.0001, "offset": -0.1,
-            "nodata": 0, "epsg": 32643, "bbox": None,
-        },
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "synthetic",
+                "analyticHref": str(a_path),
+                "sclHref": str(s_path),
+                "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "scale": 0.0001,
+                "offset": -0.1,
+                "nodata": 0,
+                "epsg": 32643,
+                "bbox": None,
+            }
+        ],
     )
     monkeypatch.setattr(
         catalog, "supported_indices",

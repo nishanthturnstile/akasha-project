@@ -15,7 +15,27 @@ import {
 /** MapLibre's Map satisfies the narrow MapLayerHost structural surface at runtime. */
 const asHost = (m: maplibregl.Map): MapLayerHost => m as unknown as MapLayerHost;
 
-const SCENE_FIT_PADDING = { top: 96, bottom: 80, left: 360, right: 260 };
+const MIN_SCENE_FIT_GUTTER = 48;
+
+function sceneFitPadding(map: maplibregl.Map) {
+  const canvas = map.getCanvas();
+  const width = canvas.clientWidth || canvas.width || 800;
+  const height = canvas.clientHeight || canvas.height || 600;
+
+  const horizontalBudget = Math.max(0, width - MIN_SCENE_FIT_GUTTER);
+  const left = Math.min(320, Math.floor(width * 0.28), Math.floor(horizontalBudget * 0.62));
+  const right = Math.min(
+    220,
+    Math.floor(width * 0.16),
+    Math.max(0, horizontalBudget - left),
+  );
+
+  const verticalBudget = Math.max(0, height - MIN_SCENE_FIT_GUTTER);
+  const top = Math.min(96, Math.floor(height * 0.14), Math.floor(verticalBudget * 0.55));
+  const bottom = Math.min(80, Math.floor(height * 0.12), Math.max(0, verticalBudget - top));
+
+  return { top, bottom, left, right };
+}
 
 function sceneLayerKey(scene: SatelliteScene | null): string | null {
   if (!scene) return null;
@@ -48,7 +68,7 @@ function fitSceneBoundsIfNeeded(map: maplibregl.Map, scene: SatelliteScene): voi
       [east, north],
     ],
     {
-      padding: SCENE_FIT_PADDING,
+      padding: sceneFitPadding(map),
       maxZoom: Math.min(scene.maxzoom ?? 14, 14),
       duration: 650,
     },

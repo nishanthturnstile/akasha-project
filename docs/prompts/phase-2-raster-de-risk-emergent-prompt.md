@@ -2,6 +2,11 @@
 
 Use this prompt in Emergent.sh for the next implementation slice.
 
+> Historical note: this prompt predates manifest-driven production ingestion.
+> Date-only paths such as `sentinel-2-l2a/2025-09-14/analytic.tif` are legacy
+> single-sample references; current production docs use
+> `sentinel-2-l2a/{date}/{mgrsTile}/analytic.tif`.
+
 ---
 
 We are continuing Akasha MVP implementation in the existing repo. Implement **Phase 2 — Raster de-risk milestone** only. Do not start full frontend UX/auth/custom domains/future sources.
@@ -172,10 +177,10 @@ Recommended item id, if following current `SceneIdentity.item_id` convention:
 sentinel-2-l2a_43PHP_20250914_0511
 ```
 
-Object keys must be:
+Object keys for that legacy single-sample milestone were:
 
 ```text
-sentinel-2-l2a/2025-09-14/analytic.tif
+sentinel-2-l2a/2025-09-14/analytic.tif   # legacy sample layout
 sentinel-2-l2a/2025-09-14/scl.tif
 ```
 
@@ -278,7 +283,7 @@ Update `data/seed/stac/sentinel-2-l2a-sample-item.json` so it matches the genera
 - `s2:processing_baseline`: `05.11`
 - `akasha:acquisition_date`: `2025-09-14`
 - asset hrefs:
-  - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif`
+  - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif` (legacy sample layout)
   - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/scl.tif`
 - per-asset `proj:shape`, `proj:transform`, `proj:bbox`, `proj:epsg` should match the rasters
 - analytic asset band order remains exactly `[B04,B08,B05,B06,B07,B11,B12,B03,B02]`
@@ -288,10 +293,10 @@ If you can safely compute AOI usable/cloud/coverage percentages using SCL, do it
 
 ### 2. Ensure MinIO seeding uploads the real COGs
 
-The current storage code uploads local rasters if present at:
+The then-current legacy sample storage code uploaded local rasters if present at:
 
 ```text
-data/seed/rasters/{acquisitionDate}/analytic.tif
+data/seed/rasters/{acquisitionDate}/analytic.tif   # legacy sample layout
 data/seed/rasters/{acquisitionDate}/scl.tif
 ```
 
@@ -388,8 +393,8 @@ Validation must check:
 1. Local stack starts.
 2. API health works.
 3. STAC collection/item are loaded.
-4. MinIO has non-empty real COG objects at:
-   - `sentinel-2-l2a/2025-09-14/analytic.tif`
+4. MinIO has non-empty real COG objects at the legacy sample keys:
+   - `sentinel-2-l2a/2025-09-14/analytic.tif` (legacy sample layout)
    - `sentinel-2-l2a/2025-09-14/scl.tif`
 5. TiTiler can render one RGB PNG through the gateway `/tiles/*` path.
 6. `POST /api/indices/statistics` returns valid NDVI JSON for a known polygon.

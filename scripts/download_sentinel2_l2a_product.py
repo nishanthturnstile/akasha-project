@@ -46,6 +46,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -77,11 +78,11 @@ RECOMMENDED_METADATA_ASSETS = (
     "granule_metadata",
     "safe_manifest",
 )
-DEFAULT_DATETIME = "2025-07-01T00:00:00Z/2025-09-30T23:59:59Z"
 LARGE_DOWNLOAD_BYTES = 1 * 1024 * 1024 * 1024
 BBOX_PRESETS = {
     "south-india": [74.0, 8.0, 85.0, 16.0],
     "bengaluru-install": [76.8, 12.5, 77.9, 13.6],
+    "south-india-target": [74.168701, 8.085101, 81.013184, 14.434701],
 }
 
 
@@ -107,6 +108,11 @@ class CandidateProduct:
     datetime: str | None
     cloud_cover: float | None
     bbox: list[float] | None
+    mgrs_tile: str | None
+    grid_code: str | None
+    overlap_bbox: list[float] | None
+    overlap_area: float
+    overlap_percent: float
     product_href: str
     product_uuid: str | None
     content_length: int | None
@@ -121,6 +127,42 @@ class CandidateProduct:
     @property
     def zip_name(self) -> str:
         return f"{self.safe_name}.zip"
+
+
+def default_datetime_range(now: datetime | None = None) -> str:
+    """Return a 90-day STAC datetime interval constrained to calendar year 2026."""
+    current = now or datetime.now(UTC)
+    current_date = current.date()
+    year_start = datetime(2026, 1, 1, tzinfo=UTC).date()
+    year_end = datetime(2026, 12, 31, tzinfo=UTC).date()
+
+    if current_date < year_start:
+        start_date = year_start
+        end_date = datetime(2026, 3, 31, tzinfo=UTC).date()
+    else:
+        end_date = min(current_date, year_end)
+        start_date = max(year_start, end_date - timedelta(days=89))
+
+    return (
+        f"{start_date.isoformat()}T00:00:00Z/"
+        f"{end_date.isoformat()}T23:59:59Z"
+    )
+
+
+def bbox_intersection(a: list[float], b: list[float]) -> list[float] | None:
+    west = max(a[0], b[0])
+    south = max(a[1], b[1])
+    east = min(a[2], b[2])
+    north = min(a[3], b[3])
+    if west >= east or south >= north:
+        return None
+    return [west, south, east, north]
+
+
+def bbox_area_degrees(bbox: list[float]) -> float:
+    width = max(0.0, bbox[2] - bbox[0])
+    height = max(0.0, bbox[3] - bbox[1])
+    return width * height
 
 
 def _json_request(
@@ -224,6 +266,25 @@ def _asset_href(asset: dict[str, Any]) -> str | None:
     return href if isinstance(href, str) else None
 
 
+def _datetime_sort_value(value: str | None) -> float:
+    if not value:
+        return 0.0
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _candidate_rank(candidate: CandidateProduct) -> tuple[bool, bool, float, float, float]:
+    return (
+        candidate.missing_required_assets != (),
+        candidate.overlap_area <= 0,
+        -candidate.overlap_percent,
+        candidate.cloud_cover if candidate.cloud_cover is not None else 9999.0,
+        -_datetime_sort_value(candidate.datetime),
+    )
+
+
 def search_l2a_items(*, bbox: list[float], datetime_range: str, limit: int) -> list[dict[str, Any]]:
     payload: dict[str, Any] = {
         "collections": [COLLECTION_ID],
@@ -278,11 +339,14 @@ def get_odata_product_details(product_uuid: str | None) -> dict[str, Any]:
 
 
 def collect_candidates(
-    *, items: list[dict[str, Any]], max_cloud_cover: float | None
+    *, items: list[dict[str, Any]], target_bbox: list[float], max_cloud_cover: float | None
 ) -> list[CandidateProduct]:
     candidates: list[CandidateProduct] = []
+    target_area = bbox_area_degrees(target_bbox)
     for item in items:
         properties = item.get("properties", {})
+        if not isinstance(properties, dict):
+            properties = {}
         cloud_cover = properties.get("eo:cloud_cover")
         if isinstance(cloud_cover, int | float):
             cloud_cover_value = float(cloud_cover)
@@ -311,12 +375,23 @@ def collect_candidates(
         details = get_odata_product_details(product_uuid)
         content_length = details.get("ContentLength")
         s3_path = details.get("S3Path")
+        item_bbox = item.get("bbox") if isinstance(item.get("bbox"), list) else None
+        overlap_bbox = bbox_intersection(target_bbox, item_bbox) if item_bbox else None
+        overlap_area = bbox_area_degrees(overlap_bbox) if overlap_bbox else 0.0
+        overlap_percent = (overlap_area / target_area * 100.0) if target_area > 0 else 0.0
+        mgrs_tile = properties.get("s2:mgrs_tile")
+        grid_code = properties.get("grid:code")
         candidates.append(
             CandidateProduct(
                 item_id=str(item.get("id")),
-                datetime=properties.get("datetime") if isinstance(properties, dict) else None,
+                datetime=properties.get("datetime"),
                 cloud_cover=cloud_cover_value,
-                bbox=item.get("bbox") if isinstance(item.get("bbox"), list) else None,
+                bbox=item_bbox,
+                mgrs_tile=mgrs_tile if isinstance(mgrs_tile, str) else None,
+                grid_code=grid_code if isinstance(grid_code, str) else None,
+                overlap_bbox=overlap_bbox,
+                overlap_area=overlap_area,
+                overlap_percent=overlap_percent,
                 product_href=product_href,
                 product_uuid=product_uuid,
                 content_length=content_length if isinstance(content_length, int) else None,
@@ -325,7 +400,18 @@ def collect_candidates(
                 missing_required_assets=missing,
             )
         )
-    return sorted(candidates, key=lambda c: (c.missing_required_assets != (), c.cloud_cover or 9999))
+    return sorted(candidates, key=_candidate_rank)
+
+
+def select_coverage_candidates(candidates: list[CandidateProduct]) -> list[CandidateProduct]:
+    grouped: dict[str, list[CandidateProduct]] = {}
+    for candidate in candidates:
+        if candidate.overlap_area <= 0:
+            continue
+        group_key = candidate.mgrs_tile or f"item:{candidate.item_id}"
+        grouped.setdefault(group_key, []).append(candidate)
+    selected = [sorted(group, key=_candidate_rank)[0] for group in grouped.values()]
+    return sorted(selected, key=_candidate_rank)
 
 
 def write_manifest(
@@ -333,9 +419,26 @@ def write_manifest(
     *,
     bbox: list[float],
     datetime_range: str,
-    selected: CandidateProduct | None,
+    selected: CandidateProduct | list[CandidateProduct] | None,
     candidates: list[CandidateProduct],
+    download_statuses: dict[str, str] | None = None,
 ) -> None:
+    selected_candidates = (
+        selected
+        if isinstance(selected, list)
+        else ([selected] if selected is not None else [])
+    )
+    statuses = download_statuses or {}
+    estimated_total_bytes = sum(
+        candidate.content_length or 0 for candidate in selected_candidates
+    )
+    warnings: list[str] = []
+    if any(candidate.missing_required_assets for candidate in selected_candidates):
+        warnings.append("one or more selected products are missing required source assets")
+    if any(candidate.content_length is None for candidate in selected_candidates):
+        warnings.append("one or more selected products have unknown download size")
+    if not selected_candidates:
+        warnings.append("no coverage candidates selected")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -345,8 +448,31 @@ def write_manifest(
                 "datetime": datetime_range,
                 "required_source_assets": list(REQUIRED_SOURCE_ASSETS),
                 "recommended_metadata_assets": list(RECOMMENDED_METADATA_ASSETS),
-                "selected": candidate_to_manifest(selected) if selected else None,
-                "candidates": [candidate_to_manifest(candidate) for candidate in candidates],
+                "selection": {
+                    "selected_product_ids": [
+                        candidate.item_id for candidate in selected_candidates
+                    ],
+                    "selected_mgrs_tiles": [
+                        candidate.mgrs_tile
+                        for candidate in selected_candidates
+                        if candidate.mgrs_tile
+                    ],
+                    "estimated_total_bytes": estimated_total_bytes,
+                    "estimated_total_human": _format_bytes(estimated_total_bytes),
+                    "warnings": warnings,
+                },
+                "selected": (
+                    candidate_to_manifest(selected_candidates[0], statuses)
+                    if len(selected_candidates) == 1
+                    else None
+                ),
+                "selected_candidates": [
+                    candidate_to_manifest(candidate, statuses)
+                    for candidate in selected_candidates
+                ],
+                "candidates": [
+                    candidate_to_manifest(candidate, statuses) for candidate in candidates
+                ],
             },
             indent=2,
         )
@@ -355,25 +481,37 @@ def write_manifest(
     )
 
 
-def candidate_to_manifest(candidate: CandidateProduct | None) -> dict[str, Any] | None:
+
+def candidate_to_manifest(
+    candidate: CandidateProduct | None, download_statuses: dict[str, str] | None = None
+) -> dict[str, Any] | None:
     if candidate is None:
         return None
+    statuses = download_statuses or {}
     return {
         "item_id": candidate.item_id,
         "safe_name": candidate.safe_name,
         "datetime": candidate.datetime,
         "cloud_cover": candidate.cloud_cover,
         "bbox": candidate.bbox,
+        "mgrs_tile": candidate.mgrs_tile,
+        "grid_code": candidate.grid_code,
+        "overlap_bbox": candidate.overlap_bbox,
+        "overlap_area": candidate.overlap_area,
+        "overlap_percent": candidate.overlap_percent,
         "product_uuid": candidate.product_uuid,
         "product_href": candidate.product_href,
         "content_length": candidate.content_length,
         "content_length_human": _format_bytes(candidate.content_length),
         "s3_path": candidate.s3_path,
         "missing_required_assets": list(candidate.missing_required_assets),
+        "download_status": statuses.get(candidate.item_id, "pending"),
     }
 
 
-def download_product(candidate: CandidateProduct, *, token: str, output_path: Path, force: bool) -> None:
+def download_product(
+    candidate: CandidateProduct, *, token: str, output_path: Path, force: bool
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if (
         not force
@@ -406,6 +544,18 @@ def download_product(candidate: CandidateProduct, *, token: str, output_path: Pa
     tmp.replace(output_path)
 
 
+def product_output_path(out_dir: Path, candidate: CandidateProduct) -> Path:
+    return out_dir / candidate.item_id / candidate.zip_name
+
+
+def is_complete_existing(candidate: CandidateProduct, output_path: Path) -> bool:
+    return (
+        output_path.exists()
+        and candidate.content_length is not None
+        and output_path.stat().st_size == candidate.content_length
+    )
+
+
 def print_candidates(candidates: list[CandidateProduct]) -> None:
     if not candidates:
         print("no candidate L2A products found")
@@ -417,6 +567,8 @@ def print_candidates(candidates: list[CandidateProduct]) -> None:
             f"  [{index}] {candidate.item_id} "
             f"datetime={candidate.datetime} "
             f"cloud={candidate.cloud_cover} "
+            f"mgrs={candidate.mgrs_tile or 'unknown'} "
+            f"overlap={candidate.overlap_percent:.2f}% "
             f"size={_format_bytes(candidate.content_length)} "
             f"missing={missing}"
         )
@@ -430,17 +582,24 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bbox", nargs=4, metavar=("WEST", "SOUTH", "EAST", "NORTH"))
     parser.add_argument("--bbox-preset", choices=sorted(BBOX_PRESETS), default="bengaluru-install")
-    parser.add_argument("--datetime", default=DEFAULT_DATETIME, help="STAC datetime interval")
+    parser.add_argument("--datetime", default=None, help="STAC datetime interval")
     parser.add_argument("--max-items", type=int, default=50, help="maximum STAC items to inspect")
     parser.add_argument("--max-cloud-cover", type=float, default=30.0)
     parser.add_argument("--item-id", help="specific STAC item id to download")
-    parser.add_argument("--candidate-index", type=int, default=1, help="1-based candidate index to use")
+    parser.add_argument(
+        "--candidate-index", type=int, default=1, help="1-based candidate index to use"
+    )
     parser.add_argument(
         "--out-dir",
         default="data/raw/sentinel-2-l2a",
         help="download root for complete native SAFE ZIP products",
     )
     parser.add_argument("--download", action="store_true", help="download the selected product ZIP")
+    parser.add_argument(
+        "--download-selected",
+        action="store_true",
+        help="download all coverage-selected product ZIPs serially",
+    )
     parser.add_argument("--yes", action="store_true", help="confirm large downloads")
     parser.add_argument("--force", action="store_true", help="re-download existing files")
     parser.add_argument(
@@ -449,32 +608,39 @@ def main(argv: list[str] | None = None) -> int:
         help="prompt in the terminal for CDSE username/password if env vars are absent",
     )
     args = parser.parse_args(argv)
+    if args.download and args.download_selected:
+        raise SystemExit("use only one of --download or --download-selected")
 
     bbox = parse_bbox(args.bbox, args.bbox_preset)
+    datetime_range = args.datetime or default_datetime_range()
     out_dir = (
         (REPO_ROOT / args.out_dir).resolve()
         if not Path(args.out_dir).is_absolute()
         else Path(args.out_dir)
     )
+    coverage_manifest_path = out_dir / "coverage_manifest.json"
 
-    items = search_l2a_items(bbox=bbox, datetime_range=args.datetime, limit=args.max_items)
-    candidates = collect_candidates(items=items, max_cloud_cover=args.max_cloud_cover)
+    items = search_l2a_items(bbox=bbox, datetime_range=datetime_range, limit=args.max_items)
+    candidates = collect_candidates(
+        items=items, target_bbox=bbox, max_cloud_cover=args.max_cloud_cover
+    )
     if args.item_id:
         candidates = [candidate for candidate in candidates if candidate.item_id == args.item_id]
+    coverage_selected = select_coverage_candidates(candidates)
 
     print(f"collection: {COLLECTION_ID}")
     print(f"bbox: {bbox}")
-    print(f"datetime: {args.datetime}")
+    print(f"datetime: {datetime_range}")
     print(f"required assets: {', '.join(REQUIRED_SOURCE_ASSETS)}")
     print(f"items inspected: {len(items)}")
     print_candidates(candidates)
 
     if not candidates:
         write_manifest(
-            out_dir / "manifest.json",
+            coverage_manifest_path,
             bbox=bbox,
-            datetime_range=args.datetime,
-            selected=None,
+            datetime_range=datetime_range,
+            selected=[],
             candidates=[],
         )
         return 2
@@ -482,43 +648,131 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"--candidate-index must be between 1 and {len(candidates)}")
 
     selected = candidates[args.candidate_index - 1]
-    selected_dir = out_dir / selected.item_id
-    output_path = selected_dir / selected.zip_name
-    manifest_path = selected_dir / "download_manifest.json"
+    output_path = product_output_path(out_dir, selected)
+    manifest_path = output_path.parent / "download_manifest.json"
+    manifest_selected: CandidateProduct | list[CandidateProduct]
+    manifest_selected = selected if args.download else coverage_selected
     write_manifest(
-        manifest_path,
+        manifest_path if args.download else coverage_manifest_path,
         bbox=bbox,
-        datetime_range=args.datetime,
-        selected=selected,
+        datetime_range=datetime_range,
+        selected=manifest_selected,
         candidates=candidates,
     )
-    print(f"selected: {selected.item_id}")
-    print(f"output: {output_path}")
-    print(f"manifest: {manifest_path}")
+    print(
+        "coverage selected: "
+        + (", ".join(candidate.item_id for candidate in coverage_selected) or "none")
+    )
 
-    if selected.missing_required_assets:
-        raise SystemExit(
-            "selected product is missing required assets: "
-            + ", ".join(selected.missing_required_assets)
-        )
-
-    if not args.download:
-        print("dry run only. Add --download --yes to fetch the complete SAFE ZIP.")
+    if not args.download and not args.download_selected:
+        print(f"manifest: {coverage_manifest_path}")
+        print("dry run only. Add --download-selected --yes for coverage batch downloads.")
+        print("Use --download --yes with --candidate-index for the legacy single-product path.")
         return 0
 
-    if (selected.content_length is None or selected.content_length >= LARGE_DOWNLOAD_BYTES) and not args.yes:
-        raise SystemExit(
-            f"refusing {_format_bytes(selected.content_length)} download without --yes. "
-            "Use --max-items/--max-cloud-cover/--item-id first to inspect candidates."
-        )
+    download_statuses: dict[str, str] = {}
+    token: str | None = None
 
-    token = get_access_token(prompt_credentials=args.prompt_credentials)
-    try:
-        download_product(selected, token=token, output_path=output_path, force=args.force)
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(
-            f"failed downloading {selected.item_id}: HTTP {exc.code} {exc.reason}"
-        ) from exc
+    if args.download:
+        print(f"selected: {selected.item_id}")
+        print(f"output: {output_path}")
+        print(f"manifest: {manifest_path}")
+        if selected.missing_required_assets:
+            raise SystemExit(
+                "selected product is missing required assets: "
+                + ", ".join(selected.missing_required_assets)
+            )
+        if (
+            selected.content_length is None or selected.content_length >= LARGE_DOWNLOAD_BYTES
+        ) and not args.yes:
+            raise SystemExit(
+                f"refusing {_format_bytes(selected.content_length)} download without --yes. "
+                "Use --max-items/--max-cloud-cover/--item-id first to inspect candidates."
+            )
+        if not args.force and is_complete_existing(selected, output_path):
+            print(f"skip existing {output_path} ({_format_bytes(selected.content_length)})")
+            download_statuses[selected.item_id] = "skipped_existing"
+        else:
+            try:
+                token = token or get_access_token(prompt_credentials=args.prompt_credentials)
+                download_product(selected, token=token, output_path=output_path, force=args.force)
+                download_statuses[selected.item_id] = "downloaded"
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+                download_statuses[selected.item_id] = "failed"
+                write_manifest(
+                    manifest_path,
+                    bbox=bbox,
+                    datetime_range=datetime_range,
+                    selected=selected,
+                    candidates=candidates,
+                    download_statuses=download_statuses,
+                )
+                raise RuntimeError(f"failed downloading {selected.item_id}: {exc}") from exc
+        write_manifest(
+            manifest_path,
+            bbox=bbox,
+            datetime_range=datetime_range,
+            selected=selected,
+            candidates=candidates,
+            download_statuses=download_statuses,
+        )
+        print("download complete")
+        return 0
+
+    if not coverage_selected:
+        write_manifest(
+            coverage_manifest_path,
+            bbox=bbox,
+            datetime_range=datetime_range,
+            selected=[],
+            candidates=candidates,
+        )
+        print(f"manifest: {coverage_manifest_path}")
+        print("no positive-overlap coverage candidates selected")
+        return 2
+
+    failures: list[str] = []
+    for candidate in coverage_selected:
+        output_path = product_output_path(out_dir, candidate)
+        if candidate.missing_required_assets:
+            print(
+                f"skip {candidate.item_id}: missing required assets "
+                + ", ".join(candidate.missing_required_assets)
+            )
+            download_statuses[candidate.item_id] = "failed"
+            failures.append(candidate.item_id)
+            continue
+        if (
+            candidate.content_length is None or candidate.content_length >= LARGE_DOWNLOAD_BYTES
+        ) and not args.yes:
+            raise SystemExit(
+                f"refusing {_format_bytes(candidate.content_length)} download without --yes. "
+                "Use --max-items/--max-cloud-cover/--item-id first to inspect candidates."
+            )
+        if not args.force and is_complete_existing(candidate, output_path):
+            print(f"skip existing {output_path} ({_format_bytes(candidate.content_length)})")
+            download_statuses[candidate.item_id] = "skipped_existing"
+            continue
+        try:
+            token = token or get_access_token(prompt_credentials=args.prompt_credentials)
+            download_product(candidate, token=token, output_path=output_path, force=args.force)
+            download_statuses[candidate.item_id] = "downloaded"
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+            print(f"failed downloading {candidate.item_id}: {exc}")
+            download_statuses[candidate.item_id] = "failed"
+            failures.append(candidate.item_id)
+    write_manifest(
+        coverage_manifest_path,
+        bbox=bbox,
+        datetime_range=datetime_range,
+        selected=coverage_selected,
+        candidates=candidates,
+        download_statuses=download_statuses,
+    )
+    print(f"manifest: {coverage_manifest_path}")
+    if failures:
+        print(f"download completed with failures: {', '.join(failures)}")
+        return 1
     print("download complete")
     return 0
 

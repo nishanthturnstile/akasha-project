@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import catalog_resolver as catalog
-from .errors import bad_request, invalid_geometry
+from .errors import bad_request, invalid_geometry, multi_scene_statistics_unavailable
 from .geo_validate import validate_polygon
 from .indices import band_name_to_position, get_index
 from .raster_reader import read_index_windows
@@ -48,33 +48,19 @@ def compute_statistics(
         geometry, max_area_ha=max_area_ha, max_vertices=max_vertices
     )
 
-    # Resolve the scene/date assets (latest usable if no date supplied).
+    # Resolve all scene/date assets (latest usable date if no date supplied).
     if not acquisition_date:
-        acquisition_date = catalog.latest_item(source_id)["properties"]["akasha:acquisition_date"]
-    assets = catalog.resolve_assets(source_id, acquisition_date)
-
-    band_names: list[str] = assets["bandNames"]
-    name_to_pos = band_name_to_position(band_names)
-    for band in index_def.required_bands:
-        if band not in name_to_pos:
-            raise bad_request(
-                f"Band '{band}' required by {index_type} is not present in the analytic asset.",
-                code="BAND_NOT_AVAILABLE",
-                band=band,
-                available=band_names,
-            )
-    pos_a = name_to_pos[index_def.band_a]
-    pos_b = name_to_pos[index_def.band_b]
-
-    read = read_index_windows(
-        analytic_href=assets["analyticHref"],
-        scl_href=assets["sclHref"],
-        geometry=geometry,
-        positions=[pos_a, pos_b],
+        acquisition_date = catalog.latest_item(source_id)["properties"][
+            "akasha:acquisition_date"
+        ]
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    candidate_assets = _candidate_assets_for_geometry(
+        assets_for_date=assets_for_date,
+        geometry_bounds=geom_facts.get("bounds"),
     )
-    if not read.intersects:
+    if not candidate_assets:
         raise invalid_geometry(
-            "Geometry does not intersect the scene footprint for this source/date.",
+            "Geometry does not intersect any scene footprint for this source/date.",
             sourceId=source_id,
             acquisitionDate=acquisition_date,
         )
@@ -84,6 +70,36 @@ def compute_statistics(
         from .indices import DEFAULT_EXCLUDED_SCL_CLASSES
 
         excluded = DEFAULT_EXCLUDED_SCL_CLASSES
+
+    intersecting_results: list[tuple[dict[str, Any], Any, int, int]] = []
+    for assets in candidate_assets:
+        pos_a, pos_b = _index_band_positions(assets, index_def, index_type)
+        read = read_index_windows(
+            analytic_href=assets["analyticHref"],
+            scl_href=assets["sclHref"],
+            geometry=geometry,
+            positions=[pos_a, pos_b],
+        )
+        if read.intersects:
+            intersecting_results.append((assets, read, pos_a, pos_b))
+
+    if not intersecting_results:
+        raise invalid_geometry(
+            "Geometry does not intersect the scene footprint for this source/date.",
+            sourceId=source_id,
+            acquisitionDate=acquisition_date,
+        )
+
+    if len(intersecting_results) > 1:
+        raise multi_scene_statistics_unavailable(
+            "Index statistics for polygons intersecting multiple same-date scenes "
+            "require a configured mosaic statistics backend.",
+            sceneCount=len(assets_for_date),
+            intersectingSceneCount=len(intersecting_results),
+            supportedSceneCount=1,
+        )
+
+    assets, read, pos_a, pos_b = intersecting_results[0]
 
     stats = compute_index_statistics(
         index_type=index_type,
@@ -105,6 +121,61 @@ def compute_statistics(
         assets=assets,
         geom_facts=geom_facts,
         excluded=tuple(excluded),
+    )
+
+
+def _index_band_positions(
+    assets: dict[str, Any],
+    index_def: Any,
+    index_type: str,
+) -> tuple[int, int]:
+    band_names: list[str] = assets["bandNames"]
+    name_to_pos = band_name_to_position(band_names)
+    for band in index_def.required_bands:
+        if band not in name_to_pos:
+            raise bad_request(
+                f"Band '{band}' required by {index_type} is not present in the analytic asset.",
+                code="BAND_NOT_AVAILABLE",
+                band=band,
+                available=band_names,
+            )
+    return name_to_pos[index_def.band_a], name_to_pos[index_def.band_b]
+
+
+def _candidate_assets_for_geometry(
+    *,
+    assets_for_date: list[dict[str, Any]],
+    geometry_bounds: list[float] | tuple[float, float, float, float] | None,
+) -> list[dict[str, Any]]:
+    if len(assets_for_date) <= 1 or not geometry_bounds:
+        return assets_for_date
+
+    candidates = [
+        assets
+        for assets in assets_for_date
+        if _bbox_intersects_geometry(assets.get("bbox"), geometry_bounds)
+    ]
+    return candidates
+
+
+def _bbox_intersects_geometry(
+    bbox: Any,
+    geometry_bounds: list[float] | tuple[float, float, float, float],
+) -> bool:
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        return True
+    try:
+        minx, miny, maxx, maxy = (float(value) for value in bbox)
+        geom_minx, geom_miny, geom_maxx, geom_maxy = (
+            float(value) for value in geometry_bounds
+        )
+    except (TypeError, ValueError):
+        return True
+    return not (
+        maxx < geom_minx
+        or geom_maxx < minx
+        or maxy < geom_miny
+        or geom_maxy < miny
     )
 
 

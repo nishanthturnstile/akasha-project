@@ -39,7 +39,7 @@ ISRO/Bhoonidhi access notes are deferred to the Appendix and are not for MVP pro
 
 Do not combine mixed-resolution continuous reflectance bands and categorical SCL into one ambiguous raster.
 
-For each Sentinel-2 scene/date, create/register these assets:
+For each Sentinel-2 scene (one SAFE ZIP = one MGRS tile/granule), create/register these assets:
 
 1. **Analytic reflectance COG**
    - Contains spectral bands needed for RGB and supported indices.
@@ -155,7 +155,7 @@ usablePixelPercent = validPixels / coveragePixels * 100   # ignores partial-cove
 
 ## STAC metadata requirements
 
-Every scene/date item must include:
+Every scene item must include:
 
 - Collection id, source name, acquisition datetime, product level, MGRS tile where applicable.
 - `proj` extension fields per asset: EPSG, shape, transform, bbox/geometry.
@@ -167,6 +167,26 @@ Every scene/date item must include:
   - optional `thumbnail` or preview later.
 - AOI cloud/usable-pixel percentage for layer-date display.
 
+### Dynamic scene identity and object keys
+
+Production ingestion must derive scene identity from the prepared manifest / SAFE product name rather than a hard-coded sample scene.
+
+```text
+scene key: {satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}
+scene component: {compactAcquisitionDatetime}_{processingBaselineWithoutDot}
+dynamic item id: {satellite}_{mgrs_tile}_{sceneComponent}
+```
+
+For dynamic scenes, use collision-safe object keys that include acquisition date, MGRS tile,
+and the scene component so multiple scenes for one date/tile do not overwrite each other:
+
+```text
+s3://akasha-cogs/sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/analytic.tif
+s3://akasha-cogs/sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/scl.tif
+```
+
+Date-only keys such as `sentinel-2-l2a/{acquisitionDate}/analytic.tif` are legacy/sample-only. They cannot represent multiple MGRS tiles for the same acquisition date without overwrites.
+
 ## Ingestion pipeline
 
 ### Wave 1 manual path
@@ -176,34 +196,81 @@ Detailed repeatable runbook: [`sentinel-2-l2a-cog-prep-runbook.md`](./sentinel-2
 1. Start with provided Bangalore `.tif` or manually downloaded Sentinel-2 L2A products.
 2. Convert inputs into analytic reflectance COG and SCL COG.
 3. Validate COGs.
-4. Upload COGs to MinIO using the deterministic seed layout.
-5. Register STAC collection/item/assets.
+4. Upload COGs to MinIO using the deterministic scene layout.
+5. Register STAC collection/items/assets.
 6. Smoke-test one RGB tile and one index statistics request.
 
 ```text
 Bucket: akasha-cogs
-Object key: sentinel-2-l2a/{acquisitionDate}/analytic.tif  and  sentinel-2-l2a/{acquisitionDate}/scl.tif
+Object keys:
+  sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/analytic.tif
+  sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/scl.tif
 Repo seed folder:
 data/seed/
   bangalore-aoi.geojson
   sample-plot.geojson
   stac/sentinel-2-l2a-collection.json
   stac/sentinel-2-l2a-sample-item.json
-  rasters/{acquisitionDate}/analytic.tif   # operator-provided; large rasters not committed
-  rasters/{acquisitionDate}/scl.tif
+  rasters/{acquisitionDate}/{mgrsTile}/analytic.tif   # prepared manifest layout; large rasters not committed
+  rasters/{acquisitionDate}/{mgrsTile}/scl.tif
+  rasters/{acquisitionDate}/{mgrsTile}/prepare_manifest.json
+  rasters/{acquisitionDate}/prepare_manifest.json      # legacy/single-ZIP layout also discovered
 ```
 
 Wave 2 automated ingestion is deferred to the Appendix and is not for MVP prompts.
 
 ## Idempotency rules
 
-Use a deterministic scene key:
+Use the deterministic scene key:
 
 ```text
 {satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}
 ```
 
 Re-ingesting the same scene must not create duplicate STAC items or overwrite validated assets unless explicitly forced.
+
+STAC item generation must be idempotent:
+
+- one prepared manifest produces one STAC item;
+- the item id is deterministic from satellite, MGRS tile, acquisition date, and processing baseline;
+- `upsert` is the normal load mode for repeated registration;
+- object uploads skip existing keys unless the operator passes an explicit force flag.
+
+## Date-level mosaic serving rules
+
+The BFF groups STAC items by `akasha:acquisition_date` (or the item datetime date) and presents one selectable date to the frontend.
+
+- `/api/sources/{sourceId}/dates` returns date-level metadata with `sceneCount`, merged bounds, and averaged available pixel metrics.
+- `/api/layers/default` chooses the latest usable date and returns one same-origin tile template for that date.
+- `/api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png` serves a single analytic COG when `sceneCount == 1`. Multi-scene dates keep the same metadata/date contract but return a sanitized `MOSAIC_TILES_UNAVAILABLE` 503 until a supported MosaicJSON/pgSTAC mosaic backend is configured.
+- Frontend map layers must stay date-based; do not create one browser layer per MGRS tile.
+
+### Large-area storage and rendering strategy
+
+For South India or all-India ingestion, store imagery as many scene-level COG pairs, not as one monolithic regional COG.
+
+Use this hierarchy for every dynamic Sentinel-2 scene:
+
+```text
+sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/analytic.tif
+sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/scl.tif
+```
+
+The BFF and STAC layer determine how those objects are grouped for rendering:
+
+1. STAC stores one item per prepared scene.
+2. BFF groups items by date and returns one row per acquisition date.
+3. BFF returns merged bounds and `sceneCount` for the date.
+4. Browser receives one same-origin date-level tile template.
+5. Tile serving uses:
+  - direct single-COG TiTiler rendering when `sceneCount == 1`;
+  - a supported MosaicJSON or pgSTAC-backed mosaic renderer when `sceneCount > 1`.
+
+Do not create one MapLibre raster layer per scene/MGRS tile in the browser. That leaks ingestion complexity into the UI, increases layer churn, and makes opacity/date transitions harder to reason about.
+
+Do not pre-mosaic all regional data into one giant COG as the default production path. Pre-mosaics may be created later for specific cached products, but the primary operational model is scene-level COG storage plus date-level mosaic rendering.
+
+For full India ingestion, expect many MGRS tiles per date. Operators must review the dry-run manifest before downloading and should ingest in batches small enough for available disk, network, and MinIO capacity.
 
 ## Validation checklist
 

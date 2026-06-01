@@ -40,6 +40,9 @@ export interface SceneDate {
   isLatestUsable: boolean;
   metricsProvisional: boolean;
   tileAvailable: boolean;
+  sceneCount?: number;
+  /** [west, south, east, north] */
+  bounds?: [number, number, number, number];
 }
 
 export interface DefaultLayer {
@@ -48,7 +51,8 @@ export interface DefaultLayer {
   /** Same-origin `/api/tiles/.../{z}/{x}/{y}.png` template — never a COG/MinIO/TiTiler URL. */
   tileUrlTemplate: string;
   /** [west, south, east, north] */
-  bounds: [number, number, number, number];
+  bounds?: [number, number, number, number];
+  sceneCount?: number;
   minzoom: number;
   maxzoom: number;
   attribution: string;

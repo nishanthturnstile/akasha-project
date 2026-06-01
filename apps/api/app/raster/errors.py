@@ -9,6 +9,7 @@ Status codes (architecture-tech-stack.md § Error response):
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import Request
@@ -33,7 +34,45 @@ class AkashaError(Exception):
         self.details = details or {}
 
     def to_payload(self) -> dict[str, Any]:
-        return {"error": {"code": self.code, "message": self.message, "details": self.details}}
+        return {
+            "error": {
+                "code": self.code,
+                "message": sanitize_error_value(self.message),
+                "details": sanitize_error_value(self.details),
+            }
+        }
+
+
+_SENSITIVE_PATTERNS = [
+    re.compile(r"(?i)\b(?:s3|https?|postgres(?:ql)?|mysql|mongodb|redis)://\S+"),
+    re.compile(r"(?i)/vsi(?:s3|curl)/\S+"),
+    re.compile(r"(?i)\b[\w.-]+\.internal(?::\d+)?\b"),
+    re.compile(
+        r"(?i)\b(?:password|passwd|pwd|secret|token|credential|access[_-]?key)\b\S*"
+    ),
+    re.compile(r"(?is)\bTraceback\b.*"),
+    re.compile(r"(?is)\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)\s+.+"),
+]
+
+
+def _sanitize_string(value: str) -> str:
+    sanitized = value
+    for pattern in _SENSITIVE_PATTERNS:
+        sanitized = pattern.sub("[redacted]", sanitized)
+    return sanitized
+
+
+def sanitize_error_value(value: Any) -> Any:
+    """Remove infrastructure and credential details from API error payload values."""
+    if isinstance(value, str):
+        return _sanitize_string(value)
+    if isinstance(value, dict):
+        return {str(k): sanitize_error_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [sanitize_error_value(v) for v in value]
+    if isinstance(value, tuple):
+        return [sanitize_error_value(v) for v in value]
+    return value
 
 
 # --- Convenience constructors for the common cases -------------------------
@@ -72,6 +111,16 @@ def raster_backend_unavailable(message: str, **details: Any) -> AkashaError:
     code path is real but the runtime dependency is absent.
     """
     return AkashaError("RASTER_BACKEND_UNAVAILABLE", message, 503, details or None)
+
+
+def mosaic_tiles_unavailable(message: str, **details: Any) -> AkashaError:
+    """503: date-level tile rendering requires unavailable mosaic support."""
+    return AkashaError("MOSAIC_TILES_UNAVAILABLE", message, 503, details or None)
+
+
+def multi_scene_statistics_unavailable(message: str, **details: Any) -> AkashaError:
+    """503: statistics needs a single selected scene until mosaic stats are supported."""
+    return AkashaError("MULTI_SCENE_STATISTICS_UNAVAILABLE", message, 503, details or None)
 
 
 def plots_backend_unavailable(message: str, **details: Any) -> AkashaError:

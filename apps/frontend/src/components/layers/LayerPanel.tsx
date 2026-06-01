@@ -51,6 +51,10 @@ export function LayerPanel(props: LayerPanelProps) {
     marginalNote,
   } = props;
   const [collapsed, setCollapsed] = useState(false);
+  const selectedDateMetadata = selectedDate
+    ? dates?.find((d) => d.acquisitionDate === selectedDate)
+    : undefined;
+  const sceneCount = selectedDateMetadata?.sceneCount;
 
   if (collapsed) {
     return (
@@ -124,6 +128,11 @@ export function LayerPanel(props: LayerPanelProps) {
             error={datesError}
             onRetry={onDatesRetry}
           />
+          {sceneCount != null && (
+            <p className="mt-2 px-1 text-[12px] text-muted-foreground" data-testid="scene-count">
+              {sceneCount === 1 ? '1 scene' : `${sceneCount} scenes`} in selected date layer
+            </p>
+          )}
         </div>
 
         <Separator />

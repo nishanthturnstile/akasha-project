@@ -52,7 +52,7 @@ Phase 1/Slice 1 storage/catalog work has been reviewed and validated locally:
 
 For Phase 2, use `docs/prompts/phase-2-raster-de-risk-emergent-prompt.md` as the implementation prompt. Key memory for that prompt:
 
-- Real ignored COG artifacts are expected at `data/seed/rasters/2025-09-14/analytic.tif` and `data/seed/rasters/2025-09-14/scl.tif`; do not commit them.
+- Legacy sample COG artifacts were expected at `data/seed/rasters/2025-09-14/analytic.tif` and `data/seed/rasters/2025-09-14/scl.tif`; do not commit them. Manifest-driven production scenes now use `data/seed/rasters/{date}/{mgrsTile}/`.
 - If those ignored files are missing in the execution environment, do not fabricate results or commit placeholder rasters. Report runtime validation as blocked unless the user explicitly authorizes re-download/re-conversion.
 - The current `data/seed/sample-plot.geojson` is outside the real 2025-09-14 raster footprint; use an in-footprint test polygon for NDVI validation.
 - Update `SAMPLE_SCENE` and `data/seed/stac/sentinel-2-l2a-sample-item.json` from the old 2026/43PGQ placeholder to the real 2025-09-14/43PHP scene.
@@ -81,7 +81,7 @@ What was built:
 
 BLOCKED runtime exit criteria (run on Railway / local Docker with operator COGs):
 
-- Upload `analytic.tif` + `scl.tif` to `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/` (see `docs/sentinel-2-l2a-cog-prep-runbook.md`), then `python services/ingestion/worker.py verify-cogs`.
+- For manifest-driven scenes, run `python worker.py ingest-manifest` and verify with `python worker.py verify-manifest-cogs`; dynamic object keys are `s3://akasha-cogs/sentinel-2-l2a/{date}/{mgrsTile}/{sceneComponent}/...` (see `docs/sentinel-2-l2a-cog-prep-runbook.md`). Use `verify-cogs` only for the legacy sample scene.
 - Render a real RGB PNG tile via the gateway and compute the real cloud-masked NDVI for `data/seed/phase2-ndvi-sample-polygon.geojson`, comparing against a QGIS/notebook reference.
 
 Note: the live preview keeps `skeleton.SLICE = 0` (so existing Slice 0 tests stay green and the dashboard is unchanged); only the roadmap status data was advanced (slice0/1 done, slice2 active). `APP_VERSION` is `0.2.0-slice2`.

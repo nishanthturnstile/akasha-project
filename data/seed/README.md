@@ -10,9 +10,10 @@ data/seed/
   stac/
     sentinel-2-l2a-collection.json          STAC Collection (eo/raster/proj/classification)
     sentinel-2-l2a-sample-item.json         STAC Item for the sample scene
-  rasters/{acquisitionDate}/                operator-provided COGs (NOT committed)
+  rasters/{acquisitionDate}/{mgrsTile}/     operator-provided COGs (NOT committed)
     analytic.tif                            frozen 9-band uint16 DN reflectance COG
     scl.tif                                 categorical SCL COG (nearest resampling)
+    prepare_manifest.json                   manifest used for upload/STAC registration
 ```
 
 ## Frozen analytic band order (Wave 1)
@@ -43,10 +44,17 @@ Source product: `S2B_MSIL2A_20250914T050649_N0511_R019_T43PHP_20250914T074457.SA
 scene key : sentinel-2-l2a:L2A:43PHP:2025-09-14T05:06:49.024000Z:05.11
 item id   : sentinel-2-l2a_43PHP_20250914_0511
 bucket    : akasha-cogs
-keys      : sentinel-2-l2a/2025-09-14/analytic.tif
+keys      : sentinel-2-l2a/2025-09-14/analytic.tif      # legacy sample layout
             sentinel-2-l2a/2025-09-14/scl.tif
 footprint : EPSG:32643, shape 10980x10980, 10 m, bbox4326
             [77.7513, 11.6470, 78.7709, 12.6502]
+```
+
+New manifest-driven Sentinel-2 scenes use dynamic collision-safe keys:
+
+```text
+sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/analytic.tif
+sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/scl.tif
 ```
 
 ## Seeding (run on Railway / local Docker — see infra/railway/README.md)
@@ -59,9 +67,11 @@ python worker.py seed         # pgSTAC migrate -> load collection/item -> MinIO 
 python worker.py verify       # checks the 3 Slice 1 exit criteria
 ```
 
-Real COGs are operator-provided. If `rasters/{date}/*.tif` are absent, the MinIO
-seed creates **empty placeholder objects** at the deterministic keys so the
-layout is established; Slice 2 replaces them with validated COGs.
+Real COGs are operator-provided. The legacy sample seed may create **empty
+placeholder objects** at the sample deterministic keys when `rasters/{date}/*.tif`
+are absent. Production-like ingestion should use prepared manifests under
+`rasters/{date}/{mgrsTile}/prepare_manifest.json` and `python worker.py
+ingest-manifest`, which uploads validated COGs and registers dynamic STAC items.
 
 For the repeatable Sentinel-2 L2A SAFE ZIP → `analytic.tif` + `scl.tif` process,
 see [`../../docs/sentinel-2-l2a-cog-prep-runbook.md`](../../docs/sentinel-2-l2a-cog-prep-runbook.md).

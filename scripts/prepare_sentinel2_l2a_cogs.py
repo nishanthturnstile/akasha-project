@@ -15,6 +15,10 @@ Outputs
     1-band uint8 categorical SCL COG resampled to the analytic 10 m grid with
     nearest-neighbour resampling.
 
+When ``--selection-manifest`` is supplied, all selected downloader products are
+prepared into ``data/seed/rasters/<acquisition-date>/<mgrs-tile>/`` to avoid
+same-date tile collisions.
+
 Run inside the ingestion container for the least GDAL friction on Windows:
 
     docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
@@ -62,6 +66,21 @@ class PreparedPaths:
     analytic_cog: Path
     scl_cog: Path
     manifest: Path
+    product_id: str | None = None
+    mgrs_tile: str | None = None
+    acquisition_datetime: str | None = None
+    acquisition_date: str | None = None
+    processing_baseline: str | None = None
+
+
+@dataclass(frozen=True)
+class SelectedProduct:
+    product_id: str
+    zip_path: Path
+    mgrs_tile: str
+    acquisition_datetime: str
+    acquisition_date: str
+    processing_baseline: str | None = None
 
 
 def require_raster_deps() -> dict[str, Any]:
@@ -69,7 +88,7 @@ def require_raster_deps() -> dict[str, Any]:
         import numpy as np
         import rasterio
         from rasterio.enums import Resampling
-        from rasterio.warp import reproject
+        from rasterio.warp import reproject, transform_bounds
         from rio_cogeo.cogeo import cog_translate, cog_validate
         from rio_cogeo.profiles import cog_profiles
     except ModuleNotFoundError as exc:
@@ -84,6 +103,7 @@ def require_raster_deps() -> dict[str, Any]:
         "rasterio": rasterio,
         "Resampling": Resampling,
         "reproject": reproject,
+        "transform_bounds": transform_bounds,
         "cog_translate": cog_translate,
         "cog_validate": cog_validate,
         "cog_profiles": cog_profiles,
@@ -118,6 +138,199 @@ def safe_name_from_zip(zip_path: Path) -> str:
     if name.endswith(".zip"):
         return name[: -len(".zip")]
     return zip_path.stem
+
+
+def product_id_from_name(name: str) -> str:
+    value = Path(name).name
+    for suffix in (".SAFE.zip", ".zip", ".SAFE"):
+        if value.endswith(suffix):
+            value = value[: -len(suffix)]
+    return value
+
+
+def normalize_mgrs_tile(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip().upper()
+    match = re.search(r"([0-9]{2}[A-Z]{3})", normalized)
+    if match:
+        return match.group(1)
+    if len(normalized) == 6 and normalized.startswith("T"):
+        return normalized[1:]
+    return normalized
+
+
+def mgrs_tile_from_product_id(product_id: str) -> str | None:
+    match = re.search(r"_T([0-9]{2}[A-Z]{3})_", product_id.upper())
+    return match.group(1) if match else None
+
+
+def acquisition_datetime_from_product_id(product_id: str) -> str | None:
+    match = re.search(r"MSIL2A_(\d{8})T(\d{6})", product_id)
+    if not match:
+        return None
+    date_value, time_value = match.groups()
+    return (
+        f"{date_value[:4]}-{date_value[4:6]}-{date_value[6:8]}T"
+        f"{time_value[:2]}:{time_value[2:4]}:{time_value[4:6]}Z"
+    )
+
+
+def acquisition_date_from_datetime(value: str) -> str:
+    match = re.match(r"(\d{4})-?(\d{2})-?(\d{2})", value)
+    if not match:
+        raise SystemExit(f"Could not infer acquisition date from datetime {value!r}")
+    year, month, day = match.groups()
+    return f"{year}-{month}-{day}"
+
+
+def processing_baseline_from_product_id(product_id: str) -> str | None:
+    match = re.search(r"_N(\d{2})(\d{2})_", product_id.upper())
+    if not match:
+        return None
+    major, minor = match.groups()
+    return f"{major}.{minor}"
+
+
+def _entry_value(entry: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in entry and entry[key] not in (None, ""):
+            return entry[key]
+    properties = entry.get("properties")
+    if isinstance(properties, dict):
+        for key in keys:
+            if key in properties and properties[key] not in (None, ""):
+                return properties[key]
+    return None
+
+
+def product_id_from_manifest_entry(entry: dict[str, Any]) -> str:
+    value = _entry_value(
+        entry,
+        "product_id",
+        "productId",
+        "item_id",
+        "id",
+        "safe_name",
+        "name",
+    )
+    if not isinstance(value, str) or not value:
+        raise SystemExit(f"Selected product entry is missing a product id: {entry}")
+    return product_id_from_name(value)
+
+
+def _candidate_entries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for key in ("selected_products", "selectedProducts", "candidates", "inspected_products"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            entries.extend(item for item in value if isinstance(item, dict))
+    return entries
+
+
+def _selected_manifest_entries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("selected_products", "selectedProducts"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+
+    selection = payload.get("selection")
+    if isinstance(selection, dict):
+        for key in ("selected_products", "selectedProducts", "products"):
+            value = selection.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+
+        selected_ids = selection.get("selected_product_ids") or selection.get("selectedProductIds")
+        if isinstance(selected_ids, list):
+            candidates_by_id = {
+                product_id_from_manifest_entry(candidate): candidate
+                for candidate in _candidate_entries(payload)
+            }
+            mgrs_tiles = selection.get("selected_mgrs_tiles") or selection.get("selectedMgrsTiles")
+            entries = []
+            for index, selected_id in enumerate(selected_ids):
+                product_id = product_id_from_name(str(selected_id))
+                entry = dict(candidates_by_id.get(product_id, {"product_id": product_id}))
+                if isinstance(mgrs_tiles, list) and index < len(mgrs_tiles):
+                    entry.setdefault("mgrs_tile", mgrs_tiles[index])
+                entries.append(entry)
+            return entries
+
+    selected = payload.get("selected")
+    if isinstance(selected, dict):
+        return [selected]
+
+    return []
+
+
+def selected_product_from_manifest_entry(
+    entry: dict[str, Any],
+    *,
+    raw_dir: Path = DEFAULT_RAW_DIR,
+) -> SelectedProduct:
+    product_id = product_id_from_manifest_entry(entry)
+    mgrs_tile = normalize_mgrs_tile(
+        _entry_value(entry, "mgrs_tile", "mgrsTile", "s2:mgrs_tile", "grid_code", "grid:code")
+    ) or mgrs_tile_from_product_id(product_id)
+    if not mgrs_tile:
+        raise SystemExit(f"Could not infer MGRS tile for selected product {product_id}")
+
+    acquisition_datetime = _entry_value(
+        entry,
+        "acquisition_datetime",
+        "acquisitionDatetime",
+        "datetime",
+        "acquired",
+    ) or acquisition_datetime_from_product_id(product_id)
+    if not isinstance(acquisition_datetime, str) or not acquisition_datetime:
+        raise SystemExit(f"Could not infer acquisition datetime for selected product {product_id}")
+
+    acquisition_date = _entry_value(entry, "acquisition_date", "acquisitionDate")
+    if isinstance(acquisition_date, str) and acquisition_date:
+        acquisition_date_value = acquisition_date_from_datetime(acquisition_date)
+    else:
+        acquisition_date_value = acquisition_date_from_datetime(acquisition_datetime)
+
+    processing_baseline = _entry_value(
+        entry,
+        "processing_baseline",
+        "processingBaseline",
+        "s2:processing_baseline",
+    )
+    if not isinstance(processing_baseline, str) or not processing_baseline:
+        processing_baseline = processing_baseline_from_product_id(product_id)
+
+    zip_path = raw_dir / product_id / f"{product_id}.SAFE.zip"
+    return SelectedProduct(
+        product_id=product_id,
+        zip_path=zip_path,
+        mgrs_tile=mgrs_tile,
+        acquisition_datetime=acquisition_datetime,
+        acquisition_date=acquisition_date_value,
+        processing_baseline=processing_baseline,
+    )
+
+
+def load_selected_products(
+    selection_manifest: Path,
+    *,
+    raw_dir: Path = DEFAULT_RAW_DIR,
+) -> list[SelectedProduct]:
+    payload = json.loads(selection_manifest.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise SystemExit(f"Selection manifest must contain a JSON object: {selection_manifest}")
+    entries = _selected_manifest_entries(payload)
+    if not entries:
+        raise SystemExit(f"Selection manifest contains no selected products: {selection_manifest}")
+    return [
+        selected_product_from_manifest_entry(entry, raw_dir=raw_dir)
+        for entry in entries
+    ]
+
+
+def manifest_output_dir(output_root: Path, product: SelectedProduct) -> Path:
+    return output_root / product.acquisition_date / product.mgrs_tile
 
 
 def extract_safe(zip_path: Path, work_dir: Path, *, overwrite: bool) -> Path:
@@ -342,21 +555,54 @@ def validate_cog(deps: dict[str, Any], path: Path) -> None:
     print(f"valid COG: {path}")
 
 
+def geometry_from_bbox(bbox: list[float]) -> dict[str, Any]:
+    west, south, east, north = bbox
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]]
+        ],
+    }
+
+
+def wgs84_bbox_from_dataset(deps: dict[str, Any], dataset: Any) -> list[float] | None:
+    if not dataset.crs:
+        return None
+    transform_bounds = deps.get("transform_bounds")
+    if transform_bounds is None:
+        return None
+    west, south, east, north = transform_bounds(
+        dataset.crs,
+        "EPSG:4326",
+        *dataset.bounds,
+        densify_pts=21,
+    )
+    return [float(west), float(south), float(east), float(north)]
+
+
 def raster_summary(deps: dict[str, Any], path: Path) -> dict[str, Any]:
     rasterio = deps["rasterio"]
     with rasterio.open(path) as dataset:
-        return {
+        summary = {
             "path": path.as_posix(),
             "crs": dataset.crs.to_string() if dataset.crs else None,
             "bounds": list(dataset.bounds),
             "resolution": list(dataset.res),
             "width": dataset.width,
             "height": dataset.height,
+            "dimensions": [dataset.width, dataset.height],
             "dtype": dataset.dtypes[0] if dataset.dtypes else None,
             "band_count": dataset.count,
             "nodata": dataset.nodata,
             "descriptions": list(dataset.descriptions),
+            "band_descriptions": list(dataset.descriptions),
         }
+        wgs84_bbox = wgs84_bbox_from_dataset(deps, dataset)
+        if wgs84_bbox:
+            summary["wgs84_bbox"] = wgs84_bbox
+            summary["wgs84_bounds"] = wgs84_bbox
+            summary["wgs84_geometry"] = geometry_from_bbox(wgs84_bbox)
+        return summary
 
 
 def write_manifest(
@@ -367,7 +613,14 @@ def write_manifest(
     scl_intermediate: Path,
 ) -> None:
     paths.manifest.parent.mkdir(parents=True, exist_ok=True)
+    analytic_summary = raster_summary(deps, paths.analytic_cog)
+    scl_summary = raster_summary(deps, paths.scl_cog)
     payload = {
+        "product_id": paths.product_id,
+        "mgrs_tile": paths.mgrs_tile,
+        "acquisition_datetime": paths.acquisition_datetime,
+        "acquisition_date": paths.acquisition_date,
+        "processing_baseline": paths.processing_baseline,
         "source_zip": paths.zip_path.as_posix(),
         "safe_dir": paths.safe_dir.as_posix(),
         "analytic_band_order": [band for band, _, _ in ANALYTIC_BANDS],
@@ -378,26 +631,33 @@ def write_manifest(
             "scl": scl_intermediate.as_posix(),
         },
         "outputs": {
-            "analytic": raster_summary(deps, paths.analytic_cog),
-            "scl": raster_summary(deps, paths.scl_cog),
+            "analytic": analytic_summary,
+            "scl": scl_summary,
         },
     }
+    if analytic_summary.get("wgs84_bbox"):
+        payload["bbox"] = analytic_summary["wgs84_bbox"]
+        payload["geometry"] = analytic_summary.get("wgs84_geometry") or geometry_from_bbox(
+            analytic_summary["wgs84_bbox"]
+        )
     paths.manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"manifest: {paths.manifest}")
+
+
+def resolve_repo_path(value: str | Path) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
 def prepare_paths(args: argparse.Namespace) -> PreparedPaths:
     zip_path = resolve_zip_path(args.zip_path)
     date = args.date or acquisition_date_from_name(zip_path.name)
-    work_dir = Path(args.work_dir)
-    if not work_dir.is_absolute():
-        work_dir = (REPO_ROOT / work_dir).resolve()
-    output_root = Path(args.output_root)
-    if not output_root.is_absolute():
-        output_root = (REPO_ROOT / output_root).resolve()
+    work_dir = resolve_repo_path(args.work_dir)
+    output_root = resolve_repo_path(args.output_root)
 
     safe_dir = extract_safe(zip_path, work_dir, overwrite=args.reextract)
     output_dir = output_root / date
+    product_id = product_id_from_name(zip_path.name)
     return PreparedPaths(
         zip_path=zip_path,
         safe_dir=safe_dir,
@@ -405,23 +665,43 @@ def prepare_paths(args: argparse.Namespace) -> PreparedPaths:
         analytic_cog=output_dir / "analytic.tif",
         scl_cog=output_dir / "scl.tif",
         manifest=output_dir / "prepare_manifest.json",
+        product_id=product_id,
+        mgrs_tile=mgrs_tile_from_product_id(product_id),
+        acquisition_datetime=acquisition_datetime_from_product_id(product_id),
+        acquisition_date=date,
+        processing_baseline=processing_baseline_from_product_id(product_id),
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--zip-path", help="Path to the downloaded .SAFE.zip")
-    parser.add_argument("--date", help="Output acquisition date folder, e.g. 2025-09-14")
-    parser.add_argument("--work-dir", default=str(DEFAULT_WORK_DIR.relative_to(REPO_ROOT)))
-    parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT.relative_to(REPO_ROOT)))
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing COG outputs")
-    parser.add_argument("--reextract", action="store_true", help="Re-extract the SAFE ZIP")
-    parser.add_argument("--keep-intermediate", action="store_true", help="Keep temporary GTiff files")
-    parser.add_argument("--skip-validation", action="store_true", help="Skip rio-cogeo validation")
-    args = parser.parse_args(argv)
+def prepare_paths_for_selected_product(
+    product: SelectedProduct,
+    args: argparse.Namespace,
+) -> PreparedPaths:
+    work_dir = resolve_repo_path(args.work_dir)
+    output_root = resolve_repo_path(args.output_root)
+    zip_path = (
+        product.zip_path
+        if product.zip_path.is_absolute()
+        else (REPO_ROOT / product.zip_path).resolve()
+    )
+    safe_dir = extract_safe(zip_path, work_dir, overwrite=args.reextract)
+    output_dir = manifest_output_dir(output_root, product)
+    return PreparedPaths(
+        zip_path=zip_path,
+        safe_dir=safe_dir,
+        output_dir=output_dir,
+        analytic_cog=output_dir / "analytic.tif",
+        scl_cog=output_dir / "scl.tif",
+        manifest=output_dir / "prepare_manifest.json",
+        product_id=product.product_id,
+        mgrs_tile=product.mgrs_tile,
+        acquisition_datetime=product.acquisition_datetime,
+        acquisition_date=product.acquisition_date,
+        processing_baseline=product.processing_baseline,
+    )
 
-    deps = require_raster_deps()
-    paths = prepare_paths(args)
+
+def prepare_one(paths: PreparedPaths, args: argparse.Namespace, deps: dict[str, Any]) -> None:
     temp_dir = paths.output_dir / "_tmp"
     analytic_intermediate = temp_dir / "analytic_intermediate.tif"
     scl_intermediate = temp_dir / "scl_intermediate.tif"
@@ -473,6 +753,83 @@ def main(argv: list[str] | None = None) -> int:
     if not args.keep_intermediate and temp_dir.exists():
         shutil.rmtree(temp_dir)
         print(f"removed temporary files: {temp_dir}")
+
+
+def write_batch_manifest(
+    *,
+    output_root: Path,
+    selection_manifest: Path,
+    prepared_paths: list[PreparedPaths],
+) -> Path:
+    batch_manifest = output_root / "batch_prepare_manifest.json"
+    batch_manifest.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "selection_manifest": selection_manifest.as_posix(),
+        "product_count": len(prepared_paths),
+        "products": [
+            {
+                "product_id": paths.product_id,
+                "mgrs_tile": paths.mgrs_tile,
+                "acquisition_datetime": paths.acquisition_datetime,
+                "acquisition_date": paths.acquisition_date,
+                "processing_baseline": paths.processing_baseline,
+                "source_zip": paths.zip_path.as_posix(),
+                "output_dir": paths.output_dir.as_posix(),
+                "analytic": paths.analytic_cog.as_posix(),
+                "scl": paths.scl_cog.as_posix(),
+                "prepare_manifest": paths.manifest.as_posix(),
+            }
+            for paths in prepared_paths
+        ],
+    }
+    batch_manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"batch manifest: {batch_manifest}")
+    return batch_manifest
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--zip-path", help="Path to the downloaded .SAFE.zip")
+    parser.add_argument(
+        "--selection-manifest",
+        help="Downloader selection manifest for batch COG preparation",
+    )
+    parser.add_argument("--date", help="Output acquisition date folder, e.g. 2025-09-14")
+    parser.add_argument("--work-dir", default=str(DEFAULT_WORK_DIR.relative_to(REPO_ROOT)))
+    parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT.relative_to(REPO_ROOT)))
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing COG outputs")
+    parser.add_argument("--reextract", action="store_true", help="Re-extract the SAFE ZIP")
+    parser.add_argument(
+        "--keep-intermediate",
+        action="store_true",
+        help="Keep temporary GTiff files",
+    )
+    parser.add_argument("--skip-validation", action="store_true", help="Skip rio-cogeo validation")
+    args = parser.parse_args(argv)
+
+    deps = require_raster_deps()
+
+    if args.selection_manifest:
+        if args.zip_path:
+            raise SystemExit("--zip-path cannot be combined with --selection-manifest")
+        if args.date:
+            raise SystemExit("--date cannot be combined with --selection-manifest")
+        selection_manifest = resolve_repo_path(args.selection_manifest)
+        output_root = resolve_repo_path(args.output_root)
+        selected_products = load_selected_products(selection_manifest)
+        prepared_paths = []
+        for product in selected_products:
+            paths = prepare_paths_for_selected_product(product, args)
+            prepare_one(paths, args, deps)
+            prepared_paths.append(paths)
+        write_batch_manifest(
+            output_root=output_root,
+            selection_manifest=selection_manifest,
+            prepared_paths=prepared_paths,
+        )
+    else:
+        paths = prepare_paths(args)
+        prepare_one(paths, args, deps)
 
     print("COG preparation complete")
     return 0

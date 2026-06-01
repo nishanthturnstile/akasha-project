@@ -109,8 +109,10 @@ Even though Slice 1 artifacts are complete, runtime exit criteria must be execut
 
 Even though Slice 2 code/artifacts are complete and statically + synthetically validated, runtime exit criteria must be executed on Railway/local Docker:
 
-1. Upload real (non-empty) COGs to MinIO:
-   - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif`
+1. Upload real (non-empty) COGs to MinIO. The 2025-09-14 paths below are the
+   legacy sample layout; manifest-driven scenes use
+   `s3://akasha-cogs/sentinel-2-l2a/{date}/{mgrsTile}/...`:
+   - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif` (legacy sample layout)
    - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/scl.tif`
 2. Verify real COG presence:
    - `python services/ingestion/worker.py verify-cogs`

@@ -118,23 +118,23 @@ async def get_source_dates(source_id: str) -> list[dict[str, Any]]:
 async def get_default_layer() -> dict[str, Any]:
     """Default source/date/layer metadata + same-origin RGB tile template."""
     source_id = catalog.COLLECTION_ID
-    item = catalog.latest_item(source_id)
-    props = item.get("properties", {})
-    acquisition_date = props.get("akasha:acquisition_date") or (
-        props.get("datetime", "") or ""
-    )[:10]
+    dates = catalog.list_dates(source_id)
+    date = next((d for d in dates if d["isLatestUsable"]), dates[0])
+    acquisition_date = date["acquisitionDate"]
+    items = catalog.items_for_date(source_id, acquisition_date)
     return {
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
         "tileUrlTemplate": (
             f"/api/tiles/{source_id}/{acquisition_date}/rgb/{{z}}/{{x}}/{{y}}.png"
         ),
-        "bounds": item.get("bbox"),
+        "bounds": catalog.merged_bbox(items),
         "minzoom": 8,
         "maxzoom": 14,
         "attribution": _ATTRIBUTION,
-        "usablePixelPercent": props.get("akasha:usable_pixel_percent"),
-        "metricsProvisional": bool(props.get("akasha:metrics_provisional", False)),
+        "sceneCount": date.get("sceneCount"),
+        "usablePixelPercent": date.get("usablePixelPercent"),
+        "metricsProvisional": bool(date.get("metricsProvisional", False)),
     }
 
 
@@ -144,13 +144,22 @@ async def get_rgb_tile(
 ) -> Response:
     """Proxy one true-colour RGB PNG tile from TiTiler (server-side).
 
-    Builds the TiTiler request from the analytic COG + RGB band positions
-    [1, 8, 9] = (B04, B03, B02). The COG url/credentials are never exposed to
-    the browser. Raises AkashaError (502/503) if TiTiler/MinIO is unavailable.
+    For single-scene dates, builds the TiTiler request from the analytic COG +
+    RGB band positions [1, 8, 9] = (B04, B03, B02). The COG url/credentials are
+    never exposed to the browser. Multi-scene dates fail explicitly until a
+    supported mosaic backend is configured.
     """
-    assets = catalog.resolve_assets(source_id, acquisition_date)
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    assets = assets_for_date[0]
     try:
         positions = rgb_band_positions(assets["bandNames"])
+        for item_assets in assets_for_date[1:]:
+            item_positions = rgb_band_positions(item_assets["bandNames"])
+            if item_positions != positions:
+                raise upstream_error(
+                    "Same-date STAC items use inconsistent RGB band positions.",
+                    code="INCONSISTENT_RGB_BANDS",
+                )
     except KeyError as exc:
         raise upstream_error(
             "STAC analytic asset is missing a required true-colour RGB band.",
@@ -158,13 +167,22 @@ async def get_rgb_tile(
             missingBand=str(exc).strip("'"),
             availableBands=assets.get("bandNames", []),
         ) from exc
-    url = tiles.build_rgb_tile_url(
-        analytic_href=assets["analyticHref"],
-        rgb_positions=positions,
-        z=z,
-        x=x,
-        y=y,
-    )
+    if len(assets_for_date) == 1:
+        url = tiles.build_rgb_tile_url(
+            analytic_href=assets["analyticHref"],
+            rgb_positions=positions,
+            z=z,
+            x=x,
+            y=y,
+        )
+    else:
+        url = tiles.build_mosaic_rgb_tile_url(
+            analytic_hrefs=[item_assets["analyticHref"] for item_assets in assets_for_date],
+            rgb_positions=positions,
+            z=z,
+            x=x,
+            y=y,
+        )
     body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
 

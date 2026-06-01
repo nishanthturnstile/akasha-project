@@ -100,15 +100,21 @@ export default function MapPage() {
 
   const basemapStyle = useMemo(() => resolveBasemapStyle(configQ.data), [configQ.data]);
 
+  const selectedDateMetadata = useMemo(
+    () => datesQ.data?.find((d) => d.acquisitionDate === selectedDate) ?? null,
+    [datesQ.data, selectedDate],
+  );
+
   const scene = useMemo<SatelliteScene | null>(() => {
     if (!selectedDate || !effectiveSourceId) return null;
     const dl = defaultLayerQ.data;
     const isDefault =
       dl && dl.sourceId === effectiveSourceId && dl.acquisitionDate === selectedDate;
+    const dateBounds = selectedDateMetadata?.bounds;
     if (isDefault) {
       return {
         tileUrlTemplate: dl.tileUrlTemplate,
-        bounds: dl.bounds,
+        bounds: dl.bounds ?? dateBounds,
         minzoom: dl.minzoom,
         maxzoom: dl.maxzoom,
         attribution: dl.attribution,
@@ -116,12 +122,12 @@ export default function MapPage() {
     }
     return {
       tileUrlTemplate: composeTileTemplate(effectiveSourceId, selectedDate),
-      bounds: dl?.bounds,
+      bounds: dateBounds,
       minzoom: dl?.minzoom,
       maxzoom: dl?.maxzoom,
       attribution: dl?.attribution,
     };
-  }, [selectedDate, effectiveSourceId, defaultLayerQ.data]);
+  }, [selectedDate, effectiveSourceId, defaultLayerQ.data, selectedDateMetadata]);
 
   // Marginal/empty signal: no date meets the usability threshold.
   const marginalNote = useMemo<string | null>(() => {

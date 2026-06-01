@@ -55,4 +55,20 @@ describe('selectDefaultDate', () => {
     ];
     expect(selectDefaultDate(dates, 70)?.acquisitionDate).toBe('2025-09-14');
   });
+
+  it('selects the latest SAR radar pass without usablePixelPercent', () => {
+    const dates = [
+      makeDate({ acquisitionDate: '2026-04-24', usablePixelPercent: null }),
+      makeDate({ acquisitionDate: '2026-04-29', usablePixelPercent: null }),
+      makeDate({
+        acquisitionDate: '2026-05-01',
+        usablePixelPercent: null,
+        tileAvailable: false,
+      }),
+    ];
+
+    expect(selectDefaultDate(dates, 70, { sourceKind: 'sar' })?.acquisitionDate).toBe(
+      '2026-04-29',
+    );
+  });
 });

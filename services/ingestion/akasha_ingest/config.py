@@ -8,7 +8,9 @@ import glob as globlib
 import os
 from pathlib import Path
 
-COLLECTION_ID = "sentinel-2-l2a"
+SENTINEL2_COLLECTION_ID = "sentinel-2-l2a"
+SENTINEL1_COLLECTION_ID = "sentinel-1-grd"
+COLLECTION_ID = os.environ.get("AKASHA_COLLECTION_ID", SENTINEL2_COLLECTION_ID)
 
 # Object storage (MinIO / S3-compatible). Internal-only; placeholders in env.
 BUCKET = os.environ.get("AKASHA_COG_BUCKET", "akasha-cogs")
@@ -28,6 +30,10 @@ DEFAULT_PREPARED_MANIFEST_PATTERNS = (
     "*/prepare_manifest.json",
     DEFAULT_PREPARED_MANIFEST_PATTERN,
 )
+SOURCE_SCOPED_PREPARED_MANIFEST_PATTERNS = (
+    "*/*/prepare_manifest.json",
+    "*/*/*/prepare_manifest.json",
+)
 
 
 def find_seed_dir() -> Path:
@@ -43,12 +49,27 @@ def find_seed_dir() -> Path:
     return Path("/app/data/seed")
 
 
-def collection_file() -> Path:
-    return find_seed_dir() / "stac" / "sentinel-2-l2a-collection.json"
+def collection_file(collection_id: str | None = None) -> Path:
+    source_id = collection_id or COLLECTION_ID
+    return find_seed_dir() / "stac" / f"{source_id}-collection.json"
 
 
-def item_file() -> Path:
-    return find_seed_dir() / "stac" / "sentinel-2-l2a-sample-item.json"
+def item_file(collection_id: str | None = None) -> Path:
+    source_id = collection_id or COLLECTION_ID
+    return find_seed_dir() / "stac" / f"{source_id}-sample-item.json"
+
+
+def item_files(collection_id: str | None = None) -> list[Path]:
+    source_id = collection_id or COLLECTION_ID
+    stac_dir = find_seed_dir() / "stac"
+    files: list[Path] = []
+    sample = item_file(source_id)
+    if sample.is_file():
+        files.append(sample)
+    item_dir = stac_dir / "items" / source_id
+    if item_dir.is_dir():
+        files.extend(sorted(path for path in item_dir.glob("*.json") if path.is_file()))
+    return sorted({path.resolve() for path in files})
 
 
 def raster_source_root() -> Path:
@@ -61,21 +82,44 @@ def raster_source_dir(acquisition_date: str) -> Path:
     return raster_source_root() / acquisition_date
 
 
-def prepared_manifest_glob(root: Path | None = None) -> str:
+def prepared_manifest_glob(root: Path | None = None, source_id: str | None = None) -> str:
     pattern = os.environ.get(PREPARED_MANIFEST_GLOB_ENV)
     if pattern:
         return pattern
-    return str((root or raster_source_root()) / "*" / "*" / "prepare_manifest.json")
+    base = root or raster_source_root()
+    if source_id:
+        return str(base / source_id / "*" / "*" / "*" / "prepare_manifest.json")
+    return str(base / "*" / "*" / "prepare_manifest.json")
 
 
-def prepared_manifest_files(root: Path | None = None, pattern: str | None = None) -> list[Path]:
-    """Find prepared COG manifests under legacy and tile-scoped raster layouts."""
+def prepared_manifest_files(
+    root: Path | None = None,
+    pattern: str | None = None,
+    source_id: str | None = None,
+) -> list[Path]:
+    """Find prepared COG manifests under legacy and source-scoped raster layouts."""
     if pattern is None:
         env_pattern = os.environ.get(PREPARED_MANIFEST_GLOB_ENV)
         if env_pattern:
             matches = [Path(path).resolve() for path in globlib.glob(env_pattern, recursive=True)]
             return sorted({path for path in matches if path.is_file()})
         base = root or raster_source_root()
+        if source_id:
+            source_root = base / source_id
+            matches = {
+                path.resolve()
+                for manifest_pattern in SOURCE_SCOPED_PREPARED_MANIFEST_PATTERNS
+                for path in source_root.glob(manifest_pattern)
+                if path.is_file()
+            }
+            if source_id == SENTINEL2_COLLECTION_ID:
+                matches.update(
+                    path.resolve()
+                    for manifest_pattern in DEFAULT_PREPARED_MANIFEST_PATTERNS
+                    for path in base.glob(manifest_pattern)
+                    if path.is_file()
+                )
+            return sorted(matches)
         matches = {
             path.resolve()
             for manifest_pattern in DEFAULT_PREPARED_MANIFEST_PATTERNS

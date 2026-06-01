@@ -97,9 +97,22 @@ def _rasterio_aws_session():
 
 
 def _verify_cog_metadata(scene: SceneIdentity) -> tuple[bool, str]:
-    """Open analytic+SCL via rasterio and verify basic COG/grid contracts."""
+    """Open collection-specific COGs via rasterio and verify basic contracts."""
     try:
         import rasterio  # lazy
+
+        if scene.source_id == config.SENTINEL1_COLLECTION_ID:
+            backscatter_path = f"/vsis3/{config.BUCKET}/{scene.backscatter_key}"
+            with rasterio.Env(_rasterio_aws_session(), **_gdal_s3_options()):
+                with rasterio.open(backscatter_path) as backscatter:
+                    problems: list[str] = []
+                    if backscatter.count < 1:
+                        problems.append("backscatter band count < 1")
+                    if not backscatter.overviews(1):
+                        problems.append("backscatter COG has no band-1 overviews")
+                    if problems:
+                        return False, "; ".join(problems)
+                    return True, f"rasterio metadata OK: backscatter={backscatter.count} band(s)"
 
         analytic_path = f"/vsis3/{config.BUCKET}/{scene.analytic_key}"
         scl_path = f"/vsis3/{config.BUCKET}/{scene.scl_key}"
@@ -152,6 +165,12 @@ def _manifest_asset_path(manifest_path: Path, manifest: dict[str, Any], asset: s
     return (manifest_path.parent / path).resolve()
 
 
+def _scene_assets(scene: SceneIdentity) -> list[tuple[str, str]]:
+    if scene.source_id == config.SENTINEL1_COLLECTION_ID:
+        return [("backscatter", scene.backscatter_key)]
+    return [("analytic", scene.analytic_key), ("scl", scene.scl_key)]
+
+
 def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[str]:
     """Upload operator rasters if present, else create empty key placeholders.
 
@@ -162,11 +181,11 @@ def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[
     client = _client()
     results: list[str] = []
     raster_dir = config.raster_source_dir(scene.acquisition_date)
-    for asset, key in (("analytic.tif", scene.analytic_key), ("scl.tif", scene.scl_key)):
+    for asset, key in _scene_assets(scene):
         if _object_exists(client, key) and not force:
             results.append(f"skip (exists): {key}")
             continue
-        local = raster_dir / asset
+        local = raster_dir / f"{asset}.tif"
         if local.is_file():
             size = local.stat().st_size
             client.upload_file(
@@ -175,7 +194,7 @@ def seed_keys(scene: SceneIdentity = SAMPLE_SCENE, force: bool = False) -> list[
                 key,
                 ExtraArgs={
                     "Metadata": {
-                        "akasha-asset": asset.split(".")[0],
+                        "akasha-asset": asset,
                         "akasha-scene-key": scene.scene_key,
                         "akasha-placeholder": "false",
                     }
@@ -200,7 +219,7 @@ def seed_manifest_cogs(manifest_paths: list[Path], force: bool = False) -> list[
     for manifest_path in manifest_paths:
         manifest = _read_manifest(Path(manifest_path))
         scene = SceneIdentity.from_prepare_manifest(manifest)
-        for asset, key in (("analytic", scene.analytic_key), ("scl", scene.scl_key)):
+        for asset, key in _scene_assets(scene):
             if _object_exists(client, key) and not force:
                 results.append(f"skip (exists): {key}")
                 continue
@@ -235,7 +254,7 @@ def verify_real_cogs(scene: SceneIdentity = SAMPLE_SCENE) -> tuple[bool, str]:
         client.head_bucket(Bucket=config.BUCKET)
         problems: list[str] = []
         sizes: list[str] = []
-        for key in (scene.analytic_key, scene.scl_key):
+        for _asset, key in _scene_assets(scene):
             st = object_status(client, key)
             if not st["exists"]:
                 problems.append(f"missing: {key}")
@@ -266,7 +285,7 @@ def verify_manifest_cogs(manifest_paths: list[Path]) -> tuple[bool, str]:
             manifest = _read_manifest(Path(manifest_path))
             scene = SceneIdentity.from_prepare_manifest(manifest)
             sizes: list[str] = []
-            for key in (scene.analytic_key, scene.scl_key):
+            for _asset, key in _scene_assets(scene):
                 st = object_status(client, key)
                 if not st["exists"]:
                     problems.append(f"{scene.item_id}: missing {key}")
@@ -287,7 +306,10 @@ def verify_manifest_cogs(manifest_paths: list[Path]) -> tuple[bool, str]:
         return False, f"manifest COG verification error: {exc}"
 
 
-def bucket_reachable(required_keys: Sequence[str] | None = None) -> tuple[bool, str]:
+def bucket_reachable(
+    required_keys: Sequence[str] | None = None,
+    collection_id: str | None = None,
+) -> tuple[bool, str]:
     """Exit-criterion check: bucket reachable + deterministic keys present.
 
     Empty placeholder objects are acceptable in Slice 1, but the expected keys
@@ -296,9 +318,15 @@ def bucket_reachable(required_keys: Sequence[str] | None = None) -> tuple[bool, 
     try:
         client = _client()
         client.head_bucket(Bucket=config.BUCKET)
-        resp = client.list_objects_v2(Bucket=config.BUCKET, Prefix=f"{config.COLLECTION_ID}/")
+        source_id = collection_id or config.COLLECTION_ID
+        resp = client.list_objects_v2(Bucket=config.BUCKET, Prefix=f"{source_id}/")
         keys = [obj["Key"] for obj in resp.get("Contents", [])]
-        expected = list(required_keys or [SAMPLE_SCENE.analytic_key, SAMPLE_SCENE.scl_key])
+        if required_keys is not None:
+            expected = list(required_keys)
+        elif source_id == config.SENTINEL2_COLLECTION_ID:
+            expected = [SAMPLE_SCENE.analytic_key, SAMPLE_SCENE.scl_key]
+        else:
+            expected = []
         missing = [key for key in expected if key not in keys]
         if missing:
             return (
@@ -308,7 +336,7 @@ def bucket_reachable(required_keys: Sequence[str] | None = None) -> tuple[bool, 
         return (
             True,
             f"bucket '{config.BUCKET}' reachable; expected keys present; "
-            f"{len(keys)} key(s) under {config.COLLECTION_ID}/",
+            f"{len(keys)} key(s) under {source_id}/",
         )
     except Exception as exc:  # noqa: BLE001
         return False, f"bucket unreachable: {exc}"

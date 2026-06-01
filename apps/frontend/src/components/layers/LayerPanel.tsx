@@ -54,7 +54,14 @@ export function LayerPanel(props: LayerPanelProps) {
   const selectedDateMetadata = selectedDate
     ? dates?.find((d) => d.acquisitionDate === selectedDate)
     : undefined;
+  const selectedSource = sources?.find((s) => s.id === selectedSourceId);
+  const isSar = selectedSource?.kind === 'sar';
   const sceneCount = selectedDateMetadata?.sceneCount;
+  const showNearestRadarPass =
+    isSar &&
+    selectedSourceId === 'sentinel-1-grd' &&
+    selectedDate != null &&
+    selectedDate !== '2026-04-27';
 
   if (collapsed) {
     return (
@@ -105,6 +112,23 @@ export function LayerPanel(props: LayerPanelProps) {
           ) : (
             <p className="text-[13px] text-muted-foreground">No sources available.</p>
           )}
+          {selectedSource?.description && (
+            <p
+              className="mt-2 px-1 text-[12px] leading-4 text-muted-foreground"
+              data-testid="source-note"
+            >
+              {selectedSource.description}
+            </p>
+          )}
+          {isSar && (
+            <div
+              className="mt-2 flex items-start gap-2 rounded-md border border-info/30 bg-info/10 px-2.5 py-2 text-[12px] text-info"
+              data-testid="sar-source-note"
+            >
+              <Info className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+              <span>Radar layer · cloud-penetrating · not true colour</span>
+            </div>
+          )}
         </div>
 
         <Separator />
@@ -120,6 +144,15 @@ export function LayerPanel(props: LayerPanelProps) {
               <span>{marginalNote}</span>
             </div>
           )}
+          {showNearestRadarPass && (
+            <div
+              className="mb-2 flex items-start gap-2 rounded-md border border-info/30 bg-info/10 px-2.5 py-2 text-[12px] text-info"
+              data-testid="nearest-pass-note"
+            >
+              <Info className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+              <span>Nearest radar pass: {selectedDate}.</span>
+            </div>
+          )}
           <DateList
             dates={dates}
             selectedDate={selectedDate}
@@ -127,6 +160,7 @@ export function LayerPanel(props: LayerPanelProps) {
             loading={datesLoading}
             error={datesError}
             onRetry={onDatesRetry}
+            sourceKind={selectedSource?.kind}
           />
           {sceneCount != null && (
             <p className="mt-2 px-1 text-[12px] text-muted-foreground" data-testid="scene-count">

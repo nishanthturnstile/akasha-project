@@ -73,12 +73,64 @@ def _manifest(
     }
 
 
+def _s1_manifest() -> dict:
+    return {
+        "source_id": "sentinel-1-grd",
+        "product_id": (
+            "S1C_IW_GRDH_1SDV_20260427T002015_20260427T002040_001234_ABCDEF_1234.SAFE"
+        ),
+        "platform": "sentinel-1c",
+        "acquisition_datetime": "2026-04-27T00:20:15Z",
+        "sar:instrument_mode": "IW",
+        "product:type": "IW_GRDH_1S",
+        "sat:relative_orbit": 42,
+        "sat:orbit_state": "ascending",
+        "sar:polarizations": ["VV", "VH"],
+        "bbox": [77.0, 11.0, 78.0, 12.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]
+            ],
+        },
+        "outputs": {
+            "backscatter": {
+                "path": "backscatter.tif",
+                "crs": "EPSG:32643",
+                "bounds": [799980, 1290240, 909780, 1400040],
+                "resolution": [10, 10],
+                "width": 10980,
+                "height": 10980,
+                "dtype": "float32",
+                "band_count": 2,
+                "nodata": -9999,
+            },
+        },
+    }
+
+
 def _write_manifest(root: Path, manifest: dict) -> Path:
     scene = SceneIdentity.from_prepare_manifest(manifest)
     directory = root / scene.acquisition_date / scene.mgrs_tile
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "analytic.tif").write_bytes(b"analytic")
     (directory / "scl.tif").write_bytes(b"scl")
+    path = directory / "prepare_manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
+def _write_s1_manifest(root: Path, manifest: dict) -> Path:
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+    directory = (
+        root
+        / scene.source_id
+        / scene.acquisition_date
+        / scene.relative_orbit_or_unknown
+        / scene.scene_component
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "backscatter.tif").write_bytes(b"backscatter")
     path = directory / "prepare_manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
     return path
@@ -118,6 +170,56 @@ def test_dynamic_scene_identity_disambiguates_same_date_tile_scenes() -> None:
     assert later_baseline_scene.scene_component == "20260115T052100Z_0501"
 
 
+def test_sentinel1_scene_identity_uses_manifest_orbit_fields_and_collision_safe_keys() -> None:
+    scene = SceneIdentity.from_prepare_manifest(_s1_manifest())
+
+    assert scene.source_id == "sentinel-1-grd"
+    assert scene.platform == "sentinel-1c"
+    assert scene.instrument_mode == "IW"
+    assert scene.product_type == "IW_GRDH_1S"
+    assert scene.relative_orbit_or_unknown == "42"
+    assert scene.orbit_state_or_unknown == "ascending"
+    assert scene.product_id_hash
+    assert scene.product_id_hash in scene.scene_component
+    assert scene.backscatter_key == (
+        "sentinel-1-grd/2026-04-27/42/"
+        f"{scene.scene_component}/backscatter.tif"
+    )
+    assert scene.item_id == f"sentinel-1-grd_42_{scene.scene_component}"
+
+
+def test_sentinel1_scene_identity_accepts_prepare_orbit_direction_alias() -> None:
+    manifest = _s1_manifest()
+    manifest.pop("sat:orbit_state")
+    manifest["orbit_direction"] = "descending"
+
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+
+    assert scene.orbit_state_or_unknown == "descending"
+
+
+def test_sentinel1_product_name_parser_handles_s1a_and_s1c_without_orbit_fields() -> None:
+    for platform, expected in [
+        ("S1A", "sentinel-1a"),
+        ("S1C", "sentinel-1c"),
+    ]:
+        manifest = _s1_manifest()
+        manifest.pop("platform")
+        manifest.pop("sat:relative_orbit")
+        manifest.pop("sat:orbit_state")
+        manifest["product_id"] = (
+            f"{platform}_IW_GRDH_1SDV_20260427T002015_"
+            "20260427T002040_001234_ABCDEF_1234.SAFE"
+        )
+
+        scene = SceneIdentity.from_prepare_manifest(manifest)
+
+        assert scene.platform == expected
+        assert scene.relative_orbit_or_unknown == "unknown"
+        assert scene.orbit_state_or_unknown == "unknown"
+        assert scene.acquisition_datetime == "2026-04-27T00:20:15Z"
+
+
 def test_build_stac_item_from_prepare_manifest_uses_dynamic_asset_hrefs() -> None:
     item = catalog.build_stac_item_from_prepare_manifest(_manifest(tile="43PHP"))
 
@@ -136,6 +238,23 @@ def test_build_stac_item_from_prepare_manifest_uses_dynamic_asset_hrefs() -> Non
     )
     assert len(item["assets"]["analytic"]["eo:bands"]) == 9
     assert len(item["assets"]["analytic"]["raster:bands"]) == 9
+
+
+def test_build_sentinel1_stac_item_emits_sar_metadata_and_backscatter_asset() -> None:
+    item = catalog.build_stac_item_from_prepare_manifest(_s1_manifest())
+
+    assert item["collection"] == "sentinel-1-grd"
+    assert "https://stac-extensions.github.io/sar/v1.0.0/schema.json" in item["stac_extensions"]
+    assert item["properties"]["constellation"] == "sentinel-1"
+    assert item["properties"]["sar:instrument_mode"] == "IW"
+    assert item["properties"]["sar:polarizations"] == ["VV", "VH"]
+    assert item["properties"]["sat:relative_orbit"] == 42
+    assert item["properties"]["sat:orbit_state"] == "ascending"
+    assert list(item["assets"]) == ["backscatter"]
+    assert item["assets"]["backscatter"]["href"].endswith("/backscatter.tif")
+    assert item["assets"]["backscatter"]["raster:bands"][0]["unit"] == "dB"
+    assert "eo:bands" not in item["assets"]["backscatter"]
+    assert "scl" not in item["assets"]
 
 
 def test_build_stac_item_transforms_projected_output_bounds_to_wgs84() -> None:
@@ -189,6 +308,55 @@ def test_seed_manifest_cogs_uploads_to_dynamic_keys_without_live_s3(
         "sentinel-2-l2a/2026-01-15/43PLQ/20260115T052000Z_0500/scl.tif",
     ]
     assert result[0].startswith("uploaded prepared COG")
+
+
+def test_seed_manifest_cogs_uploads_sentinel1_backscatter_only(
+    monkeypatch: pytest.MonkeyPatch, scratch_dir: Path
+) -> None:
+    manifest_path = _write_s1_manifest(scratch_dir, _s1_manifest())
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.uploads: list[tuple[str, str, str, dict]] = []
+
+        def upload_file(self, filename: str, bucket: str, key: str, ExtraArgs: dict) -> None:  # noqa: N803
+            self.uploads.append((filename, bucket, key, ExtraArgs))
+
+    fake_client = FakeClient()
+    monkeypatch.setattr(storage, "_client", lambda: fake_client)
+    monkeypatch.setattr(storage, "_object_exists", lambda _client, _key: False)
+
+    result = storage.seed_manifest_cogs([manifest_path])
+
+    uploaded_keys = [call[2] for call in fake_client.uploads]
+    assert len(uploaded_keys) == 1
+    assert uploaded_keys[0].startswith("sentinel-1-grd/2026-04-27/42/")
+    assert uploaded_keys[0].endswith("/backscatter.tif")
+    assert fake_client.uploads[0][3]["Metadata"]["akasha-asset"] == "backscatter"
+    assert result[0].startswith("uploaded prepared COG")
+
+
+def test_verify_manifest_cogs_accepts_sentinel1_backscatter_without_s2_assets(
+    monkeypatch: pytest.MonkeyPatch, scratch_dir: Path
+) -> None:
+    manifest_path = _write_s1_manifest(scratch_dir, _s1_manifest())
+
+    class FakeClient:
+        def head_bucket(self, Bucket: str) -> None:  # noqa: N803
+            return None
+
+    monkeypatch.setattr(storage, "_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        storage,
+        "object_status",
+        lambda _client, key: {"key": key, "exists": True, "size": 12, "placeholder": False},
+    )
+    monkeypatch.setattr(storage, "_verify_cog_metadata", lambda _scene: (True, "ok"))
+
+    ok, detail = storage.verify_manifest_cogs([manifest_path])
+
+    assert ok
+    assert "verified 1 manifest scene" in detail
 
 
 def test_load_manifest_items_writes_multi_item_ndjson_without_live_pgstac(
@@ -263,4 +431,28 @@ def test_prepared_manifest_files_discovers_legacy_and_tile_scoped_layouts(
     assert config.prepared_manifest_files(root=root) == [
         legacy_manifest.resolve(),
         tile_manifest.resolve(),
+    ]
+
+
+def test_prepared_manifest_files_discovers_sentinel1_source_scoped_layout(
+    scratch_dir: Path,
+) -> None:
+    root = scratch_dir / "rasters"
+    s1_manifest = (
+        root
+        / "sentinel-1-grd"
+        / "2026-04-27"
+        / "42"
+        / "20260427T002015Z_scene"
+        / "prepare_manifest.json"
+    )
+    s2_manifest = root / "2026-01-15" / "43PHQ" / "prepare_manifest.json"
+    s1_manifest.parent.mkdir(parents=True)
+    s2_manifest.parent.mkdir(parents=True)
+    s1_manifest.write_text("{}", encoding="utf-8")
+    s2_manifest.write_text("{}", encoding="utf-8")
+
+    assert config.collection_file("sentinel-1-grd").name == "sentinel-1-grd-collection.json"
+    assert config.prepared_manifest_files(root=root, source_id="sentinel-1-grd") == [
+        s1_manifest.resolve()
     ]

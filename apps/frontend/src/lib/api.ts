@@ -63,9 +63,13 @@ export const getDates = (sourceId: string): Promise<SceneDate[]> =>
 export const getDefaultLayer = (): Promise<DefaultLayer> =>
   request<DefaultLayer>('/api/layers/default');
 
-/** Compose the same-origin tile template for an arbitrary source/date selection. */
-export function composeTileTemplate(sourceId: string, acquisitionDate: string): string {
+/** Compose the same-origin tile template for an arbitrary source/date/display-mode selection. */
+export function composeTileTemplate(
+  sourceId: string,
+  acquisitionDate: string,
+  displayMode = 'RGB',
+): string {
   return `/api/tiles/${encodeURIComponent(sourceId)}/${encodeURIComponent(
     acquisitionDate,
-  )}/rgb/{z}/{x}/{y}.png`;
+  )}/${encodeURIComponent(displayMode)}/{z}/{x}/{y}.png`;
 }

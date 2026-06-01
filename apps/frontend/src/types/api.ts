@@ -23,11 +23,19 @@ export interface AppConfig {
   defaultIndex: string;
 }
 
+export type SourceKind = 'optical' | 'sar';
+
 export interface Source {
   id: string;
   label: string;
   provider: string;
-  supportedIndices: string[];
+  kind?: SourceKind;
+  displayModes?: string[];
+  defaultDisplayMode?: string;
+  displayMode?: string;
+  description?: string;
+  attribution?: string;
+  supportedIndices?: string[];
 }
 
 export interface SceneDate {
@@ -48,6 +56,12 @@ export interface SceneDate {
 export interface DefaultLayer {
   sourceId: string;
   acquisitionDate: string;
+  displayMode?: string;
+  kind?: SourceKind;
+  displayModes?: string[];
+  defaultDisplayMode?: string;
+  description?: string;
+  supportedIndices?: string[];
   /** Same-origin `/api/tiles/.../{z}/{x}/{y}.png` template — never a COG/MinIO/TiTiler URL. */
   tileUrlTemplate: string;
   /** [west, south, east, north] */

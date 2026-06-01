@@ -1,4 +1,8 @@
-import type { SceneDate } from '@/types/api';
+import type { SceneDate, SourceKind } from '@/types/api';
+
+interface SelectDefaultDateOptions {
+  sourceKind?: SourceKind;
+}
 
 /**
  * Choose the default-selected acquisition date.
@@ -11,13 +15,20 @@ import type { SceneDate } from '@/types/api';
 export function selectDefaultDate(
   dates: SceneDate[],
   thresholdPercent: number,
+  options: SelectDefaultDateOptions = {},
 ): SceneDate | null {
   if (!dates || dates.length === 0) return null;
 
-  const newestFirst = [...dates].sort((a, b) => b.acquisitionDate.localeCompare(a.acquisitionDate));
+  const selectable = dates.filter((d) => d.tileAvailable);
+  const candidates = selectable.length > 0 ? selectable : dates;
+  const newestFirst = [...candidates].sort((a, b) =>
+    b.acquisitionDate.localeCompare(a.acquisitionDate),
+  );
 
   const latestUsable = newestFirst.find((d) => d.isLatestUsable);
   if (latestUsable) return latestUsable;
+
+  if (options.sourceKind === 'sar') return newestFirst[0];
 
   const overThreshold = newestFirst.find(
     (d) => d.usablePixelPercent != null && d.usablePixelPercent >= thresholdPercent,

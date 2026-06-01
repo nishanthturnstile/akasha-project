@@ -23,6 +23,12 @@ STAC_EXTENSIONS = [
     "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
     "https://stac-extensions.github.io/classification/v1.1.0/schema.json",
 ]
+SENTINEL1_STAC_EXTENSIONS = [
+    "https://stac-extensions.github.io/sar/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/sat/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+]
 
 ANALYTIC_EO_BANDS = [
     {
@@ -123,11 +129,11 @@ def _write_ndjson(records: Iterable[dict]) -> Path:
     return ndjson
 
 
-def load_collection(method: str = "upsert") -> str:
+def load_collection(method: str = "upsert", collection_id: str | None = None) -> str:
     from pypgstac.db import PgstacDB  # lazy
     from pypgstac.load import Loader, Methods  # lazy
 
-    collection = json.loads(config.collection_file().read_text())
+    collection = json.loads(config.collection_file(collection_id).read_text())
     ndjson = _write_ndjson([collection])
     try:
         with PgstacDB(dsn=_require_dsn()) as db:
@@ -137,18 +143,22 @@ def load_collection(method: str = "upsert") -> str:
     return f"loaded collection {collection.get('id')} (method={method})"
 
 
-def load_items(method: str = "upsert") -> str:
+def load_items(method: str = "upsert", collection_id: str | None = None) -> str:
     from pypgstac.db import PgstacDB  # lazy
     from pypgstac.load import Loader, Methods  # lazy
 
-    item = json.loads(config.item_file().read_text())
-    ndjson = _write_ndjson([item])
+    item_paths = config.item_files(collection_id)
+    if not item_paths:
+        source_id = collection_id or config.COLLECTION_ID
+        return f"loaded 0 seed item(s) for {source_id} (method={method})"
+    items = [json.loads(path.read_text(encoding="utf-8")) for path in item_paths]
+    ndjson = _write_ndjson(items)
     try:
         with PgstacDB(dsn=_require_dsn()) as db:
             Loader(db=db).load_items(str(ndjson), insert_mode=Methods(method))
     finally:
         ndjson.unlink(missing_ok=True)
-    return f"loaded item {item.get('id')} (method={method})"
+    return f"loaded {len(items)} seed item(s) (method={method})"
 
 
 def _read_manifest(path: Path) -> dict[str, Any]:
@@ -371,6 +381,12 @@ def _properties(manifest: dict[str, Any]) -> dict[str, Any]:
 def build_stac_item_from_prepare_manifest(manifest: dict[str, Any]) -> dict:
     """Create a STAC item for one prepared manifest using dynamic object keys."""
     scene = SceneIdentity.from_prepare_manifest(manifest)
+    if scene.source_id == config.SENTINEL1_COLLECTION_ID:
+        return _build_sentinel1_stac_item(manifest, scene)
+    return _build_sentinel2_stac_item(manifest, scene)
+
+
+def _build_sentinel2_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
     props = _properties(manifest)
     analytic = _output_meta(manifest, "analytic")
     scl = _output_meta(manifest, "scl")
@@ -453,7 +469,7 @@ def build_stac_item_from_prepare_manifest(manifest: dict[str, Any]) -> dict:
         "stac_version": "1.0.0",
         "stac_extensions": STAC_EXTENSIONS,
         "id": scene.item_id,
-        "collection": config.COLLECTION_ID,
+        "collection": scene.source_id,
         "bbox": bbox,
         "geometry": geometry,
         "properties": item_props,
@@ -461,17 +477,164 @@ def build_stac_item_from_prepare_manifest(manifest: dict[str, Any]) -> dict:
         "links": [
             {
                 "rel": "collection",
-                "href": "./sentinel-2-l2a-collection.json",
+                "href": f"./{scene.source_id}-collection.json",
                 "type": "application/json",
             },
             {
                 "rel": "parent",
-                "href": "./sentinel-2-l2a-collection.json",
+                "href": f"./{scene.source_id}-collection.json",
                 "type": "application/json",
             },
             {
                 "rel": "root",
-                "href": "./sentinel-2-l2a-collection.json",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+        ],
+    }
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, list | tuple):
+        return list(value)
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return [value]
+
+
+def _sentinel1_polarizations(manifest: dict[str, Any], meta: dict[str, Any]) -> list[str]:
+    props = _properties(manifest)
+    value = _first(
+        manifest.get("sar:polarizations"),
+        manifest.get("polarizations"),
+        props.get("sar:polarizations"),
+        meta.get("sar:polarizations"),
+        meta.get("polarizations"),
+    )
+    polarizations = [str(pol).upper() for pol in _as_list(value)]
+    return polarizations or ["VV"]
+
+
+def _backscatter_raster_bands(
+    meta: dict[str, Any],
+    polarizations: list[str],
+) -> list[dict[str, Any]]:
+    existing = _first(meta.get("raster:bands"), meta.get("raster_bands"))
+    if existing:
+        return list(existing)
+    resolution = meta.get("resolution") or [10]
+    spatial_resolution = resolution[0] if isinstance(resolution, list) and resolution else 10
+    nodata = meta.get("nodata")
+    bands: list[dict[str, Any]] = []
+    for pol in polarizations:
+        band = {
+            "data_type": meta.get("dtype") or "float32",
+            "spatial_resolution": spatial_resolution,
+            "unit": "dB",
+            "name": f"{pol}_dB",
+        }
+        if nodata is not None:
+            band["nodata"] = nodata
+        bands.append(band)
+    return bands
+
+
+def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+    props = _properties(manifest)
+    backscatter = _output_meta(manifest, "backscatter")
+    bbox = _bbox_from_manifest(manifest, backscatter)
+    geometry = _geometry_from_manifest(manifest, backscatter, bbox)
+    epsg = _epsg(_first(backscatter.get("crs"), manifest.get("crs"), props.get("proj:epsg")))
+    shape = _shape(backscatter)
+    transform = _transform(backscatter)
+    proj_bbox = list(_first(backscatter.get("proj:bbox"), backscatter.get("bounds"), bbox))
+    gsd = _first(manifest.get("gsd"), props.get("gsd"), backscatter.get("gsd"), 10)
+    polarizations = _sentinel1_polarizations(manifest, backscatter)
+
+    item_props: dict[str, Any] = {
+        "datetime": scene.acquisition_datetime,
+        "platform": scene.platform,
+        "constellation": "sentinel-1",
+        "instruments": ["c-sar"],
+        "gsd": gsd,
+        "sar:instrument_mode": scene.instrument_mode,
+        "sar:frequency_band": _first(props.get("sar:frequency_band"), "C"),
+        "sar:polarizations": polarizations,
+        "sar:product_type": scene.product_type,
+        "product:type": scene.product_type,
+        "sat:orbit_state": None if scene.orbit_state_or_unknown == "unknown" else scene.orbit_state,
+        "akasha:scene_key": scene.scene_key,
+        "akasha:source_id": scene.source_id,
+        "akasha:acquisition_date": scene.acquisition_date,
+        "akasha:scene_component": scene.scene_component,
+        "akasha:product_id_hash": scene.product_id_hash,
+        "akasha:date_metrics_kind": "radar",
+        "akasha:metrics_provisional": _first(props.get("akasha:metrics_provisional"), True),
+    }
+    if scene.relative_orbit not in (None, ""):
+        item_props["sat:relative_orbit"] = (
+            int(scene.relative_orbit)
+            if str(scene.relative_orbit).isdigit()
+            else scene.relative_orbit
+        )
+    if props.get("sat:absolute_orbit") not in (None, ""):
+        item_props["sat:absolute_orbit"] = props.get("sat:absolute_orbit")
+    if epsg is not None:
+        item_props["proj:epsg"] = epsg
+    if shape:
+        item_props["proj:shape"] = shape
+    if transform:
+        item_props["proj:transform"] = transform
+    if proj_bbox:
+        item_props["proj:bbox"] = proj_bbox
+    if manifest.get("created") or props.get("created"):
+        item_props["created"] = manifest.get("created") or props.get("created")
+    item_props = {key: value for key, value in item_props.items() if value is not None}
+
+    backscatter_asset: dict[str, Any] = {
+        "href": f"s3://{config.BUCKET}/{scene.backscatter_key}",
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "Calibrated terrain-corrected SAR backscatter COG (dB)",
+        "roles": ["data", "backscatter"],
+        "gsd": gsd,
+        "sar:polarizations": polarizations,
+        "raster:bands": _backscatter_raster_bands(backscatter, polarizations),
+    }
+    if epsg is not None:
+        backscatter_asset["proj:epsg"] = epsg
+    if shape:
+        backscatter_asset["proj:shape"] = shape
+    if transform:
+        backscatter_asset["proj:transform"] = transform
+    if proj_bbox:
+        backscatter_asset["proj:bbox"] = proj_bbox
+
+    return {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "stac_extensions": SENTINEL1_STAC_EXTENSIONS,
+        "id": scene.item_id,
+        "collection": scene.source_id,
+        "bbox": bbox,
+        "geometry": geometry,
+        "properties": item_props,
+        "assets": {"backscatter": backscatter_asset},
+        "links": [
+            {
+                "rel": "collection",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "parent",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "root",
+                "href": f"./{scene.source_id}-collection.json",
                 "type": "application/json",
             },
         ],

@@ -8,6 +8,7 @@ Idempotency key (data-ingestion-and-satellite-rules.md):
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +16,11 @@ from typing import Any
 _PRODUCT_RE = re.compile(
     r"(?P<platform>S2[A-B])_MSI(?P<level>L\d[A-Z])_(?P<dt>\d{8}T\d{6})_"
     r"N(?P<baseline>\d{4})_R\d{3}_T(?P<tile>[0-9A-Z]{5})_",
+    re.IGNORECASE,
+)
+_S1_PRODUCT_RE = re.compile(
+    r"(?P<platform>S1[A-C])_(?P<mode>[A-Z0-9]+)_(?P<family>GRD[HFM])_"
+    r"(?P<class>\d[A-Z]{2,3})_(?P<dt>\d{8}T\d{6})_",
     re.IGNORECASE,
 )
 _UNSAFE_COMPONENT_RE = re.compile(r"[^0-9A-Za-z]+")
@@ -63,6 +69,23 @@ def _product_match(manifest: dict[str, Any]) -> re.Match[str] | None:
     return None
 
 
+def _s1_product_match(manifest: dict[str, Any]) -> re.Match[str] | None:
+    for value in _manifest_text_sources(manifest):
+        match = _S1_PRODUCT_RE.search(value)
+        if match:
+            return match
+    return None
+
+
+def _source_id_from_manifest(manifest: dict[str, Any]) -> str:
+    source_id = _first_value(manifest, "source_id", "sourceId", "collection_id", "collection")
+    if source_id:
+        return str(source_id)
+    if _s1_product_match(manifest):
+        return "sentinel-1-grd"
+    return "sentinel-2-l2a"
+
+
 def _normalise_datetime(value: str) -> str:
     if value.endswith("Z"):
         return value
@@ -90,6 +113,28 @@ def _safe_component(value: str) -> str:
     return _UNSAFE_COMPONENT_RE.sub("", value)
 
 
+def _safe_path_component(value: str, default: str = "unknown") -> str:
+    cleaned = _UNSAFE_COMPONENT_RE.sub("-", str(value).strip()).strip("-")
+    return cleaned or default
+
+
+def _platform_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    code = value.lower()
+    if code in {"s1a", "sentinel-1a"}:
+        return "sentinel-1a"
+    if code in {"s1b", "sentinel-1b"}:
+        return "sentinel-1b"
+    if code in {"s1c", "sentinel-1c"}:
+        return "sentinel-1c"
+    if code in {"s2a", "sentinel-2a"}:
+        return "sentinel-2a"
+    if code in {"s2b", "sentinel-2b"}:
+        return "sentinel-2b"
+    return value
+
+
 @dataclass(frozen=True)
 class SceneIdentity:
     satellite: str
@@ -98,10 +143,22 @@ class SceneIdentity:
     acquisition_datetime: str  # ISO 8601 UTC, e.g. "2026-01-15T05:20:00Z"
     processing_baseline: str  # e.g. "05.00"
     legacy_object_layout: bool = False
+    platform: str | None = None
+    instrument_mode: str | None = None
+    product_type: str | None = None
+    relative_orbit: str | int | None = None
+    orbit_state: str | None = None
+    product_id: str | None = None
 
     @classmethod
     def from_prepare_manifest(cls, manifest: dict[str, Any]) -> SceneIdentity:
         """Build a dynamic scene identity from a COG prepare manifest."""
+        if _source_id_from_manifest(manifest) == "sentinel-1-grd":
+            return cls._sentinel1_from_prepare_manifest(manifest)
+        return cls._sentinel2_from_prepare_manifest(manifest)
+
+    @classmethod
+    def _sentinel2_from_prepare_manifest(cls, manifest: dict[str, Any]) -> SceneIdentity:
         match = _product_match(manifest)
         mgrs_tile = _first_value(manifest, "mgrs_tile", "mgrsTile", "s2:mgrs_tile")
         if not mgrs_tile and match:
@@ -142,12 +199,92 @@ class SceneIdentity:
             level = match.group("level")
         product_level = str(level or "L2A").replace("MSI", "")
 
+        platform = _platform_name(match.group("platform")) if match else None
+
         return cls(
             satellite="sentinel-2-l2a",
             product_level=product_level,
             mgrs_tile=mgrs_tile,
             acquisition_datetime=_normalise_datetime(str(acquisition_datetime)),
             processing_baseline=_format_baseline(str(baseline)),
+            platform=platform or _platform_name(_first_value(manifest, "platform")),
+        )
+
+    @classmethod
+    def _sentinel1_from_prepare_manifest(cls, manifest: dict[str, Any]) -> SceneIdentity:
+        match = _s1_product_match(manifest)
+        product_id = _first_value(manifest, "product_id", "productId", "source_product_id", "id")
+        if not product_id and match:
+            product_id = match.group(0).rstrip("_")
+        product_id = str(product_id or "sentinel-1-grd")
+
+        acquisition_datetime = _first_value(
+            manifest,
+            "acquisition_datetime",
+            "acquisitionDateTime",
+            "datetime",
+            "sensing_time",
+        )
+        if not acquisition_datetime and match:
+            acquisition_datetime = _datetime_from_product(match.group("dt"))
+        if not acquisition_datetime:
+            acquisition_date = _first_value(manifest, "acquisition_date", "acquisitionDate")
+            if acquisition_date:
+                acquisition_datetime = f"{acquisition_date}T00:00:00Z"
+        if not acquisition_datetime:
+            raise ValueError("Sentinel-1 prepare manifest is missing acquisition datetime")
+
+        platform = _platform_name(_first_value(manifest, "platform"))
+        if not platform and match:
+            platform = _platform_name(match.group("platform"))
+
+        instrument_mode = _first_value(
+            manifest,
+            "sar:instrument_mode",
+            "instrument_mode",
+            "instrumentMode",
+        )
+        if not instrument_mode and match:
+            instrument_mode = match.group("mode").upper()
+
+        product_type = _first_value(
+            manifest,
+            "product:type",
+            "product_type",
+            "productType",
+            "sar:product_type",
+        )
+        if not product_type and match:
+            product_class = match.group("class").upper()
+            product_type = (
+                f"{match.group('mode').upper()}_"
+                f"{match.group('family').upper()}_{product_class[:2]}"
+            )
+
+        return cls(
+            satellite="sentinel-1-grd",
+            product_level="GRD",
+            mgrs_tile="",
+            acquisition_datetime=_normalise_datetime(str(acquisition_datetime)),
+            processing_baseline="",
+            platform=platform,
+            instrument_mode=str(instrument_mode or "unknown").upper(),
+            product_type=str(product_type or "unknown"),
+            relative_orbit=_first_value(
+                manifest,
+                "sat:relative_orbit",
+                "relative_orbit",
+                "relativeOrbit",
+            ),
+            orbit_state=_first_value(
+                manifest,
+                "sat:orbit_state",
+                "orbit_state",
+                "orbitState",
+                "orbit_direction",
+                "orbitDirection",
+            ),
+            product_id=product_id,
         )
 
     @property
@@ -155,9 +292,41 @@ class SceneIdentity:
         return self.acquisition_datetime[:10]
 
     @property
+    def source_id(self) -> str:
+        return self.satellite
+
+    @property
+    def relative_orbit_or_unknown(self) -> str:
+        if self.relative_orbit in (None, ""):
+            return "unknown"
+        return _safe_path_component(str(self.relative_orbit), "unknown")
+
+    @property
+    def orbit_state_or_unknown(self) -> str:
+        if self.orbit_state in (None, ""):
+            return "unknown"
+        return _safe_path_component(str(self.orbit_state).lower(), "unknown")
+
+    @property
+    def product_id_hash(self) -> str:
+        value = self.product_id or (
+            f"{self.source_id}:{self.acquisition_datetime}:"
+            f"{self.product_level}:{self.mgrs_tile}:{self.processing_baseline}"
+        )
+        return hashlib.sha1(value.encode("utf-8")).hexdigest()[:12]
+
+    @property
     def scene_key(self) -> str:
         """Deterministic idempotency key. Re-ingesting the same scene must not
         create duplicate STAC items or overwrite validated assets."""
+        if self.source_id == "sentinel-1-grd":
+            platform = self.platform or "unknown"
+            instrument_mode = self.instrument_mode or "unknown"
+            return (
+                f"{self.source_id}:{platform}:{instrument_mode}:"
+                f"{self.product_type or 'unknown'}:{self.relative_orbit_or_unknown}:"
+                f"{self.orbit_state_or_unknown}:{self.acquisition_datetime}:{self.product_id_hash}"
+            )
         return (
             f"{self.satellite}:{self.product_level}:{self.mgrs_tile}:"
             f"{self.acquisition_datetime}:{self.processing_baseline}"
@@ -165,6 +334,8 @@ class SceneIdentity:
 
     @property
     def item_id(self) -> str:
+        if self.source_id == "sentinel-1-grd":
+            return f"{self.source_id}_{self.relative_orbit_or_unknown}_{self.scene_component}"
         if self.legacy_object_layout:
             date_compact = self.acquisition_date.replace("-", "")
             baseline_compact = _safe_component(self.processing_baseline)
@@ -174,12 +345,23 @@ class SceneIdentity:
     @property
     def scene_component(self) -> str:
         """Filesystem/S3-safe component that distinguishes scenes for one date/tile."""
+        if self.source_id == "sentinel-1-grd":
+            datetime_compact = _safe_component(self.acquisition_datetime)
+            platform = _safe_path_component(self.platform or "unknown")
+            instrument = _safe_path_component(self.instrument_mode or "unknown")
+            product = _safe_path_component(self.product_type or "unknown")
+            return f"{datetime_compact}_{platform}_{instrument}_{product}_{self.product_id_hash}"
         datetime_compact = _safe_component(self.acquisition_datetime)
         baseline_compact = _safe_component(self.processing_baseline)
         return f"{datetime_compact}_{baseline_compact}"
 
     @property
     def _dynamic_key_prefix(self) -> str:
+        if self.source_id == "sentinel-1-grd":
+            return (
+                f"{self.source_id}/{self.acquisition_date}/"
+                f"{self.relative_orbit_or_unknown}/{self.scene_component}"
+            )
         return f"{self.satellite}/{self.acquisition_date}/{self.mgrs_tile}/{self.scene_component}"
 
     @property
@@ -205,6 +387,10 @@ class SceneIdentity:
     @property
     def scl_key(self) -> str:
         return f"{self._key_prefix}/scl.tif"
+
+    @property
+    def backscatter_key(self) -> str:
+        return f"{self._key_prefix}/backscatter.tif"
 
 
 def scene_from_prepare_manifest(manifest: dict[str, Any]) -> SceneIdentity:

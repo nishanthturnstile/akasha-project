@@ -34,7 +34,12 @@ def _transparent_png() -> bytes:
     ihdr = struct.pack("!IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
     # One scanline: filter byte 0, then transparent RGBA pixel.
     idat = zlib.compress(b"\x00\x00\x00\x00\x00")
-    return signature + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
+    return (
+        signature
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", idat)
+        + _png_chunk(b"IEND", b"")
+    )
 
 
 # Used for TiTiler 404 tile misses at COG/scene edges so MapLibre can continue
@@ -54,6 +59,34 @@ def default_rgb_rescale() -> str:
     (scale 0.0001). Overridable via AKASHA_RGB_RESCALE ("min,max").
     """
     return os.environ.get("AKASHA_RGB_RESCALE", "0,3000")
+
+
+def default_sentinel1_vv_rescale() -> str:
+    """Sentinel-1 VV backscatter dB display stretch."""
+    return os.environ.get("AKASHA_S1_VV_RESCALE", "-25,5")
+
+
+def build_sentinel1_vv_tile_url(
+    *,
+    backscatter_href: str,
+    z: int,
+    x: int,
+    y: int,
+    titiler_url: str | None = None,
+    rescale: str | None = None,
+    fmt: str = "png",
+) -> str:
+    """Build the internal TiTiler request URL for a Sentinel-1 VV grayscale tile."""
+    base = (titiler_url or titiler_base_url()).rstrip("/")
+    rescale = rescale or default_sentinel1_vv_rescale()
+    path = f"/cog/tiles/{TILE_MATRIX_SET}/{z}/{x}/{y}.{fmt}"
+    params: list[tuple[str, str]] = [
+        ("url", backscatter_href),
+        ("bidx", "1"),
+        ("rescale", rescale),
+        ("colormap_name", "gray"),
+    ]
+    return f"{base}{path}?{urllib.parse.urlencode(params)}"
 
 
 def build_rgb_tile_url(

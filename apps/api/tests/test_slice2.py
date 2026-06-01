@@ -166,6 +166,7 @@ def test_config_endpoint_contract():
     body = r.json()
     assert body["supportedIndices"] == ["NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"]
     assert body["defaultIndex"] == "NDVI"
+    assert body["indexFieldsKind"] == "global-optical-defaults"
     assert body["maxPolygonAreaHa"] == 50
     assert body["aoi"]["id"] == "bangalore"
 
@@ -173,9 +174,19 @@ def test_config_endpoint_contract():
 def test_sources_endpoint_contract():
     r = client.get("/api/sources")
     assert r.status_code == 200
-    src = r.json()[0]
-    assert src["id"] == "sentinel-2-l2a"
+    sources = {src["id"]: src for src in r.json()}
+    src = sources["sentinel-2-l2a"]
     assert "NDVI" in src["supportedIndices"]
+    assert src["kind"] == "optical"
+    assert src["displayModes"] == ["RGB"]
+    s1 = sources["sentinel-1-grd"]
+    assert s1["label"] == "Sentinel-1 GRD"
+    assert s1["provider"] == "Copernicus"
+    assert s1["kind"] == "sar"
+    assert s1["displayModes"] == ["VV_GRAYSCALE"]
+    assert s1["defaultDisplayMode"] == "VV_GRAYSCALE"
+    assert s1["dateMetricsKind"] == "radar"
+    assert s1["supportedIndices"] == []
 
 
 def test_dates_endpoint_returns_real_scene():
@@ -191,6 +202,7 @@ def test_layers_default_tile_template_is_same_origin_api_route():
     body = r.json()
     assert body["sourceId"] == "sentinel-2-l2a"
     assert body["acquisitionDate"] == "2025-09-14"
+    assert body["displayMode"] == "RGB"
     assert body["tileUrlTemplate"] == (
         "/api/tiles/sentinel-2-l2a/2025-09-14/rgb/{z}/{x}/{y}.png"
     )
@@ -222,6 +234,146 @@ def _stac_item(item_id, acquisition_date, bbox, analytic_href, scl_href, usable=
             "scl": {"href": scl_href},
         },
     }
+
+
+def _s1_stac_item(
+    item_id,
+    acquisition_date,
+    bbox,
+    backscatter_href,
+    coverage=64.0,
+    latest=None,
+):
+    props = {
+        "datetime": f"{acquisition_date}T01:30:00Z",
+        "akasha:acquisition_date": acquisition_date,
+        "akasha:coverage_percent": coverage,
+        "sar:polarizations": ["VV", "VH"],
+        "proj:epsg": 32643,
+    }
+    if latest is not None:
+        props["akasha:is_latest_usable"] = latest
+    return {
+        "type": "Feature",
+        "id": item_id,
+        "collection": "sentinel-1-grd",
+        "bbox": bbox,
+        "properties": props,
+        "assets": {
+            "backscatter": {
+                "href": backscatter_href,
+                "raster:bands": [{"name": "VV", "nodata": -9999.0}],
+                "proj:epsg": 32643,
+            }
+        },
+    }
+
+
+def test_supported_indices_preserves_explicit_empty_collection(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "get_collection",
+        lambda source_id="sentinel-1-grd": {
+            "id": source_id,
+            "akasha:supported_indices": [],
+        },
+    )
+
+    assert catalog.supported_indices("sentinel-1-grd") == []
+
+
+def test_sentinel1_asset_resolution_uses_backscatter_not_optical_assets(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-1-grd": [
+            _s1_stac_item(
+                "s1-a",
+                "2026-04-26",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://akasha-cogs/s1/a/backscatter.tif",
+            )
+        ],
+    )
+
+    assets = catalog.resolve_assets("sentinel-1-grd", "2026-04-26")
+    assert assets["backscatterHref"] == "s3://akasha-cogs/s1/a/backscatter.tif"
+    assert assets["bandNames"] == ["VV"]
+    assert "analyticHref" not in assets
+    assert "sclHref" not in assets
+
+
+def test_sentinel1_dates_are_radar_safe(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-1-grd": [
+            _s1_stac_item(
+                "s1-old",
+                "2026-04-24",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://akasha-cogs/s1/old/backscatter.tif",
+                coverage=50.0,
+            ),
+            _s1_stac_item(
+                "s1-new",
+                "2026-04-26",
+                [77.5, 11.5, 79.0, 13.5],
+                "s3://akasha-cogs/s1/new/backscatter.tif",
+                coverage=70.0,
+            ),
+        ],
+    )
+
+    r = client.get("/api/sources/sentinel-1-grd/dates")
+    assert r.status_code == 200
+    dates = r.json()
+    assert dates[0]["acquisitionDate"] == "2026-04-26"
+    assert dates[0]["sceneCount"] == 1
+    assert dates[0]["bounds"] == [77.5, 11.5, 79.0, 13.5]
+    assert dates[0]["tileAvailable"] is True
+    assert dates[0]["usablePixelPercent"] is None
+    assert dates[0]["cloudMaskedPercent"] is None
+    assert dates[0]["coveragePercent"] == pytest.approx(70.0)
+    assert dates[0]["isLatestUsable"] is True
+    assert dates[0]["metricsProvisional"] is False
+
+
+def test_sentinel1_multi_scene_dates_are_not_tile_available(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-1-grd": [
+            _s1_stac_item(
+                "s1-a",
+                "2026-04-26",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://akasha-cogs/s1/a/backscatter.tif",
+            ),
+            _s1_stac_item(
+                "s1-b",
+                "2026-04-26",
+                [78.0, 12.0, 79.0, 13.0],
+                "s3://akasha-cogs/s1/b/backscatter.tif",
+            ),
+        ],
+    )
+
+    r = client.get("/api/sources/sentinel-1-grd/dates")
+
+    assert r.status_code == 200
+    dates = r.json()
+    assert dates[0]["sceneCount"] == 2
+    assert dates[0]["tileAvailable"] is False
+    assert dates[0]["metricsProvisional"] is True
 
 
 def test_dates_endpoint_deduplicates_same_date_scenes_with_merged_bounds(monkeypatch):
@@ -283,6 +435,74 @@ def test_layers_default_uses_merged_bounds_for_latest_date(monkeypatch):
     )
 
 
+def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-1-grd": [
+            _s1_stac_item(
+                "s1-a",
+                "2026-04-26",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://akasha-cogs/s1/a/backscatter.tif",
+            )
+        ],
+    )
+
+    r = client.get("/api/layers/default?sourceId=sentinel-1-grd")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sourceId"] == "sentinel-1-grd"
+    assert body["displayMode"] == "VV_GRAYSCALE"
+    assert body["kind"] == "sar"
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/sentinel-1-grd/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png"
+    )
+    assert body["usablePixelPercent"] is None
+    assert body["cloudMaskedPercent"] is None
+
+
+def test_layers_default_skips_unsupported_sentinel1_multi_scene_date(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-1-grd": [
+            _s1_stac_item(
+                "s1-new-a",
+                "2026-04-26",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://akasha-cogs/s1/new-a/backscatter.tif",
+            ),
+            _s1_stac_item(
+                "s1-new-b",
+                "2026-04-26",
+                [78.0, 12.0, 79.0, 13.0],
+                "s3://akasha-cogs/s1/new-b/backscatter.tif",
+            ),
+            _s1_stac_item(
+                "s1-old",
+                "2026-04-24",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://akasha-cogs/s1/old/backscatter.tif",
+            ),
+        ],
+    )
+
+    r = client.get("/api/layers/default?sourceId=sentinel-1-grd")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["acquisitionDate"] == "2026-04-24"
+    assert body["tileAvailable"] is True
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/sentinel-1-grd/2026-04-24/VV_GRAYSCALE/{z}/{x}/{y}.png"
+    )
+
+
 def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import tiles
@@ -321,6 +541,76 @@ def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
         "url=s3%3A%2F%2Fakasha-cogs%2Fa%2Fanalytic.tif&bidx=1&bidx=8&bidx=9&"
         "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
     )
+
+
+def test_sentinel1_tile_builder_uses_vv_bidx_and_default_rescale(monkeypatch):
+    from app.raster import tiles
+
+    monkeypatch.setenv("AKASHA_S1_VV_RESCALE", "-25,5")
+    url = tiles.build_sentinel1_vv_tile_url(
+        backscatter_href="s3://akasha-cogs/s1/backscatter.tif",
+        z=3,
+        x=4,
+        y=5,
+        titiler_url="http://titiler.internal:8000",
+    )
+
+    assert url == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fs1%2Fbackscatter.tif&bidx=1&"
+        "rescale=-25%2C5&colormap_name=gray"
+    )
+
+
+def test_sentinel1_display_tile_route_uses_backscatter_asset(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    captured = {}
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "s1-a",
+                "backscatterHref": "s3://akasha-cogs/s1/a/backscatter.tif",
+                "bandNames": ["VV"],
+                "nodata": -9999.0,
+                "epsg": 32643,
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+            }
+        ],
+    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+
+    r = client.get("/api/tiles/sentinel-1-grd/2026-04-26/VV_GRAYSCALE/3/4/5.png")
+    assert r.status_code == 200
+    assert r.content == b"png-bytes"
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fs1%2Fa%2Fbackscatter.tif&bidx=1&"
+        "rescale=-25%2C5&colormap_name=gray"
+    )
+
+
+def test_sentinel1_tile_route_rejects_unsupported_display_mode():
+    r = client.get("/api/tiles/sentinel-1-grd/2026-04-26/RGB/3/4/5.png")
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "UNSUPPORTED_DISPLAY_MODE"
+    assert body["error"]["details"] == {
+        "sourceId": "sentinel-1-grd",
+        "displayMode": "RGB",
+        "supportedDisplayModes": ["VV_GRAYSCALE"],
+    }
+    assert "s3://" not in r.text
 
 
 def test_tile_route_multi_scene_fails_without_leaking_cog_hrefs(monkeypatch):
@@ -378,6 +668,35 @@ def test_statistics_unsupported_index_returns_400_error_shape():
     )
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "UNSUPPORTED_INDEX"
+
+
+def test_statistics_rejects_sentinel1_optical_index_without_raster_io(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    def fail_resolve_assets(*_args, **_kwargs):
+        raise AssertionError("Sentinel-1 optical indices must fail before asset resolution")
+
+    monkeypatch.setattr(catalog, "resolve_assets_for_date", fail_resolve_assets)
+
+    r = client.post(
+        "/api/indices/statistics",
+        json={
+            "geometry": IN_FOOTPRINT_POLY,
+            "sourceId": "sentinel-1-grd",
+            "acquisitionDate": "2026-04-26",
+            "indexType": "NDVI",
+        },
+    )
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "UNSUPPORTED_INDEX"
+    assert body["error"]["details"] == {
+        "sourceId": "sentinel-1-grd",
+        "indexType": "NDVI",
+        "supported": [],
+    }
+    assert "s3://" not in r.text
 
 
 def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypatch):

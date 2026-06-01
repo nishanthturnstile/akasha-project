@@ -37,6 +37,9 @@ class Settings:
     database_url: str = field(default_factory=lambda: _get("DATABASE_URL", ""))
     stac_api_url: str = field(default_factory=lambda: _get("STAC_API_URL", ""))
     titiler_url: str = field(default_factory=lambda: _get("TITILER_URL", ""))
+    sentinel1_vv_rescale: str = field(
+        default_factory=lambda: _get("AKASHA_S1_VV_RESCALE", "-25,5")
+    )
 
     # AOI / source defaults
     default_source_id: str = field(

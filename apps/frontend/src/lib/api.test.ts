@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getConfig, getSources } from '@/lib/api';
+import { ApiError, composeTileTemplate, getConfig, getSources } from '@/lib/api';
 
 describe('api client error mapping', () => {
   beforeEach(() => {
@@ -38,6 +38,14 @@ describe('api client error mapping', () => {
     await expect(getSources()).rejects.toMatchObject({
       code: 'RASTER_BACKEND_UNAVAILABLE',
       status: 503,
+    });
+  });
+
+  describe('composeTileTemplate', () => {
+    it('uses the requested display mode in the source/date tile route', () => {
+      expect(composeTileTemplate('sentinel-1-grd', '2026-04-26', 'VV_GRAYSCALE')).toBe(
+        '/api/tiles/sentinel-1-grd/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
+      );
     });
   });
 

@@ -192,6 +192,8 @@ Date-only keys such as `sentinel-2-l2a/{acquisitionDate}/analytic.tif` are legac
 ### Wave 1 manual path
 
 Detailed repeatable runbook: [`sentinel-2-l2a-cog-prep-runbook.md`](./sentinel-2-l2a-cog-prep-runbook.md).
+Sentinel-1 GRD SAR preprocessing is documented separately in
+[`sentinel-1-grd-cog-prep-runbook.md`](./sentinel-1-grd-cog-prep-runbook.md).
 
 1. Start with provided Bangalore `.tif` or manually downloaded Sentinel-2 L2A products.
 2. Convert inputs into analytic reflectance COG and SCL COG.
@@ -215,6 +217,8 @@ data/seed/
   rasters/{acquisitionDate}/{mgrsTile}/scl.tif
   rasters/{acquisitionDate}/{mgrsTile}/prepare_manifest.json
   rasters/{acquisitionDate}/prepare_manifest.json      # legacy/single-ZIP layout also discovered
+  rasters/sentinel-1-grd/{acquisitionDate}/{relativeOrbitOrUnknown}/{sceneComponent}/backscatter.tif
+  rasters/sentinel-1-grd/{acquisitionDate}/{relativeOrbitOrUnknown}/{sceneComponent}/prepare_manifest.json
 ```
 
 Wave 2 automated ingestion is deferred to the Appendix and is not for MVP prompts.

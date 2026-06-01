@@ -36,8 +36,9 @@ def compute_statistics(
     supported = catalog.supported_indices(source_id)
     if index_type not in supported:
         raise bad_request(
-            f"Unsupported index '{index_type}'. Supported: {supported}.",
+            f"Unsupported index '{index_type}' for source '{source_id}'.",
             code="UNSUPPORTED_INDEX",
+            sourceId=source_id,
             indexType=index_type,
             supported=supported,
         )

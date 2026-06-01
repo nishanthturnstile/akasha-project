@@ -75,6 +75,10 @@ export default function MapPage() {
   const [sourceOverride, setSourceOverride] = useState<string | undefined>(undefined);
   const effectiveSourceId = sourceOverride ?? sourcesQ.data?.[0]?.id;
   const datesQ = useDates(effectiveSourceId);
+  const selectedSource = useMemo(
+    () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
+    [sourcesQ.data, effectiveSourceId],
+  );
 
   const [dateOverride, setDateOverride] = useState<string | null>(null);
   const [visible, setVisible] = useState(true);
@@ -89,9 +93,11 @@ export default function MapPage() {
     if (dateOverride && datesQ.data.some((d) => d.acquisitionDate === dateOverride)) {
       return dateOverride;
     }
-    const def = selectDefaultDate(datesQ.data, configQ.data.usablePixelThresholdPercent);
+    const def = selectDefaultDate(datesQ.data, configQ.data.usablePixelThresholdPercent, {
+      sourceKind: selectedSource?.kind,
+    });
     return def ? def.acquisitionDate : null;
-  }, [datesQ.data, configQ.data, dateOverride]);
+  }, [datesQ.data, configQ.data, dateOverride, selectedSource?.kind]);
 
   const handleSourceChange = (id: string) => {
     setSourceOverride(id);
@@ -105,6 +111,15 @@ export default function MapPage() {
     [datesQ.data, selectedDate],
   );
 
+  const selectedDisplayMode =
+    selectedSource?.displayMode ??
+    selectedSource?.defaultDisplayMode ??
+    selectedSource?.displayModes?.[0] ??
+    (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
+      ? defaultLayerQ.data.displayMode
+      : undefined) ??
+    'RGB';
+
   const scene = useMemo<SatelliteScene | null>(() => {
     if (!selectedDate || !effectiveSourceId) return null;
     const dl = defaultLayerQ.data;
@@ -117,28 +132,38 @@ export default function MapPage() {
         bounds: dl.bounds ?? dateBounds,
         minzoom: dl.minzoom,
         maxzoom: dl.maxzoom,
-        attribution: dl.attribution,
+        attribution: selectedSource?.attribution ?? dl.attribution,
       };
     }
     return {
-      tileUrlTemplate: composeTileTemplate(effectiveSourceId, selectedDate),
+      tileUrlTemplate: composeTileTemplate(effectiveSourceId, selectedDate, selectedDisplayMode),
       bounds: dateBounds,
       minzoom: dl?.minzoom,
       maxzoom: dl?.maxzoom,
-      attribution: dl?.attribution,
+      attribution:
+        selectedSource?.attribution ??
+        (dl?.sourceId === effectiveSourceId ? dl.attribution : undefined),
     };
-  }, [selectedDate, effectiveSourceId, defaultLayerQ.data, selectedDateMetadata]);
+  }, [
+    selectedDate,
+    effectiveSourceId,
+    defaultLayerQ.data,
+    selectedDateMetadata,
+    selectedDisplayMode,
+    selectedSource?.attribution,
+  ]);
 
   // Marginal/empty signal: no date meets the usability threshold.
   const marginalNote = useMemo<string | null>(() => {
     if (!datesQ.data || datesQ.data.length === 0 || !configQ.data) return null;
+    if (selectedSource?.kind === 'sar') return null;
     const threshold = configQ.data.usablePixelThresholdPercent;
     const qualifies = datesQ.data.some(
       (d) => d.isLatestUsable || (d.usablePixelPercent != null && d.usablePixelPercent >= threshold),
     );
     if (qualifies) return null;
     return `No usable optical scene in range. Showing the most recent attempt (${datesQ.data[0].acquisitionDate}).`;
-  }, [datesQ.data, configQ.data]);
+  }, [datesQ.data, configQ.data, selectedSource?.kind]);
 
   if (configQ.isLoading) return <FullScreenLoading />;
   if (configQ.isError || !configQ.data) {
@@ -146,8 +171,11 @@ export default function MapPage() {
   }
 
   const config = configQ.data;
-  const attribution = scene?.attribution ?? 'Copernicus Sentinel-2';
+  const sourceAttribution = selectedSource?.attribution ?? selectedSource?.provider;
+  const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
   const basemapCredit = basemapAttribution(configQ.data);
+  const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
+  const showIndexPanel = selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background" data-testid="map-page">
@@ -209,7 +237,7 @@ export default function MapPage() {
 
       {/* Right: index panel (Phase 5 placeholder) */ }
       <div className="absolute right-4 top-[76px] z-10 hidden xl:block">
-        <IndexPanel />
+        {showIndexPanel && <IndexPanel />}
       </div>
 
       {/* Bottom-right: map controls */ }

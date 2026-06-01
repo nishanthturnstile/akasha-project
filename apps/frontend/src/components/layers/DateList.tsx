@@ -1,5 +1,5 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import type { SceneDate } from '@/types/api';
+import type { SceneDate, SourceKind } from '@/types/api';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ interface DateListProps {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  sourceKind?: SourceKind;
 }
 
 function LoadingRows() {
@@ -33,6 +34,7 @@ export function DateList({
   loading,
   error,
   onRetry,
+  sourceKind,
 }: DateListProps) {
   if (loading) return <LoadingRows />;
 
@@ -67,6 +69,8 @@ export function DateList({
         {dates.map((d) => {
           const selected = d.acquisitionDate === selectedDate;
           const disabled = !d.tileAvailable;
+          const latestLabel =
+            sourceKind === 'sar' ? 'Latest radar pass' : 'Latest usable scene';
           return (
             <button
               key={d.acquisitionDate}
@@ -91,11 +95,15 @@ export function DateList({
                     <TooltipTrigger asChild>
                       <span
                         className="size-2 rounded-pill bg-primary"
-                        aria-label="Latest usable scene"
-                        data-testid={`latest-usable-dot-${d.acquisitionDate}`}
+                        aria-label={latestLabel}
+                        data-testid={
+                          sourceKind === 'sar'
+                            ? `latest-date-dot-${d.acquisitionDate}`
+                            : `latest-usable-dot-${d.acquisitionDate}`
+                        }
                       />
                     </TooltipTrigger>
-                    <TooltipContent>Latest usable scene</TooltipContent>
+                    <TooltipContent>{latestLabel}</TooltipContent>
                   </Tooltip>
                 )}
                 <span className="font-mono tnum text-[13px] text-foreground">
@@ -103,7 +111,11 @@ export function DateList({
                 </span>
               </span>
               <span className="ml-auto">
-                <CloudUsabilityChip percent={d.usablePixelPercent} />
+                <CloudUsabilityChip
+                  percent={d.usablePixelPercent}
+                  coveragePercent={d.coveragePercent}
+                  sourceKind={sourceKind}
+                />
               </span>
             </button>
           );

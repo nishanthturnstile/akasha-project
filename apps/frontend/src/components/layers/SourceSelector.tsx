@@ -13,11 +13,12 @@ export function SourceSelector({ sources, value, onChange }: SourceSelectorProps
     <div
       role="tablist"
       aria-label="Imagery source"
-      className="flex items-center gap-1"
+      className="flex max-w-full flex-wrap items-center gap-1 overflow-hidden"
       data-testid="source-selector"
     >
       {sources.map((s) => {
         const active = s.id === value;
+        const sourceKind = s.kind === 'sar' ? 'Radar' : 'Optical';
         return (
           <button
             key={s.id}
@@ -27,12 +28,13 @@ export function SourceSelector({ sources, value, onChange }: SourceSelectorProps
             data-testid={`source-tab-${s.id}`}
             onClick={() => onChange(s.id)}
             className={cn(
-              'relative rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-none transition-colors duration-fast ease-standard',
+              'relative min-w-0 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-none transition-colors duration-fast ease-standard',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
+            title={`${s.label} · ${sourceKind}`}
           >
-            {s.label}
+            <span className="block max-w-[9.5rem] truncate">{s.label}</span>
             {active && (
               <span className="absolute inset-x-2 -bottom-0.5 h-0.5 rounded-pill bg-primary" />
             )}

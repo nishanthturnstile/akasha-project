@@ -49,7 +49,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
             onMouseEnter={ onPrefetch }
             onFocus={ onPrefetch }
             className={ cn(
-                'group relative flex w-[88px] shrink-0 snap-start flex-col items-center gap-1.5 rounded-lg border px-2 py-2 text-center transition-colors duration-fast ease-standard',
+                'group relative flex h-11 w-[64px] shrink-0 snap-start flex-col items-center justify-center gap-0 rounded-md border px-1 py-0.5 text-center transition-colors duration-fast ease-standard',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 selected
                     ? 'border-primary/60 bg-primary/10 shadow-e1'
@@ -59,7 +59,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
         >
             { date.isLatestUsable && (
                 <span
-                    className="absolute right-1.5 top-1.5 size-1.5 rounded-pill bg-primary"
+                    className="absolute right-1 top-1 size-1.5 rounded-pill bg-primary"
                     aria-hidden="true"
                     data-testid={
                         sourceKind === 'sar'
@@ -69,10 +69,10 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                 />
             ) }
             <span className="leading-tight">
-                <span className="block text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                <span className="block text-[9px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                     { month }
                 </span>
-                <span className="block font-display text-[18px] font-semibold leading-none tracking-[-0.02em] text-foreground">
+                <span className="block font-display text-[13px] font-semibold leading-none tracking-[-0.02em] text-foreground">
                     { day }
                 </span>
             </span>
@@ -80,7 +80,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                 percent={ date.usablePixelPercent }
                 coveragePercent={ date.coveragePercent }
                 sourceKind={ sourceKind }
-                className="scale-[0.92]"
+                className="max-w-full gap-1 overflow-hidden px-1 py-0 text-[9px] leading-3 [&>span:first-child]:size-1"
             />
         </button>
     );

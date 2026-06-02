@@ -281,10 +281,8 @@ export default function MapPage() {
         onMapReady={ setMap }
       />
 
-      {/* Top chrome: layers toggle · brand · theme */ }
+      {/* Top chrome: layers toggle · search · theme */ }
       <TopBar
-        appName={ config.appName }
-        aoiName={ config.aoi.name }
         layersOpen={ layersOpen }
         onToggleLayers={ view.toggleLayers }
         onOpenCommand={ () => setCommandOpen(true) }
@@ -331,7 +329,7 @@ export default function MapPage() {
       </div>
 
       {/* Right: coordinate readout + map controls (lifted above the timeline) */ }
-      <div className="absolute bottom-[7.75rem] right-4 z-toolbar flex flex-col items-end gap-2">
+      <div className="absolute bottom-[calc(var(--timeline-height)+1.125rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <CoordinateReadout map={ map } />
         <MeasureTool map={ map } />
         <CompareControl
@@ -348,7 +346,7 @@ export default function MapPage() {
       </div>
 
       {/* Bottom-left: legend (per display mode) + attribution, above the timeline */ }
-      <div className="absolute bottom-[7.75rem] left-4 z-toolbar flex flex-col items-start gap-2">
+      <div className="absolute bottom-[calc(var(--timeline-height)+1.125rem)] left-4 z-toolbar flex flex-col items-start gap-2">
         { visible && (
           <Legend displayMode={ selectedDisplayMode } sourceKind={ selectedSource?.kind } />
         ) }
@@ -361,7 +359,7 @@ export default function MapPage() {
       </div>
 
       {/* Bottom: temporal filmstrip */ }
-      <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-3 pb-3">
+      <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
         <TimelineBar
           dates={ datesQ.data }
           selectedDate={ selectedDate }

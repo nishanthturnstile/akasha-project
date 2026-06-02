@@ -1,37 +1,22 @@
-import { Satellite, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LayersToggleButton } from '@/components/layers/LayersToggleButton';
 
 interface TopBarProps {
-    appName: string;
-    aoiName: string;
     layersOpen: boolean;
     onToggleLayers: () => void;
     onOpenCommand: () => void;
 }
 
 /**
- * Floating top chrome: Layers entry (left), brand wordmark (center), search +
- * theme (right). Anchored over the map; the center stays clear for the canvas.
+ * Floating top chrome: Layers entry (left), search + theme (right). Anchored
+ * over the map; the center stays clear for the canvas.
  */
-export function TopBar({ appName, aoiName, layersOpen, onToggleLayers, onOpenCommand }: TopBarProps) {
+export function TopBar({ layersOpen, onToggleLayers, onOpenCommand }: TopBarProps) {
     return (
         <div className="pointer-events-none absolute inset-x-0 top-4 z-toolbar flex items-center justify-between px-4">
             <div className="pointer-events-auto">
                 <LayersToggleButton open={ layersOpen } onClick={ onToggleLayers } />
-            </div>
-
-            <div className="pointer-events-auto absolute left-1/2 -translate-x-1/2">
-                <div
-                    className="glass flex items-center gap-2 rounded-pill px-3.5 py-1.5"
-                    data-testid="brand-mark"
-                >
-                    <Satellite className="size-4 text-primary" strokeWidth={ 1.75 } />
-                    <span className="font-display text-[15px] font-semibold tracking-[-0.01em]">
-                        { appName }
-                    </span>
-                    <span className="hidden text-[12px] text-muted-foreground sm:inline">· { aoiName }</span>
-                </div>
             </div>
 
             <div className="pointer-events-auto flex items-center gap-2">

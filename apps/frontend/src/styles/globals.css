@@ -218,7 +218,7 @@
     /* Map-screen layout (redesign) — kept as tokens so fit-to-bounds padding,
      * timeline reservations, and panel stacking are computed, not magic numbers. */
     --rail-width: 22rem; /* 352px — expanded Layers drawer */
-    --timeline-height: 5.25rem; /* 84px — bottom filmstrip */
+    --timeline-height: 3.5rem; /* 56px — compact bottom filmstrip */
 
     /* Stacking order for floating map chrome (low → high). */
     --z-map: 0;

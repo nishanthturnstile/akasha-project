@@ -195,5 +195,5 @@ export function MapLayerManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  return <div ref={ containerRef } className="absolute inset-0" data-testid="map-canvas" />;
+  return <div ref={ containerRef } className="absolute inset-0 size-full" data-testid="map-canvas" />;
 }

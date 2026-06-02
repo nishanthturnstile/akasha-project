@@ -35,13 +35,13 @@ function NoteRow({
         <div
             data-testid={ testId }
             className={ cn(
-                'flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px]',
+                'flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px]',
                 tone === 'warning'
                     ? 'border-warning/30 bg-warning/10 text-warning'
                     : 'border-info/30 bg-info/10 text-info',
             ) }
         >
-            <Info className="size-3.5 shrink-0" strokeWidth={ 1.75 } />
+            <Info className="size-3 shrink-0" strokeWidth={ 1.75 } />
             <span className="truncate">{ children }</span>
         </div>
     );
@@ -119,9 +119,9 @@ export function TimelineBar({
     let content: React.ReactNode;
     if (loading) {
         content = (
-            <div className="flex gap-2" data-testid="timeline-loading">
+            <div className="flex gap-1.5" data-testid="timeline-loading">
                 { [0, 1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={ i } className="h-[68px] w-[88px] shrink-0 rounded-lg" />
+                    <Skeleton key={ i } className="h-11 w-[62px] shrink-0 rounded-md" />
                 )) }
             </div>
         );
@@ -155,7 +155,7 @@ export function TimelineBar({
                 tabIndex={ 0 }
                 onKeyDown={ handleKeyDown }
                 data-testid="timeline-track"
-                className="flex snap-x gap-2 overflow-x-auto pb-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex snap-x gap-1.5 overflow-x-auto py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
                 { ordered.map((d) => {
                     const selected = d.acquisitionDate === selectedDate;
@@ -179,25 +179,25 @@ export function TimelineBar({
         <section
             aria-label="Timeline"
             data-testid="timeline-bar"
-            className="glass pointer-events-auto z-panel animate-panel-in overflow-hidden px-3 pb-2 pt-2"
+            className="glass pointer-events-auto z-panel min-h-[var(--timeline-height)] animate-panel-in overflow-hidden px-2 py-1"
         >
-            { (marginalNote || nearestPassNote) && (
-                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                    { marginalNote && (
-                        <NoteRow testId="marginal-note" tone="warning">
-                            { marginalNote }
-                        </NoteRow>
-                    ) }
-                    { nearestPassNote && (
-                        <NoteRow testId="nearest-pass-note" tone="info">
-                            { nearestPassNote }
-                        </NoteRow>
-                    ) }
-                </div>
-            ) }
-            <div className="flex items-stretch gap-3">
+            <div className="flex min-h-12 items-center gap-2">
+                { (marginalNote || nearestPassNote) && (
+                    <div className="hidden max-w-[28vw] shrink-0 flex-col gap-1 lg:flex">
+                        { marginalNote && (
+                            <NoteRow testId="marginal-note" tone="warning">
+                                { marginalNote }
+                            </NoteRow>
+                        ) }
+                        { nearestPassNote && (
+                            <NoteRow testId="nearest-pass-note" tone="info">
+                                { nearestPassNote }
+                            </NoteRow>
+                        ) }
+                    </div>
+                ) }
                 <div className="min-w-0 flex-1">{ content }</div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1.5">
                     { selectable.length >= 2 && (
                         <PlaybackControls
                             dates={ selectable }
@@ -213,6 +213,7 @@ export function TimelineBar({
                         onClick={ () => jumpTarget && onSelect(jumpTarget) }
                         data-testid="timeline-jump-latest"
                         title="Jump to latest"
+                        className="h-8 px-2"
                     >
                         <ChevronsRight className="size-4" strokeWidth={ 1.75 } />
                         <span className="hidden sm:inline">Latest</span>

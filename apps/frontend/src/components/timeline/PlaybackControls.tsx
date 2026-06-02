@@ -73,7 +73,7 @@ export function PlaybackControls({ dates, selectedDate, onSelect, onPrefetch }: 
                 title={ isPlaying ? 'Pause' : 'Play timelapse' }
                 data-testid="playback-toggle"
                 className={ cn(
-                    'flex size-9 items-center justify-center rounded-md border border-border/60 bg-secondary/40 text-foreground/85 transition-colors duration-fast ease-standard',
+                    'flex size-8 items-center justify-center rounded-md border border-border/60 bg-secondary/40 text-foreground/85 transition-colors duration-fast ease-standard',
                     'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     'disabled:cursor-not-allowed disabled:opacity-40',
                     isPlaying && 'bg-primary/15 text-foreground',
@@ -93,7 +93,7 @@ export function PlaybackControls({ dates, selectedDate, onSelect, onPrefetch }: 
                 title="Cycle speed"
                 data-testid="playback-speed"
                 className={ cn(
-                    'h-9 rounded-md border border-border/60 bg-secondary/40 px-2 font-mono text-[12px] tabular-nums text-foreground/85 transition-colors duration-fast ease-standard',
+                    'h-8 rounded-md border border-border/60 bg-secondary/40 px-2 font-mono text-[11px] tabular-nums text-foreground/85 transition-colors duration-fast ease-standard',
                     'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     'disabled:cursor-not-allowed disabled:opacity-40',
                 ) }

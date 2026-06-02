@@ -1,19 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
-import { ApiError, composeTileTemplate } from '@/lib/api';
-import { useConfig, useDates, useDefaultLayer, useSources } from '@/lib/queries';
+import { useQueryClient } from '@tanstack/react-query';
+import { ApiError, composeTileTemplate, getDates } from '@/lib/api';
+import { queryKeys, useConfig, useDates, useDefaultLayer, useSources } from '@/lib/queries';
 import { basemapAttribution, resolveBasemapStyle } from '@/map/basemap';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
-import { LayerPanel } from '@/components/layers/LayerPanel';
+import { MeasureTool } from '@/components/map/MeasureTool';
+import { CompareControl } from '@/components/map/CompareControl';
+import { CommandPalette } from '@/components/map/CommandPalette';
+import { CoordinateReadout } from '@/components/map/CoordinateReadout';
+import { Legend } from '@/components/map/Legend';
+import { TopBar } from '@/components/map/TopBar';
+import { LayersSurface } from '@/components/layers/LayersSurface';
+import { SourceList } from '@/components/layers/SourceList';
+import { TimelineBar } from '@/components/timeline/TimelineBar';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMapView } from '@/state/mapViewContext';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -71,19 +80,41 @@ export default function MapPage() {
   const configQ = useConfig();
   const sourcesQ = useSources();
   const defaultLayerQ = useDefaultLayer();
+  const queryClient = useQueryClient();
 
-  const [sourceOverride, setSourceOverride] = useState<string | undefined>(undefined);
-  const effectiveSourceId = sourceOverride ?? sourcesQ.data?.[0]?.id;
+  const view = useMapView();
+  const {
+    activeSourceId,
+    selectedDate: dateOverride,
+    displayMode: displayModeOverride,
+    opacity,
+    visible,
+    layersOpen,
+    compareEnabled,
+    compareDate,
+  } = view;
+
+  const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
   const datesQ = useDates(effectiveSourceId);
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
     [sourcesQ.data, effectiveSourceId],
   );
 
-  const [dateOverride, setDateOverride] = useState<string | null>(null);
-  const [visible, setVisible] = useState(true);
-  const [opacity, setOpacity] = useState(100); // percent
   const [map, setMap] = useState<maplibregl.Map | null>(null);
+  const [commandOpen, setCommandOpen] = useState(false);
+
+  // ⌘K / Ctrl-K toggles the command palette from anywhere.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Effective acquisition date: keep a still-valid user choice, otherwise the
   // computed default (latest usable -> threshold -> newest). Derived, not stored,
@@ -99,11 +130,6 @@ export default function MapPage() {
     return def ? def.acquisitionDate : null;
   }, [datesQ.data, configQ.data, dateOverride, selectedSource?.kind]);
 
-  const handleSourceChange = (id: string) => {
-    setSourceOverride(id);
-    setDateOverride(null); // let the new source recompute its default date
-  };
-
   const basemapStyle = useMemo(() => resolveBasemapStyle(configQ.data), [configQ.data]);
 
   const selectedDateMetadata = useMemo(
@@ -112,6 +138,7 @@ export default function MapPage() {
   );
 
   const selectedDisplayMode =
+    displayModeOverride ??
     selectedSource?.displayMode ??
     selectedSource?.defaultDisplayMode ??
     selectedSource?.displayModes?.[0] ??
@@ -124,7 +151,10 @@ export default function MapPage() {
     if (!selectedDate || !effectiveSourceId) return null;
     const dl = defaultLayerQ.data;
     const isDefault =
-      dl && dl.sourceId === effectiveSourceId && dl.acquisitionDate === selectedDate;
+      dl &&
+      dl.sourceId === effectiveSourceId &&
+      dl.acquisitionDate === selectedDate &&
+      (dl.displayMode ?? 'RGB') === selectedDisplayMode;
     const dateBounds = selectedDateMetadata?.bounds;
     if (isDefault) {
       return {
@@ -153,6 +183,41 @@ export default function MapPage() {
     selectedSource?.attribution,
   ]);
 
+  // Compare ("B") scene: same source + display mode, a different acquisition date.
+  // Rendered beneath A; the opacity slider blends A over B.
+  const sceneB = useMemo<SatelliteScene | null>(() => {
+    if (!visible || !compareEnabled || !compareDate || !effectiveSourceId) return null;
+    if (compareDate === selectedDate) return null;
+    const meta = datesQ.data?.find((d) => d.acquisitionDate === compareDate);
+    if (!meta?.tileAvailable) return null;
+    return {
+      tileUrlTemplate: composeTileTemplate(effectiveSourceId, compareDate, selectedDisplayMode),
+      bounds: meta?.bounds,
+      minzoom: defaultLayerQ.data?.minzoom,
+      maxzoom: defaultLayerQ.data?.maxzoom,
+      attribution: selectedSource?.attribution,
+    };
+  }, [
+    compareEnabled,
+    compareDate,
+    visible,
+    effectiveSourceId,
+    selectedDate,
+    selectedDisplayMode,
+    datesQ.data,
+    defaultLayerQ.data,
+    selectedSource?.attribution,
+  ]);
+
+  // Chronological, tile-available dates for the compare B-scene picker.
+  const comparableDates = useMemo(
+    () =>
+      (datesQ.data ?? [])
+        .filter((d) => d.tileAvailable)
+        .sort((a, b) => a.acquisitionDate.localeCompare(b.acquisitionDate)),
+    [datesQ.data],
+  );
+
   // Marginal/empty signal: no date meets the usability threshold.
   const marginalNote = useMemo<string | null>(() => {
     if (!datesQ.data || datesQ.data.length === 0 || !configQ.data) return null;
@@ -162,8 +227,26 @@ export default function MapPage() {
       (d) => d.isLatestUsable || (d.usablePixelPercent != null && d.usablePixelPercent >= threshold),
     );
     if (qualifies) return null;
-    return `No usable optical scene in range. Showing the most recent attempt (${datesQ.data[0].acquisitionDate}).`;
+    const newest = [...datesQ.data].sort((a, b) =>
+      b.acquisitionDate.localeCompare(a.acquisitionDate),
+    )[0];
+    return `No usable optical scene in range. Showing the most recent attempt (${newest.acquisitionDate}).`;
   }, [datesQ.data, configQ.data, selectedSource?.kind]);
+
+  // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
+  const nearestPassNote = useMemo<string | null>(() => {
+    if (selectedSource?.kind !== 'sar') return null;
+    if (effectiveSourceId !== 'sentinel-1-grd') return null;
+    if (!selectedDate || selectedDate === '2026-04-27') return null;
+    return `Nearest radar pass: ${selectedDate}.`;
+  }, [selectedSource?.kind, effectiveSourceId, selectedDate]);
+
+  const prefetchDates = (sourceId: string) => {
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.dates(sourceId),
+      queryFn: () => getDates(sourceId),
+    });
+  };
 
   if (configQ.isLoading) return <FullScreenLoading />;
   if (configQ.isError || !configQ.data) {
@@ -179,78 +262,118 @@ export default function MapPage() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background" data-testid="map-page">
+      {/* Accessibility: bypass the map canvas (WCAG 2.4.1). */ }
+      <a
+        href="#timeline-bar"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-popover focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-[13px] focus:font-medium focus:text-primary-foreground"
+      >
+        Skip the map
+      </a>
+
       <MapLayerManager
         basemapStyle={ basemapStyle }
         center={ config.aoi.center }
         zoom={ config.aoi.zoom }
         scene={ scene }
+        sceneB={ sceneB }
         opacity={ opacity / 100 }
         visible={ visible }
         onMapReady={ setMap }
       />
 
-      {/* Top-left: plot tools (Phase 5 placeholder) */ }
-      <div className="absolute left-4 top-4 z-20">
+      {/* Top chrome: layers toggle · brand · theme */ }
+      <TopBar
+        appName={ config.appName }
+        aoiName={ config.aoi.name }
+        layersOpen={ layersOpen }
+        onToggleLayers={ view.toggleLayers }
+        onOpenCommand={ () => setCommandOpen(true) }
+      />
+
+      <CommandPalette
+        open={ commandOpen }
+        onOpenChange={ setCommandOpen }
+        sources={ sourcesQ.data }
+        activeSourceId={ effectiveSourceId }
+        dates={ datesQ.data }
+        onSelectSource={ view.setSource }
+        onSelectDate={ view.setDate }
+        onToggleLayers={ view.toggleLayers }
+      />
+
+      {/* Left: plot tools (Phase 5 placeholder) */ }
+      <div className="absolute left-4 top-[68px] z-toolbar">
         <PlotToolbar />
       </div>
 
-      {/* Top-center: brand wordmark */ }
-      <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2">
-        <div
-          className="glass flex items-center gap-2 rounded-pill px-3.5 py-1.5"
-          data-testid="brand-mark"
-        >
-          <Satellite className="size-4 text-primary" strokeWidth={ 1.75 } />
-          <span className="font-display text-[15px] font-semibold tracking-[-0.01em]">
-            { config.appName }
-          </span>
-          <span className="hidden text-[12px] text-muted-foreground sm:inline">
-            · { config.aoi.name }
-          </span>
-        </div>
-      </div>
-
-      {/* Top-right: theme toggle */ }
-      <div className="absolute right-4 top-4 z-20">
-        <ThemeToggle />
-      </div>
-
-      {/* Left: layer panel */ }
-      <div className="absolute left-4 top-[76px] z-20">
-        <LayerPanel
-          sources={ sourcesQ.data }
-          selectedSourceId={ effectiveSourceId }
-          onSourceChange={ handleSourceChange }
-          dates={ datesQ.data }
-          datesLoading={ datesQ.isLoading }
-          datesError={ datesQ.isError ? messageFor(datesQ.error) : null }
-          onDatesRetry={ () => datesQ.refetch() }
-          selectedDate={ selectedDate }
-          onDateSelect={ setDateOverride }
-          visible={ visible }
-          onVisibleChange={ setVisible }
-          opacity={ opacity }
-          onOpacityChange={ setOpacity }
-          marginalNote={ marginalNote }
-        />
+      {/* Layers surface — left drawer (≥md) / bottom sheet (<md) */ }
+      <div className="absolute left-4 top-[112px]">
+        <LayersSurface open={ layersOpen } onClose={ () => view.setLayersOpen(false) }>
+          <SourceList
+            sources={ sourcesQ.data }
+            activeSourceId={ effectiveSourceId }
+            selectedDate={ selectedDate }
+            displayMode={ selectedDisplayMode }
+            visible={ visible }
+            opacity={ opacity }
+            onSelectSource={ view.setSource }
+            onDisplayModeChange={ view.setDisplayMode }
+            onVisibleChange={ view.setVisible }
+            onOpacityChange={ view.setOpacity }
+            onPrefetchSource={ prefetchDates }
+          />
+        </LayersSurface>
       </div>
 
       {/* Right: index panel (Phase 5 placeholder) */ }
-      <div className="absolute right-4 top-[76px] z-10 hidden xl:block">
-        {showIndexPanel && <IndexPanel />}
+      <div className="absolute right-4 top-[68px] z-toolbar hidden xl:block">
+        { showIndexPanel && <IndexPanel /> }
       </div>
 
-      {/* Bottom-right: map controls */ }
-      <div className="absolute bottom-8 right-4 z-20">
+      {/* Right: coordinate readout + map controls (lifted above the timeline) */ }
+      <div className="absolute bottom-[7.75rem] right-4 z-toolbar flex flex-col items-end gap-2">
+        <CoordinateReadout map={ map } />
+        <MeasureTool map={ map } />
+        <CompareControl
+          enabled={ compareEnabled }
+          onEnabledChange={ view.setCompareEnabled }
+          dates={ comparableDates }
+          activeDate={ selectedDate }
+          compareDate={ compareDate }
+          onCompareDateChange={ view.setCompareDate }
+          blend={ opacity }
+          onBlendChange={ view.setOpacity }
+        />
         <MapControls map={ map } />
       </div>
 
-      {/* Bottom-left: attribution (muted, on-map) */ }
-      <div
-        className="pointer-events-none absolute bottom-7 left-3 z-20 max-w-[60vw] truncate text-[11px] text-foreground/70 on-map-text"
-        data-testid="attribution"
-      >
-        { attribution } · { basemapCredit }
+      {/* Bottom-left: legend (per display mode) + attribution, above the timeline */ }
+      <div className="absolute bottom-[7.75rem] left-4 z-toolbar flex flex-col items-start gap-2">
+        { visible && (
+          <Legend displayMode={ selectedDisplayMode } sourceKind={ selectedSource?.kind } />
+        ) }
+        <div
+          className="pointer-events-none max-w-[60vw] truncate text-[11px] text-foreground/70 on-map-text"
+          data-testid="attribution"
+        >
+          { attribution } · { basemapCredit }
+        </div>
+      </div>
+
+      {/* Bottom: temporal filmstrip */ }
+      <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-3 pb-3">
+        <TimelineBar
+          dates={ datesQ.data }
+          selectedDate={ selectedDate }
+          onSelect={ view.setDate }
+          sourceKind={ selectedSource?.kind }
+          loading={ datesQ.isLoading }
+          error={ datesQ.isError ? messageFor(datesQ.error) : null }
+          onRetry={ () => datesQ.refetch() }
+          marginalNote={ marginalNote }
+          nearestPassNote={ nearestPassNote }
+          onPrefetchDate={ undefined }
+        />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
 // Akasha Vite frontend (Phase 4). In local dev /api and /tiles are proxied to the
@@ -8,7 +9,7 @@ import path from 'node:path';
 const devProxyTarget = process.env.AKASHA_DEV_PROXY_TARGET ?? 'http://localhost:8000';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

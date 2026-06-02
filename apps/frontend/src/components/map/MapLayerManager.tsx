@@ -3,7 +3,9 @@ import maplibregl from 'maplibre-gl';
 import type { BasemapStyle } from '@/map/basemap';
 import {
   applySatelliteLayer,
+  applyCompareLayer,
   isValidSceneBounds,
+  removeCompareLayer,
   setSatelliteOpacity,
   setSatelliteVisibility,
   SAT_LAYER_ID,
@@ -32,7 +34,8 @@ function sceneFitPadding(map: maplibregl.Map) {
 
   const verticalBudget = Math.max(0, height - MIN_SCENE_FIT_GUTTER);
   const top = Math.min(96, Math.floor(height * 0.14), Math.floor(verticalBudget * 0.55));
-  const bottom = Math.min(80, Math.floor(height * 0.12), Math.max(0, verticalBudget - top));
+  // Reserve room for the bottom timeline filmstrip (~110px tall).
+  const bottom = Math.min(140, Math.floor(height * 0.2), Math.max(0, verticalBudget - top));
 
   return { top, bottom, left, right };
 }
@@ -80,6 +83,8 @@ interface MapLayerManagerProps {
   center: [number, number];
   zoom: number;
   scene: SatelliteScene | null;
+  /** Compare ("B") scene rendered beneath `scene`; `null` disables compare. */
+  sceneB?: SatelliteScene | null;
   /** 0..1 */
   opacity: number;
   visible: boolean;
@@ -97,6 +102,7 @@ export function MapLayerManager({
   center,
   zoom,
   scene,
+  sceneB,
   opacity,
   visible,
   onMapReady,
@@ -107,9 +113,12 @@ export function MapLayerManager({
 
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
+  const sceneBRef = useRef(sceneB ?? null);
+  sceneBRef.current = sceneB ?? null;
   const stateRef = useRef({ opacity, visible });
   stateRef.current = { opacity, visible };
   const sceneKey = sceneLayerKey(scene);
+  const sceneKeyB = sceneLayerKey(sceneB ?? null);
 
   // Create the map exactly once.
   useEffect(() => {
@@ -132,6 +141,7 @@ export function MapLayerManager({
         applySatelliteLayer(asHost(map), s, stateRef.current);
         if (stateRef.current.visible) fitSceneBoundsIfNeeded(map, s);
       }
+      if (sceneBRef.current) applyCompareLayer(asHost(map), sceneBRef.current);
       onMapReady?.(map);
     });
 
@@ -156,6 +166,18 @@ export function MapLayerManager({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneKey]);
+
+  // Compare ("B") layer: add/replace beneath A, or remove when compare is off.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    if (sceneB) {
+      applyCompareLayer(asHost(map), sceneB);
+    } else {
+      removeCompareLayer(asHost(map));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneKeyB]);
 
   // Live opacity (no layer rebuild).
   useEffect(() => {

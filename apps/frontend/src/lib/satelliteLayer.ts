@@ -7,6 +7,11 @@
 export const SAT_SOURCE_ID = 'akasha-satellite';
 export const SAT_LAYER_ID = 'akasha-satellite-layer';
 
+// Compare ("B") overlay — rendered *beneath* the primary ("A") overlay so the A
+// layer's opacity blends A over B (NASA Worldview "opacity" compare mode).
+export const SAT_SOURCE_ID_B = 'akasha-satellite-compare';
+export const SAT_LAYER_ID_B = 'akasha-satellite-compare-layer';
+
 export interface SatelliteScene {
   /** Same-origin `/api/tiles/.../{z}/{x}/{y}.png` template. */
   tileUrlTemplate: string;
@@ -80,20 +85,7 @@ export function applySatelliteLayer(
   if (map.getLayer(SAT_LAYER_ID)) map.removeLayer(SAT_LAYER_ID);
   if (map.getSource(SAT_SOURCE_ID)) map.removeSource(SAT_SOURCE_ID);
 
-  const source: Record<string, unknown> = {
-    type: 'raster',
-    tiles: [resolveTileUrl(scene.tileUrlTemplate, origin)],
-    tileSize: 256,
-  };
-  // Constrain requests to the STAC footprint. TiTiler returns 404 for tiles outside
-  // the COG footprint, which MapLibre surfaces as tile errors; bounds prevent the
-  // UI from asking for imagery where this scene cannot render.
-  if (isValidSceneBounds(scene.bounds)) source.bounds = scene.bounds;
-  if (scene.minzoom != null) source.minzoom = scene.minzoom;
-  if (scene.maxzoom != null) source.maxzoom = scene.maxzoom;
-  if (scene.attribution) source.attribution = scene.attribution;
-
-  map.addSource(SAT_SOURCE_ID, source);
+  map.addSource(SAT_SOURCE_ID, buildRasterSource(scene, origin));
   map.addLayer({
     id: SAT_LAYER_ID,
     type: 'raster',
@@ -122,4 +114,53 @@ export function setSatelliteVisibility(
     map.setLayoutProperty(SAT_LAYER_ID, 'visibility', visible ? 'visible' : 'none');
     map.setPaintProperty(SAT_LAYER_ID, 'raster-opacity', visible ? opacity : 0);
   }
+}
+
+function buildRasterSource(scene: SatelliteScene, origin?: string): Record<string, unknown> {
+  const source: Record<string, unknown> = {
+    type: 'raster',
+    tiles: [resolveTileUrl(scene.tileUrlTemplate, origin)],
+    tileSize: 256,
+  };
+  if (isValidSceneBounds(scene.bounds)) source.bounds = scene.bounds;
+  if (scene.minzoom != null) source.minzoom = scene.minzoom;
+  if (scene.maxzoom != null) source.maxzoom = scene.maxzoom;
+  if (scene.attribution) source.attribution = scene.attribution;
+  return source;
+}
+
+/**
+ * Add or replace the compare ("B") raster layer, inserted *below* the primary
+ * satellite layer so A blends over B. Always rendered at full opacity — the blend
+ * is driven by the A layer's `raster-opacity`. Never touches the basemap.
+ */
+export function applyCompareLayer(
+  map: MapLayerHost,
+  scene: SatelliteScene,
+  origin?: string,
+): void {
+  if (map.getLayer(SAT_LAYER_ID_B)) map.removeLayer(SAT_LAYER_ID_B);
+  if (map.getSource(SAT_SOURCE_ID_B)) map.removeSource(SAT_SOURCE_ID_B);
+
+  map.addSource(SAT_SOURCE_ID_B, buildRasterSource(scene, origin));
+  // beforeId keeps B underneath A; if A isn't present yet it's added on top, which
+  // is still correct (B simply becomes the only overlay until A is (re)applied).
+  map.addLayer(
+    {
+      id: SAT_LAYER_ID_B,
+      type: 'raster',
+      source: SAT_SOURCE_ID_B,
+      layout: { visibility: 'visible' },
+      paint: {
+        'raster-opacity': 1,
+        'raster-opacity-transition': { duration: 360, delay: 0 },
+      },
+    },
+    map.getLayer(SAT_LAYER_ID) ? SAT_LAYER_ID : undefined,
+  );
+}
+
+export function removeCompareLayer(map: MapLayerHost): void {
+  if (map.getLayer(SAT_LAYER_ID_B)) map.removeLayer(SAT_LAYER_ID_B);
+  if (map.getSource(SAT_SOURCE_ID_B)) map.removeSource(SAT_SOURCE_ID_B);
 }

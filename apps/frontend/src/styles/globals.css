@@ -2,9 +2,143 @@
  * Tokens are copied verbatim from docs/design-system.md (§2.6, §3, §4, §6).
  * Default theme is DARK (imagery reads best on ink); light "haze" is the alternate.
  */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-info: hsl(var(--info));
+  --color-nodata: hsl(var(--nodata));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-panel: hsl(var(--panel));
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-pill: 999px;
+
+  --shadow-e1: 0 1px 2px hsl(var(--halo) / var(--halo-alpha));
+  --shadow-e2: 0 8px 28px -6px hsl(var(--halo) / calc(var(--halo-alpha) + 0.08)),
+    0 2px 6px hsl(var(--halo) / var(--halo-alpha));
+  --shadow-e3: 0 16px 48px -8px hsl(var(--halo) / calc(var(--halo-alpha) + 0.14));
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-emphasis: cubic-bezier(0.2, 0, 0, 1.1);
+
+  --spacing-rail: var(--rail-width);
+  --spacing-timeline: var(--timeline-height);
+
+  --animate-fade-in: fade-in var(--dur-base) var(--ease-decelerate);
+  --animate-panel-in: panel-in var(--dur-base) var(--ease-decelerate);
+  --animate-drawer-in: drawer-in var(--dur-base) var(--ease-decelerate);
+  --animate-sheet-up: sheet-up var(--dur-slow) var(--ease-decelerate);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes drawer-in {
+    from {
+      opacity: 0;
+      transform: translateX(-16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+}
+
+@utility duration-instant {
+  transition-duration: var(--dur-instant);
+}
+
+@utility duration-fast {
+  transition-duration: var(--dur-fast);
+}
+
+@utility duration-base {
+  transition-duration: var(--dur-base);
+}
+
+@utility duration-slow {
+  transition-duration: var(--dur-slow);
+}
+
+@utility duration-deliberate {
+  transition-duration: var(--dur-deliberate);
+}
+
+@utility z-map {
+  z-index: var(--z-map);
+}
+
+@utility z-overlay {
+  z-index: var(--z-overlay);
+}
+
+@utility z-panel {
+  z-index: var(--z-panel);
+}
+
+@utility z-toolbar {
+  z-index: var(--z-toolbar);
+}
+
+@utility z-popover {
+  z-index: var(--z-popover);
+}
 
 @layer base {
   :root {
@@ -80,6 +214,18 @@
     --dur-base: 220ms;
     --dur-slow: 360ms;
     --dur-deliberate: 540ms;
+
+    /* Map-screen layout (redesign) — kept as tokens so fit-to-bounds padding,
+     * timeline reservations, and panel stacking are computed, not magic numbers. */
+    --rail-width: 22rem; /* 352px — expanded Layers drawer */
+    --timeline-height: 5.25rem; /* 84px — bottom filmstrip */
+
+    /* Stacking order for floating map chrome (low → high). */
+    --z-map: 0;
+    --z-overlay: 30; /* scrims / mobile sheet backdrop */
+    --z-panel: 40; /* layers surface, timeline */
+    --z-toolbar: 50; /* corner controls, top bar */
+    --z-popover: 60; /* calendar / command palette / menus */
   }
 
   .dark {
@@ -245,4 +391,47 @@
 /* MapLibre canvas should never show a focus outline ring over imagery. */
 .maplibregl-canvas:focus {
   outline: none;
+}
+
+/* --- Command palette (cmdk) theming --------------------------------------- */
+/* Headless cmdk emits [cmdk-*] attribute hooks; positioning/overlay come from
+ * Tailwind on the Dialog, these rules cover item selection + group headings. */
+[cmdk-group-heading] {
+  padding: 0.375rem 0.5rem 0.25rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+[cmdk-item] {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 13px;
+  color: hsl(var(--foreground) / 0.9);
+  cursor: pointer;
+  user-select: none;
+}
+[cmdk-item][data-selected='true'] {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+[cmdk-item][data-disabled='true'] {
+  color: hsl(var(--muted-foreground) / 0.5);
+  cursor: not-allowed;
+}
+[cmdk-list] {
+  max-height: 22rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 0.25rem;
+}
+[cmdk-empty] {
+  padding: 1.25rem 0.5rem;
+  text-align: center;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
 }

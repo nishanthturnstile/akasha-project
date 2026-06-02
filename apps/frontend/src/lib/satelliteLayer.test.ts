@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  applyCompareLayer,
   applySatelliteLayer,
   isValidSceneBounds,
+  removeCompareLayer,
   resolveTileUrl,
   SAT_LAYER_ID,
+  SAT_LAYER_ID_B,
   SAT_SOURCE_ID,
+  SAT_SOURCE_ID_B,
   type MapLayerHost,
 } from '@/lib/satelliteLayer';
 
@@ -126,5 +130,50 @@ describe('applySatelliteLayer (date change touches only the raster layer)', () =
     expect(map.addLayer).toHaveBeenCalledTimes(1);
     // The basemap style is never replaced when changing dates.
     expect(map.setStyle).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyCompareLayer / removeCompareLayer (opacity-blend compare mode)', () => {
+  it('adds the B layer beneath A and never calls setStyle', () => {
+    const map = createMockMap();
+    const host = map as unknown as MapLayerHost;
+    applySatelliteLayer(
+      host,
+      { tileUrlTemplate: '/api/tiles/a/2025-09-14/rgb/{z}/{x}/{y}.png' },
+      { opacity: 0.5, visible: true },
+      'http://localhost',
+    );
+    map.addLayer.mockClear();
+
+    applyCompareLayer(
+      host,
+      { tileUrlTemplate: '/api/tiles/a/2025-08-30/rgb/{z}/{x}/{y}.png' },
+      'http://localhost',
+    );
+
+    expect(map.addSource).toHaveBeenCalledWith(
+      SAT_SOURCE_ID_B,
+      expect.objectContaining({ type: 'raster' }),
+    );
+    // B is inserted before (beneath) the A layer.
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: SAT_LAYER_ID_B, type: 'raster' }),
+      SAT_LAYER_ID,
+    );
+    expect(map.setStyle).not.toHaveBeenCalled();
+  });
+
+  it('removes the B source+layer when compare is turned off', () => {
+    const map = createMockMap();
+    const host = map as unknown as MapLayerHost;
+    applyCompareLayer(
+      host,
+      { tileUrlTemplate: '/api/tiles/a/2025-08-30/rgb/{z}/{x}/{y}.png' },
+      'http://localhost',
+    );
+    removeCompareLayer(host);
+
+    expect(map.removeLayer).toHaveBeenCalledWith(SAT_LAYER_ID_B);
+    expect(map.removeSource).toHaveBeenCalledWith(SAT_SOURCE_ID_B);
   });
 });

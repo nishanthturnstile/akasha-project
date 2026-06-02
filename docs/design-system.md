@@ -431,24 +431,37 @@ disable count-up (show final value), replace scan-sweep with a static contour sh
 ---
 
 ## 8. Implementation notes (Tailwind)
-Extend the theme so tokens are usable as utilities; apply globals in `apps/frontend` during the frontend slice.
+Akasha uses Tailwind CSS v4 in the canonical `apps/frontend` SPA. Define theme utilities with
+CSS-first `@theme` variables in `apps/frontend/src/styles/globals.css` instead of a
+JavaScript/TypeScript `tailwind.config` file.
 
-```js
-// tailwind.config — theme.extend (excerpt)
-extend: {
-  colors: {
-    background: "hsl(var(--background))",
-    foreground: "hsl(var(--foreground))",
-    primary: { DEFAULT: "hsl(var(--primary))", foreground: "hsl(var(--primary-foreground))" },
-    success: "hsl(var(--success))", warning: "hsl(var(--warning))",
-    info: "hsl(var(--info))", destructive: "hsl(var(--destructive))",
-    panel: "hsl(var(--panel))", border: "hsl(var(--border))",
-  },
-  fontFamily: {
-    display: "var(--font-display)", sans: "var(--font-sans)", mono: "var(--font-mono)",
-  },
-  borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 4px)", sm: "calc(var(--radius) - 8px)" },
-  boxShadow: { e1: "var(--shadow-e1)", e2: "var(--shadow-e2)", e3: "var(--shadow-e3)" },
+```css
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-info: hsl(var(--info));
+  --color-destructive: hsl(var(--destructive));
+  --color-panel: hsl(var(--panel));
+  --color-border: hsl(var(--border));
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 8px);
+  --shadow-e1: 0 1px 2px hsl(var(--halo) / var(--halo-alpha));
+  --shadow-e2: 0 8px 28px -6px hsl(var(--halo) / calc(var(--halo-alpha) + 0.08)),
+    0 2px 6px hsl(var(--halo) / var(--halo-alpha));
+  --shadow-e3: 0 16px 48px -8px hsl(var(--halo) / calc(var(--halo-alpha) + 0.14));
 }
 ```
 

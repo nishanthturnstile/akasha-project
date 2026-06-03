@@ -1,6 +1,8 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MapViewProvider } from '@/state/mapViewContext';
 import { ProductRoutes } from '@/routes/ProductRoutes';
 
 vi.mock('@/pages/monitoring/FieldAnalyticsPage', () => ({
@@ -8,12 +10,23 @@ vi.mock('@/pages/monitoring/FieldAnalyticsPage', () => ({
 }));
 
 function renderRoutes(path: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
   return render(
-    <MemoryRouter initialEntries={ [path] }>
-      <ProductRoutes />
-    </MemoryRouter>,
+    <QueryClientProvider client={ queryClient }>
+      <MemoryRouter initialEntries={ [path] }>
+        <MapViewProvider>
+          <ProductRoutes />
+        </MapViewProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('ProductRoutes', () => {
   it('redirects the root URL to the monitoring map workspace', async () => {
@@ -40,6 +53,20 @@ describe('ProductRoutes', () => {
     );
     expect(screen.getByTestId('module-placeholder')).toBeTruthy();
     expect(screen.queryByTestId('map-page')).toBeNull();
+  });
+
+  it('renders real weather pages instead of placeholders', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
+    );
+    renderRoutes('/weather/forecast');
+
+    await waitFor(
+      () => expect(screen.getByRole('heading', { name: 'Weather Forecast' })).toBeTruthy(),
+      { timeout: 8000 },
+    );
+    expect(screen.queryByTestId('module-placeholder')).toBeNull();
   });
 
   it('renders a not-found page for unknown product routes', () => {

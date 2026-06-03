@@ -9,6 +9,11 @@ import type {
   FieldStatisticsResponse,
   FieldTrendResponse,
   FileDownload,
+  WeatherForecastResponse,
+  WeatherHistoryResponse,
+  WeatherProviderChoice,
+  WeatherSeriesId,
+  WeatherSoilMoistureResponse,
   CloudMaskOptions,
   Plot,
   PlotCreatePayload,
@@ -269,6 +274,57 @@ export const getFieldTrend = (
   }
   return request<FieldTrendResponse>(
     `/api/fields/${encodeURIComponent(plotId)}/analytics/trend?${params.toString()}`,
+  );
+};
+
+export const getFieldWeatherForecast = (
+  plotId: string,
+  options: { provider?: WeatherProviderChoice; days?: number } = {},
+): Promise<WeatherForecastResponse> => {
+  const params = new URLSearchParams();
+  if (options.provider) params.set('provider', options.provider);
+  if (options.days) params.set('days', String(options.days));
+  const query = params.toString();
+  return request<WeatherForecastResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/weather/forecast${query ? `?${query}` : ''}`,
+  );
+};
+
+export const getFieldWeatherHistory = (
+  plotId: string,
+  options: {
+    provider?: WeatherProviderChoice;
+    startDate?: string;
+    endDate?: string;
+    parameters?: WeatherSeriesId[];
+  } = {},
+): Promise<WeatherHistoryResponse> => {
+  const params = new URLSearchParams();
+  if (options.provider) params.set('provider', options.provider);
+  if (options.startDate) params.set('startDate', options.startDate);
+  if (options.endDate) params.set('endDate', options.endDate);
+  options.parameters?.forEach((parameter) => params.append('parameters', parameter));
+  const query = params.toString();
+  return request<WeatherHistoryResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/weather/history${query ? `?${query}` : ''}`,
+  );
+};
+
+export const getFieldWeatherSoilMoisture = (
+  plotId: string,
+  options: {
+    provider?: WeatherProviderChoice;
+    startDate?: string;
+    endDate?: string;
+  } = {},
+): Promise<WeatherSoilMoistureResponse> => {
+  const params = new URLSearchParams();
+  if (options.provider) params.set('provider', options.provider);
+  if (options.startDate) params.set('startDate', options.startDate);
+  if (options.endDate) params.set('endDate', options.endDate);
+  const query = params.toString();
+  return request<WeatherSoilMoistureResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/weather/soil-moisture${query ? `?${query}` : ''}`,
   );
 };
 

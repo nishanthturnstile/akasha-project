@@ -329,6 +329,90 @@ export interface FileDownload {
   filename: string;
 }
 
+export type WeatherProviderChoice = 'auto' | 'eos';
+
+export type WeatherSeriesId =
+  | 'accumulatedPrecipitation'
+  | 'dailyPrecipitation'
+  | 'dailyTemperature'
+  | 'sumActiveTemperatures'
+  | 'evapotranspiration'
+  | 'relativeHumidity'
+  | 'globalRadiation';
+
+export interface WeatherForecastCard {
+  id: 'temperature' | 'precipitation' | 'relativeHumidity' | 'clouds' | 'wind';
+  label: string;
+  value: number | null;
+  unit: string;
+  secondaryValue?: number | null;
+  secondaryUnit?: string | null;
+  summary: string;
+}
+
+export interface WeatherForecastPoint {
+  date: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  temperatureMinC?: number | null;
+  temperatureMaxC?: number | null;
+  temperatureAvgC?: number | null;
+  precipitationMm?: number | null;
+  humidityPercent?: number | null;
+  cloudinessPercent?: number | null;
+  windMps?: number | null;
+  windDirection?: string | null;
+  conditions?: string | null;
+}
+
+export interface WeatherForecastResponse {
+  plotId: string;
+  provider: string;
+  scope: 'field';
+  startDate: string;
+  endDate: string;
+  cards: WeatherForecastCard[];
+  timeline: WeatherForecastPoint[];
+  metadata: Record<string, unknown>;
+}
+
+export interface WeatherSeriesPoint {
+  date: string;
+  value: number | null;
+}
+
+export interface WeatherSeries {
+  id: WeatherSeriesId | 'soilMoisture';
+  label: string;
+  unit: string;
+  available: boolean;
+  unavailableReason?: string | null;
+  points: WeatherSeriesPoint[];
+}
+
+export interface WeatherHistoryResponse {
+  plotId: string;
+  provider: string;
+  scope: 'field';
+  startDate: string;
+  endDate: string;
+  series: WeatherSeries[];
+  metadata: Record<string, unknown>;
+}
+
+export interface WeatherSoilMoistureResponse {
+  plotId: string;
+  provider: string;
+  scope: 'field';
+  startDate: string;
+  endDate: string;
+  available: boolean;
+  series?: WeatherSeries | null;
+  unavailableReason?: string | null;
+  unavailableCode?: string | null;
+  metadata: Record<string, unknown>;
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

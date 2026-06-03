@@ -46,9 +46,9 @@ into one row per EOS module, classifies how Akasha will deliver each module, and
 | 7. Classification area | Area per index-threshold class (`cl_stats`) | none | BFF (thresholded raster area) | akasha-native-first-party | No | Given an index + thresholds, return area per class for the field | Phase 5 |
 | 8. Cloud masking & data quality | Cloud %, cloud-mask tile, masked statistics, UI warnings/toggles | partial (SCL mask + masked-pixel math exist in raster engine, REQ-013; UI exposure/toggles not yet wired) | raster + frontend | wire-existing-backend | Yes | Every scene/statistics result exposes cloud % and masked-pixel fields to the UI | Phase 6 |
 | 9. Risk map & alerts | NDVI delta (change detection) + weather stress rules | none | BFF + provider | defer | No | — (Phase 11) | Phase 11 |
-| 10. Weather forecast | 14-day field forecast | none | provider-adapter (`WeatherProvider`) + BFF + frontend | eos-backed-trial | Yes | Forecast card/chart for the field via BFF weather route; with no EOS key, returns `provider-unconfigured` (PAT-003); native IMD/GFS/Open-Meteo path documented (REQ-014) | Phase 7 |
-| 11. Weather historical | Historical/accumulated weather | none | provider-adapter + BFF + frontend | eos-backed-trial | Yes | History card/chart via the same `WeatherProvider`; unconfigured-safe | Phase 7 |
-| 12. Soil moisture | Surface/root-zone soil moisture (`soilmoisture`) | none | provider-adapter + BFF | defer | No | — (SMAP/native later) | Phase 11 |
+| 10. Weather forecast | 14-day field forecast | implemented (`/api/fields/{plot_id}/weather/forecast` + `WeatherForecastPage`) | provider-adapter (`WeatherProvider`) + BFF + frontend | eos-backed-trial | Yes | Forecast cards/timeline load through the BFF weather route; with no EOS key, the route returns a sanitized provider-unavailable error; native IMD/GFS/Open-Meteo path remains the replacement direction (REQ-014) | Phase 7 |
+| 11. Weather historical | Historical/accumulated weather | implemented (`/api/fields/{plot_id}/weather/history` + `WeatherAnalyticsPage`) | provider-adapter + BFF + frontend | eos-backed-trial | Yes | Historical/accumulated weather charts load through normalized `WeatherProvider` series; provider-unavailable and rate-limit states are sanitized | Phase 7 |
+| 12. Soil moisture | Surface/root-zone soil moisture (`soilmoisture`) | optional unsupported response implemented (`/api/fields/{plot_id}/weather/soil-moisture`) | provider-adapter + BFF | defer | No | Route returns `available=false` with a clear unavailable reason until EOS trial/native SMAP support exists | Phase 11 |
 | 13. Vegetation VRA zoning map | N vegetation zones from current scene/index | none | provider-adapter (`ZoningProvider`) + BFF + frontend | eos-backed-trial | Yes | Create a vegetation VRA map (N zones) for the field via BFF zoning route; unconfigured-safe; Akasha k-means zoning is the native replacement | Phase 8 |
 | 14. Productivity / P&K zoning map | Long-period NDVI productivity zones | none | provider-adapter + BFF | defer | No | — (needs multi-season archive) | Phase 8 |
 | 15. Zoning export (SHP/GeoJSON) | SHP/ISO-XML zone export for machinery/GIS | none | BFF export service | akasha-native-first-party | Yes (GeoJSON) | Export zones as GeoJSON server-side; SHP/ISO-XML deferred (DEP-013) | Phase 6/8 |
@@ -93,7 +93,7 @@ step is gated by the acceptance check of its module(s) above.
 7. **Show the NDVI trend.** A time-series NDVI chart (min/max/avg/std) renders with per-point
    cloud-quality warnings (REQ-013). *(Module 6, 8)*
 8. **Show weather forecast and history.** Forecast and historical weather cards/charts load via the
-   BFF `WeatherProvider`; unconfigured-safe. *(Module 10, 11)*
+   BFF `WeatherProvider`; provider-unavailable and rate-limit states stay sanitized. *(Module 10, 11)*
 9. **Create a vegetation VRA zoning map.** N vegetation zones are generated for the field via the BFF
    `ZoningProvider`; unconfigured-safe. *(Module 13)*
 10. **Export one result.** One output (e.g. GeoJSON zones or analytics CSV) is produced server-side

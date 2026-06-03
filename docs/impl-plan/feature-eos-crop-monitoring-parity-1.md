@@ -202,13 +202,13 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-064 | Add `GET /api/fields/{plot_id}/weather/forecast` returning normalized forecast cards for temperature, precipitation, relative humidity, clouds, and wind. Depends on: TASK-026, TASK-037. | | |
-| TASK-065 | Add `GET /api/fields/{plot_id}/weather/history` returning time series for accumulated precipitation, daily precipitation, daily temperature, sum active temperatures, evapotranspiration, relative humidity, and global radiation. Depends on: TASK-026, TASK-037. | | |
-| TASK-066 | Add `GET /api/fields/{plot_id}/weather/soil-moisture` where EOS trial access supports it. If unsupported, return a clear provider-unavailable response. Depends on: TASK-026. | | |
-| TASK-067 | Implement `apps/frontend/src/pages/weather/WeatherForecastPage.tsx` with current cards, forecast timeline, field-required empty state, loading state, and provider-unavailable state. Depends on: TASK-064, TASK-034. | | |
-| TASK-068 | Implement `apps/frontend/src/pages/weather/WeatherAnalyticsPage.tsx` with parameter selectors, date range controls, comparison mode placeholder, and charts for all supported weather series. Depends on: TASK-065, TASK-052, TASK-034. | | |
-| TASK-069 | Add weather API functions/hooks in `apps/frontend/src/lib/api.ts` and `apps/frontend/src/lib/queries.ts`. Depends on: TASK-064, TASK-065, TASK-066. | | |
-| TASK-070 | Add backend provider tests and frontend page tests for forecast/history success, rate-limit/provider errors, and no selected field. Depends on: TASK-064, TASK-065, TASK-067, TASK-068. | | |
+| TASK-064 | Add `GET /api/fields/{plot_id}/weather/forecast` returning normalized forecast cards for temperature, precipitation, relative humidity, clouds, and wind. Depends on: TASK-026, TASK-037. | Yes | 2026-06-03 |
+| TASK-065 | Add `GET /api/fields/{plot_id}/weather/history` returning time series for accumulated precipitation, daily precipitation, daily temperature, sum active temperatures, evapotranspiration, relative humidity, and global radiation. Depends on: TASK-026, TASK-037. | Yes | 2026-06-03 |
+| TASK-066 | Add `GET /api/fields/{plot_id}/weather/soil-moisture` where EOS trial access supports it. If unsupported, return a clear provider-unavailable response. Depends on: TASK-026. | Yes | 2026-06-03 |
+| TASK-067 | Implement `apps/frontend/src/pages/weather/WeatherForecastPage.tsx` with current cards, forecast timeline, field-required empty state, loading state, and provider-unavailable state. Depends on: TASK-064, TASK-034. | Yes | 2026-06-03 |
+| TASK-068 | Implement `apps/frontend/src/pages/weather/WeatherAnalyticsPage.tsx` with parameter selectors, date range controls, comparison mode placeholder, and charts for all supported weather series. Depends on: TASK-065, TASK-052, TASK-034. | Yes | 2026-06-03 |
+| TASK-069 | Add weather API functions/hooks in `apps/frontend/src/lib/api.ts` and `apps/frontend/src/lib/queries.ts`. Depends on: TASK-064, TASK-065, TASK-066. | Yes | 2026-06-03 |
+| TASK-070 | Add backend provider tests and frontend page tests for forecast/history success, rate-limit/provider errors, and no selected field. Depends on: TASK-064, TASK-065, TASK-067, TASK-068. | Yes | 2026-06-03 |
 
 ### Implementation Phase 8 — VRA Vegetation Zoning and Zoning Module Shells
 

@@ -20,6 +20,7 @@ from app.providers.eos.field_provider import EosFieldProvider
 from app.providers.eos.imagery_provider import EosImageryProvider
 from app.providers.eos.scene_provider import EosSceneProvider
 from app.providers.eos.tile_provider import EosTileProvider
+from app.providers.eos.weather_provider import EosWeatherProvider
 from app.providers.models import CloudMaskOptions, SceneMetadata
 from app.raster.errors import AkashaError
 from fastapi.testclient import TestClient
@@ -259,6 +260,79 @@ def test_scene_provider_normalizes_async_search_and_results():
     assert scenes[0].scene_id == "S2/43/P/FM/2026/6/1/0"
     assert scenes[0].sensor == "S2"
     assert scenes[0].cloud_percent == pytest.approx(8.5)
+
+
+def test_weather_provider_normalizes_history_and_accumulated_records():
+    calls: list[dict[str, Any]] = []
+
+    class FakeClient:
+        def request(self, method, path, **kwargs):
+            calls.append({"method": method, "path": path, **kwargs})
+            return [
+                {
+                    "date": "2026-06-01",
+                    "temperature": "24.5",
+                    "precipitation": "3.2",
+                    "relative_humidity": "81",
+                    "evapotranspiration": "2.8",
+                    "global_radiation": "17.5",
+                    "sum_active_temperatures": "126",
+                }
+            ]
+
+    provider = EosWeatherProvider(client=FakeClient())
+    response = provider.get_history("field id/with spaces", date(2026, 6, 1), date(2026, 6, 2))
+
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["path"] == "/weather/historical-high-accuracy/field%20id%2Fwith%20spaces"
+    record = response.records[0]
+    assert record.temperature_avg_c == 24.5
+    assert record.precipitation_mm == 3.2
+    assert record.humidity_percent == 81
+    assert record.evapotranspiration_mm == 2.8
+    assert record.global_radiation_mj_m2 == 17.5
+    assert record.sum_active_temperatures_c == 126
+
+
+def test_weather_provider_preserves_zero_values():
+    class FakeClient:
+        def request(self, *_args, **_kwargs):
+            return [
+                {
+                    "date": "2026-06-01",
+                    "temperature": 0,
+                    "precipitation": 0,
+                    "relative_humidity": 0,
+                    "cloudiness": 0,
+                    "wind": 0,
+                    "evapotranspiration": 0,
+                    "global_radiation": 0,
+                    "sum_active_temperatures": 0,
+                }
+            ]
+
+    provider = EosWeatherProvider(client=FakeClient())
+    response = provider.get_history("field-1", date(2026, 6, 1), date(2026, 6, 2))
+    record = response.records[0]
+
+    assert record.temperature_avg_c == 0
+    assert record.precipitation_mm == 0
+    assert record.humidity_percent == 0
+    assert record.cloudiness_percent == 0
+    assert record.wind_mps == 0
+    assert record.evapotranspiration_mm == 0
+    assert record.global_radiation_mj_m2 == 0
+    assert record.sum_active_temperatures_c == 0
+
+
+def test_weather_provider_soil_moisture_is_explicitly_feature_unavailable():
+    provider = EosWeatherProvider(client=object())
+
+    with pytest.raises(AkashaError) as ei:
+        provider.get_soil_moisture("field-1", date(2026, 6, 1), date(2026, 6, 2))
+
+    assert ei.value.code == "PROVIDER_FEATURE_UNAVAILABLE"
+    assert FAKE_KEY not in str(ei.value.to_payload())
 
 
 def test_scene_provider_polls_pending_result_before_returning_scenes():

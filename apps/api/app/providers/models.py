@@ -208,13 +208,19 @@ class WeatherRecord(ProviderModel):
     record_date: date | None = Field(default=None, alias="date")
     start_time: DateTime | None = None
     end_time: DateTime | None = None
+    temperature_avg_c: float | None = None
     temperature_min_c: float | None = None
     temperature_max_c: float | None = None
     precipitation_mm: float | None = None
+    accumulated_precipitation_mm: float | None = None
     humidity_percent: float | None = None
     cloudiness_percent: float | None = None
     wind_mps: float | None = None
     wind_direction: str | None = None
+    sum_active_temperatures_c: float | None = None
+    evapotranspiration_mm: float | None = None
+    global_radiation_mj_m2: float | None = None
+    soil_moisture_percent: float | None = None
     conditions: str | None = None
     conditions_code: str | None = None
 
@@ -222,7 +228,7 @@ class WeatherRecord(ProviderModel):
 class WeatherResponse(ProviderModel):
     provider: str = "eos"
     external_field_id: str
-    kind: Literal["forecast", "history", "accumulated"]
+    kind: Literal["forecast", "history", "accumulated", "soil_moisture"]
     records: list[WeatherRecord]
 
 

@@ -8,6 +8,8 @@ import {
   useDeletePlot,
   useImportPlotsGeoJson,
   usePlots,
+  useFieldWeatherForecast,
+  useFieldWeatherHistory,
   useUpdatePlot,
 } from '@/lib/queries';
 import type { Plot, PlotGeometry } from '@/types/api';
@@ -101,5 +103,45 @@ describe('plot query hooks', () => {
     expect(deletedIds).toEqual(['plot-1']);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.plots });
     expect(invalidateSpy).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('weather query hooks', () => {
+  it('keeps weather queries disabled without a selected field', () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    vi.stubGlobal('fetch', fetchMock);
+    const { Provider } = wrapper();
+
+    const forecast = renderHook(() => useFieldWeatherForecast(null), { wrapper: Provider });
+    const history = renderHook(
+      () => useFieldWeatherHistory(null, { startDate: '2026-06-01', endDate: '2026-06-02' }),
+      { wrapper: Provider },
+    );
+
+    expect(forecast.result.current.fetchStatus).toBe('idle');
+    expect(history.result.current.fetchStatus).toBe('idle');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fetches weather history with date-scoped query keys', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ series: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { Provider } = wrapper();
+
+    const { result } = renderHook(
+      () =>
+        useFieldWeatherHistory('plot-1', {
+          startDate: '2026-06-01',
+          endDate: '2026-06-02',
+          parameters: ['dailyTemperature'],
+        }),
+      { wrapper: Provider },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/fields/plot-1/weather/history?provider=auto&startDate=2026-06-01&endDate=2026-06-02&parameters=dailyTemperature',
+      expect.objectContaining({ method: 'GET' }),
+    );
   });
 });

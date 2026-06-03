@@ -124,6 +124,13 @@ class WeatherProvider(Protocol):
         date_end: date,
     ) -> WeatherResponse: ...
 
+    def get_soil_moisture(
+        self,
+        external_field_id: str,
+        date_start: date,
+        date_end: date,
+    ) -> WeatherResponse: ...
+
 
 class ZoningProvider(Protocol):
     def create_vegetation_map(

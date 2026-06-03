@@ -5,6 +5,7 @@ from datetime import date
 from typing import Any, Literal
 from urllib.parse import quote
 
+from ...raster.errors import AkashaError
 from ..models import WeatherRecord, WeatherResponse
 from .client import EosClient
 
@@ -70,6 +71,25 @@ class EosWeatherProvider:
         )
         return _weather_response(external_field_id, "accumulated", response)
 
+    def get_soil_moisture(
+        self,
+        external_field_id: str,
+        date_start: date,
+        date_end: date,
+    ) -> WeatherResponse:
+        raise AkashaError(
+            "PROVIDER_FEATURE_UNAVAILABLE",
+            "Soil-moisture weather data is not available from the configured provider.",
+            503,
+            {
+                "provider": "eos",
+                "feature": "soil_moisture",
+                "externalFieldId": external_field_id,
+                "startDate": date_start.isoformat(),
+                "endDate": date_end.isoformat(),
+            },
+        )
+
 
 def _weather_response(
     external_field_id: str,
@@ -93,18 +113,62 @@ def _record(item: dict[str, Any], item_date: date | None) -> WeatherRecord:
         record_date=item_date,
         start_time=item.get("start_time"),
         end_time=item.get("end_time"),
+        temperature_avg_c=_to_float(
+            _first_present(
+                item,
+                "temperature",
+                "temperature_avg",
+                "temperature_mean",
+                "air_temperature",
+            )
+        ),
         temperature_min_c=_to_float(item.get("temperature_min")),
         temperature_max_c=_to_float(item.get("temperature_max")),
-        precipitation_mm=_to_float(item.get("precipitation") or item.get("rainfall")),
-        humidity_percent=_to_float(item.get("humidity")),
-        cloudiness_percent=_to_float(item.get("cloudiness")),
-        wind_mps=_to_float(item.get("wind") or item.get("wind_speed")),
+        precipitation_mm=_to_float(
+            _first_present(item, "precipitation", "rainfall", "rain")
+        ),
+        accumulated_precipitation_mm=_to_float(
+            _first_present(
+                item,
+                "accumulated_precipitation",
+                "accumulated_precipitation_mm",
+                "precipitation_accumulated",
+            )
+        ),
+        humidity_percent=_to_float(_first_present(item, "humidity", "relative_humidity")),
+        cloudiness_percent=_to_float(_first_present(item, "cloudiness", "clouds")),
+        wind_mps=_to_float(_first_present(item, "wind", "wind_speed")),
         wind_direction=item.get("wind_direction"),
+        sum_active_temperatures_c=_to_float(
+            _first_present(
+                item,
+                "sum_active_temperatures",
+                "sum_active_temperature",
+                "active_temperature_sum",
+                "accumulated_temperature",
+            )
+        ),
+        evapotranspiration_mm=_to_float(
+            _first_present(item, "evapotranspiration", "et", "eto")
+        ),
+        global_radiation_mj_m2=_to_float(
+            _first_present(item, "global_radiation", "solar_radiation", "radiation")
+        ),
+        soil_moisture_percent=_to_float(
+            _first_present(item, "soil_moisture", "soil_moisture_percent")
+        ),
         conditions=item.get("total_conditions"),
         conditions_code=(
             str(item["conditions_code"]) if item.get("conditions_code") is not None else None
         ),
     )
+
+
+def _first_present(item: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if item.get(key) is not None:
+            return item[key]
+    return None
 
 
 def _to_float(value: Any) -> float | None:

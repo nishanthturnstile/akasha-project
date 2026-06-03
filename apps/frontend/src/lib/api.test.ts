@@ -9,6 +9,9 @@ import {
   exportFieldReportCsv,
   exportPlotGeoJson,
   getConfig,
+  getFieldWeatherForecast,
+  getFieldWeatherHistory,
+  getFieldWeatherSoilMoisture,
   getPlots,
   getSources,
   importPlotsGeoJson,
@@ -232,6 +235,38 @@ describe('api client error mapping', () => {
       );
       expect(String(fetchMock.mock.calls[1][0])).toContain('/api/fields/plot-1/exports/report.csv?');
       expect(String(fetchMock.mock.calls[1][0])).toContain('cloudShadows=false');
+    });
+
+    it('fetches selected-field weather from same-origin routes with encoded query params', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ plotId: 'plot 1', provider: 'eos', metadata: {} }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await getFieldWeatherForecast('plot 1', { provider: 'auto', days: 5 });
+      await getFieldWeatherHistory('plot 1', {
+        startDate: '2026-06-01',
+        endDate: '2026-06-10',
+        parameters: ['dailyPrecipitation', 'globalRadiation'],
+      });
+      await getFieldWeatherSoilMoisture('plot 1', {
+        startDate: '2026-06-01',
+        endDate: '2026-06-10',
+      });
+
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        '/api/fields/plot%201/weather/forecast?provider=auto&days=5',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(String(fetchMock.mock.calls[1][0])).toBe(
+        '/api/fields/plot%201/weather/history?startDate=2026-06-01&endDate=2026-06-10&parameters=dailyPrecipitation&parameters=globalRadiation',
+      );
+      expect(String(fetchMock.mock.calls[2][0])).toBe(
+        '/api/fields/plot%201/weather/soil-moisture?startDate=2026-06-01&endDate=2026-06-10',
+      );
     });
   });
 });

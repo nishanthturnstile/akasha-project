@@ -7,6 +7,9 @@ import {
   getFieldScenes,
   getFieldStatistics,
   getFieldTrend,
+  getFieldWeatherForecast,
+  getFieldWeatherHistory,
+  getFieldWeatherSoilMoisture,
   getConfig,
   getDates,
   getDefaultLayer,
@@ -21,6 +24,8 @@ import type {
   FieldIndexExportOptions,
   FieldReportExportOptions,
   PlotUpdatePayload,
+  WeatherProviderChoice,
+  WeatherSeriesId,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -69,6 +74,40 @@ export const queryKeys = {
       cloudMask.clouds,
       cloudMask.cloudShadows,
       cloudMask.cirrus,
+    ] as const,
+  fieldWeatherForecast: (plotId: string, provider: WeatherProviderChoice, days: number) =>
+    ['fields', plotId, 'weather', 'forecast', provider, days] as const,
+  fieldWeatherHistory: (
+    plotId: string,
+    provider: WeatherProviderChoice,
+    startDate: string | undefined,
+    endDate: string | undefined,
+    parameters: readonly WeatherSeriesId[] | undefined,
+  ) =>
+    [
+      'fields',
+      plotId,
+      'weather',
+      'history',
+      provider,
+      startDate ?? 'default-start',
+      endDate ?? 'default-end',
+      ...(parameters ?? []),
+    ] as const,
+  fieldWeatherSoilMoisture: (
+    plotId: string,
+    provider: WeatherProviderChoice,
+    startDate: string | undefined,
+    endDate: string | undefined,
+  ) =>
+    [
+      'fields',
+      plotId,
+      'weather',
+      'soil-moisture',
+      provider,
+      startDate ?? 'default-start',
+      endDate ?? 'default-end',
     ] as const,
 };
 
@@ -228,6 +267,80 @@ export function useFieldTrend(
         cloudMask: options.cloudMask,
       }),
     enabled: Boolean(plotId && options.sourceId),
+  });
+}
+
+export function useFieldWeatherForecast(
+  plotId: string | null | undefined,
+  options: { provider?: WeatherProviderChoice; days?: number } = {},
+) {
+  const provider = options.provider ?? 'auto';
+  const days = options.days ?? 7;
+  return useQuery({
+    queryKey: plotId
+      ? queryKeys.fieldWeatherForecast(plotId, provider, days)
+      : (['fields', 'none', 'weather', 'forecast'] as const),
+    queryFn: () => getFieldWeatherForecast(plotId as string, { provider, days }),
+    enabled: Boolean(plotId),
+  });
+}
+
+export function useFieldWeatherHistory(
+  plotId: string | null | undefined,
+  options: {
+    provider?: WeatherProviderChoice;
+    startDate?: string;
+    endDate?: string;
+    parameters?: WeatherSeriesId[];
+  } = {},
+) {
+  const provider = options.provider ?? 'auto';
+  return useQuery({
+    queryKey: plotId
+      ? queryKeys.fieldWeatherHistory(
+          plotId,
+          provider,
+          options.startDate,
+          options.endDate,
+          options.parameters,
+        )
+      : (['fields', 'none', 'weather', 'history'] as const),
+    queryFn: () =>
+      getFieldWeatherHistory(plotId as string, {
+        provider,
+        startDate: options.startDate,
+        endDate: options.endDate,
+        parameters: options.parameters,
+      }),
+    enabled: Boolean(plotId && options.startDate && options.endDate),
+  });
+}
+
+export function useFieldWeatherSoilMoisture(
+  plotId: string | null | undefined,
+  options: {
+    provider?: WeatherProviderChoice;
+    startDate?: string;
+    endDate?: string;
+  } = {},
+) {
+  const provider = options.provider ?? 'auto';
+  return useQuery({
+    queryKey: plotId
+      ? queryKeys.fieldWeatherSoilMoisture(
+          plotId,
+          provider,
+          options.startDate,
+          options.endDate,
+        )
+      : (['fields', 'none', 'weather', 'soil-moisture'] as const),
+    queryFn: () =>
+      getFieldWeatherSoilMoisture(plotId as string, {
+        provider,
+        startDate: options.startDate,
+        endDate: options.endDate,
+      }),
+    enabled: Boolean(plotId && options.startDate && options.endDate),
   });
 }
 

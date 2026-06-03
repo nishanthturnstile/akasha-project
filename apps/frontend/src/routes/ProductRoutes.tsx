@@ -21,7 +21,7 @@ const WeatherAnalyticsPage = lazy(() => import('@/pages/weather/WeatherAnalytics
 const WeatherForecastPage = lazy(() => import('@/pages/weather/WeatherForecastPage'));
 const FieldActivityLogPage = lazyPlaceholderPage('FieldActivityLogPage');
 const VraSowingPage = lazyPlaceholderPage('VraSowingPage');
-const VraVegetationPage = lazyPlaceholderPage('VraVegetationPage');
+const VraVegetationPage = lazy(() => import('@/pages/vra/VraVegetationPage'));
 const VraPkPage = lazyPlaceholderPage('VraPkPage');
 const VraMapBuilderPage = lazyPlaceholderPage('VraMapBuilderPage');
 const VraSoilSamplingPage = lazyPlaceholderPage('VraSoilSamplingPage');

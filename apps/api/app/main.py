@@ -38,6 +38,7 @@ from .config import settings
 from .field_analytics import router as field_analytics_router
 from .field_exports import router as field_exports_router
 from .field_monitoring import router as field_monitoring_router
+from .field_zoning import router as field_zoning_router
 from .plots import router as plots_router
 from .product import router as product_router
 from .providers.router import router as providers_router
@@ -237,6 +238,9 @@ app.include_router(field_exports_router)
 
 # --- Field Weather API (EOS parity Phase 7) --------------------------------
 app.include_router(weather_router)
+
+# --- Field Zoning API (EOS parity Phase 8) ---------------------------------
+app.include_router(field_zoning_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)

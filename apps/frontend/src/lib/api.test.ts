@@ -12,6 +12,10 @@ import {
   getFieldWeatherForecast,
   getFieldWeatherHistory,
   getFieldWeatherSoilMoisture,
+  createVegetationZoning,
+  exportZoningMap,
+  getZoningMap,
+  listZoningMaps,
   getPlots,
   getSources,
   importPlotsGeoJson,
@@ -266,6 +270,58 @@ describe('api client error mapping', () => {
       );
       expect(String(fetchMock.mock.calls[2][0])).toBe(
         '/api/fields/plot%201/weather/soil-moisture?startDate=2026-06-01&endDate=2026-06-10',
+      );
+    });
+
+    it('uses same-origin VRA zoning routes and encoded map ids', async () => {
+      const blob = new Blob(['zip'], { type: 'application/zip' });
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        if (String(input).endsWith('/export.shp')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'Content-Disposition': 'attachment; filename="zones.zip"' }),
+            blob: async () => blob,
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ mapId: 'map 1', maps: [] }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await createVegetationZoning('plot 1', {
+        indexType: 'NDVI',
+        imageDate: '2026-06-01',
+        zoneCount: 3,
+        minZoneArea: 0.25,
+      });
+      await listZoningMaps('plot 1');
+      await getZoningMap('plot 1', 'map 1');
+      const file = await exportZoningMap('plot 1', 'map 1', 'shp');
+
+      expect(file.filename).toBe('zones.zip');
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        '/api/fields/plot%201/zoning/vegetation',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        '/api/fields/plot%201/zoning/maps',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        3,
+        '/api/fields/plot%201/zoning/maps/map%201',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        4,
+        '/api/fields/plot%201/zoning/maps/map%201/export.shp',
+        expect.objectContaining({ method: 'GET' }),
       );
     });
   });

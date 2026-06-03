@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any
 from urllib.parse import quote
 
 from ..models import ProviderAsyncRequest, ZoningMapStatus, ZoningZone
 from .client import EosClient
 
-_ZMAP_RE = re.compile(r"/zoning/[^/]+/([^/?]+)")
+_ZMAP_RE = re.compile(r"/zoning/maps/[^/?]+/([^/?]+)")
 
 
 class EosZoningProvider:
@@ -21,9 +22,15 @@ class EosZoningProvider:
         *,
         index: str,
         zone_quantity: int,
-        min_zone_area: int,
+        min_zone_area: float,
         dataset_id: str,
+        image_date: date,
     ) -> ProviderAsyncRequest:
+        """Create an EOS vegetation map.
+
+        Akasha's public contract supplies min_zone_area in hectares; EOSDA's
+        vegetation-map endpoint accepts the same unit for this parameter.
+        """
         response = self.client.request(
             "POST",
             "/zoning/vegetation-map",
@@ -33,6 +40,7 @@ class EosZoningProvider:
                 "zone_quantity": zone_quantity,
                 "min_zone_area": min_zone_area,
                 "dataset_id": dataset_id,
+                "image_date": image_date.isoformat(),
                 "need_answer": False,
             },
         )

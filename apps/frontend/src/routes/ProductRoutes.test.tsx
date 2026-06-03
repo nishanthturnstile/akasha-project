@@ -45,10 +45,10 @@ describe('ProductRoutes', () => {
   });
 
   it('renders planned module placeholders without loading the map workspace', async () => {
-    renderRoutes('/vra/vegetation');
+    renderRoutes('/vra/sowing');
 
     await waitFor(
-      () => expect(screen.getByRole('heading', { name: 'VRA Vegetation' })).toBeTruthy(),
+      () => expect(screen.getByRole('heading', { name: 'VRA Sowing' })).toBeTruthy(),
       { timeout: 8000 },
     );
     expect(screen.getByTestId('module-placeholder')).toBeTruthy();
@@ -64,6 +64,20 @@ describe('ProductRoutes', () => {
 
     await waitFor(
       () => expect(screen.getByRole('heading', { name: 'Weather Forecast' })).toBeTruthy(),
+      { timeout: 8000 },
+    );
+    expect(screen.queryByTestId('module-placeholder')).toBeNull();
+  });
+
+  it('renders the real VRA vegetation page instead of a placeholder', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
+    );
+    renderRoutes('/vra/vegetation');
+
+    await waitFor(
+      () => expect(screen.getByRole('heading', { name: 'VRA Vegetation' })).toBeTruthy(),
       { timeout: 8000 },
     );
     expect(screen.queryByTestId('module-placeholder')).toBeNull();

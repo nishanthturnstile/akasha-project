@@ -216,12 +216,12 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-071 | Add `POST /api/fields/{plot_id}/zoning/vegetation` with request body `indexType`, `imageDate`, `zoneCount`, `minZoneArea`, and optional provider callback/async flags. Depends on: TASK-027, TASK-037, TASK-043. | | |
-| TASK-072 | Add `GET /api/fields/{plot_id}/zoning/maps` and `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}` returning normalized zone geometry, area, percentage, cluster values, status, and provider metadata. Depends on: TASK-071. | | |
-| TASK-073 | Add `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}/export.shp` and optional `export.geojson`. Depends on: TASK-072. | | |
-| TASK-074 | Implement `VraVegetationPage` with form controls for selected field, date, index, zone count, minimum zone area, create action, processing state, zone map overlay, zone table, and export actions. Depends on: TASK-071, TASK-072, TASK-073, TASK-034. | | |
-| TASK-075 | Implement clear shells for `VraSowingPage`, `VraPkPage`, `VraMapBuilderPage`, and `VraSoilSamplingPage` with descriptions and dependency notes. Depends on: TASK-034. | | |
-| TASK-076 | Add tests for zoning create/retrieve/export backend flows and VRA Vegetation UI form/processing/result states. Depends on: TASK-071, TASK-072, TASK-074. | | |
+| TASK-071 | Add `POST /api/fields/{plot_id}/zoning/vegetation` with request body `indexType`, `imageDate`, `zoneCount`, `minZoneArea`, and optional provider callback/async flags. Depends on: TASK-027, TASK-037, TASK-043. | Yes | 2026-06-03 |
+| TASK-072 | Add `GET /api/fields/{plot_id}/zoning/maps` and `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}` returning normalized zone geometry, area, percentage, cluster values, status, and provider metadata. Depends on: TASK-071. | Yes | 2026-06-03 |
+| TASK-073 | Add `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}/export.shp` and optional `export.geojson`. Depends on: TASK-072. | Yes | 2026-06-03 |
+| TASK-074 | Implement `VraVegetationPage` with form controls for selected field, date, index, zone count, minimum zone area, create action, processing state, zone map overlay, zone table, and export actions. Depends on: TASK-071, TASK-072, TASK-073, TASK-034. | Yes | 2026-06-03 |
+| TASK-075 | Implement clear shells for `VraSowingPage`, `VraPkPage`, `VraMapBuilderPage`, and `VraSoilSamplingPage` with descriptions and dependency notes. Depends on: TASK-034. | Yes | 2026-06-03 |
+| TASK-076 | Add tests for zoning create/retrieve/export backend flows and VRA Vegetation UI form/processing/result states. Depends on: TASK-071, TASK-072, TASK-074. | Yes | 2026-06-03 |
 
 ### Implementation Phase 9 — Field Leaderboard, Reporting, and Report Templates
 
@@ -230,7 +230,7 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
 | TASK-077 | Add `GET /api/reports/field-leaderboard` returning fields ranked by latest index value, index delta, cloud-free recency, weather risk summary, crop, group, season, area, and image date. Depends on: TASK-050, TASK-064, TASK-014. | | |
-| TASK-078 | Add `POST /api/reports/templates`, `GET /api/reports/templates`, and `PATCH /api/reports/templates/{template_id}` for custom report column templates. Store templates in a new migration `004_report_templates.sql`. Depends on: TASK-077. | | |
+| TASK-078 | Add `POST /api/reports/templates`, `GET /api/reports/templates`, and `PATCH /api/reports/templates/{template_id}` for custom report column templates. Store templates in a new migration `005_report_templates.sql`. Depends on: TASK-077. | | |
 | TASK-079 | Add `GET /api/reports/field-leaderboard/export.csv` and optional `export.xlsx` after choosing an XLSX library. CSV is required first. Depends on: TASK-077. | | |
 | TASK-080 | Implement `FieldLeaderboardPage` with filters/columns matching EOS: index, group, crop, variety, report date, field, location, coordinates, area, sowing/planting, index value, value change, actual yield, image date, and preview/open. Depends on: TASK-077, TASK-034. | | |
 | TASK-081 | Implement `ReportingPage` with create-template workflow and selectable columns. Depends on: TASK-078, TASK-034. | | |
@@ -242,7 +242,7 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-083 | Add migration `005_operations_tasks_data_manager.sql` with tables for field activities, scout tasks, field groups, uploaded datasets, and attachments metadata. Depends on: TASK-013. | | |
+| TASK-083 | Add migration `006_operations_tasks_data_manager.sql` with tables for field activities, scout tasks, field groups, uploaded datasets, and attachments metadata. Depends on: TASK-013. | | |
 | TASK-084 | Add `apps/api/app/operations.py` with CRUD endpoints for field activities: type, date, field, assignee, status, input/product, cost, notes, and attachment references. Depends on: TASK-083. | | |
 | TASK-085 | Add `apps/api/app/scout_tasks.py` with CRUD endpoints for map-pin tasks, status `new|closed`, assignee, priority, notes, photos/attachments, and field linkage. Depends on: TASK-083. | | |
 | TASK-086 | Add `apps/api/app/data_manager.py` with dataset upload metadata endpoints for GeoJSON/SHP ZIP first. ISO-XML may be stored as uploaded metadata until parsing rules are implemented. Depends on: TASK-083. | | |
@@ -346,39 +346,40 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 - **FILE-020**: `apps/api/app/product.py` — Preserve existing product routes; add or coordinate field-aware routes.
 - **FILE-021**: `apps/api/app/raster/indices.py` — Add MSAVI and RECI native support where possible.
 - **FILE-022**: `apps/api/migrations/003_field_metadata_provider_links.sql` — New field metadata/provider link migration.
-- **FILE-023**: `apps/api/migrations/004_report_templates.sql` — New report template migration.
-- **FILE-024**: `apps/api/migrations/005_operations_tasks_data_manager.sql` — New operations/scouting/data manager migration.
-- **FILE-025**: `apps/api/app/operations.py` — New field activity routes.
-- **FILE-026**: `apps/api/app/scout_tasks.py` — New scout task routes.
-- **FILE-027**: `apps/api/app/data_manager.py` — New dataset upload/metadata routes.
-- **FILE-028**: `apps/api/app/field_groups.py` — New field group routes.
-- **FILE-029**: `apps/api/app/risk.py` — New risk summary routes.
-- **FILE-030**: `apps/frontend/package.json` — Add routing/chart/export dependencies as phases require.
-- **FILE-031**: `apps/frontend/src/App.tsx` — Add routing and shell.
-- **FILE-032**: `apps/frontend/src/pages/MapPage.tsx` — Make current map field-aware and route-aware.
-- **FILE-033**: `apps/frontend/src/components/scaffold/PlotToolbar.tsx` — Replace placeholder with real field tools.
-- **FILE-034**: `apps/frontend/src/components/scaffold/IndexPanel.tsx` — Replace placeholder with analytics panel or delegate to new analytics component.
-- **FILE-035**: `apps/frontend/src/state/mapViewContext.tsx` — Add selected field, cloud-mask, and field-aware view state.
-- **FILE-036**: `apps/frontend/src/lib/api.ts` — Add typed API functions for fields, provider sync, scenes, stats, weather, zoning, reports, operations, tasks, data manager, groups, risk, notifications.
-- **FILE-037**: `apps/frontend/src/lib/queries.ts` — Add TanStack Query hooks/mutations and invalidation rules.
-- **FILE-038**: `apps/frontend/src/types/api.ts` — Add normalized frontend DTOs.
-- **FILE-039**: `apps/frontend/src/components/fields/FieldDrawController.tsx` — New field drawing/editing controller.
-- **FILE-040**: `apps/frontend/src/components/fields/AllFieldsPanel.tsx` — New All Fields panel.
-- **FILE-041**: `apps/frontend/src/components/fields/FieldBoundaryLayer.tsx` — New selected field boundary layer if not handled in `MapLayerManager`.
-- **FILE-042**: `apps/frontend/src/components/shell/AppShell.tsx` — New product shell.
-- **FILE-043**: `apps/frontend/src/pages/weather/WeatherForecastPage.tsx` — New forecast page.
-- **FILE-044**: `apps/frontend/src/pages/weather/WeatherAnalyticsPage.tsx` — New weather analytics page.
-- **FILE-045**: `apps/frontend/src/pages/vra/VraVegetationPage.tsx` — New VRA vegetation page.
-- **FILE-046**: `apps/frontend/src/pages/reports/FieldLeaderboardPage.tsx` — New field leaderboard page.
-- **FILE-047**: `apps/frontend/src/pages/reports/ReportingPage.tsx` — New reporting/template page.
-- **FILE-048**: `apps/frontend/src/pages/operations/FieldActivityLogPage.tsx` — New activity log page.
-- **FILE-049**: `apps/frontend/src/pages/scout/ScoutTasksPage.tsx` — New scout tasks page.
-- **FILE-050**: `apps/frontend/src/pages/data/DataManagerPage.tsx` — New data manager page.
-- **FILE-051**: `apps/frontend/src/pages/fields/FieldGroupsPage.tsx` — New field groups page.
-- **FILE-052**: `apps/frontend/src/pages/risk/DiseasesPestsPage.tsx` — New diseases/pests page.
-- **FILE-053**: `docs/architecture-tech-stack.md` — Update provider adapter and replacement path after parity verification.
-- **FILE-054**: `docs/india-specific-productization-plan.md` — New India-specific plan after baseline parity.
-- **FILE-055**: `docs/auth-team-admin-plan.md` — New auth/team/admin decision doc before pilot.
+- **FILE-023**: `apps/api/migrations/004_zoning_maps.sql` — New zoning map public-ID/job-handle migration.
+- **FILE-024**: `apps/api/migrations/005_report_templates.sql` — New report template migration.
+- **FILE-025**: `apps/api/migrations/006_operations_tasks_data_manager.sql` — New operations/scouting/data manager migration.
+- **FILE-026**: `apps/api/app/operations.py` — New field activity routes.
+- **FILE-027**: `apps/api/app/scout_tasks.py` — New scout task routes.
+- **FILE-028**: `apps/api/app/data_manager.py` — New dataset upload/metadata routes.
+- **FILE-029**: `apps/api/app/field_groups.py` — New field group routes.
+- **FILE-030**: `apps/api/app/risk.py` — New risk summary routes.
+- **FILE-031**: `apps/frontend/package.json` — Add routing/chart/export dependencies as phases require.
+- **FILE-032**: `apps/frontend/src/App.tsx` — Add routing and shell.
+- **FILE-033**: `apps/frontend/src/pages/MapPage.tsx` — Make current map field-aware and route-aware.
+- **FILE-034**: `apps/frontend/src/components/scaffold/PlotToolbar.tsx` — Replace placeholder with real field tools.
+- **FILE-035**: `apps/frontend/src/components/scaffold/IndexPanel.tsx` — Replace placeholder with analytics panel or delegate to new analytics component.
+- **FILE-036**: `apps/frontend/src/state/mapViewContext.tsx` — Add selected field, cloud-mask, and field-aware view state.
+- **FILE-037**: `apps/frontend/src/lib/api.ts` — Add typed API functions for fields, provider sync, scenes, stats, weather, zoning, reports, operations, tasks, data manager, groups, risk, notifications.
+- **FILE-038**: `apps/frontend/src/lib/queries.ts` — Add TanStack Query hooks/mutations and invalidation rules.
+- **FILE-039**: `apps/frontend/src/types/api.ts` — Add normalized frontend DTOs.
+- **FILE-040**: `apps/frontend/src/components/fields/FieldDrawController.tsx` — New field drawing/editing controller.
+- **FILE-041**: `apps/frontend/src/components/fields/AllFieldsPanel.tsx` — New All Fields panel.
+- **FILE-042**: `apps/frontend/src/components/fields/FieldBoundaryLayer.tsx` — New selected field boundary layer if not handled in `MapLayerManager`.
+- **FILE-043**: `apps/frontend/src/components/shell/AppShell.tsx` — New product shell.
+- **FILE-044**: `apps/frontend/src/pages/weather/WeatherForecastPage.tsx` — New forecast page.
+- **FILE-045**: `apps/frontend/src/pages/weather/WeatherAnalyticsPage.tsx` — New weather analytics page.
+- **FILE-046**: `apps/frontend/src/pages/vra/VraVegetationPage.tsx` — New VRA vegetation page.
+- **FILE-047**: `apps/frontend/src/pages/reports/FieldLeaderboardPage.tsx` — New field leaderboard page.
+- **FILE-048**: `apps/frontend/src/pages/reports/ReportingPage.tsx` — New reporting/template page.
+- **FILE-049**: `apps/frontend/src/pages/operations/FieldActivityLogPage.tsx` — New activity log page.
+- **FILE-050**: `apps/frontend/src/pages/scout/ScoutTasksPage.tsx` — New scout tasks page.
+- **FILE-051**: `apps/frontend/src/pages/data/DataManagerPage.tsx` — New data manager page.
+- **FILE-052**: `apps/frontend/src/pages/fields/FieldGroupsPage.tsx` — New field groups page.
+- **FILE-053**: `apps/frontend/src/pages/risk/DiseasesPestsPage.tsx` — New diseases/pests page.
+- **FILE-054**: `docs/architecture-tech-stack.md` — Update provider adapter and replacement path after parity verification.
+- **FILE-055**: `docs/india-specific-productization-plan.md` — New India-specific plan after baseline parity.
+- **FILE-056**: `docs/auth-team-admin-plan.md` — New auth/team/admin decision doc before pilot.
 
 ## 6. Testing
 

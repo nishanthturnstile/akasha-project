@@ -14,6 +14,10 @@ import type {
   WeatherProviderChoice,
   WeatherSeriesId,
   WeatherSoilMoistureResponse,
+  VegetationZoningRequest,
+  ZoningExportFormat,
+  ZoningMap,
+  ZoningMapListResponse,
   CloudMaskOptions,
   Plot,
   PlotCreatePayload,
@@ -327,6 +331,33 @@ export const getFieldWeatherSoilMoisture = (
     `/api/fields/${encodeURIComponent(plotId)}/weather/soil-moisture${query ? `?${query}` : ''}`,
   );
 };
+
+export const createVegetationZoning = (
+  plotId: string,
+  payload: VegetationZoningRequest,
+): Promise<ZoningMap> =>
+  request<ZoningMap>(
+    `/api/fields/${encodeURIComponent(plotId)}/zoning/vegetation`,
+    { method: 'POST', body: payload },
+  );
+
+export const listZoningMaps = (plotId: string): Promise<ZoningMapListResponse> =>
+  request<ZoningMapListResponse>(`/api/fields/${encodeURIComponent(plotId)}/zoning/maps`);
+
+export const getZoningMap = (plotId: string, mapId: string): Promise<ZoningMap> =>
+  request<ZoningMap>(
+    `/api/fields/${encodeURIComponent(plotId)}/zoning/maps/${encodeURIComponent(mapId)}`,
+  );
+
+export const exportZoningMap = (
+  plotId: string,
+  mapId: string,
+  format: ZoningExportFormat,
+): Promise<FileDownload> =>
+  requestDownload(
+    `/api/fields/${encodeURIComponent(plotId)}/zoning/maps/${encodeURIComponent(mapId)}/export.${format}`,
+    `zoning_${mapId}.${format === 'shp' ? 'zip' : 'geojson'}`,
+  );
 
 export const exportFieldIndex = (
   plotId: string,

@@ -21,6 +21,7 @@ from app.providers.eos.imagery_provider import EosImageryProvider
 from app.providers.eos.scene_provider import EosSceneProvider
 from app.providers.eos.tile_provider import EosTileProvider
 from app.providers.eos.weather_provider import EosWeatherProvider
+from app.providers.eos.zoning_provider import EosZoningProvider
 from app.providers.models import CloudMaskOptions, SceneMetadata
 from app.raster.errors import AkashaError
 from fastapi.testclient import TestClient
@@ -333,6 +334,64 @@ def test_weather_provider_soil_moisture_is_explicitly_feature_unavailable():
 
     assert ei.value.code == "PROVIDER_FEATURE_UNAVAILABLE"
     assert FAKE_KEY not in str(ei.value.to_payload())
+
+
+def test_zoning_provider_preserves_zero_zone_values():
+    class FakeClient:
+        def request(self, *_args, **_kwargs):
+            return {
+                "field_id": "field-1",
+                "zmap_id": "zmap-1",
+                "status": "ready",
+                "type_zmap": "vegetation",
+                "vegetation_index": "NDVI",
+                "zones": [
+                    {
+                        "zone-1": {
+                            "zone_area": 0,
+                            "zone_p": 0,
+                            "fertilizer": 0,
+                            "geometry": {"type": "Polygon", "coordinates": []},
+                        }
+                    }
+                ],
+            }
+
+    provider = EosZoningProvider(client=FakeClient())
+    result = provider.get_zoning_map("field-1", "zmap-1")
+
+    assert result.zones[0].area_ha == 0
+    assert result.zones[0].area_percent == 0
+    assert result.zones[0].fertilizer == 0
+
+
+def test_zoning_provider_create_parses_zmap_id_and_sends_image_date():
+    calls: list[dict[str, Any]] = []
+
+    class FakeClient:
+        def request(self, method, path, **kwargs):
+            calls.append({"method": method, "path": path, **kwargs})
+            return {
+                "status": "pending",
+                "request_url": "/zoning/maps/field-123/zmap-456",
+                "request_id": "request-1",
+            }
+
+    provider = EosZoningProvider(client=FakeClient())
+    result = provider.create_vegetation_map(
+        "field-123",
+        index="NDVI",
+        zone_quantity=3,
+        min_zone_area=0.25,
+        dataset_id="dataset-1",
+        image_date=date(2026, 6, 1),
+    )
+
+    assert result.external_zmap_id == "zmap-456"
+    assert result.request_id == "zmap-456"
+    assert calls[0]["path"] == "/zoning/vegetation-map"
+    assert calls[0]["json"]["image_date"] == "2026-06-01"
+    assert calls[0]["json"]["dataset_id"] == "dataset-1"
 
 
 def test_scene_provider_polls_pending_result_before_returning_scenes():

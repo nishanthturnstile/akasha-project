@@ -10,6 +10,10 @@ import {
   getFieldWeatherForecast,
   getFieldWeatherHistory,
   getFieldWeatherSoilMoisture,
+  createVegetationZoning,
+  exportZoningMap,
+  getZoningMap,
+  listZoningMaps,
   getConfig,
   getDates,
   getDefaultLayer,
@@ -26,6 +30,8 @@ import type {
   PlotUpdatePayload,
   WeatherProviderChoice,
   WeatherSeriesId,
+  VegetationZoningRequest,
+  ZoningExportFormat,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -109,6 +115,9 @@ export const queryKeys = {
       startDate ?? 'default-start',
       endDate ?? 'default-end',
     ] as const,
+  zoningMaps: (plotId: string) => ['fields', plotId, 'zoning', 'maps'] as const,
+  zoningMap: (plotId: string, mapId: string) =>
+    ['fields', plotId, 'zoning', 'maps', mapId] as const,
 };
 
 interface UpdatePlotVariables {
@@ -128,6 +137,17 @@ interface FieldIndexExportVariables {
 interface FieldReportExportVariables {
   plotId: string;
   options: FieldReportExportOptions;
+}
+
+interface CreateVegetationZoningVariables {
+  plotId: string;
+  payload: VegetationZoningRequest;
+}
+
+interface ZoningExportVariables {
+  plotId: string;
+  mapId: string;
+  format: ZoningExportFormat;
 }
 
 export function useConfig() {
@@ -341,6 +361,51 @@ export function useFieldWeatherSoilMoisture(
         endDate: options.endDate,
       }),
     enabled: Boolean(plotId && options.startDate && options.endDate),
+  });
+}
+
+export function useZoningMaps(plotId: string | null | undefined) {
+  return useQuery({
+    queryKey: plotId ? queryKeys.zoningMaps(plotId) : (['fields', 'none', 'zoning', 'maps'] as const),
+    queryFn: () => listZoningMaps(plotId as string),
+    enabled: Boolean(plotId),
+  });
+}
+
+export function useZoningMap(plotId: string | null | undefined, mapId: string | null | undefined) {
+  return useQuery({
+    queryKey:
+      plotId && mapId
+        ? queryKeys.zoningMap(plotId, mapId)
+        : (['fields', 'none', 'zoning', 'maps', 'none'] as const),
+    queryFn: () => getZoningMap(plotId as string, mapId as string),
+    enabled: Boolean(plotId && mapId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'processing' || status === 'unknown' ? 5000 : false;
+    },
+  });
+}
+
+export function useCreateVegetationZoning() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ plotId, payload }: CreateVegetationZoningVariables) =>
+      createVegetationZoning(plotId, payload),
+    onSuccess: (data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.zoningMaps(variables.plotId) });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.zoningMap(variables.plotId, data.mapId),
+      });
+    },
+  });
+}
+
+export function useExportZoningMap() {
+  return useMutation({
+    mutationFn: ({ plotId, mapId, format }: ZoningExportVariables) =>
+      exportZoningMap(plotId, mapId, format),
   });
 }
 

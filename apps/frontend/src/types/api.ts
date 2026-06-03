@@ -413,6 +413,58 @@ export interface WeatherSoilMoistureResponse {
   metadata: Record<string, unknown>;
 }
 
+export type ZoningStatus = 'processing' | 'ready' | 'failed' | 'unknown';
+
+export interface VegetationZoningRequest {
+  indexType: string;
+  imageDate: string;
+  zoneCount: number;
+  minZoneArea: number;
+  provider?: 'auto' | 'eos';
+  asyncProcessing?: boolean;
+}
+
+export interface ZoningZone {
+  zoneId: string;
+  color: string;
+  areaHa?: number | null;
+  areaPercent?: number | null;
+  clusterValue?: number | null;
+  geometry?: PlotGeometry | null;
+}
+
+export interface ZoningMapMetadata {
+  requestedAt?: string | null;
+  imageDate?: string | null;
+  indexType?: string | null;
+  zoneCount?: number | null;
+  minZoneAreaHa?: number | null;
+  statusUpdatedAt?: string | null;
+  source: 'provider-adapter';
+}
+
+export interface ZoningMap {
+  plotId: string;
+  mapId: string;
+  provider: string;
+  status: ZoningStatus;
+  mapType: string;
+  indexType?: string | null;
+  imageDate?: string | null;
+  zoneCount?: number | null;
+  minZoneAreaHa?: number | null;
+  zones: ZoningZone[];
+  metadata: ZoningMapMetadata;
+}
+
+export interface ZoningMapListResponse {
+  plotId: string;
+  provider: string;
+  maps: ZoningMap[];
+}
+
+export type ZoningExportFormat = 'geojson' | 'shp';
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

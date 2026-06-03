@@ -139,8 +139,9 @@ class ZoningProvider(Protocol):
         *,
         index: str,
         zone_quantity: int,
-        min_zone_area: int,
+        min_zone_area: float,
         dataset_id: str,
+        image_date: date,
     ) -> ProviderAsyncRequest: ...
 
     def get_zoning_map(self, external_field_id: str, external_zmap_id: str) -> ZoningMapStatus: ...

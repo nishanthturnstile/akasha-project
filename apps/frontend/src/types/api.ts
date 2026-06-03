@@ -717,6 +717,47 @@ export interface ConnectionStatus {
   message: string;
 }
 
+export type RiskLevel = 'low' | 'medium' | 'high' | 'unknown';
+
+export interface RiskComponent {
+  id: string;
+  label: string;
+  available: boolean;
+  level: RiskLevel;
+  score?: number | null;
+  weight: number;
+  usedInAggregate: boolean;
+  evidence: string[];
+  limitations: string[];
+  source: string;
+  flags?: {
+    heat?: boolean | null;
+    dryness?: boolean | null;
+    excessRain?: boolean | null;
+  } | null;
+}
+
+export interface CropStageSummary {
+  cropType?: string | null;
+  startDate?: string | null;
+  startDateType: 'sowingDate' | 'plantingDate' | 'unknown';
+  daysAfterStart?: number | null;
+  stageLabel: string;
+  modelVersion: string;
+  limitations: string[];
+}
+
+export interface FieldRiskSummaryResponse {
+  plotId: string;
+  fieldWatchLevel: RiskLevel;
+  vegetationStressContext: string;
+  score?: number | null;
+  components: RiskComponent[];
+  cropStage: CropStageSummary;
+  limitations: string[];
+  metadata: Record<string, unknown>;
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

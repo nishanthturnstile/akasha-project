@@ -34,6 +34,7 @@ import type {
   FieldGroup,
   FieldGroupPayload,
   ConnectionStatus,
+  FieldRiskSummaryResponse,
   CloudMaskOptions,
   Plot,
   PlotCreatePayload,
@@ -499,6 +500,19 @@ export const uploadDataset = (
 
 export const getJohnDeereConnection = (): Promise<ConnectionStatus> =>
   request<ConnectionStatus>('/api/connections/john-deere');
+
+export const getFieldRiskSummary = (
+  plotId: string,
+  options: { indexType?: string; sourceId?: string } = {},
+): Promise<FieldRiskSummaryResponse> => {
+  const params = new URLSearchParams();
+  if (options.indexType) params.set('indexType', options.indexType);
+  if (options.sourceId) params.set('sourceId', options.sourceId);
+  const query = params.toString();
+  return request<FieldRiskSummaryResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/risk/summary${query ? `?${query}` : ''}`,
+  );
+};
 
 export const listFieldGroups = (): Promise<FieldGroup[]> =>
   request<FieldGroup[]>('/api/field-groups');

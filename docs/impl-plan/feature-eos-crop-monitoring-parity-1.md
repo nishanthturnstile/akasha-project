@@ -260,12 +260,12 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-094 | Add `apps/api/app/risk.py` with `GET /api/fields/{plot_id}/risk/summary`. Initial risk inputs: latest index value, index delta between latest two clean scenes, weather stress flags, cloud-data gap, crop/season metadata, and open scout tasks. Depends on: TASK-050, TASK-064, TASK-085, TASK-014. | | |
-| TASK-095 | Implement a transparent rule-based risk scoring model with output levels `low`, `medium`, `high`, and `unknown`. Do not claim disease diagnosis from NDVI alone. Depends on: TASK-094. | | |
-| TASK-096 | Add crop-stage timeline calculation from crop type and sowing/planting date. Start with generic stages and explicit `modelVersion`. Depends on: TASK-014. | | |
-| TASK-097 | Implement `DiseasesPestsPage` with manage-disease-list placeholder, low/medium/high risk legend, crop/growth-stage context, and clear statement when no validated model is available. Depends on: TASK-095, TASK-096, TASK-034. | | |
-| TASK-098 | Add `docs/india-specific-productization-plan.md` covering Kharif/Rabi/Zaid seasons, Indian crop catalog, IMD weather warnings, regional languages, smallholder workflows, WhatsApp/SMS advisory path, and government/insurance workflows. Depends on: TASK-095, TASK-096. | | |
-| TASK-099 | Add tests for risk summary levels, crop-stage calculation, and disease/pest page states. Depends on: TASK-094, TASK-096, TASK-097. | | |
+| TASK-094 | Add `apps/api/app/risk.py` with `GET /api/fields/{plot_id}/risk/summary`. Initial risk inputs: latest index value, index delta between latest two clean scenes, weather stress flags, cloud-data gap, crop/season metadata, and open scout tasks. Depends on: TASK-050, TASK-064, TASK-085, TASK-014. | Yes | 2026-06-04 |
+| TASK-095 | Implement a transparent rule-based risk scoring model with output levels `low`, `medium`, `high`, and `unknown`. Do not claim disease diagnosis from NDVI alone. Depends on: TASK-094. | Yes | 2026-06-04 |
+| TASK-096 | Add crop-stage timeline calculation from crop type and sowing/planting date. Start with generic stages and explicit `modelVersion`. Depends on: TASK-014. | Yes | 2026-06-04 |
+| TASK-097 | Implement `DiseasesPestsPage` with manage-disease-list placeholder, low/medium/high risk legend, crop/growth-stage context, and clear statement when no validated model is available. Depends on: TASK-095, TASK-096, TASK-034. | Yes | 2026-06-04 |
+| TASK-098 | Add `docs/india-specific-productization-plan.md` covering Kharif/Rabi/Zaid seasons, Indian crop catalog, IMD weather warnings, regional languages, smallholder workflows, WhatsApp/SMS advisory path, and government/insurance workflows. Depends on: TASK-095, TASK-096. | Yes | 2026-06-04 |
+| TASK-099 | Add tests for risk summary levels, crop-stage calculation, and disease/pest page states. Depends on: TASK-094, TASK-096, TASK-097. | Yes | 2026-06-04 |
 
 ### Implementation Phase 12 — Auth, Teams, API/Admin, Notifications, and Pilot Readiness
 

@@ -51,6 +51,7 @@ from .raster.errors import (
     request_validation_error_handler,
 )
 from .reports import router as reports_router
+from .risk import router as risk_router
 from .scout_tasks import router as scout_tasks_router
 from .weather import router as weather_router
 
@@ -249,6 +250,9 @@ app.include_router(field_zoning_router)
 
 # --- Reports API (EOS parity Phase 9) --------------------------------------
 app.include_router(reports_router)
+
+# --- Risk/Crop Intelligence API (EOS parity Phase 11) ----------------------
+app.include_router(risk_router)
 
 # --- Operations/Data APIs (EOS parity Phase 10) ----------------------------
 app.include_router(operations_router)

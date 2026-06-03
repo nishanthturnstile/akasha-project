@@ -17,6 +17,7 @@ import {
   exportPlotGeoJson,
   getConfig,
   getFieldLeaderboard,
+  getFieldRiskSummary,
   getFieldWeatherForecast,
   getFieldWeatherHistory,
   getFieldWeatherSoilMoisture,
@@ -438,6 +439,22 @@ describe('api client error mapping', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/field-groups/group%201/fields',
         expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('fetches field risk summary from same-origin route', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ plotId: 'plot 1', fieldWatchLevel: 'unknown' }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await getFieldRiskSummary('plot 1', { indexType: 'NDVI' });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/fields/plot%201/risk/summary?indexType=NDVI',
+        expect.objectContaining({ method: 'GET' }),
       );
     });
   });

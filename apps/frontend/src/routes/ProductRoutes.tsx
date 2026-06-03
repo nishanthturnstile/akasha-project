@@ -16,7 +16,7 @@ function lazyPlaceholderPage(name: keyof typeof import('@/pages/product/ProductP
 const MonitoringGlobalView = lazyPlaceholderPage('MonitoringGlobalView');
 const FieldLeaderboardPage = lazy(() => import('@/pages/reports/FieldLeaderboardPage'));
 const ReportingPage = lazy(() => import('@/pages/reports/ReportingPage'));
-const DiseasesPestsPage = lazyPlaceholderPage('DiseasesPestsPage');
+const DiseasesPestsPage = lazy(() => import('@/pages/risk/DiseasesPestsPage'));
 const WeatherAnalyticsPage = lazy(() => import('@/pages/weather/WeatherAnalyticsPage'));
 const WeatherForecastPage = lazy(() => import('@/pages/weather/WeatherForecastPage'));
 const FieldActivityLogPage = lazy(() => import('@/pages/operations/FieldActivityLogPage'));

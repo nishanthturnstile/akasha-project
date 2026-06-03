@@ -21,6 +21,7 @@ import {
   exportFieldLeaderboardCsv,
   exportActivitiesCsv,
   getJohnDeereConnection,
+  getFieldRiskSummary,
   getFieldLeaderboard,
   getReportTemplate,
   getZoningMap,
@@ -153,6 +154,8 @@ export const queryKeys = {
     ['reports', 'field-leaderboard', filters] as const,
   reportTemplates: ['reports', 'templates'] as const,
   reportTemplate: (templateId: string) => ['reports', 'templates', templateId] as const,
+  fieldRiskSummary: (plotId: string, indexType: string) =>
+    ['fields', plotId, 'risk', 'summary', indexType] as const,
   activities: (filters: ActivityFilters) => ['operations', 'activities', filters] as const,
   scoutTasks: (filters: Record<string, unknown>) => ['operations', 'scout-tasks', filters] as const,
   datasets: ['data-manager', 'datasets'] as const,
@@ -594,6 +597,20 @@ export function useUploadDataset() {
 
 export function useJohnDeereConnection() {
   return useQuery({ queryKey: queryKeys.connection('john-deere'), queryFn: getJohnDeereConnection });
+}
+
+export function useFieldRiskSummary(
+  plotId: string | null | undefined,
+  options: { indexType?: string } = {},
+) {
+  const indexType = options.indexType ?? 'NDVI';
+  return useQuery({
+    queryKey: plotId
+      ? queryKeys.fieldRiskSummary(plotId, indexType)
+      : (['fields', 'none', 'risk', 'summary'] as const),
+    queryFn: () => getFieldRiskSummary(plotId as string, { indexType }),
+    enabled: Boolean(plotId),
+  });
 }
 
 export function useFieldGroups() {

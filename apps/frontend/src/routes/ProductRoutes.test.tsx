@@ -83,6 +83,20 @@ describe('ProductRoutes', () => {
     expect(screen.queryByTestId('module-placeholder')).toBeNull();
   });
 
+  it('renders the real diseases and pests page instead of a placeholder', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
+    );
+    renderRoutes('/monitoring/diseases-pests');
+
+    await waitFor(
+      () => expect(screen.getByRole('heading', { name: 'Diseases & Pests' })).toBeTruthy(),
+      { timeout: 8000 },
+    );
+    expect(screen.queryByTestId('module-placeholder')).toBeNull();
+  });
+
   it('renders the real VRA vegetation page instead of a placeholder', async () => {
     vi.stubGlobal(
       'fetch',

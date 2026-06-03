@@ -2,10 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
   composeTileTemplate,
+  assignFieldGroupFields,
+  createFieldActivity,
+  createFieldGroup,
   createPlot,
   createReportTemplate,
+  createScoutTask,
   deletePlot,
   exportAllPlotsGeoJson,
+  exportActivitiesCsv,
   exportFieldIndex,
   exportFieldReportCsv,
   exportFieldLeaderboardCsv,
@@ -17,12 +22,18 @@ import {
   getFieldWeatherSoilMoisture,
   createVegetationZoning,
   exportZoningMap,
+  getJohnDeereConnection,
   getZoningMap,
+  listActivities,
+  listDatasets,
+  listFieldGroups,
+  listScoutTasks,
   listZoningMaps,
   listReportTemplates,
   getPlots,
   getSources,
   importPlotsGeoJson,
+  uploadDataset,
   updateReportTemplate,
   updatePlot,
 } from '@/lib/api';
@@ -377,6 +388,56 @@ describe('api client error mapping', () => {
         5,
         '/api/reports/templates/template%201',
         expect.objectContaining({ method: 'PATCH' }),
+      );
+    });
+
+    it('uses same-origin operations, scout, data-manager, and group routes', async () => {
+      const blob = new Blob(['csv'], { type: 'text/csv' });
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        if (String(input).includes('/activities/export.csv')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'Content-Disposition': 'attachment; filename="activities.csv"' }),
+            blob: async () => blob,
+          });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: async () => [] });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await listActivities({ year: 2026, activityType: 'fertilizer' });
+      await createFieldActivity('plot 1', { activityType: 'fertilizer', activityDate: '2026-06-04' });
+      await exportActivitiesCsv({ year: 2026 });
+      await listScoutTasks({ status: 'new' });
+      await createScoutTask({ longitude: 77, latitude: 12 });
+      await listDatasets();
+      await uploadDataset(new File(['{}'], 'fields.geojson', { type: 'application/geo+json' }), 'geojson');
+      await getJohnDeereConnection();
+      await listFieldGroups();
+      await createFieldGroup({ name: 'North' });
+      await assignFieldGroupFields('group 1', ['plot 1']);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/activities?year=2026&activityType=fertilizer',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/fields/plot%201/activities',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(String(fetchMock.mock.calls[2][0])).toContain('/api/activities/export.csv?year=2026');
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/scout-tasks?status=new',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/datasets/upload',
+        expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/field-groups/group%201/fields',
+        expect.objectContaining({ method: 'POST' }),
       );
     });
   });

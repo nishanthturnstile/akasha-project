@@ -242,17 +242,17 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-083 | Add migration `006_operations_tasks_data_manager.sql` with tables for field activities, scout tasks, field groups, uploaded datasets, and attachments metadata. Depends on: TASK-013. | | |
-| TASK-084 | Add `apps/api/app/operations.py` with CRUD endpoints for field activities: type, date, field, assignee, status, input/product, cost, notes, and attachment references. Depends on: TASK-083. | | |
-| TASK-085 | Add `apps/api/app/scout_tasks.py` with CRUD endpoints for map-pin tasks, status `new|closed`, assignee, priority, notes, photos/attachments, and field linkage. Depends on: TASK-083. | | |
-| TASK-086 | Add `apps/api/app/data_manager.py` with dataset upload metadata endpoints for GeoJSON/SHP ZIP first. ISO-XML may be stored as uploaded metadata until parsing rules are implemented. Depends on: TASK-083. | | |
-| TASK-087 | Add `apps/api/app/field_groups.py` with CRUD endpoints for field groups and field assignment. Depends on: TASK-083. | | |
-| TASK-088 | Implement `FieldActivityLogPage` with filters for group/crop/variety/activity/assignee, yearly calendar timeline, add activity, and download report action. Depends on: TASK-084, TASK-034. | | |
-| TASK-089 | Implement `ScoutTasksPage` with map task pins, task list, search/filter, New/Closed tabs, and add-new-task-by-pin workflow. Depends on: TASK-085, TASK-034. | | |
-| TASK-090 | Implement `DataManagerPage` with upload/drop zone for GeoJSON/SHP ZIP and ISO-XML ZIP, max upload copy, upload status, and dataset list. Depends on: TASK-086, TASK-034. | | |
-| TASK-091 | Implement `ConnectionsPage` with John Deere placeholder and clear `not connected` state. Do not implement OAuth until client confirms need. Depends on: TASK-034. | | |
-| TASK-092 | Implement `FieldGroupsPage` with add group, edit group, delete group, and assign fields. Depends on: TASK-087, TASK-034. | | |
-| TASK-093 | Add backend/frontend tests for activities, scout tasks, dataset metadata upload, field groups, and corresponding pages. Depends on: TASK-084, TASK-085, TASK-086, TASK-087, TASK-088, TASK-089, TASK-090, TASK-092. | | |
+| TASK-083 | Add migration `006_operations_tasks_data_manager.sql` with tables for field activities, scout tasks, field groups, uploaded datasets, and attachments metadata. Depends on: TASK-013. | Yes | 2026-06-04 |
+| TASK-084 | Add `apps/api/app/operations.py` with CRUD endpoints for field activities: type, date, field, assignee, status, input/product, cost, notes, and attachment references. Depends on: TASK-083. | Yes | 2026-06-04 |
+| TASK-085 | Add `apps/api/app/scout_tasks.py` with CRUD endpoints for map-pin tasks, status `new|closed`, assignee, priority, notes, photos/attachments, and field linkage. Depends on: TASK-083. | Yes | 2026-06-04 |
+| TASK-086 | Add `apps/api/app/data_manager.py` with dataset upload metadata endpoints for GeoJSON/SHP ZIP first. ISO-XML may be stored as uploaded metadata until parsing rules are implemented. Depends on: TASK-083. | Yes | 2026-06-04 |
+| TASK-087 | Add `apps/api/app/field_groups.py` with CRUD endpoints for field groups and field assignment. Depends on: TASK-083. | Yes | 2026-06-04 |
+| TASK-088 | Implement `FieldActivityLogPage` with filters for group/crop/variety/activity/assignee, yearly calendar timeline, add activity, and download report action. Depends on: TASK-084, TASK-034. | Yes | 2026-06-04 |
+| TASK-089 | Implement `ScoutTasksPage` with map task pins, task list, search/filter, New/Closed tabs, and add-new-task-by-pin workflow. Depends on: TASK-085, TASK-034. | Yes | 2026-06-04 |
+| TASK-090 | Implement `DataManagerPage` with upload/drop zone for GeoJSON/SHP ZIP and ISO-XML ZIP, max upload copy, upload status, and dataset list. Depends on: TASK-086, TASK-034. | Yes | 2026-06-04 |
+| TASK-091 | Implement `ConnectionsPage` with John Deere placeholder and clear `not connected` state. Do not implement OAuth until client confirms need. Depends on: TASK-034. | Yes | 2026-06-04 |
+| TASK-092 | Implement `FieldGroupsPage` with add group, edit group, delete group, and assign fields. Depends on: TASK-087, TASK-034. | Yes | 2026-06-04 |
+| TASK-093 | Add backend/frontend tests for activities, scout tasks, dataset metadata upload, field groups, and corresponding pages. Depends on: TASK-084, TASK-085, TASK-086, TASK-087, TASK-088, TASK-089, TASK-090, TASK-092. | Yes | 2026-06-04 |
 
 ### Implementation Phase 11 — Risk Map, Crop Stages, Diseases/Pests Shell, and India-Specific Intelligence Path
 

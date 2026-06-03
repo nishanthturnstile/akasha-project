@@ -571,6 +571,152 @@ export interface ReportTemplateUpdatePayload {
   sort?: Record<string, unknown>;
 }
 
+export interface Attachment {
+  id: string;
+  parentType?: string | null;
+  parentId?: string | null;
+  filename: string;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  metadata: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export type FieldActivityStatus = 'planned' | 'in_progress' | 'done' | 'cancelled';
+
+export interface FieldActivity {
+  id: string;
+  plotId?: string | null;
+  fieldName?: string | null;
+  groupName?: string | null;
+  groupNames: string[];
+  cropType?: string | null;
+  variety?: string | null;
+  seasonLabel?: string | null;
+  activityType: string;
+  activityDate: string;
+  assignee?: string | null;
+  status: FieldActivityStatus;
+  inputProduct?: string | null;
+  cost?: number | null;
+  notes?: string | null;
+  attachments: Attachment[];
+  metadata: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface FieldActivityPayload {
+  activityType: string;
+  activityDate: string;
+  plotId?: string | null;
+  assignee?: string | null;
+  status?: FieldActivityStatus;
+  inputProduct?: string | null;
+  cost?: number | null;
+  notes?: string | null;
+  attachmentIds?: string[];
+}
+
+export interface FieldActivityUpdatePayload {
+  activityType?: string;
+  activityDate?: string;
+  plotId?: string | null;
+  assignee?: string | null;
+  status?: FieldActivityStatus;
+  inputProduct?: string | null;
+  cost?: number | null;
+  notes?: string | null;
+  attachmentIds?: string[];
+}
+
+export interface ActivityFilters {
+  plotId?: string;
+  groupName?: string;
+  cropType?: string;
+  variety?: string;
+  activityType?: string;
+  assignee?: string;
+  year?: number;
+  status?: FieldActivityStatus;
+}
+
+export interface ScoutTask {
+  id: string;
+  plotId?: string | null;
+  fieldName?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  status: 'new' | 'closed';
+  assignee?: string | null;
+  priority: 'low' | 'medium' | 'high';
+  notes?: string | null;
+  attachments: Attachment[];
+  metadata: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ScoutTaskPayload {
+  plotId?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  status?: 'new' | 'closed';
+  assignee?: string | null;
+  priority?: 'low' | 'medium' | 'high';
+  notes?: string | null;
+  attachmentIds?: string[];
+}
+
+export interface ScoutTaskUpdatePayload {
+  plotId?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  status?: 'new' | 'closed';
+  assignee?: string | null;
+  priority?: 'low' | 'medium' | 'high';
+  notes?: string | null;
+  attachmentIds?: string[];
+}
+
+export interface UploadedDataset {
+  id: string;
+  name: string;
+  datasetType: 'geojson' | 'shp_zip' | 'iso_xml';
+  uploadStatus: 'uploaded' | 'parsed' | 'failed';
+  originalFilename?: string | null;
+  contentType?: string | null;
+  fileSizeBytes?: number | null;
+  featureCount?: number | null;
+  validationMessage?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface FieldGroup {
+  id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  plotIds: string[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface FieldGroupPayload {
+  name?: string;
+  description?: string | null;
+  color?: string | null;
+}
+
+export interface ConnectionStatus {
+  provider: string;
+  status: 'not_connected';
+  message: string;
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

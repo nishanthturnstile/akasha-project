@@ -11,6 +11,10 @@ import type {
   FileDownload,
   FieldLeaderboardFilters,
   FieldLeaderboardResponse,
+  FieldActivity,
+  FieldActivityPayload,
+  FieldActivityUpdatePayload,
+  ActivityFilters,
   WeatherForecastResponse,
   WeatherHistoryResponse,
   WeatherProviderChoice,
@@ -23,6 +27,13 @@ import type {
   ReportTemplate,
   ReportTemplatePayload,
   ReportTemplateUpdatePayload,
+  ScoutTask,
+  ScoutTaskPayload,
+  ScoutTaskUpdatePayload,
+  UploadedDataset,
+  FieldGroup,
+  FieldGroupPayload,
+  ConnectionStatus,
   CloudMaskOptions,
   Plot,
   PlotCreatePayload,
@@ -414,6 +425,101 @@ export const updateReportTemplate = (
     `/api/reports/templates/${encodeURIComponent(templateId)}`,
     { method: 'PATCH', body: payload },
   );
+
+function appendParams(params: URLSearchParams, values: object = {}) {
+  Object.entries(values).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    params.set(key, String(value));
+  });
+}
+
+export const listActivities = (filters: ActivityFilters = {}): Promise<FieldActivity[]> => {
+  const params = new URLSearchParams();
+  appendParams(params, filters);
+  const query = params.toString();
+  return request<FieldActivity[]>(`/api/activities${query ? `?${query}` : ''}`);
+};
+
+export const createFieldActivity = (
+  plotId: string,
+  payload: FieldActivityPayload,
+): Promise<FieldActivity> =>
+  request<FieldActivity>(`/api/fields/${encodeURIComponent(plotId)}/activities`, {
+    method: 'POST',
+    body: payload,
+  });
+
+export const updateFieldActivity = (
+  activityId: string,
+  payload: FieldActivityUpdatePayload,
+): Promise<FieldActivity> =>
+  request<FieldActivity>(`/api/activities/${encodeURIComponent(activityId)}`, {
+    method: 'PATCH',
+    body: payload,
+  });
+
+export const exportActivitiesCsv = (filters: ActivityFilters = {}): Promise<FileDownload> => {
+  const params = new URLSearchParams();
+  appendParams(params, filters);
+  const query = params.toString();
+  return requestDownload(`/api/activities/export.csv${query ? `?${query}` : ''}`, 'field-activities.csv');
+};
+
+export const listScoutTasks = (filters: { status?: string; search?: string; plotId?: string } = {}): Promise<ScoutTask[]> => {
+  const params = new URLSearchParams();
+  appendParams(params, filters);
+  const query = params.toString();
+  return request<ScoutTask[]>(`/api/scout-tasks${query ? `?${query}` : ''}`);
+};
+
+export const createScoutTask = (payload: ScoutTaskPayload): Promise<ScoutTask> =>
+  request<ScoutTask>('/api/scout-tasks', { method: 'POST', body: payload });
+
+export const updateScoutTask = (
+  taskId: string,
+  payload: ScoutTaskUpdatePayload,
+): Promise<ScoutTask> =>
+  request<ScoutTask>(`/api/scout-tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: payload,
+  });
+
+export const listDatasets = (): Promise<UploadedDataset[]> =>
+  request<UploadedDataset[]>('/api/datasets');
+
+export const uploadDataset = (
+  file: File,
+  datasetType?: UploadedDataset['datasetType'],
+): Promise<UploadedDataset> => {
+  const form = new FormData();
+  form.set('file', file);
+  if (datasetType) form.set('datasetType', datasetType);
+  return request<UploadedDataset>('/api/datasets/upload', { method: 'POST', body: form });
+};
+
+export const getJohnDeereConnection = (): Promise<ConnectionStatus> =>
+  request<ConnectionStatus>('/api/connections/john-deere');
+
+export const listFieldGroups = (): Promise<FieldGroup[]> =>
+  request<FieldGroup[]>('/api/field-groups');
+
+export const createFieldGroup = (payload: FieldGroupPayload): Promise<FieldGroup> =>
+  request<FieldGroup>('/api/field-groups', { method: 'POST', body: payload });
+
+export const updateFieldGroup = (groupId: string, payload: FieldGroupPayload): Promise<FieldGroup> =>
+  request<FieldGroup>(`/api/field-groups/${encodeURIComponent(groupId)}`, {
+    method: 'PATCH',
+    body: payload,
+  });
+
+export const deleteFieldGroup = (groupId: string): Promise<void> =>
+  request<void>(`/api/field-groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
+
+export const assignFieldGroupFields = (groupId: string, plotIds: string[]): Promise<FieldGroup> =>
+  request<FieldGroup>(`/api/field-groups/${encodeURIComponent(groupId)}/fields`, {
+    method: 'POST',
+    body: { plotIds },
+  });
 
 export const exportFieldIndex = (
   plotId: string,

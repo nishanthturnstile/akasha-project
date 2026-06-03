@@ -12,13 +12,28 @@ import {
   getFieldWeatherSoilMoisture,
   createVegetationZoning,
   createReportTemplate,
+  createFieldActivity,
+  createFieldGroup,
+  createScoutTask,
+  assignFieldGroupFields,
+  deleteFieldGroup,
   exportZoningMap,
   exportFieldLeaderboardCsv,
+  exportActivitiesCsv,
+  getJohnDeereConnection,
   getFieldLeaderboard,
   getReportTemplate,
   getZoningMap,
+  listActivities,
+  listDatasets,
+  listFieldGroups,
+  listScoutTasks,
   listZoningMaps,
   listReportTemplates,
+  uploadDataset,
+  updateFieldGroup,
+  updateFieldActivity,
+  updateScoutTask,
   updateReportTemplate,
   getConfig,
   getDates,
@@ -41,6 +56,13 @@ import type {
   FieldLeaderboardFilters,
   ReportTemplatePayload,
   ReportTemplateUpdatePayload,
+  ActivityFilters,
+  FieldActivityPayload,
+  FieldActivityUpdatePayload,
+  FieldGroupPayload,
+  ScoutTaskPayload,
+  ScoutTaskUpdatePayload,
+  UploadedDataset,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -131,6 +153,11 @@ export const queryKeys = {
     ['reports', 'field-leaderboard', filters] as const,
   reportTemplates: ['reports', 'templates'] as const,
   reportTemplate: (templateId: string) => ['reports', 'templates', templateId] as const,
+  activities: (filters: ActivityFilters) => ['operations', 'activities', filters] as const,
+  scoutTasks: (filters: Record<string, unknown>) => ['operations', 'scout-tasks', filters] as const,
+  datasets: ['data-manager', 'datasets'] as const,
+  fieldGroups: ['field-groups'] as const,
+  connection: (provider: string) => ['connections', provider] as const,
 };
 
 interface UpdatePlotVariables {
@@ -172,6 +199,26 @@ interface LeaderboardExportVariables {
 interface UpdateReportTemplateVariables {
   templateId: string;
   payload: ReportTemplateUpdatePayload;
+}
+
+interface CreateActivityVariables {
+  plotId: string;
+  payload: FieldActivityPayload;
+}
+
+interface UpdateActivityVariables {
+  activityId: string;
+  payload: FieldActivityUpdatePayload;
+}
+
+interface UpdateScoutTaskVariables {
+  taskId: string;
+  payload: ScoutTaskUpdatePayload;
+}
+
+interface UpdateFieldGroupVariables {
+  groupId: string;
+  payload: FieldGroupPayload;
 }
 
 export function useConfig() {
@@ -476,6 +523,114 @@ export function useUpdateReportTemplate() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.reportTemplates });
       void queryClient.invalidateQueries({ queryKey: queryKeys.reportTemplate(data.id) });
     },
+  });
+}
+
+export function useActivities(filters: ActivityFilters = {}) {
+  return useQuery({
+    queryKey: queryKeys.activities(filters),
+    queryFn: () => listActivities(filters),
+  });
+}
+
+export function useCreateFieldActivity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ plotId, payload }: CreateActivityVariables) =>
+      createFieldActivity(plotId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['operations', 'activities'] }),
+  });
+}
+
+export function useUpdateFieldActivity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ activityId, payload }: UpdateActivityVariables) =>
+      updateFieldActivity(activityId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['operations', 'activities'] }),
+  });
+}
+
+export function useExportActivitiesCsv() {
+  return useMutation({ mutationFn: exportActivitiesCsv });
+}
+
+export function useScoutTasks(filters: Record<string, unknown> = {}) {
+  return useQuery({
+    queryKey: queryKeys.scoutTasks(filters),
+    queryFn: () => listScoutTasks(filters as { status?: string; search?: string; plotId?: string }),
+  });
+}
+
+export function useCreateScoutTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ScoutTaskPayload) => createScoutTask(payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['operations', 'scout-tasks'] }),
+  });
+}
+
+export function useUpdateScoutTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, payload }: UpdateScoutTaskVariables) =>
+      updateScoutTask(taskId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['operations', 'scout-tasks'] }),
+  });
+}
+
+export function useDatasets() {
+  return useQuery({ queryKey: queryKeys.datasets, queryFn: listDatasets });
+}
+
+export function useUploadDataset() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, datasetType }: { file: File; datasetType?: UploadedDataset['datasetType'] }) =>
+      uploadDataset(file, datasetType),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.datasets }),
+  });
+}
+
+export function useJohnDeereConnection() {
+  return useQuery({ queryKey: queryKeys.connection('john-deere'), queryFn: getJohnDeereConnection });
+}
+
+export function useFieldGroups() {
+  return useQuery({ queryKey: queryKeys.fieldGroups, queryFn: listFieldGroups });
+}
+
+export function useCreateFieldGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: FieldGroupPayload) => createFieldGroup(payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldGroups }),
+  });
+}
+
+export function useUpdateFieldGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, payload }: UpdateFieldGroupVariables) =>
+      updateFieldGroup(groupId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldGroups }),
+  });
+}
+
+export function useDeleteFieldGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteFieldGroup,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldGroups }),
+  });
+}
+
+export function useAssignFieldGroupFields() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, plotIds }: { groupId: string; plotIds: string[] }) =>
+      assignFieldGroupFields(groupId, plotIds),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldGroups }),
   });
 }
 

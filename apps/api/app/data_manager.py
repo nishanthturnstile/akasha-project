@@ -7,14 +7,19 @@ import logging
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from . import phase10_repo
+from .auth import get_current_team
 from .providers.models import ProviderModel
 from .raster.errors import AkashaError, bad_request, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.data_manager")
-router = APIRouter(prefix="/api", tags=["data-manager"])
+router = APIRouter(
+    prefix="/api",
+    tags=["data-manager"],
+    dependencies=[Depends(get_current_team)],
+)
 
 MAX_UPLOAD_BYTES = 1_048_576
 

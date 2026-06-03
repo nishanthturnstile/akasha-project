@@ -273,14 +273,14 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-100 | Decide authentication provider and document decision in `docs/auth-team-admin-plan.md`. Minimum decision fields: provider, local dev mode, Railway deployment mode, session storage, user table, team table, and migration approach. Depends on: TASK-010, TASK-083. | | |
-| TASK-101 | Add migrations for users, teams, memberships, roles, API keys, and ownership columns on fields/activities/tasks/reports/uploads/provider links. Depends on: TASK-100. | | |
-| TASK-102 | Add authentication middleware/dependencies in FastAPI and ownership checks for field, activity, task, report, data manager, and provider routes. Depends on: TASK-101. | | |
-| TASK-103 | Implement account/team/settings/API pages and team switching UI. Depends on: TASK-102, TASK-034. | | |
-| TASK-104 | Add notification tables and routes for field changes, risk alerts, task assignment, report availability, and provider sync failures. Depends on: TASK-102, TASK-094, TASK-085. | | |
-| TASK-105 | Implement Notifications page/panel with empty state, unread count, and notification detail actions. Depends on: TASK-104, TASK-034. | | |
-| TASK-106 | Implement AI assistant shell only after analytics/weather/risk endpoints exist. It may summarize field data from Akasha APIs but must not invent agronomic advice beyond available evidence. Depends on: TASK-050, TASK-065, TASK-094. | | |
-| TASK-107 | Add security and authorization tests for every protected route and frontend tests for team/settings/notifications states. Depends on: TASK-102, TASK-103, TASK-104, TASK-105. | | |
+| TASK-100 | Decide authentication provider and document decision in `docs/auth-team-admin-plan.md`. Minimum decision fields: provider, local dev mode, Railway deployment mode, session storage, user table, team table, and migration approach. Depends on: TASK-010, TASK-083. | Yes | 2026-06-04 |
+| TASK-101 | Add migrations for users, teams, memberships, roles, API keys, and ownership columns on fields/activities/tasks/reports/uploads/provider links. Depends on: TASK-100. | Yes | 2026-06-04 |
+| TASK-102 | Add authentication middleware/dependencies in FastAPI and ownership checks for field, activity, task, report, data manager, and provider routes. Depends on: TASK-101. | Yes | 2026-06-04 |
+| TASK-103 | Implement account/team/settings/API pages and team switching UI. Depends on: TASK-102, TASK-034. | Yes | 2026-06-04 |
+| TASK-104 | Add notification tables and routes for field changes, risk alerts, task assignment, report availability, and provider sync failures. Depends on: TASK-102, TASK-094, TASK-085. | Yes | 2026-06-04 |
+| TASK-105 | Implement Notifications page/panel with empty state, unread count, and notification detail actions. Depends on: TASK-104, TASK-034. | Yes | 2026-06-04 |
+| TASK-106 | Implement AI assistant shell only after analytics/weather/risk endpoints exist. It may summarize field data from Akasha APIs but must not invent agronomic advice beyond available evidence. Depends on: TASK-050, TASK-065, TASK-094. | Yes | 2026-06-04 |
+| TASK-107 | Add security and authorization tests for every protected route and frontend tests for team/settings/notifications states. Depends on: TASK-102, TASK-103, TASK-104, TASK-105. | Yes | 2026-06-04 |
 
 ### Implementation Phase 13 — End-to-End EOS Parity Verification and Native Replacement Readiness
 

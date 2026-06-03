@@ -1,12 +1,17 @@
 """Provider status routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from ..auth import get_current_team
 from ..config import settings
 from .models import ProviderFeature, ProviderStatus
 
-router = APIRouter(prefix="/api/providers", tags=["providers"])
+router = APIRouter(
+    prefix="/api/providers",
+    tags=["providers"],
+    dependencies=[Depends(get_current_team)],
+)
 
 _EOS_FEATURES = [
     "fields",

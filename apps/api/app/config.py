@@ -87,6 +87,15 @@ class Settings:
     )
     eos_enabled: bool = field(default_factory=lambda: _get_bool("EOS_ENABLED", False))
 
+    # Phase 12 auth/team foundations. AUTH_MODE=disabled is local/dev only.
+    auth_mode: str = field(default_factory=lambda: _get("AUTH_MODE", "disabled"))
+    auth_dev_user_email: str = field(
+        default_factory=lambda: _get("AUTH_DEV_USER_EMAIL", "dev@akasha.local")
+    )
+    auth_dev_team_name: str = field(
+        default_factory=lambda: _get("AUTH_DEV_TEAM_NAME", "Akasha Dev Team")
+    )
+
     @property
     def cors_allowed_origins(self) -> list[str]:
         """Comma-separated origins. Supports CORS_ALLOWED_ORIGINS (doc name)

@@ -28,11 +28,12 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ValidationError, field_validator
 
 from . import plots_repo
+from .auth import get_current_team
 from .config import settings
 from .raster.errors import (
     AkashaError,
@@ -45,7 +46,7 @@ from .raster.geo_validate import validate_polygon
 
 logger = logging.getLogger("akasha.api.plots")
 
-router = APIRouter(prefix="/api", tags=["plots"])
+router = APIRouter(prefix="/api", tags=["plots"], dependencies=[Depends(get_current_team)])
 
 GEOJSON_MEDIA_TYPE = "application/geo+json"
 MAX_NAME_LENGTH = 200

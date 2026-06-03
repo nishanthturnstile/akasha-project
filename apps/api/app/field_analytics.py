@@ -8,9 +8,10 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Body, Query, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
 
 from . import plots_repo
+from .auth import get_current_team
 from .config import settings
 from .product import _enforce_index_rate_limit
 from .providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
@@ -29,7 +30,11 @@ from .raster.service import compute_statistics
 
 logger = logging.getLogger("akasha.api.field_analytics")
 
-router = APIRouter(prefix="/api", tags=["field-analytics"])
+router = APIRouter(
+    prefix="/api",
+    tags=["field-analytics"],
+    dependencies=[Depends(get_current_team)],
+)
 
 ProviderChoice = Literal["auto", "eos", "native"]
 MAX_TREND_DAYS = 365

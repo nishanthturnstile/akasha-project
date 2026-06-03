@@ -7,10 +7,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import Field
 
 from . import plots_repo
+from .auth import get_current_team
 from .config import settings
 from .providers.eos.weather_provider import EosWeatherProvider
 from .providers.models import ProviderModel, WeatherRecord, WeatherResponse
@@ -18,7 +19,7 @@ from .raster.errors import AkashaError, bad_request, not_found, plots_backend_un
 
 logger = logging.getLogger("akasha.api.weather")
 
-router = APIRouter(prefix="/api", tags=["weather"])
+router = APIRouter(prefix="/api", tags=["weather"], dependencies=[Depends(get_current_team)])
 
 ProviderChoice = Literal["auto", "eos", "native"]
 MAX_HISTORY_DAYS = 365

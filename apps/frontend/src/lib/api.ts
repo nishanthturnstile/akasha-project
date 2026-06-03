@@ -35,6 +35,10 @@ import type {
   FieldGroupPayload,
   ConnectionStatus,
   FieldRiskSummaryResponse,
+  AccountMe,
+  ApiKeyMetadata,
+  NotificationItem,
+  AssistantStatus,
   CloudMaskOptions,
   Plot,
   PlotCreatePayload,
@@ -513,6 +517,37 @@ export const getFieldRiskSummary = (
     `/api/fields/${encodeURIComponent(plotId)}/risk/summary${query ? `?${query}` : ''}`,
   );
 };
+
+export const getAccountMe = (): Promise<AccountMe> => request<AccountMe>('/api/account/me');
+
+export const getAccountSettings = (): Promise<Record<string, unknown>> =>
+  request<Record<string, unknown>>('/api/account/settings');
+
+export const listApiKeys = (): Promise<ApiKeyMetadata[]> =>
+  request<ApiKeyMetadata[]>('/api/account/api-keys');
+
+export const createApiKey = (name: string): Promise<ApiKeyMetadata> =>
+  request<ApiKeyMetadata>('/api/account/api-keys', { method: 'POST', body: { name } });
+
+export const revokeApiKey = (keyId: string): Promise<void> =>
+  request<void>(`/api/account/api-keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' });
+
+export const listNotifications = (unreadOnly = false): Promise<NotificationItem[]> =>
+  request<NotificationItem[]>(`/api/notifications${unreadOnly ? '?unreadOnly=true' : ''}`);
+
+export const getNotificationUnreadCount = (): Promise<{ unreadCount: number }> =>
+  request<{ unreadCount: number }>('/api/notifications/unread-count');
+
+export const markNotificationRead = (notificationId: string): Promise<NotificationItem> =>
+  request<NotificationItem>(`/api/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: 'POST',
+  });
+
+export const markAllNotificationsRead = (): Promise<{ updatedCount: number }> =>
+  request<{ updatedCount: number }>('/api/notifications/read-all', { method: 'POST' });
+
+export const getAssistantStatus = (): Promise<AssistantStatus> =>
+  request<AssistantStatus>('/api/assistant/status');
 
 export const listFieldGroups = (): Promise<FieldGroup[]> =>
   request<FieldGroup[]>('/api/field-groups');

@@ -29,12 +29,12 @@ const ScoutTasksPage = lazy(() => import('@/pages/operations/ScoutTasksPage'));
 const DataManagerPage = lazy(() => import('@/pages/data-manager/DataManagerPage'));
 const ConnectionsPage = lazy(() => import('@/pages/data-manager/ConnectionsPage'));
 const FieldGroupsPage = lazy(() => import('@/pages/field-manager/FieldGroupsPage'));
-const AiAssistantPage = lazyPlaceholderPage('AiAssistantPage');
-const NotificationsPage = lazyPlaceholderPage('NotificationsPage');
+const AiAssistantPage = lazy(() => import('@/pages/account/AiAssistantPage'));
+const NotificationsPage = lazy(() => import('@/pages/account/NotificationsPage'));
 const HelpPage = lazyPlaceholderPage('HelpPage');
 const MarketplacePage = lazyPlaceholderPage('MarketplacePage');
-const AccountSettingsPage = lazyPlaceholderPage('AccountSettingsPage');
-const ApiSettingsPage = lazyPlaceholderPage('ApiSettingsPage');
+const AccountSettingsPage = lazy(() => import('@/pages/account/AccountSettingsPage'));
+const ApiSettingsPage = lazy(() => import('@/pages/account/ApiSettingsPage'));
 
 function RouteFallback() {
   return (

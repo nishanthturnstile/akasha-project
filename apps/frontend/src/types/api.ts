@@ -758,6 +758,42 @@ export interface FieldRiskSummaryResponse {
   metadata: Record<string, unknown>;
 }
 
+export interface AccountMe {
+  user: { id: string; email: string; displayName: string };
+  currentTeam: { id: string; name: string; role: string };
+  memberships: Array<{ teamId: string; teamName: string; role: string }>;
+  authMode: string;
+}
+
+export interface ApiKeyMetadata {
+  id: string;
+  name: string;
+  prefix: string;
+  last4: string;
+  createdAt: string;
+  revokedAt?: string | null;
+  rawKey?: string | null;
+}
+
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  readAt?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AssistantStatus {
+  status: 'disabled';
+  message: string;
+  evidenceSources: string[];
+  limitations: string[];
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

@@ -8,17 +8,22 @@ from io import StringIO
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import Field
 
 from . import phase10_repo
+from .auth import get_current_team
 from .field_exports import _disposition
 from .providers.models import ProviderModel
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.operations")
-router = APIRouter(prefix="/api", tags=["operations"])
+router = APIRouter(
+    prefix="/api",
+    tags=["operations"],
+    dependencies=[Depends(get_current_team)],
+)
 
 ActivityStatus = Literal["planned", "in_progress", "done", "cancelled"]
 

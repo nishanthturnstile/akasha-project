@@ -11,11 +11,12 @@ from io import StringIO
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import Field
 
 from . import plots_repo, reports_repo
+from .auth import get_current_team
 from .config import settings
 from .field_analytics import _field_statistics
 from .field_exports import _disposition, _safe_filename
@@ -26,7 +27,7 @@ from .raster.indices import DEFAULT_INDEX
 
 logger = logging.getLogger("akasha.api.reports")
 
-router = APIRouter(prefix="/api", tags=["reports"])
+router = APIRouter(prefix="/api", tags=["reports"], dependencies=[Depends(get_current_team)])
 
 SORT_KEYS = {
     "rank",

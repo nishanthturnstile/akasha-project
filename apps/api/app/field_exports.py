@@ -10,10 +10,11 @@ from io import StringIO
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 
 from . import plots_repo
+from .auth import get_current_team
 from .config import settings
 from .field_analytics import (
     PROVIDER_INDEX_TYPES,
@@ -31,7 +32,11 @@ from .raster.indices import DEFAULT_INDEX
 
 logger = logging.getLogger("akasha.api.field_exports")
 
-router = APIRouter(prefix="/api", tags=["field-exports"])
+router = APIRouter(
+    prefix="/api",
+    tags=["field-exports"],
+    dependencies=[Depends(get_current_team)],
+)
 
 ExportFormat = Literal["geotiff", "geojson", "csv", "shp"]
 ProviderChoice = Literal["auto", "eos", "native"]

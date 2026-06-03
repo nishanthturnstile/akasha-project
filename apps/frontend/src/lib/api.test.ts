@@ -5,6 +5,7 @@ import {
   assignFieldGroupFields,
   createFieldActivity,
   createFieldGroup,
+  createApiKey,
   createPlot,
   createReportTemplate,
   createScoutTask,
@@ -16,6 +17,8 @@ import {
   exportFieldLeaderboardCsv,
   exportPlotGeoJson,
   getConfig,
+  getAccountMe,
+  getAssistantStatus,
   getFieldLeaderboard,
   getFieldRiskSummary,
   getFieldWeatherForecast,
@@ -25,15 +28,18 @@ import {
   exportZoningMap,
   getJohnDeereConnection,
   getZoningMap,
+  listApiKeys,
   listActivities,
   listDatasets,
   listFieldGroups,
   listScoutTasks,
   listZoningMaps,
   listReportTemplates,
+  listNotifications,
   getPlots,
   getSources,
   importPlotsGeoJson,
+  markNotificationRead,
   uploadDataset,
   updateReportTemplate,
   updatePlot,
@@ -456,6 +462,30 @@ describe('api client error mapping', () => {
         '/api/fields/plot%201/risk/summary?indexType=NDVI',
         expect.objectContaining({ method: 'GET' }),
       );
+    });
+
+    it('uses same-origin account notification and assistant routes', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ([]),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await getAccountMe();
+      await listApiKeys();
+      await createApiKey('Demo');
+      await listNotifications();
+      await markNotificationRead('note 1');
+      await getAssistantStatus();
+
+      expect(fetchMock).toHaveBeenCalledWith('/api/account/me', expect.anything());
+      expect(fetchMock).toHaveBeenCalledWith('/api/account/api-keys', expect.anything());
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/notifications/note%201/read',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith('/api/assistant/status', expect.anything());
     });
   });
 });

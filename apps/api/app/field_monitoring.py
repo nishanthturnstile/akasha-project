@@ -10,10 +10,11 @@ from typing import Literal
 from urllib.parse import quote
 
 import anyio
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
 from . import plots_repo
+from .auth import get_current_team
 from .config import settings
 from .providers.eos.field_provider import EosFieldProvider
 from .providers.eos.scene_provider import EosSceneProvider
@@ -31,7 +32,11 @@ from .raster.errors import AkashaError, bad_request, not_found, plots_backend_un
 
 logger = logging.getLogger("akasha.api.field_monitoring")
 
-router = APIRouter(prefix="/api", tags=["field-monitoring"])
+router = APIRouter(
+    prefix="/api",
+    tags=["field-monitoring"],
+    dependencies=[Depends(get_current_team)],
+)
 
 ProviderChoice = Literal["auto", "eos", "native"]
 DISPLAY_MODES = ["RGB", "NDVI", "NDRE", "NDMI", "MSAVI", "RECI", "FALSE_COLOR"]

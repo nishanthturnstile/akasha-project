@@ -34,6 +34,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from . import skeleton
+from .account import router as account_router
 from .config import settings
 from .data_manager import router as data_manager_router
 from .field_analytics import router as field_analytics_router
@@ -253,6 +254,9 @@ app.include_router(reports_router)
 
 # --- Risk/Crop Intelligence API (EOS parity Phase 11) ----------------------
 app.include_router(risk_router)
+
+# --- Auth/Team/Admin/Notifications API (EOS parity Phase 12) ---------------
+app.include_router(account_router)
 
 # --- Operations/Data APIs (EOS parity Phase 10) ----------------------------
 app.include_router(operations_router)

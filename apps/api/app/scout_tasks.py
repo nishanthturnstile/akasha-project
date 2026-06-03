@@ -6,17 +6,22 @@ import logging
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import Field
 
 from . import phase10_repo
+from .auth import get_current_team
 from .operations import AttachmentPublic
 from .providers.models import ProviderModel
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.scout_tasks")
-router = APIRouter(prefix="/api", tags=["scout-tasks"])
+router = APIRouter(
+    prefix="/api",
+    tags=["scout-tasks"],
+    dependencies=[Depends(get_current_team)],
+)
 
 
 class ScoutTaskPayload(ProviderModel):

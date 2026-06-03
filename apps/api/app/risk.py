@@ -9,10 +9,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from . import phase10_repo, plots_repo
+from .auth import get_current_team
 from .config import settings
 from .field_analytics import _field_statistics
 from .providers.eos.weather_provider import EosWeatherProvider
@@ -22,7 +23,7 @@ from .raster.errors import AkashaError, bad_request, not_found, plots_backend_un
 from .raster.indices import DEFAULT_INDEX, get_index
 
 logger = logging.getLogger("akasha.api.risk")
-router = APIRouter(prefix="/api", tags=["risk"])
+router = APIRouter(prefix="/api", tags=["risk"], dependencies=[Depends(get_current_team)])
 
 RiskLevel = Literal["low", "medium", "high", "unknown"]
 MODEL_VERSION = "field-watch-generic-v1"

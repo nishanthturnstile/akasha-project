@@ -134,6 +134,37 @@ describe('ProductRoutes', () => {
     }
   });
 
+  it('renders real Phase 12 account pages instead of placeholders', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          user: { id: 'u1', email: 'dev@example.test', displayName: 'Dev' },
+          currentTeam: { id: 't1', name: 'Team', role: 'owner' },
+          memberships: [],
+          authMode: 'dev',
+        }),
+      }),
+    );
+    const cases = [
+      { path: '/account/settings', heading: 'Account settings' },
+      { path: '/account/api', heading: 'API settings' },
+      { path: '/notifications', heading: 'Notifications' },
+      { path: '/assistant', heading: 'AI assistant shell' },
+    ];
+    for (const item of cases) {
+      const view = renderRoutes(item.path);
+      await waitFor(
+        () => expect(screen.getByRole('heading', { name: item.heading })).toBeTruthy(),
+        { timeout: 8000 },
+      );
+      expect(screen.queryByTestId('module-placeholder')).toBeNull();
+      view.unmount();
+    }
+  });
+
   it('renders a not-found page for unknown product routes', () => {
     renderRoutes('/missing/module');
 

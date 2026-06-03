@@ -5,16 +5,21 @@ import functools
 import logging
 
 import anyio
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import Field
 
 from . import phase10_repo
+from .auth import get_current_team
 from .providers.models import ProviderModel
 from .raster.errors import AkashaError, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.field_groups")
-router = APIRouter(prefix="/api", tags=["field-groups"])
+router = APIRouter(
+    prefix="/api",
+    tags=["field-groups"],
+    dependencies=[Depends(get_current_team)],
+)
 
 
 class FieldGroupPayload(ProviderModel):

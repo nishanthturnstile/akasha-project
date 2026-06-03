@@ -22,16 +22,26 @@ import {
   exportActivitiesCsv,
   getJohnDeereConnection,
   getFieldRiskSummary,
+  createApiKey,
+  getAccountMe,
+  getAccountSettings,
+  getAssistantStatus,
+  getNotificationUnreadCount,
   getFieldLeaderboard,
   getReportTemplate,
   getZoningMap,
   listActivities,
+  listApiKeys,
   listDatasets,
   listFieldGroups,
+  listNotifications,
   listScoutTasks,
   listZoningMaps,
   listReportTemplates,
   uploadDataset,
+  markAllNotificationsRead,
+  markNotificationRead,
+  revokeApiKey,
   updateFieldGroup,
   updateFieldActivity,
   updateScoutTask,
@@ -161,6 +171,12 @@ export const queryKeys = {
   datasets: ['data-manager', 'datasets'] as const,
   fieldGroups: ['field-groups'] as const,
   connection: (provider: string) => ['connections', provider] as const,
+  accountMe: ['account', 'me'] as const,
+  accountSettings: ['account', 'settings'] as const,
+  apiKeys: ['account', 'api-keys'] as const,
+  notifications: (unreadOnly: boolean) => ['notifications', unreadOnly] as const,
+  notificationUnreadCount: ['notifications', 'unread-count'] as const,
+  assistantStatus: ['assistant', 'status'] as const,
 };
 
 interface UpdatePlotVariables {
@@ -611,6 +627,68 @@ export function useFieldRiskSummary(
     queryFn: () => getFieldRiskSummary(plotId as string, { indexType }),
     enabled: Boolean(plotId),
   });
+}
+
+export function useAccountMe() {
+  return useQuery({ queryKey: queryKeys.accountMe, queryFn: getAccountMe });
+}
+
+export function useAccountSettings() {
+  return useQuery({ queryKey: queryKeys.accountSettings, queryFn: getAccountSettings });
+}
+
+export function useApiKeys() {
+  return useQuery({ queryKey: queryKeys.apiKeys, queryFn: listApiKeys });
+}
+
+export function useCreateApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createApiKey,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys }),
+  });
+}
+
+export function useRevokeApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: revokeApiKey,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys }),
+  });
+}
+
+export function useNotifications(unreadOnly = false) {
+  return useQuery({
+    queryKey: queryKeys.notifications(unreadOnly),
+    queryFn: () => listNotifications(unreadOnly),
+  });
+}
+
+export function useNotificationUnreadCount() {
+  return useQuery({
+    queryKey: queryKeys.notificationUnreadCount,
+    queryFn: getNotificationUnreadCount,
+  });
+}
+
+export function useMarkNotificationRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: markNotificationRead,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+}
+
+export function useMarkAllNotificationsRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: markAllNotificationsRead,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+}
+
+export function useAssistantStatus() {
+  return useQuery({ queryKey: queryKeys.assistantStatus, queryFn: getAssistantStatus });
 }
 
 export function useFieldGroups() {

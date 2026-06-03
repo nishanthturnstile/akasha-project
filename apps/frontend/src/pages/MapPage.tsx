@@ -2,7 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError, composeTileTemplate, exportAllPlotsGeoJson, exportPlotGeoJson, getDates, type PlotGeoJsonImportPayload } from '@/lib/api';
+import {
+  ApiError,
+  composeTileTemplate,
+  exportAllPlotsGeoJson,
+  exportPlotGeoJson,
+  getDates,
+  withCloudMaskParams,
+  type PlotGeoJsonImportPayload,
+} from '@/lib/api';
 import {
   queryKeys,
   useConfig,
@@ -10,9 +18,11 @@ import {
   useDates,
   useDefaultLayer,
   useDeletePlot,
+  useFieldScenes,
   useImportPlotsGeoJson,
   usePlots,
   useSources,
+  useSyncFieldProvider,
   useUpdatePlot,
 } from '@/lib/queries';
 import { basemapAttribution, resolveBasemapStyle } from '@/map/basemap';
@@ -23,6 +33,9 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
+import { CloudMaskControl } from '@/components/monitoring/CloudMaskControl';
+import { DownloadMenu } from '@/components/monitoring/DownloadMenu';
+import { FieldSceneStatusPanel } from '@/components/monitoring/FieldSceneStatusPanel';
 import { MeasureTool } from '@/components/map/MeasureTool';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import { CompareControl } from '@/components/map/CompareControl';
@@ -38,7 +51,7 @@ import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/mapViewContext';
-import type { Plot, PlotGeometry } from '@/types/api';
+import type { FieldScene, Plot, PlotGeometry, SceneDate } from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -134,6 +147,30 @@ function geoJsonFilename(plot: Plot | null): string {
   return `${safeName || 'field'}.geojson`;
 }
 
+function sceneDateFromFieldScene(scene: FieldScene, latest: boolean): SceneDate {
+  return {
+    acquisitionDate: scene.acquisitionDate,
+    datetime: scene.datetime ?? `${scene.acquisitionDate}T00:00:00Z`,
+    usablePixelPercent: scene.usablePixelPercent,
+    cloudMaskedPercent: scene.cloudMaskedPercent ?? scene.cloudPercent ?? null,
+    coveragePercent: scene.coveragePercent ?? null,
+    isLatestUsable: latest,
+    metricsProvisional: scene.metricsProvisional,
+    tileAvailable: scene.tileAvailable,
+    sceneCount: scene.sceneCount ?? undefined,
+    bounds: scene.bounds,
+  };
+}
+
+function fieldLayerFor(scene: FieldScene | null | undefined, displayMode: string) {
+  if (!scene) return null;
+  return (
+    scene.layers.find((layer) => layer.displayMode === displayMode && layer.available) ??
+    scene.layers.find((layer) => layer.displayMode === 'RGB' && layer.available) ??
+    null
+  );
+}
+
 export default function MapPage() {
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -151,6 +188,8 @@ export default function MapPage() {
     compareEnabled,
     compareDate,
     selectedPlotId,
+    cloudMask,
+    legendOpen,
   } = view;
 
   const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
@@ -170,6 +209,7 @@ export default function MapPage() {
   const createPlotMutation = useCreatePlot();
   const updatePlotMutation = useUpdatePlot();
   const importPlotsMutation = useImportPlotsGeoJson();
+  const syncFieldMutation = useSyncFieldProvider();
   const deletePlotMutation = useDeletePlot({
     onDeleted: (plotId) => {
       if (plotId === selectedPlotId) view.clearSelectedPlot();
@@ -180,6 +220,7 @@ export default function MapPage() {
     if (!selectedPlotId) return null;
     return plotsQ.data?.find((plot) => plot.id === selectedPlotId) ?? null;
   }, [plotsQ.data, selectedPlotId]);
+  const fieldScenesQ = useFieldScenes(selectedPlot?.id);
 
   useEffect(() => {
     if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
@@ -200,38 +241,77 @@ export default function MapPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  const fieldSceneMode =
+    Boolean(selectedPlot) &&
+    fieldScenesQ.data?.scope === 'field' &&
+    fieldScenesQ.data.scenes.length > 0;
+
+  const fieldTimelineDates = useMemo<SceneDate[]>(() => {
+    if (!fieldSceneMode || !fieldScenesQ.data) return [];
+    const ordered = [...fieldScenesQ.data.scenes].sort((a, b) =>
+      b.acquisitionDate.localeCompare(a.acquisitionDate),
+    );
+    return ordered.map((fieldScene, index) => sceneDateFromFieldScene(fieldScene, index === 0));
+  }, [fieldSceneMode, fieldScenesQ.data]);
+
+  const activeTimelineDates = fieldSceneMode ? fieldTimelineDates : datesQ.data;
+  const activeSourceKind = fieldSceneMode ? 'optical' : selectedSource?.kind;
+
   // Effective acquisition date: keep a still-valid user choice, otherwise the
   // computed default (latest usable -> threshold -> newest). Derived, not stored,
   // so we never call setState inside an effect.
   const selectedDate = useMemo<string | null>(() => {
-    if (!datesQ.data || !configQ.data) return null;
-    if (dateOverride && datesQ.data.some((d) => d.acquisitionDate === dateOverride)) {
+    if (!activeTimelineDates || !configQ.data) return null;
+    if (dateOverride && activeTimelineDates.some((d) => d.acquisitionDate === dateOverride)) {
       return dateOverride;
     }
-    const def = selectDefaultDate(datesQ.data, configQ.data.usablePixelThresholdPercent, {
-      sourceKind: selectedSource?.kind,
+    const def = selectDefaultDate(activeTimelineDates, configQ.data.usablePixelThresholdPercent, {
+      sourceKind: activeSourceKind,
     });
     return def ? def.acquisitionDate : null;
-  }, [datesQ.data, configQ.data, dateOverride, selectedSource?.kind]);
+  }, [activeTimelineDates, configQ.data, dateOverride, activeSourceKind]);
 
   const basemapStyle = useMemo(() => resolveBasemapStyle(configQ.data), [configQ.data]);
 
   const selectedDateMetadata = useMemo(
-    () => datesQ.data?.find((d) => d.acquisitionDate === selectedDate) ?? null,
-    [datesQ.data, selectedDate],
+    () => activeTimelineDates?.find((d) => d.acquisitionDate === selectedDate) ?? null,
+    [activeTimelineDates, selectedDate],
   );
 
-  const selectedDisplayMode =
-    displayModeOverride ??
-    selectedSource?.displayMode ??
-    selectedSource?.defaultDisplayMode ??
-    selectedSource?.displayModes?.[0] ??
-    (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
-      ? defaultLayerQ.data.displayMode
-      : undefined) ??
-    'RGB';
+  const selectedFieldScene = useMemo(
+    () =>
+      fieldSceneMode
+        ? fieldScenesQ.data?.scenes.find((s) => s.acquisitionDate === selectedDate) ?? null
+        : null,
+    [fieldSceneMode, fieldScenesQ.data, selectedDate],
+  );
+
+  const fieldDisplayModes = fieldScenesQ.data?.displayModes ?? ['RGB'];
+  const selectedDisplayMode = fieldSceneMode
+    ? fieldDisplayModes.includes(displayModeOverride ?? '')
+      ? (displayModeOverride as string)
+      : 'RGB'
+    : displayModeOverride ??
+      selectedSource?.displayMode ??
+      selectedSource?.defaultDisplayMode ??
+      selectedSource?.displayModes?.[0] ??
+      (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
+        ? defaultLayerQ.data.displayMode
+        : undefined) ??
+      'RGB';
 
   const scene = useMemo<SatelliteScene | null>(() => {
+    if (fieldSceneMode) {
+      const layer = fieldLayerFor(selectedFieldScene, selectedDisplayMode);
+      if (!layer) return null;
+      return {
+        tileUrlTemplate: withCloudMaskParams(layer.tileUrlTemplate, cloudMask),
+        bounds: selectedFieldScene?.bounds,
+        minzoom: defaultLayerQ.data?.minzoom,
+        maxzoom: defaultLayerQ.data?.maxzoom,
+        attribution: layer.attribution,
+      };
+    }
     if (!selectedDate || !effectiveSourceId) return null;
     const dl = defaultLayerQ.data;
     const isDefault =
@@ -261,6 +341,9 @@ export default function MapPage() {
   }, [
     selectedDate,
     effectiveSourceId,
+    fieldSceneMode,
+    selectedFieldScene,
+    cloudMask,
     defaultLayerQ.data,
     selectedDateMetadata,
     selectedDisplayMode,
@@ -270,8 +353,21 @@ export default function MapPage() {
   // Compare ("B") scene: same source + display mode, a different acquisition date.
   // Rendered beneath A; the opacity slider blends A over B.
   const sceneB = useMemo<SatelliteScene | null>(() => {
-    if (!visible || !compareEnabled || !compareDate || !effectiveSourceId) return null;
+    if (!visible || !compareEnabled || !compareDate) return null;
     if (compareDate === selectedDate) return null;
+    if (fieldSceneMode) {
+      const fieldScene = fieldScenesQ.data?.scenes.find((s) => s.acquisitionDate === compareDate);
+      const layer = fieldLayerFor(fieldScene, selectedDisplayMode);
+      if (!fieldScene?.tileAvailable || !layer) return null;
+      return {
+        tileUrlTemplate: withCloudMaskParams(layer.tileUrlTemplate, cloudMask),
+        bounds: fieldScene.bounds,
+        minzoom: defaultLayerQ.data?.minzoom,
+        maxzoom: defaultLayerQ.data?.maxzoom,
+        attribution: layer.attribution,
+      };
+    }
+    if (!effectiveSourceId) return null;
     const meta = datesQ.data?.find((d) => d.acquisitionDate === compareDate);
     if (!meta?.tileAvailable) return null;
     return {
@@ -285,6 +381,9 @@ export default function MapPage() {
     compareEnabled,
     compareDate,
     visible,
+    fieldSceneMode,
+    fieldScenesQ.data,
+    cloudMask,
     effectiveSourceId,
     selectedDate,
     selectedDisplayMode,
@@ -296,34 +395,35 @@ export default function MapPage() {
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
     () =>
-      (datesQ.data ?? [])
+      (activeTimelineDates ?? [])
         .filter((d) => d.tileAvailable)
         .sort((a, b) => a.acquisitionDate.localeCompare(b.acquisitionDate)),
-    [datesQ.data],
+    [activeTimelineDates],
   );
 
   // Marginal/empty signal: no date meets the usability threshold.
   const marginalNote = useMemo<string | null>(() => {
-    if (!datesQ.data || datesQ.data.length === 0 || !configQ.data) return null;
-    if (selectedSource?.kind === 'sar') return null;
+    if (!activeTimelineDates || activeTimelineDates.length === 0 || !configQ.data) return null;
+    if (activeSourceKind === 'sar') return null;
     const threshold = configQ.data.usablePixelThresholdPercent;
-    const qualifies = datesQ.data.some(
+    const qualifies = activeTimelineDates.some(
       (d) => d.isLatestUsable || (d.usablePixelPercent != null && d.usablePixelPercent >= threshold),
     );
     if (qualifies) return null;
-    const newest = [...datesQ.data].sort((a, b) =>
+    const newest = [...activeTimelineDates].sort((a, b) =>
       b.acquisitionDate.localeCompare(a.acquisitionDate),
     )[0];
     return `No usable optical scene in range. Showing the most recent attempt (${newest.acquisitionDate}).`;
-  }, [datesQ.data, configQ.data, selectedSource?.kind]);
+  }, [activeTimelineDates, configQ.data, activeSourceKind]);
 
   // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
   const nearestPassNote = useMemo<string | null>(() => {
+    if (fieldSceneMode) return null;
     if (selectedSource?.kind !== 'sar') return null;
     if (effectiveSourceId !== 'sentinel-1-grd') return null;
     if (!selectedDate || selectedDate === '2026-04-27') return null;
     return `Nearest radar pass: ${selectedDate}.`;
-  }, [selectedSource?.kind, effectiveSourceId, selectedDate]);
+  }, [fieldSceneMode, selectedSource?.kind, effectiveSourceId, selectedDate]);
 
   const prefetchDates = (sourceId: string) => {
     queryClient.prefetchQuery({
@@ -371,6 +471,11 @@ export default function MapPage() {
     await deletePlotMutation.mutateAsync(selectedPlot.id);
   };
 
+  const syncSelectedField = async () => {
+    if (!selectedPlot) return;
+    await syncFieldMutation.mutateAsync(selectedPlot.id);
+  };
+
   if (configQ.isLoading) return <FullScreenLoading />;
   if (configQ.isError || !configQ.data) {
     return <FullScreenError message={ messageFor(configQ.error) } onRetry={ () => configQ.refetch() } />;
@@ -381,7 +486,8 @@ export default function MapPage() {
   const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
   const basemapCredit = basemapAttribution(configQ.data);
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
-  const showIndexPanel = selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0;
+  const showIndexPanel =
+    fieldSceneMode || (selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0);
 
   return (
     <div className="relative h-full min-h-[640px] w-full overflow-hidden bg-background" data-testid="map-page">
@@ -513,8 +619,20 @@ export default function MapPage() {
         </LayersSurface>
       </div>
 
-      {/* Right: index panel (Phase 5 placeholder) */ }
-      <div className="absolute right-4 top-[68px] z-toolbar hidden xl:block">
+      {/* Right: field scene status + index panel (Phase 5 placeholder) */ }
+      <div className="absolute right-4 top-[68px] z-toolbar hidden max-w-[300px] flex-col gap-2 xl:flex">
+        <FieldSceneStatusPanel
+          selectedPlot={ selectedPlot }
+          response={ fieldScenesQ.data }
+          loading={ Boolean(selectedPlot) && fieldScenesQ.isLoading }
+          error={ fieldScenesQ.isError ? messageFor(fieldScenesQ.error) : null }
+          onRetry={ () => void fieldScenesQ.refetch() }
+          onSync={ () => void syncSelectedField() }
+          syncing={ syncFieldMutation.isPending }
+          displayModes={ fieldDisplayModes }
+          displayMode={ selectedDisplayMode }
+          onDisplayModeChange={ view.setDisplayMode }
+        />
         { showIndexPanel && <IndexPanel /> }
       </div>
 
@@ -537,13 +655,31 @@ export default function MapPage() {
           blend={ opacity }
           onBlendChange={ view.setOpacity }
         />
-        <MapControls map={ map } />
+        <CloudMaskControl
+          value={ cloudMask }
+          onChange={ view.setCloudMask }
+          disabled={ !fieldSceneMode }
+        />
+        <DownloadMenu
+          hasSelectedField={ Boolean(selectedPlot) }
+          selectedDate={ selectedDate }
+          displayMode={ selectedDisplayMode }
+        />
+        <MapControls
+          map={ map }
+          hasSelectedField={ Boolean(selectedPlot) }
+          legendOpen={ legendOpen }
+          onFindSelectedField={ () => {
+            if (selectedPlot) focusPlot(map, selectedPlot);
+          } }
+          onLegendOpenChange={ view.setLegendOpen }
+        />
       </div>
 
       {/* Bottom-left: legend (per display mode) + attribution, above the timeline */ }
       <div className="absolute bottom-[calc(var(--timeline-height)+1.125rem)] left-4 z-toolbar flex flex-col items-start gap-2">
-        { visible && (
-          <Legend displayMode={ selectedDisplayMode } sourceKind={ selectedSource?.kind } />
+        { visible && legendOpen && (
+          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } />
         ) }
         <div
           className="pointer-events-none max-w-[60vw] truncate text-[11px] text-foreground/70 on-map-text"
@@ -556,13 +692,17 @@ export default function MapPage() {
       {/* Bottom: temporal filmstrip */ }
       <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
         <TimelineBar
-          dates={ datesQ.data }
+          dates={ activeTimelineDates }
           selectedDate={ selectedDate }
           onSelect={ view.setDate }
-          sourceKind={ selectedSource?.kind }
-          loading={ datesQ.isLoading }
-          error={ datesQ.isError ? messageFor(datesQ.error) : null }
-          onRetry={ () => datesQ.refetch() }
+          sourceKind={ activeSourceKind }
+          loading={ fieldSceneMode ? fieldScenesQ.isLoading : datesQ.isLoading }
+          error={
+            fieldSceneMode
+              ? fieldScenesQ.isError ? messageFor(fieldScenesQ.error) : null
+              : datesQ.isError ? messageFor(datesQ.error) : null
+          }
+          onRetry={ () => (fieldSceneMode ? fieldScenesQ.refetch() : datesQ.refetch()) }
           marginalNote={ marginalNote }
           nearestPassNote={ nearestPassNote }
           onPrefetchDate={ undefined }

@@ -1,7 +1,7 @@
 """Normalized provider DTOs exposed inside the Akasha BFF."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime as DateTime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,7 +52,7 @@ class FieldMirrorResult(ProviderModel):
     provider: str = "eos"
     external_field_id: str
     sync_status: Literal["pending", "synced", "failed"]
-    synced_at: datetime | None = None
+    synced_at: DateTime | None = None
     provider_area_ha: float | None = None
 
 
@@ -77,6 +77,63 @@ class TileTemplateMetadata(ProviderModel):
     attribution: str = "EOSDA API Connect"
 
 
+class TileBytes(ProviderModel):
+    provider: str = "eos"
+    content: bytes
+    content_type: str = "image/png"
+
+
+class CloudMaskOptions(ProviderModel):
+    clouds: bool = True
+    cloud_shadows: bool = True
+    cirrus: bool = True
+
+
+class FieldLayer(ProviderModel):
+    display_mode: str
+    label: str
+    kind: Literal["rgb", "index", "composite"]
+    tile_url_template: str
+    available: bool = True
+    unavailable_reason: str | None = None
+    attribution: str = "Akasha"
+
+
+class FieldScene(ProviderModel):
+    scene_token: str
+    acquisition_date: date
+    datetime: DateTime | None = None
+    sensor: str | None = None
+    cloud_percent: float | None = None
+    usable_pixel_percent: float | None = None
+    cloud_masked_percent: float | None = None
+    coverage_percent: float | None = None
+    bounds: list[float] | None = None
+    tile_available: bool = True
+    metrics_provisional: bool = False
+    scene_count: int | None = None
+    layers: list[FieldLayer] = []
+
+
+class FieldSceneListResponse(ProviderModel):
+    plot_id: str
+    provider: str
+    scope: Literal["field", "global_fallback"]
+    source_id: str
+    default_display_mode: Literal["RGB"] = "RGB"
+    display_modes: list[str]
+    scenes: list[FieldScene]
+    fallback_reason: str | None = None
+
+
+class ProviderSyncResponse(ProviderModel):
+    plot_id: str
+    provider: str = "eos"
+    sync_status: Literal["pending", "synced", "failed"]
+    synced_at: DateTime | None = None
+    field: FieldMirrorResult | None = None
+
+
 class AnalyticsTrendPoint(ProviderModel):
     provider: str = "eos"
     scene_id: str | None = None
@@ -92,8 +149,8 @@ class AnalyticsTrendPoint(ProviderModel):
 
 class WeatherRecord(ProviderModel):
     record_date: date | None = Field(default=None, alias="date")
-    start_time: datetime | None = None
-    end_time: datetime | None = None
+    start_time: DateTime | None = None
+    end_time: DateTime | None = None
     temperature_min_c: float | None = None
     temperature_max_c: float | None = None
     precipitation_mm: float | None = None

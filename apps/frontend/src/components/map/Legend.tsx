@@ -46,6 +46,22 @@ const NDMI_RAMP: RampSpec = {
     caption: 'Dry ▸ moist vegetation',
 };
 
+const MSAVI_RAMP: RampSpec = {
+    title: 'MSAVI · adjusted vigour',
+    gradient:
+        'linear-gradient(90deg,#8f5525 0%,#d0a64a 30%,#e7dd76 55%,#78b852 78%,#1d7138 100%)',
+    ticks: ['Low', 'Mid', 'High'],
+    caption: 'Soil-adjusted sparse ▸ dense canopy',
+};
+
+const RECI_RAMP: RampSpec = {
+    title: 'RECI · chlorophyll',
+    gradient:
+        'linear-gradient(90deg,#6b3f17 0%,#bd8733 30%,#e6d66c 55%,#5ea85b 78%,#17623e 100%)',
+    ticks: ['Low', 'Mid', 'High'],
+    caption: 'Low ▸ high chlorophyll signal',
+};
+
 const NDWI_RAMP: RampSpec = {
     title: 'NDWI · water',
     gradient:
@@ -84,6 +100,10 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
             return NDRE_RAMP;
         case 'NDMI':
             return NDMI_RAMP;
+        case 'MSAVI':
+            return MSAVI_RAMP;
+        case 'RECI':
+            return RECI_RAMP;
         case 'NDWI':
         case 'NDWI_GREEN_NIR':
             return NDWI_RAMP;

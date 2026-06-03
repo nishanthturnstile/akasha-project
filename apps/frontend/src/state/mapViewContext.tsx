@@ -32,6 +32,14 @@ export interface MapViewState {
     compareDate: string | null;
     /** Client-only selected field/plot id; server field data stays in TanStack Query. */
     selectedPlotId: string | null;
+    /** Field scene visual cloud mask switches; statistics keep server-safe defaults. */
+    cloudMask: {
+        clouds: boolean;
+        cloudShadows: boolean;
+        cirrus: boolean;
+    };
+    /** Legend visibility toggle. RGB still renders no legend content. */
+    legendOpen: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -44,6 +52,12 @@ export const initialMapViewState: MapViewState = {
     compareEnabled: false,
     compareDate: null,
     selectedPlotId: null,
+    cloudMask: {
+        clouds: true,
+        cloudShadows: true,
+        cirrus: true,
+    },
+    legendOpen: true,
 };
 
 type MapViewAction =
@@ -57,7 +71,12 @@ type MapViewAction =
     | { type: 'SET_COMPARE_ENABLED'; enabled: boolean }
     | { type: 'SET_COMPARE_DATE'; date: string | null }
     | { type: 'SET_SELECTED_PLOT_ID'; plotId: string | null }
-    | { type: 'CLEAR_SELECTED_PLOT' };
+    | { type: 'CLEAR_SELECTED_PLOT' }
+    | {
+        type: 'SET_CLOUD_MASK';
+        cloudMask: { clouds: boolean; cloudShadows: boolean; cirrus: boolean };
+    }
+    | { type: 'SET_LEGEND_OPEN'; open: boolean };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -104,6 +123,11 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'CLEAR_SELECTED_PLOT':
             if (state.selectedPlotId === null) return state;
             return { ...state, selectedPlotId: null };
+        case 'SET_CLOUD_MASK':
+            return { ...state, cloudMask: action.cloudMask };
+        case 'SET_LEGEND_OPEN':
+            if (action.open === state.legendOpen) return state;
+            return { ...state, legendOpen: action.open };
         default:
             return state;
     }
@@ -121,6 +145,8 @@ export interface MapViewContextValue extends MapViewState {
     setCompareDate: (date: string | null) => void;
     setSelectedPlotId: (plotId: string | null) => void;
     clearSelectedPlot: () => void;
+    setCloudMask: (cloudMask: MapViewState['cloudMask']) => void;
+    setLegendOpen: (open: boolean) => void;
 }
 
 const MapViewContext = createContext<MapViewContextValue | null>(null);
@@ -151,6 +177,8 @@ export function MapViewProvider({
             setCompareDate: (date) => dispatch({ type: 'SET_COMPARE_DATE', date }),
             setSelectedPlotId: (plotId) => dispatch({ type: 'SET_SELECTED_PLOT_ID', plotId }),
             clearSelectedPlot: () => dispatch({ type: 'CLEAR_SELECTED_PLOT' }),
+            setCloudMask: (cloudMask) => dispatch({ type: 'SET_CLOUD_MASK', cloudMask }),
+            setLegendOpen: (open) => dispatch({ type: 'SET_LEGEND_OPEN', open }),
         }),
         [state],
     );

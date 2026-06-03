@@ -35,6 +35,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import skeleton
 from .config import settings
+from .field_monitoring import router as field_monitoring_router
 from .plots import router as plots_router
 from .product import router as product_router
 from .providers.router import router as providers_router
@@ -221,6 +222,9 @@ async def get_manifest() -> dict[str, Any]:
 
 app.include_router(api_router)
 app.include_router(skeleton_router)
+
+# --- Field Monitoring API (EOS parity Phase 4) -----------------------------
+app.include_router(field_monitoring_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)

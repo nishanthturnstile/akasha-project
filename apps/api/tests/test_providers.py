@@ -238,9 +238,8 @@ def test_tile_provider_returns_same_origin_template_only():
         acquisition_date=date(2026, 6, 1),
     )
     tile = EosTileProvider().get_tile_template(scene, layer_type="index", index="NDVI")
-    assert tile.tile_url_template.startswith("/api/providers/eos/tiles/")
+    assert tile.tile_url_template.startswith("/api/tiles/")
     assert "{z}/{x}/{y}.png" in tile.tile_url_template
     assert "api-connect.eos.com" not in tile.tile_url_template
     assert "api_key" not in tile.tile_url_template
     assert "x-api-key" not in tile.tile_url_template
-

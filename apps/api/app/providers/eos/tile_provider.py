@@ -1,16 +1,33 @@
-"""EOS tile metadata provider.
+"""EOS tile provider.
 
-Phase 2 only returns Akasha same-origin templates. The actual proxy route is a
-later phase so no direct EOS render URL reaches the browser.
+The browser only receives Akasha same-origin `/api/tiles/*` templates. EOS
+Render API paths are constructed and fetched here, inside the BFF.
 """
 from __future__ import annotations
 
 from urllib.parse import quote
 
-from ..models import SceneMetadata, TileTemplateMetadata
+from ..models import CloudMaskOptions, SceneMetadata, TileBytes, TileTemplateMetadata
+from .client import EosClient
+
+
+_DISPLAY_MODE_TO_BANDS = {
+    "RGB": "B04,B03,B02",
+    "FALSE_COLOR": "B08,B04,B03",
+    "NDVI": "NDVI",
+    "NDRE": "NDRE",
+    "NDMI": "NDMI",
+    "MSAVI": "MSAVI",
+    "RECI": "RECI",
+}
+
+_INDEX_MODES = {"NDVI", "NDRE", "NDMI", "MSAVI", "RECI"}
 
 
 class EosTileProvider:
+    def __init__(self, client: EosClient | None = None) -> None:
+        self.client = client or EosClient()
+
     def get_tile_template(
         self,
         scene: SceneMetadata,
@@ -25,7 +42,50 @@ class EosTileProvider:
             layer_type=layer_type,
             index=index,
             tile_url_template=(
-                f"/api/providers/eos/tiles/{scene_token}/{layer_token}/{{z}}/{{x}}/{{y}}.png"
+                f"/api/tiles/fields/eos/{scene_token}/{layer_token}/{{z}}/{{x}}/{{y}}.png"
             ),
         )
 
+    def render_tile(
+        self,
+        scene: SceneMetadata,
+        *,
+        display_mode: str,
+        z: int,
+        x: int,
+        y: int,
+        cloud_mask: CloudMaskOptions,
+    ) -> TileBytes:
+        mode = display_mode.upper()
+        bands = _DISPLAY_MODE_TO_BANDS.get(mode)
+        if not bands:
+            from ...raster.errors import bad_request
+
+            raise bad_request(
+                f"Display mode '{display_mode}' is not supported for EOS field scenes.",
+                code="UNSUPPORTED_DISPLAY_MODE",
+                displayMode=display_mode,
+                supportedDisplayModes=sorted(_DISPLAY_MODE_TO_BANDS),
+            )
+        view_id = quote(scene.view_id or scene.scene_id, safe="")
+        path = f"/api/render/{view_id}/{quote(bands, safe=',')}/{z}/{x}/{y}"
+        params: dict[str, str | int] = {}
+        cloud_level = _cloud_mask_level(cloud_mask)
+        if cloud_level is not None:
+            params["cloud_masking_level"] = cloud_level
+        if mode in _INDEX_MODES:
+            params["colormap"] = mode.lower()
+        body, content_type = self.client.request_bytes("GET", path, params=params)
+        return TileBytes(content=body, content_type=content_type or "image/png")
+
+
+def _cloud_mask_level(mask: CloudMaskOptions) -> int | None:
+    if not mask.clouds and not mask.cirrus and not mask.cloud_shadows:
+        return None
+    if mask.clouds and mask.cirrus and mask.cloud_shadows:
+        return 3
+    if mask.clouds and mask.cirrus:
+        return 4
+    if mask.clouds:
+        return 2
+    return 1

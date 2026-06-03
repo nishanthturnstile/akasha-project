@@ -2,11 +2,13 @@ import type {
   ApiErrorShape,
   AppConfig,
   DefaultLayer,
+  FieldSceneListResponse,
   Plot,
   PlotCreatePayload,
   PlotGeometry,
   PlotImportResponse,
   PlotUpdatePayload,
+  ProviderSyncResponse,
   SceneDate,
   Source,
 } from '@/types/api';
@@ -175,6 +177,26 @@ export const exportAllPlotsGeoJson = (): Promise<Blob> =>
 export const exportPlotGeoJson = (plotId: string): Promise<Blob> =>
   requestBlob(`/api/plots/${encodeURIComponent(plotId)}/export.geojson`);
 
+export const syncFieldProvider = (plotId: string): Promise<ProviderSyncResponse> =>
+  request<ProviderSyncResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/providers/eos/sync`,
+    { method: 'POST' },
+  );
+
+export const getFieldScenes = (
+  plotId: string,
+  options: { provider?: 'auto' | 'eos' | 'native'; startDate?: string; endDate?: string } = {},
+): Promise<FieldSceneListResponse> => {
+  const params = new URLSearchParams();
+  if (options.provider) params.set('provider', options.provider);
+  if (options.startDate) params.set('startDate', options.startDate);
+  if (options.endDate) params.set('endDate', options.endDate);
+  const query = params.toString();
+  return request<FieldSceneListResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/scenes${query ? `?${query}` : ''}`,
+  );
+};
+
 /** Compose the same-origin tile template for an arbitrary source/date/display-mode selection. */
 export function composeTileTemplate(
   sourceId: string,
@@ -184,4 +206,17 @@ export function composeTileTemplate(
   return `/api/tiles/${encodeURIComponent(sourceId)}/${encodeURIComponent(
     acquisitionDate,
   )}/${encodeURIComponent(displayMode)}/{z}/{x}/{y}.png`;
+}
+
+export function withCloudMaskParams(
+  tileUrlTemplate: string,
+  mask: { clouds: boolean; cloudShadows: boolean; cirrus: boolean },
+): string {
+  const [path] = tileUrlTemplate.split('?', 1);
+  const params = new URLSearchParams({
+    clouds: String(mask.clouds),
+    cloudShadows: String(mask.cloudShadows),
+    cirrus: String(mask.cirrus),
+  });
+  return `${path}?${params.toString()}`;
 }

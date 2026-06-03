@@ -86,6 +86,51 @@ class EosClient:
 
         raise self._error_from_response(response)
 
+    def request_bytes(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        expected_status: Iterable[int] = (200,),
+    ) -> tuple[bytes, str]:
+        if not self.api_key.strip():
+            raise AkashaError(
+                "PROVIDER_UNCONFIGURED",
+                "EOS provider is not configured.",
+                503,
+                {"provider": "eos"},
+            )
+
+        safe_path = path.split("?", 1)[0]
+        logger.info("EOS provider bytes request: method=%s path=%s", method.upper(), safe_path)
+        try:
+            response = self._client.request(
+                method,
+                path,
+                params=params,
+                headers={"x-api-key": self.api_key, "Accept": "image/png,*/*"},
+            )
+        except httpx.TimeoutException as exc:
+            raise AkashaError(
+                "PROVIDER_TIMEOUT",
+                "EOS provider request timed out.",
+                504,
+                {"provider": "eos"},
+            ) from exc
+        except httpx.RequestError as exc:
+            raise AkashaError(
+                "PROVIDER_UPSTREAM_ERROR",
+                "EOS provider is unavailable.",
+                502,
+                {"provider": "eos"},
+            ) from exc
+
+        if response.status_code in set(expected_status):
+            return response.content, response.headers.get("Content-Type", "image/png")
+
+        raise self._error_from_response(response)
+
     def _error_from_response(self, response: httpx.Response) -> AkashaError:
         retry_after = response.headers.get("retry-after")
         details: dict[str, Any] = {
@@ -115,4 +160,3 @@ class EosClient:
             status,
             sanitize_error_value(details),
         )
-

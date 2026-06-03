@@ -50,6 +50,17 @@ describe('resolveTileUrl', () => {
     ).toBe('http://localhost/api/tiles/s/d/rgb/{z}/{x}/{y}.png');
   });
 
+  it('allows field-scoped same-origin tile templates', () => {
+    expect(
+      resolveTileUrl(
+        '/api/tiles/fields/plot-1/scene-token/NDVI/{z}/{x}/{y}.png?clouds=true',
+        'http://localhost',
+      ),
+    ).toBe(
+      'http://localhost/api/tiles/fields/plot-1/scene-token/NDVI/{z}/{x}/{y}.png?clouds=true',
+    );
+  });
+
   it('rejects external absolute tile URLs', () => {
     expect(() => resolveTileUrl('https://tiles.example.com/y/{z}.png', 'http://localhost')).toThrow(
       /same-origin/,

@@ -152,17 +152,17 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-037 | Add `POST /api/fields/{plot_id}/providers/eos/sync` in a new field/provider router or existing plot router. It must mirror the selected Akasha field to EOS and persist provider link metadata. Depends on: TASK-022. | | |
-| TASK-038 | Add `GET /api/fields/{plot_id}/scenes` returning normalized field-specific scene metadata. It must use EOS scene provider when provider mode is `eos` or `hybrid`, and native STAC fallback where supported. Depends on: TASK-023, TASK-037. | | |
-| TASK-039 | Add EOS-backed tile proxy route `GET /api/fields/{plot_id}/tiles/{provider_scene_id}/{display_mode}/{z}/{x}/{y}.png` or equivalent same-origin route. It must proxy/fetch EOS render output server-side and return image content. Depends on: TASK-024, TASK-038. | | |
-| TASK-040 | Extend frontend types with `FieldScene`, `FieldLayer`, `ProviderSyncStatus`, and field-aware tile template DTOs. Depends on: TASK-038. | | |
-| TASK-041 | Add API functions and TanStack Query hooks for field provider sync and field scene list in `apps/frontend/src/lib/api.ts` and `apps/frontend/src/lib/queries.ts`. Depends on: TASK-040. | | |
-| TASK-042 | Update `apps/frontend/src/pages/MapPage.tsx` so selected field scene timeline supersedes global source dates when a field is selected and synced. Preserve existing global date behavior when no field is selected. Depends on: TASK-041, TASK-010. | | |
-| TASK-043 | Expand display modes for EOS-backed optical field scenes: `RGB`, `NDVI`, `NDRE`, `NDMI`, `MSAVI`, `RECI`, and optional `FALSE_COLOR`. Keep default `RGB`. Depends on: TASK-039, TASK-042. | | |
-| TASK-044 | Add cloud mask control UI with cirrus, cloud, and cloud-shadow toggles. Store the selected mask settings in map view state and pass them to field scene/tile/stat requests. Depends on: TASK-042. | | |
-| TASK-045 | Add EOS-like map controls missing from the current shell: find selected field, legend toggle, download menu, and true split/swipe comparison. Existing measure/fullscreen/zoom controls may be reused. Depends on: TASK-042. | | |
-| TASK-046 | Add frontend tests for field sync button behavior, field-aware scene timeline, display mode switching, cloud mask toggles, and same-origin tile URL usage. Depends on: TASK-041, TASK-042, TASK-043, TASK-044. | | |
-| TASK-047 | Add backend tests for field scene route and EOS tile proxy route using mocked provider responses and image bytes. Depends on: TASK-038, TASK-039. | | |
+| TASK-037 | Add `POST /api/fields/{plot_id}/providers/eos/sync` in a new field/provider router or existing plot router. It must mirror the selected Akasha field to EOS and persist provider link metadata. Depends on: TASK-022. | ✅ | 2026-06-03 |
+| TASK-038 | Add `GET /api/fields/{plot_id}/scenes` returning normalized field-specific scene metadata. It must use EOS scene provider when provider mode is `eos` or `hybrid`, and native STAC fallback where supported. Depends on: TASK-023, TASK-037. | ✅ | 2026-06-03 |
+| TASK-039 | Add EOS-backed tile proxy route `GET /api/fields/{plot_id}/tiles/{provider_scene_id}/{display_mode}/{z}/{x}/{y}.png` or equivalent same-origin route. It must proxy/fetch EOS render output server-side and return image content. Depends on: TASK-024, TASK-038. | ✅ | 2026-06-03 |
+| TASK-040 | Extend frontend types with `FieldScene`, `FieldLayer`, `ProviderSyncStatus`, and field-aware tile template DTOs. Depends on: TASK-038. | ✅ | 2026-06-03 |
+| TASK-041 | Add API functions and TanStack Query hooks for field provider sync and field scene list in `apps/frontend/src/lib/api.ts` and `apps/frontend/src/lib/queries.ts`. Depends on: TASK-040. | ✅ | 2026-06-03 |
+| TASK-042 | Update `apps/frontend/src/pages/MapPage.tsx` so selected field scene timeline supersedes global source dates when a field is selected and synced. Preserve existing global date behavior when no field is selected. Depends on: TASK-041, TASK-010. | ✅ | 2026-06-03 |
+| TASK-043 | Expand display modes for EOS-backed optical field scenes: `RGB`, `NDVI`, `NDRE`, `NDMI`, `MSAVI`, `RECI`, and optional `FALSE_COLOR`. Keep default `RGB`. Depends on: TASK-039, TASK-042. | ✅ | 2026-06-03 |
+| TASK-044 | Add cloud mask control UI with cirrus, cloud, and cloud-shadow toggles. Store the selected mask settings in map view state and pass them to field scene/tile/stat requests. Depends on: TASK-042. | ✅ | 2026-06-03 |
+| TASK-045 | Add EOS-like map controls missing from the current shell: find selected field, legend toggle, download menu, and true split/swipe comparison. Existing measure/fullscreen/zoom controls may be reused. Depends on: TASK-042. | ✅ | 2026-06-03 |
+| TASK-046 | Add frontend tests for field sync button behavior, field-aware scene timeline, display mode switching, cloud mask toggles, and same-origin tile URL usage. Depends on: TASK-041, TASK-042, TASK-043, TASK-044. | ✅ | 2026-06-03 |
+| TASK-047 | Add backend tests for field scene route and EOS tile proxy route using mocked provider responses and image bytes. Depends on: TASK-038, TASK-039. | ✅ | 2026-06-03 |
 
 ### Implementation Phase 5 — Field Analytics Panel and Multi-Temporal Trends
 

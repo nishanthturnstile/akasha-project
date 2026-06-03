@@ -20,4 +20,20 @@ describe('MapViewProvider selected field state', () => {
     act(() => result.current.clearSelectedPlot());
     expect(result.current.selectedPlotId).toBeNull();
   });
+
+  it('stores cloud mask and legend visibility as client view state', () => {
+    const { result } = renderHook(() => useMapView(), { wrapper });
+
+    act(() =>
+      result.current.setCloudMask({
+        clouds: true,
+        cloudShadows: false,
+        cirrus: true,
+      }),
+    );
+    expect(result.current.cloudMask.cloudShadows).toBe(false);
+
+    act(() => result.current.setLegendOpen(false));
+    expect(result.current.legendOpen).toBe(false);
+  });
 });

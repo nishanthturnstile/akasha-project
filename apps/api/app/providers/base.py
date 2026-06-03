@@ -7,8 +7,10 @@ from typing import Protocol
 from .models import (
     AnalyticsTrendPoint,
     FieldMirrorResult,
+    CloudMaskOptions,
     ProviderAsyncRequest,
     SceneMetadata,
+    TileBytes,
     TileTemplateMetadata,
     WeatherResponse,
     ZoningMapStatus,
@@ -52,6 +54,17 @@ class TileProvider(Protocol):
         layer_type: str,
         index: str | None = None,
     ) -> TileTemplateMetadata: ...
+
+    def render_tile(
+        self,
+        scene: SceneMetadata,
+        *,
+        display_mode: str,
+        z: int,
+        x: int,
+        y: int,
+        cloud_mask: CloudMaskOptions,
+    ) -> TileBytes: ...
 
 
 class AnalyticsProvider(Protocol):
@@ -113,4 +126,3 @@ class ZoningProvider(Protocol):
     def list_zoning_maps(self, external_field_id: str) -> list[ZoningMapStatus]: ...
 
     def delete_zoning_map(self, external_field_id: str, external_zmap_id: str) -> None: ...
-

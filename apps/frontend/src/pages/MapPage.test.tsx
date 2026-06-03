@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import MapPage from '@/pages/MapPage';
 import { MapViewProvider, type MapViewState } from '@/state/mapViewContext';
-import type { SceneDate } from '@/types/api';
+import type { FieldSceneListResponse, Plot, SceneDate } from '@/types/api';
 
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: ({
@@ -64,6 +64,103 @@ function makeDate(acquisitionDate: string, overrides: Partial<SceneDate> = {}): 
   };
 }
 
+const FIELD_PLOT: Plot = {
+  id: 'plot-1',
+  name: 'North Field',
+  geometry: {
+    type: 'Polygon',
+    coordinates: [[[77, 12], [77.1, 12], [77.1, 12.1], [77, 12]]],
+  },
+  areaHa: 5,
+  createdAt: null,
+  updatedAt: null,
+  externalProvider: 'eos',
+  externalFieldId: 'eos-field-1',
+  providerSyncStatus: 'synced',
+  providerSyncedAt: '2026-06-03T00:00:00Z',
+};
+
+function makeFieldScenes(overrides: Partial<FieldSceneListResponse> = {}): FieldSceneListResponse {
+  return {
+    plotId: 'plot-1',
+    provider: 'eos',
+    scope: 'field',
+    sourceId: 'sentinel-2-l2a',
+    defaultDisplayMode: 'RGB',
+    displayModes: ['RGB', 'NDVI'],
+    scenes: [
+      {
+        sceneToken: 'field-scene-a',
+        acquisitionDate: '2026-06-01',
+        datetime: '2026-06-01T00:00:00Z',
+        sensor: 'S2',
+        cloudPercent: 5,
+        usablePixelPercent: 95,
+        cloudMaskedPercent: 5,
+        coveragePercent: 100,
+        bounds: [77, 12, 77.1, 12.1],
+        tileAvailable: true,
+        metricsProvisional: false,
+        sceneCount: 1,
+        layers: [
+          {
+            displayMode: 'RGB',
+            label: 'True colour',
+            kind: 'rgb',
+            tileUrlTemplate:
+              '/api/tiles/fields/plot-1/field-scene-a/RGB/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
+            available: true,
+            attribution: 'EOSDA API Connect',
+          },
+          {
+            displayMode: 'NDVI',
+            label: 'NDVI',
+            kind: 'index',
+            tileUrlTemplate:
+              '/api/tiles/fields/plot-1/field-scene-a/NDVI/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
+            available: true,
+            attribution: 'EOSDA API Connect',
+          },
+        ],
+      },
+      {
+        sceneToken: 'field-scene-b',
+        acquisitionDate: '2026-05-20',
+        datetime: '2026-05-20T00:00:00Z',
+        sensor: 'S2',
+        cloudPercent: 12,
+        usablePixelPercent: 88,
+        cloudMaskedPercent: 12,
+        coveragePercent: 100,
+        tileAvailable: true,
+        metricsProvisional: false,
+        sceneCount: 1,
+        layers: [
+          {
+            displayMode: 'RGB',
+            label: 'True colour',
+            kind: 'rgb',
+            tileUrlTemplate:
+              '/api/tiles/fields/plot-1/field-scene-b/RGB/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
+            available: true,
+            attribution: 'EOSDA API Connect',
+          },
+          {
+            displayMode: 'NDVI',
+            label: 'NDVI',
+            kind: 'index',
+            tileUrlTemplate:
+              '/api/tiles/fields/plot-1/field-scene-b/NDVI/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
+            available: true,
+            attribution: 'EOSDA API Connect',
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
 class ResizeObserverMock {
   observe() {}
   unobserve() {}
@@ -84,9 +181,13 @@ function stubAkashaFetch({
       isLatestUsable: true,
     }),
   ],
+  plots = [],
+  fieldScenes,
 }: {
   sentinel2Dates?: SceneDate[];
   sentinel1Dates?: SceneDate[];
+  plots?: Plot[];
+  fieldScenes?: FieldSceneListResponse;
 } = {}) {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   vi.stubGlobal(
@@ -160,7 +261,42 @@ function stubAkashaFetch({
       }
 
       if (path === '/api/plots') {
-        return Promise.resolve(jsonResponse([]));
+        return Promise.resolve(jsonResponse(plots));
+      }
+
+      if (path.startsWith('/api/fields/plot-1/scenes')) {
+        return Promise.resolve(
+          jsonResponse(
+            fieldScenes ?? {
+              plotId: 'plot-1',
+              provider: 'native',
+              scope: 'global_fallback',
+              sourceId: 'sentinel-2-l2a',
+              defaultDisplayMode: 'RGB',
+              displayModes: ['RGB'],
+              scenes: [],
+              fallbackReason: 'Selected field is not synced to the configured provider.',
+            },
+          ),
+        );
+      }
+
+      if (path === '/api/fields/plot-1/providers/eos/sync') {
+        return Promise.resolve(
+          jsonResponse({
+            plotId: 'plot-1',
+            provider: 'eos',
+            syncStatus: 'synced',
+            syncedAt: '2026-06-03T00:00:00Z',
+            field: {
+              plotId: 'plot-1',
+              provider: 'eos',
+              externalFieldId: 'eos-field-1',
+              syncStatus: 'synced',
+              syncedAt: '2026-06-03T00:00:00Z',
+            },
+          }),
+        );
       }
 
       if (path === '/api/sources/sentinel-2-l2a/dates') {
@@ -261,5 +397,107 @@ describe('MapPage Sentinel-1 source behavior', () => {
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-compare-tile-template')).toBe(
       '',
     );
+  });
+});
+
+describe('MapPage field-aware scene behavior', () => {
+  it('uses field scenes when a synced field is selected and keeps RGB as the default', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT], fieldScenes: makeFieldScenes() });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    await screen.findByTestId('field-scene-status');
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
+        '/api/tiles/fields/plot-1/field-scene-a/RGB/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
+      );
+    });
+    expect(screen.getByTestId('timeline-bar').textContent).toContain('Jun');
+    expect(screen.queryByTestId('map-legend')).toBeNull();
+  });
+
+  it('switches field display modes and applies cloud mask query params', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT], fieldScenes: makeFieldScenes() });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    fireEvent.click(await screen.findByTestId('display-mode-NDVI'));
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
+        '/api/tiles/fields/plot-1/field-scene-a/NDVI/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('cloud-mask-cloudShadows'));
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
+        'clouds=true&cloudShadows=false&cirrus=true',
+      );
+    });
+    expect(screen.getByTestId('map-legend').getAttribute('data-display-mode')).toBe('NDVI');
+  });
+
+  it('shows sync and download affordances for an unsynced selected field without replacing global imagery', async () => {
+    const unsynced = {
+      ...FIELD_PLOT,
+      externalProvider: null,
+      externalFieldId: null,
+      providerSyncStatus: 'not_synced' as const,
+    };
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === '/api/fields/plot-1/providers/eos/sync') {
+        return Promise.resolve(
+          jsonResponse({
+            plotId: 'plot-1',
+            provider: 'eos',
+            syncStatus: 'synced',
+            syncedAt: '2026-06-03T00:00:00Z',
+          }),
+        );
+      }
+      return (globalThis.fetch as unknown as typeof fetch)(input);
+    });
+    stubAkashaFetch({ plots: [unsynced] });
+    const baseFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === '/api/fields/plot-1/providers/eos/sync') return fetchSpy(input);
+      return baseFetch(input);
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    await screen.findByTestId('field-sync-button');
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
+        '/api/tiles/sentinel-2-l2a/2026-04-27/RGB/{z}/{x}/{y}.png',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('download-menu-toggle'));
+    expect((await screen.findByTestId('download-index-tiff') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    fireEvent.click(screen.getByTestId('field-sync-button'));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+  });
+
+  it('toggles the field legend without changing the selected tile', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT], fieldScenes: makeFieldScenes() });
+
+    renderMapPage({ selectedPlotId: 'plot-1', displayMode: 'NDVI' });
+
+    await screen.findByTestId('map-legend');
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
+        '/api/tiles/fields/plot-1/field-scene-a/NDVI/',
+      );
+    });
+    const before = screen.getByTestId('map-layer-manager').getAttribute('data-tile-template');
+    fireEvent.click(screen.getByTestId('legend-toggle-btn'));
+    expect(screen.queryByTestId('map-legend')).toBeNull();
+    expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toBe(before);
   });
 });

@@ -2,12 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createPlot,
   deletePlot,
+  getFieldScenes,
   getConfig,
   getDates,
   getDefaultLayer,
   getPlots,
   getSources,
   importPlotsGeoJson,
+  syncFieldProvider,
   updatePlot,
 } from '@/lib/api';
 import type { PlotUpdatePayload } from '@/types/api';
@@ -18,6 +20,7 @@ export const queryKeys = {
   dates: (sourceId: string) => ['dates', sourceId] as const,
   defaultLayer: ['layers', 'default'] as const,
   plots: ['plots'] as const,
+  fieldScenes: (plotId: string, provider = 'auto') => ['fields', plotId, 'scenes', provider] as const,
 };
 
 interface UpdatePlotVariables {
@@ -89,5 +92,25 @@ export function useImportPlotsGeoJson() {
   return useMutation({
     mutationFn: importPlotsGeoJson,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.plots }),
+  });
+}
+
+export function useFieldScenes(plotId: string | null | undefined, provider: 'auto' | 'eos' | 'native' = 'auto') {
+  return useQuery({
+    queryKey: plotId ? queryKeys.fieldScenes(plotId, provider) : (['fields', 'none', 'scenes', provider] as const),
+    queryFn: () => getFieldScenes(plotId as string, { provider }),
+    enabled: Boolean(plotId),
+  });
+}
+
+export function useSyncFieldProvider() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: syncFieldProvider,
+    onSuccess: (_data, plotId) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.plots });
+      void queryClient.invalidateQueries({ queryKey: ['fields', plotId, 'scenes'] });
+    },
   });
 }

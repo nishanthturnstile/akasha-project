@@ -5,6 +5,8 @@ import {
   createPlot,
   deletePlot,
   exportAllPlotsGeoJson,
+  exportFieldIndex,
+  exportFieldReportCsv,
   exportPlotGeoJson,
   getConfig,
   getPlots,
@@ -191,6 +193,45 @@ describe('api client error mapping', () => {
         '/api/plots/plot-1/export.geojson',
         expect.objectContaining({ method: 'GET' }),
       );
+    });
+
+    it('downloads selected-field exports with cloud mask params and response filename', async () => {
+      const blob = new Blob(['csv'], { type: 'text/csv' });
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'Content-Type': 'text/csv',
+          'Content-Disposition': 'attachment; filename="North_NDVI.csv"',
+        }),
+        blob: async () => blob,
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const file = await exportFieldIndex('plot-1', {
+        format: 'csv',
+        sourceId: 'sentinel-2-l2a',
+        acquisitionDate: '2026-06-01',
+        indexType: 'NDVI',
+        provider: 'native',
+        cloudMask: { clouds: true, cloudShadows: false, cirrus: true },
+      });
+      await exportFieldReportCsv('plot-1', {
+        sourceId: 'sentinel-2-l2a',
+        indexType: 'NDVI',
+        startDate: '2026-06-01',
+        endDate: '2026-06-01',
+        cloudMask: { clouds: true, cloudShadows: false, cirrus: true },
+      });
+
+      expect(file.filename).toBe('North_NDVI.csv');
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        '/api/fields/plot-1/exports/index?format=csv&sourceId=sentinel-2-l2a&acquisitionDate=2026-06-01&indexType=NDVI&provider=native&clouds=true&cloudShadows=false&cirrus=true',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(String(fetchMock.mock.calls[1][0])).toContain('/api/fields/plot-1/exports/report.csv?');
+      expect(String(fetchMock.mock.calls[1][0])).toContain('cloudShadows=false');
     });
   });
 });

@@ -1,51 +1,167 @@
 import { useState } from 'react';
-import { Download } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Download, FileArchive, FileDown, FileText, ImageDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useExportFieldIndex, useExportFieldReportCsv } from '@/lib/queries';
+import type { CloudMaskOptions, FieldScene, FileDownload, Plot } from '@/types/api';
 
 interface DownloadMenuProps {
-  hasSelectedField: boolean;
+  selectedPlot: Plot | null;
   selectedDate: string | null;
   displayMode: string;
+  sourceId: string | undefined;
+  indexType: string;
+  cloudMask: CloudMaskOptions;
+  selectedScene: FieldScene | null;
 }
 
-const EXPORTS = [
-  { id: 'index-tiff', label: 'Index GeoTIFF' },
-  { id: 'index-shp', label: 'Index SHP' },
-  { id: 'contours-shp', label: 'Contours SHP' },
-];
+function isIndexMode(mode: string): boolean {
+  return !['RGB', 'FALSE_COLOR', 'FALSE_COLOR_URBAN', 'VV_GRAYSCALE', 'VH_GRAYSCALE'].includes(
+    mode.toUpperCase(),
+  );
+}
 
-export function DownloadMenu({ hasSelectedField, selectedDate, displayMode }: DownloadMenuProps) {
+function downloadFile(file: FileDownload): void {
+  const url = URL.createObjectURL(file.blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function DownloadMenu({
+  selectedPlot,
+  selectedDate,
+  displayMode,
+  sourceId,
+  indexType,
+  cloudMask,
+  selectedScene,
+}: DownloadMenuProps) {
   const [open, setOpen] = useState(false);
-  const disabledReason = !hasSelectedField
+  const [error, setError] = useState<string | null>(null);
+  const indexExport = useExportFieldIndex();
+  const reportExport = useExportFieldReportCsv();
+
+  const disabledReason = !selectedPlot
     ? 'Select a field to download map outputs.'
     : !selectedDate
       ? 'Select a scene date to download map outputs.'
       : null;
+  const fieldId = selectedPlot?.id;
+  const canExportField = Boolean(fieldId && selectedDate && sourceId);
+  const canExportTiff = Boolean(
+    canExportField &&
+      selectedScene &&
+      selectedPlot?.externalFieldId &&
+      isIndexMode(displayMode),
+  );
+  const busy = indexExport.isPending || reportExport.isPending;
+
+  const exportIndex = async (format: 'geotiff' | 'geojson') => {
+    if (!fieldId || !selectedDate || !sourceId) return;
+    setError(null);
+    try {
+      const file = await indexExport.mutateAsync({
+        plotId: fieldId,
+        options: {
+          format,
+          sourceId,
+          acquisitionDate: selectedDate,
+          indexType,
+          provider: format === 'geotiff' ? 'eos' : 'native',
+          sceneToken: selectedScene?.sceneToken,
+          cloudMask,
+        },
+      });
+      downloadFile(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed.');
+    }
+  };
+
+  const exportAnalyticsCsv = async () => {
+    if (!fieldId || !selectedDate || !sourceId) return;
+    setError(null);
+    try {
+      const file = await reportExport.mutateAsync({
+        plotId: fieldId,
+        options: {
+          sourceId,
+          indexType,
+          provider: 'auto',
+          startDate: selectedDate,
+          endDate: selectedDate,
+          cloudMask,
+        },
+      });
+      downloadFile(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed.');
+    }
+  };
 
   return (
     <div className="flex flex-col items-end gap-2" data-testid="download-menu">
       { open && (
-        <div className="glass w-56 rounded-md p-3" data-testid="download-menu-panel">
+        <div className="glass w-60 rounded-md p-3" data-testid="download-menu-panel">
           <p className="mb-2 text-[12px] font-semibold text-foreground">
-            { displayMode } · { selectedDate ?? 'No date' }
+            { indexType } · { selectedDate ?? 'No date' }
           </p>
           <div className="flex flex-col gap-1">
-            { EXPORTS.map((item) => (
-              <button
-                key={ item.id }
-                type="button"
-                disabled
-                className="flex items-center justify-between rounded px-2 py-1.5 text-left text-[12px] text-muted-foreground opacity-70"
-                data-testid={ `download-${item.id}` }
-                title="Available in Phase 6 exports"
-              >
-                { item.label }
-                <span className="text-[10px] uppercase tracking-wide">Phase 6</span>
-              </button>
-            )) }
+            <DownloadButton
+              id="index-tiff"
+              label="Index GeoTIFF"
+              icon={<ImageDown className="size-3.5" />}
+              disabled={ !canExportTiff || busy }
+              reason={
+                canExportTiff
+                  ? undefined
+                  : 'Select a synced field scene and an index layer for GeoTIFF export.'
+              }
+              onClick={ () => void exportIndex('geotiff') }
+            />
+            <DownloadButton
+              id="analytics-csv"
+              label="Analytics CSV"
+              icon={<FileText className="size-3.5" />}
+              disabled={ !canExportField || busy }
+              reason={ disabledReason ?? undefined }
+              onClick={ () => void exportAnalyticsCsv() }
+            />
+            <DownloadButton
+              id="field-geojson"
+              label="Field GeoJSON"
+              icon={<FileDown className="size-3.5" />}
+              disabled={ !canExportField || busy }
+              reason={ disabledReason ?? undefined }
+              onClick={ () => void exportIndex('geojson') }
+            />
+            <DownloadButton
+              id="index-shp"
+              label="Index SHP"
+              icon={<FileArchive className="size-3.5" />}
+              disabled
+              reason="Available after zoning/vector exports."
+            />
+            <DownloadButton
+              id="contours-shp"
+              label="Contours SHP"
+              icon={<FileArchive className="size-3.5" />}
+              disabled
+              reason="Available after zoning/vector exports."
+            />
           </div>
           { disabledReason && (
             <p className="mt-2 text-[11px] leading-4 text-muted-foreground">{ disabledReason }</p>
+          ) }
+          { error && (
+            <p className="mt-2 text-[11px] leading-4 text-destructive" data-testid="download-error">
+              { error }
+            </p>
           ) }
         </div>
       ) }
@@ -63,5 +179,35 @@ export function DownloadMenu({ hasSelectedField, selectedDate, displayMode }: Do
         <Download className="size-5" strokeWidth={ 1.75 } />
       </Button>
     </div>
+  );
+}
+
+interface DownloadButtonProps {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  disabled: boolean;
+  reason?: string;
+  onClick?: () => void;
+}
+
+function DownloadButton({ id, label, icon, disabled, reason, onClick }: DownloadButtonProps) {
+  return (
+    <button
+      type="button"
+      disabled={ disabled }
+      className="flex items-center justify-between rounded px-2 py-1.5 text-left text-[12px] text-foreground/85 transition-colors hover:bg-accent hover:text-accent-foreground disabled:text-muted-foreground disabled:opacity-65"
+      data-testid={ `download-${id}` }
+      title={ disabled ? reason : label }
+      onClick={ onClick }
+    >
+      <span className="flex items-center gap-2">
+        { icon }
+        { label }
+      </span>
+      { disabled && reason && (
+        <span className="max-w-[78px] truncate text-[10px] uppercase tracking-wide">Unavailable</span>
+      ) }
+    </button>
   );
 }

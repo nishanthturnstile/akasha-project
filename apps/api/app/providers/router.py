@@ -13,6 +13,7 @@ _EOS_FEATURES = [
     "scenes",
     "tiles",
     "analytics",
+    "imagery_exports",
     "weather",
     "zoning",
 ]
@@ -42,4 +43,3 @@ def _eos_status_payload() -> ProviderStatus:
 async def get_eos_status() -> ProviderStatus:
     """Return provider readiness without contacting EOS or exposing secrets."""
     return _eos_status_payload()
-

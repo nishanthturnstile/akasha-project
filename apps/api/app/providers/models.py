@@ -89,6 +89,33 @@ class CloudMaskOptions(ProviderModel):
     cirrus: bool = True
 
 
+class CloudMaskMapping(ProviderModel):
+    native_excluded_scl_classes: list[int]
+    eos_cloud_masking_level: int | None = None
+    eos_exact: bool = True
+    warnings: list[str] = []
+
+
+class FieldExportMetadata(ProviderModel):
+    plot_id: str
+    provider: str
+    source_id: str
+    acquisition_date: date | None = None
+    index_type: str | None = None
+    format: str
+    cloud_mask: CloudMaskOptions | None = None
+    cloud_mask_mapping: CloudMaskMapping | None = None
+    warnings: list[str] = []
+
+
+class ExportFile(ProviderModel):
+    provider: str
+    filename: str
+    content: bytes
+    content_type: str
+    metadata: FieldExportMetadata
+
+
 class FieldLayer(ProviderModel):
     display_mode: str
     label: str

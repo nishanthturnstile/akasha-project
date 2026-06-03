@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
+from ..cloud_mask import eos_cloud_masking_level
 from ..models import CloudMaskOptions, SceneMetadata, TileBytes, TileTemplateMetadata
 from .client import EosClient
 
@@ -70,22 +71,10 @@ class EosTileProvider:
         view_id = quote(scene.view_id or scene.scene_id, safe="")
         path = f"/api/render/{view_id}/{quote(bands, safe=',')}/{z}/{x}/{y}"
         params: dict[str, str | int] = {}
-        cloud_level = _cloud_mask_level(cloud_mask)
+        cloud_level, _, _ = eos_cloud_masking_level(cloud_mask)
         if cloud_level is not None:
             params["cloud_masking_level"] = cloud_level
         if mode in _INDEX_MODES:
             params["colormap"] = mode.lower()
         body, content_type = self.client.request_bytes("GET", path, params=params)
         return TileBytes(content=body, content_type=content_type or "image/png")
-
-
-def _cloud_mask_level(mask: CloudMaskOptions) -> int | None:
-    if not mask.clouds and not mask.cirrus and not mask.cloud_shadows:
-        return None
-    if mask.clouds and mask.cirrus and mask.cloud_shadows:
-        return 3
-    if mask.clouds and mask.cirrus:
-        return 4
-    if mask.clouds:
-        return 2
-    return 1

@@ -36,6 +36,7 @@ from starlette.middleware.cors import CORSMiddleware
 from . import skeleton
 from .config import settings
 from .field_analytics import router as field_analytics_router
+from .field_exports import router as field_exports_router
 from .field_monitoring import router as field_monitoring_router
 from .plots import router as plots_router
 from .product import router as product_router
@@ -229,6 +230,9 @@ app.include_router(field_monitoring_router)
 
 # --- Field Analytics API (EOS parity Phase 5) ------------------------------
 app.include_router(field_analytics_router)
+
+# --- Field Exports API (EOS parity Phase 6) --------------------------------
+app.include_router(field_exports_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)

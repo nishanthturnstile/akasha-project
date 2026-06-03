@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from ..cloud_mask import eos_request_params
 from ..models import AnalyticsTrendPoint, CloudMaskOptions, ProviderAsyncRequest
 from .client import EosClient
 
@@ -22,18 +23,20 @@ class EosAnalyticsProvider:
         data_source: str,
         cloud_mask: CloudMaskOptions | None = None,
     ) -> ProviderAsyncRequest:
+        params: dict[str, Any] = {
+            "date_start": date_start.isoformat(),
+            "date_end": date_end.isoformat(),
+            "index": index,
+            "data_source": data_source,
+            "distinct_by_date": True,
+        }
+        if cloud_mask is not None:
+            params.update(eos_request_params(cloud_mask))
+
         response = self.client.request(
             "POST",
             f"/field-analytics/trend/{external_field_id}",
-            json={
-                "params": {
-                    "date_start": date_start.isoformat(),
-                    "date_end": date_end.isoformat(),
-                    "index": index,
-                    "data_source": data_source,
-                    "distinct_by_date": True,
-                }
-            },
+            json={"params": params},
         )
         return ProviderAsyncRequest(
             request_id=str(response.get("request_id", "")),

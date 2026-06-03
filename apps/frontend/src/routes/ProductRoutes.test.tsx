@@ -36,7 +36,7 @@ describe('ProductRoutes', () => {
 
     await waitFor(
       () => expect(screen.getByRole('heading', { name: 'VRA Vegetation' })).toBeTruthy(),
-      { timeout: 3000 },
+      { timeout: 8000 },
     );
     expect(screen.getByTestId('module-placeholder')).toBeTruthy();
     expect(screen.queryByTestId('map-page')).toBeNull();

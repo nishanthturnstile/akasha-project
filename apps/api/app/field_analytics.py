@@ -14,6 +14,7 @@ from . import plots_repo
 from .config import settings
 from .product import _enforce_index_rate_limit
 from .providers.eos.analytics_provider import EosAnalyticsProvider
+from .providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
 from .providers.models import (
     CloudMaskOptions,
     FieldTrendPoint,
@@ -22,7 +23,7 @@ from .providers.models import (
 )
 from .raster import catalog_resolver as catalog
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
-from .raster.indices import DEFAULT_EXCLUDED_SCL_CLASSES, DEFAULT_INDEX, get_index
+from .raster.indices import DEFAULT_INDEX, get_index
 from .raster.models import IndexStatisticsModel, PixelCounts
 from .raster.service import compute_statistics
 
@@ -96,17 +97,6 @@ def _validate_range(date_start: date, date_end: date) -> None:
         )
 
 
-def _excluded_scl_classes(mask: CloudMaskOptions) -> tuple[int, ...]:
-    excluded = set(DEFAULT_EXCLUDED_SCL_CLASSES)
-    if not mask.cloud_shadows:
-        excluded.discard(3)
-    if not mask.clouds:
-        excluded.difference_update({7, 8, 9})
-    if not mask.cirrus:
-        excluded.discard(10)
-    return tuple(sorted(excluded))
-
-
 def _normalize_index(index_type: str | None) -> str:
     return (index_type or DEFAULT_INDEX).strip().upper()
 
@@ -127,7 +117,7 @@ def _field_statistics(
         index_type=index_type,
         max_area_ha=settings.max_polygon_area_ha,
         max_vertices=settings.max_polygon_vertices,
-        excluded_scl_classes=_excluded_scl_classes(cloud_mask),
+        excluded_scl_classes=native_scl_excluded_classes(cloud_mask),
     )
     metadata = dict(computed["metadata"])
     metadata.update(
@@ -135,6 +125,7 @@ def _field_statistics(
             "provider": "native",
             "scope": "field",
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
+            "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
         }
     )
     return FieldStatisticsResponse(
@@ -227,6 +218,7 @@ def _native_trend_response(
             "formula": index_def.formula,
             "bands": list(index_def.required_bands),
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
+            "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
             "rangeLimitDays": MAX_TREND_DAYS,
         },
     )
@@ -284,6 +276,7 @@ def _eos_trend_response(
             "formula": index_def.formula,
             "bands": list(index_def.required_bands),
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
+            "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
             "requestStatus": request.status,
         },
     )

@@ -16,9 +16,11 @@ from app.main import app
 from app.providers.eos.client import EosClient
 from app.providers.eos.analytics_provider import EosAnalyticsProvider
 from app.providers.eos.field_provider import EosFieldProvider
+from app.providers.eos.imagery_provider import EosImageryProvider
 from app.providers.eos.scene_provider import EosSceneProvider
 from app.providers.eos.tile_provider import EosTileProvider
-from app.providers.models import SceneMetadata
+from app.providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
+from app.providers.models import CloudMaskOptions, SceneMetadata
 from app.raster.errors import AkashaError
 from fastapi.testclient import TestClient
 
@@ -246,6 +248,23 @@ def test_tile_provider_returns_same_origin_template_only():
     assert "x-api-key" not in tile.tile_url_template
 
 
+def test_cloud_mask_mapping_exact_and_conservative_cases():
+    all_off = CloudMaskOptions(clouds=False, cloud_shadows=False, cirrus=False)
+    assert native_scl_excluded_classes(all_off) == (0, 1, 2, 11)
+    assert cloud_mask_mapping(all_off).eos_cloud_masking_level is None
+
+    clouds_only = CloudMaskOptions(clouds=True, cloud_shadows=False, cirrus=False)
+    assert native_scl_excluded_classes(clouds_only) == (0, 1, 2, 7, 8, 9, 11)
+    assert cloud_mask_mapping(clouds_only).eos_cloud_masking_level == 2
+    assert cloud_mask_mapping(clouds_only).eos_exact is True
+
+    shadows_only = CloudMaskOptions(clouds=False, cloud_shadows=True, cirrus=False)
+    mapping = cloud_mask_mapping(shadows_only)
+    assert mapping.eos_cloud_masking_level == 3
+    assert mapping.eos_exact is False
+    assert "EOS_CLOUD_MASK_APPROXIMATION" in mapping.warnings
+
+
 def test_analytics_provider_normalizes_trend_points():
     calls: list[dict[str, Any]] = []
 
@@ -277,13 +296,49 @@ def test_analytics_provider_normalizes_trend_points():
         date(2023, 4, 30),
         index="NDVI",
         data_source="S2",
+        cloud_mask=CloudMaskOptions(clouds=True, cloud_shadows=True, cirrus=True),
     )
     points = provider.get_trend_result("9793351", request.request_id, index="NDVI")
 
     assert calls[0]["path"] == "/field-analytics/trend/9793351"
     assert calls[0]["json"]["params"]["distinct_by_date"] is True
+    assert calls[0]["json"]["params"]["exclude_cover_pixels"] is True
+    assert calls[0]["json"]["params"]["cloud_masking_level"] == 3
     assert calls[1]["path"] == "/field-analytics/trend/9793351/trend-1"
     assert points[0].mean == pytest.approx(0.6)
     assert points[0].minimum == pytest.approx(0.1)
     assert points[0].maximum == pytest.approx(0.8)
     assert points[0].cloud_percent == pytest.approx(7)
+
+
+def test_imagery_provider_exports_geotiff_bytes_without_exposing_download_url():
+    calls: list[dict[str, Any]] = []
+
+    class FakeClient:
+        def request(self, method, path, **kwargs):
+            calls.append({"method": method, "path": path, **kwargs})
+            if method == "POST":
+                return {"task_id": "export-1"}
+            return {"status": "done", "result": {"download_url": "/safe-provider-download"}}
+
+        def request_bytes(self, method, path, **kwargs):
+            calls.append({"method": method, "path": path, **kwargs})
+            assert path == "/safe-provider-download"
+            return b"tiff-bytes", "image/tiff"
+
+    provider = EosImageryProvider(client=FakeClient())
+    exported = provider.export_index_geotiff(
+        "9793351",
+        scene_token="opaque-scene",
+        acquisition_date=date(2026, 6, 1),
+        index="NDVI",
+        cloud_mask=CloudMaskOptions(clouds=True, cloud_shadows=True, cirrus=True),
+        filename="north_2026-06-01_NDVI.tiff",
+    )
+
+    assert calls[0]["path"] == "/api/gdw/api"
+    assert calls[0]["json"]["type"] == "bandmath"
+    assert calls[0]["json"]["params"]["cloud_masking_level"] == 3
+    assert exported.content == b"tiff-bytes"
+    assert exported.content_type == "image/tiff"
+    assert "api-connect" not in str(exported.model_dump())

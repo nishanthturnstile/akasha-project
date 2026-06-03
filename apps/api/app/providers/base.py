@@ -6,6 +6,7 @@ from typing import Protocol
 
 from .models import (
     AnalyticsTrendPoint,
+    ExportFile,
     FieldMirrorResult,
     CloudMaskOptions,
     ProviderAsyncRequest,
@@ -86,6 +87,19 @@ class AnalyticsProvider(Protocol):
         *,
         index: str,
     ) -> list[AnalyticsTrendPoint]: ...
+
+
+class ImageryExportProvider(Protocol):
+    def export_index_geotiff(
+        self,
+        external_field_id: str,
+        *,
+        scene_token: str | None,
+        acquisition_date: date,
+        index: str,
+        cloud_mask: CloudMaskOptions,
+        filename: str,
+    ) -> ExportFile: ...
 
 
 class WeatherProvider(Protocol):

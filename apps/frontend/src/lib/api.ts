@@ -2,10 +2,13 @@ import type {
   ApiErrorShape,
   AppConfig,
   DefaultLayer,
+  FieldIndexExportOptions,
+  FieldReportExportOptions,
   FieldSceneListResponse,
   FieldStatisticsRequest,
   FieldStatisticsResponse,
   FieldTrendResponse,
+  FileDownload,
   CloudMaskOptions,
   Plot,
   PlotCreatePayload,
@@ -149,6 +152,37 @@ async function requestBlob(path: string, options: RequestOptions = {}): Promise<
   return new Blob([blob], { type: res.headers.get('Content-Type') ?? 'application/geo+json' });
 }
 
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const quoted = header.match(/filename="([^"]+)"/i);
+  if (quoted?.[1]) return quoted[1];
+  const plain = header.match(/filename=([^;]+)/i);
+  return plain?.[1]?.trim() || fallback;
+}
+
+async function requestDownload(
+  path: string,
+  fallbackFilename: string,
+  options: RequestOptions = {},
+): Promise<FileDownload> {
+  const headers = new Headers(options.headers);
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/octet-stream, text/csv;q=0.9, application/geo+json;q=0.8');
+  }
+
+  const res = await fetchApi(path, { ...options, headers });
+  const blob = await res.blob();
+  return {
+    blob: blob.type
+      ? blob
+      : new Blob([blob], { type: res.headers.get('Content-Type') ?? 'application/octet-stream' }),
+    filename: filenameFromContentDisposition(
+      res.headers.get('Content-Disposition'),
+      fallbackFilename,
+    ),
+  };
+}
+
 export const getConfig = (): Promise<AppConfig> => request<AppConfig>('/api/config');
 
 export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sources');
@@ -235,6 +269,52 @@ export const getFieldTrend = (
   }
   return request<FieldTrendResponse>(
     `/api/fields/${encodeURIComponent(plotId)}/analytics/trend?${params.toString()}`,
+  );
+};
+
+export const exportFieldIndex = (
+  plotId: string,
+  options: FieldIndexExportOptions,
+): Promise<FileDownload> => {
+  const params = new URLSearchParams({
+    format: options.format,
+    sourceId: options.sourceId,
+    acquisitionDate: options.acquisitionDate,
+    indexType: options.indexType,
+  });
+  if (options.provider) params.set('provider', options.provider);
+  if (options.sceneToken) params.set('sceneToken', options.sceneToken);
+  if (options.cloudMask) {
+    params.set('clouds', String(options.cloudMask.clouds));
+    params.set('cloudShadows', String(options.cloudMask.cloudShadows));
+    params.set('cirrus', String(options.cloudMask.cirrus));
+  }
+  const suffix = options.format === 'geotiff' ? 'tiff' : options.format;
+  return requestDownload(
+    `/api/fields/${encodeURIComponent(plotId)}/exports/index?${params.toString()}`,
+    `field_${options.acquisitionDate}_${options.indexType}.${suffix}`,
+  );
+};
+
+export const exportFieldReportCsv = (
+  plotId: string,
+  options: FieldReportExportOptions,
+): Promise<FileDownload> => {
+  const params = new URLSearchParams({
+    sourceId: options.sourceId,
+    indexType: options.indexType,
+  });
+  if (options.provider) params.set('provider', options.provider);
+  if (options.startDate) params.set('startDate', options.startDate);
+  if (options.endDate) params.set('endDate', options.endDate);
+  if (options.cloudMask) {
+    params.set('clouds', String(options.cloudMask.clouds));
+    params.set('cloudShadows', String(options.cloudMask.cloudShadows));
+    params.set('cirrus', String(options.cloudMask.cirrus));
+  }
+  return requestDownload(
+    `/api/fields/${encodeURIComponent(plotId)}/exports/report.csv?${params.toString()}`,
+    `field_${options.indexType}_analytics.csv`,
   );
 };
 

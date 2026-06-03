@@ -84,6 +84,13 @@ export interface CloudMaskOptions {
   cirrus: boolean;
 }
 
+export interface CloudMaskMapping {
+  nativeExcludedSclClasses: number[];
+  eosCloudMaskingLevel?: number | null;
+  eosExact: boolean;
+  warnings: string[];
+}
+
 export type GeoJsonPosition = [number, number] | [number, number, number];
 
 export interface GeoJsonPolygonGeometry {
@@ -249,6 +256,7 @@ export interface FieldStatisticsResponse {
     bands?: string[];
     cloudMask?: string;
     cloudMaskOptions?: CloudMaskOptions;
+    cloudMaskMapping?: CloudMaskMapping;
     reflectanceCorrection?: string;
     itemId?: string | null;
     areaHa?: number | null;
@@ -288,10 +296,37 @@ export interface FieldTrendResponse {
     formula?: string;
     bands?: string[];
     cloudMaskOptions?: CloudMaskOptions;
+    cloudMaskMapping?: CloudMaskMapping;
     requestStatus?: string;
     rangeLimitDays?: number;
     [key: string]: unknown;
   };
+}
+
+export type FieldIndexExportFormat = 'geotiff' | 'geojson' | 'csv' | 'shp';
+
+export interface FieldIndexExportOptions {
+  format: FieldIndexExportFormat;
+  sourceId: string;
+  acquisitionDate: string;
+  indexType: string;
+  provider?: 'auto' | 'eos' | 'native';
+  sceneToken?: string | null;
+  cloudMask?: CloudMaskOptions;
+}
+
+export interface FieldReportExportOptions {
+  sourceId: string;
+  indexType: string;
+  provider?: 'auto' | 'eos' | 'native';
+  startDate?: string;
+  endDate?: string;
+  cloudMask?: CloudMaskOptions;
+}
+
+export interface FileDownload {
+  blob: Blob;
+  filename: string;
 }
 
 /** Standard BFF error envelope: { error: { code, message, details } }. */

@@ -84,10 +84,18 @@ const FALSE_COLOR_RAMP: RampSpec = {
     caption: 'Band-substituted composite',
 };
 
+const GENERIC_INDEX_RAMP: RampSpec = {
+    title: 'Index',
+    gradient:
+        'linear-gradient(90deg,#7b4b25 0%,#c7943e 30%,#e7dc79 55%,#6ead59 78%,#1f6b3a 100%)',
+    ticks: ['Low', 'Mid', 'High'],
+    caption: 'Low ▸ high index value',
+};
+
 /**
  * Resolve the legend ramp for a render mode. True-colour (`RGB`) has no legend
- * (natural imagery needs none); unknown index modes fall back to the NDVI ramp
- * so a colour key is always shown for non-RGB optical renders.
+ * (natural imagery needs none); unknown optical index modes use a generic ramp
+ * so the UI does not imply an NDVI formula for arbitrary provider labels.
  */
 function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null {
     const mode = displayMode.toUpperCase();
@@ -115,7 +123,7 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
     }
     if (mode.startsWith('FALSE_COLOR')) return FALSE_COLOR_RAMP;
     if (sourceKind === 'sar') return SAR_RAMP;
-    return NDVI_RAMP;
+    return GENERIC_INDEX_RAMP;
 }
 
 /**

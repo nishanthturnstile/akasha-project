@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createPlot,
   deletePlot,
+  exportFieldIndex,
+  exportFieldReportCsv,
   getFieldScenes,
   getFieldStatistics,
   getFieldTrend,
@@ -14,8 +16,12 @@ import {
   syncFieldProvider,
   updatePlot,
 } from '@/lib/api';
-import type { PlotUpdatePayload } from '@/types/api';
-import type { CloudMaskOptions } from '@/types/api';
+import type {
+  CloudMaskOptions,
+  FieldIndexExportOptions,
+  FieldReportExportOptions,
+  PlotUpdatePayload,
+} from '@/types/api';
 
 export const queryKeys = {
   config: ['config'] as const,
@@ -73,6 +79,16 @@ interface UpdatePlotVariables {
 
 interface DeletePlotOptions {
   onDeleted?: (plotId: string) => void;
+}
+
+interface FieldIndexExportVariables {
+  plotId: string;
+  options: FieldIndexExportOptions;
+}
+
+interface FieldReportExportVariables {
+  plotId: string;
+  options: FieldReportExportOptions;
 }
 
 export function useConfig() {
@@ -224,5 +240,19 @@ export function useSyncFieldProvider() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.plots });
       void queryClient.invalidateQueries({ queryKey: ['fields', plotId, 'scenes'] });
     },
+  });
+}
+
+export function useExportFieldIndex() {
+  return useMutation({
+    mutationFn: ({ plotId, options }: FieldIndexExportVariables) =>
+      exportFieldIndex(plotId, options),
+  });
+}
+
+export function useExportFieldReportCsv() {
+  return useMutation({
+    mutationFn: ({ plotId, options }: FieldReportExportVariables) =>
+      exportFieldReportCsv(plotId, options),
   });
 }

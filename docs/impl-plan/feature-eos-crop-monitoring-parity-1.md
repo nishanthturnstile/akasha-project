@@ -188,13 +188,13 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-057 | Define `CloudMaskOptions` in backend and frontend DTOs with booleans for `clouds`, `cloudShadows`, `cirrus`, and a provider/native mapping field. Depends on: TASK-044. | | |
-| TASK-058 | Map `CloudMaskOptions` to EOS `cloud_masking_level` conservatively for statistics and imagery requests. Document exact mapping in provider code comments and tests. Depends on: TASK-057, TASK-021. | | |
-| TASK-059 | Add `GET /api/fields/{plot_id}/exports/index` supporting export type `geotiff`, `geojson`, `shp`, and `csv` where available. It must call EOS imagery/zoning/export APIs or native Akasha exporters and return a file response. Depends on: TASK-039, TASK-049. | | |
-| TASK-060 | Add `GET /api/fields/{plot_id}/exports/report.csv` for basic selected-field analytics export. Depends on: TASK-050. | | |
-| TASK-061 | Update frontend legend behavior so RGB hides index ramps, index layers show matching color ramp/thresholds, and EOS-backed index layers can use EOS-compatible labels. Depends on: TASK-043. | | |
-| TASK-062 | Implement download menu actions for `NDVI.tiff`, `NDVI.shp`, `Contours.shp`, and analytics CSV where available. Depends on: TASK-059, TASK-060. | | |
-| TASK-063 | Add backend and frontend tests for cloud mask option mapping and export download actions. Depends on: TASK-058, TASK-059, TASK-062. | | |
+| TASK-057 | Define `CloudMaskOptions` in backend and frontend DTOs with booleans for `clouds`, `cloudShadows`, `cirrus`, and a provider/native mapping field. Depends on: TASK-044. | ✅ | 2026-06-03 |
+| TASK-058 | Map `CloudMaskOptions` to EOS `cloud_masking_level` conservatively for statistics and imagery requests. Document exact mapping in provider code comments and tests. Depends on: TASK-057, TASK-021. | ✅ | 2026-06-03 |
+| TASK-059 | Add `GET /api/fields/{plot_id}/exports/index` supporting export type `geotiff`, `geojson`, `shp`, and `csv` where available. It must call EOS imagery/zoning/export APIs or native Akasha exporters and return a file response. Depends on: TASK-039, TASK-049. | ✅ | 2026-06-03 |
+| TASK-060 | Add `GET /api/fields/{plot_id}/exports/report.csv` for basic selected-field analytics export. Depends on: TASK-050. | ✅ | 2026-06-03 |
+| TASK-061 | Update frontend legend behavior so RGB hides index ramps, index layers show matching color ramp/thresholds, and EOS-backed index layers can use EOS-compatible labels. Depends on: TASK-043. | ✅ | 2026-06-03 |
+| TASK-062 | Implement download menu actions for `NDVI.tiff`, `NDVI.shp`, `Contours.shp`, and analytics CSV where available. Depends on: TASK-059, TASK-060. | ✅ | 2026-06-03 |
+| TASK-063 | Add backend and frontend tests for cloud mask option mapping and export download actions. Depends on: TASK-058, TASK-059, TASK-062. | ✅ | 2026-06-03 |
 
 ### Implementation Phase 7 — Weather Analytics and Forecast
 

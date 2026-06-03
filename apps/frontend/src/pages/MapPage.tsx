@@ -489,6 +489,9 @@ export default function MapPage() {
   const analyticsSupportedIndices = fieldSceneMode
     ? fieldDisplayModes.filter((mode) => !['RGB', 'FALSE_COLOR'].includes(mode))
     : sourceSupportedIndices;
+  const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
+    ? selectedDisplayMode
+    : analyticsSupportedIndices[0] ?? config.defaultIndex ?? 'NDVI';
   const showIndexPanel =
     fieldSceneMode || (selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0);
 
@@ -674,9 +677,13 @@ export default function MapPage() {
           disabled={ !fieldSceneMode }
         />
         <DownloadMenu
-          hasSelectedField={ Boolean(selectedPlot) }
+          selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
           displayMode={ selectedDisplayMode }
+          sourceId={ fieldSceneMode ? fieldScenesQ.data?.sourceId : effectiveSourceId }
+          indexType={ exportIndexType }
+          cloudMask={ cloudMask }
+          selectedScene={ selectedFieldScene }
         />
         <MapControls
           map={ map }

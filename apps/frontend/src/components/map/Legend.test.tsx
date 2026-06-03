@@ -24,7 +24,15 @@ describe('Legend', () => {
 
     it('falls back to an index ramp for unknown non-RGB optical modes', () => {
         const { getByTestId } = render(<Legend displayMode="SOMETHING_ELSE" sourceKind="optical" />);
-        expect(getByTestId('map-legend')).toBeTruthy();
+        expect(getByTestId('map-legend').textContent).toContain('Index');
+        expect(getByTestId('map-legend').textContent).not.toContain('NDVI');
+    });
+
+    it('renders MSAVI and RECI-specific ramps', () => {
+        const { getByText, rerender } = render(<Legend displayMode="MSAVI" sourceKind="optical" />);
+        expect(getByText('MSAVI · adjusted vigour')).toBeTruthy();
+        rerender(<Legend displayMode="RECI" sourceKind="optical" />);
+        expect(getByText('RECI · chlorophyll')).toBeTruthy();
     });
 
     it('shows a false-colour key for FALSE_COLOR modes', () => {

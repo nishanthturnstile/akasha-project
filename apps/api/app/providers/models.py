@@ -147,6 +147,35 @@ class AnalyticsTrendPoint(ProviderModel):
     cloud_percent: float | None = None
 
 
+class FieldTrendPoint(ProviderModel):
+    acquisition_date: date
+    scene_id: str | None = None
+    view_id: str | None = None
+    mean: float | None = None
+    min: float | None = None
+    max: float | None = None
+    stddev: float | None = None
+    valid_pixel_percent: float | None = None
+    cloud_masked_percent: float | None = None
+    coverage_percent: float | None = None
+    cloud_percent: float | None = None
+    metrics_provisional: bool = False
+    unavailable_reason: str | None = None
+
+
+class FieldTrendResponse(ProviderModel):
+    plot_id: str
+    provider: str
+    scope: Literal["field", "native_fallback"]
+    source_id: str
+    index_type: str
+    start_date: date
+    end_date: date
+    points: list[FieldTrendPoint]
+    fallback_reason: str | None = None
+    metadata: dict[str, Any] = {}
+
+
 class WeatherRecord(ProviderModel):
     record_date: date | None = Field(default=None, alias="date")
     start_time: DateTime | None = None

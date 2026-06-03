@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from ..models import AnalyticsTrendPoint, ProviderAsyncRequest
+from ..models import AnalyticsTrendPoint, CloudMaskOptions, ProviderAsyncRequest
 from .client import EosClient
 
 
@@ -20,6 +20,7 @@ class EosAnalyticsProvider:
         *,
         index: str,
         data_source: str,
+        cloud_mask: CloudMaskOptions | None = None,
     ) -> ProviderAsyncRequest:
         response = self.client.request(
             "POST",
@@ -30,6 +31,7 @@ class EosAnalyticsProvider:
                     "date_end": date_end.isoformat(),
                     "index": index,
                     "data_source": data_source,
+                    "distinct_by_date": True,
                 }
             },
         )
@@ -74,4 +76,3 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-

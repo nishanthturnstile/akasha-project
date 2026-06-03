@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import MapPage from '@/pages/MapPage';
 import { MapViewProvider, type MapViewState } from '@/state/mapViewContext';
-import type { FieldSceneListResponse, Plot, SceneDate } from '@/types/api';
+import type {
+  FieldSceneListResponse,
+  FieldStatisticsResponse,
+  FieldTrendResponse,
+  Plot,
+  SceneDate,
+} from '@/types/api';
 
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: ({
@@ -161,6 +167,81 @@ function makeFieldScenes(overrides: Partial<FieldSceneListResponse> = {}): Field
   };
 }
 
+function makeFieldStatistics(overrides: Partial<FieldStatisticsResponse> = {}): FieldStatisticsResponse {
+  return {
+    plotId: 'plot-1',
+    provider: 'native',
+    scope: 'field',
+    indexType: 'NDVI',
+    sourceId: 'sentinel-2-l2a',
+    acquisitionDate: '2026-06-01',
+    cloudMask: { clouds: true, cloudShadows: true, cirrus: true },
+    statistics: {
+      min: 0.1,
+      max: 0.8,
+      mean: 0.56,
+      stddev: 0.12,
+      validPixelPercent: 91,
+      cloudMaskedPercent: 6,
+      coveragePercent: 97,
+    },
+    pixelCounts: {
+      totalPixels: 100,
+      nodataPixels: 3,
+      coveragePixels: 97,
+      sclExcludedPixels: 6,
+      validPixels: 91,
+    },
+    metadata: {
+      formula: '(B08 - B04) / (B08 + B04)',
+      bands: ['B08', 'B04'],
+      warnings: [],
+    },
+    ...overrides,
+  };
+}
+
+function makeFieldTrend(overrides: Partial<FieldTrendResponse> = {}): FieldTrendResponse {
+  return {
+    plotId: 'plot-1',
+    provider: 'native',
+    scope: 'native_fallback',
+    sourceId: 'sentinel-2-l2a',
+    indexType: 'NDVI',
+    startDate: '2025-12-03',
+    endDate: '2026-06-01',
+    points: [
+      {
+        acquisitionDate: '2026-05-20',
+        mean: 0.5,
+        min: 0.1,
+        max: 0.75,
+        stddev: 0.1,
+        validPixelPercent: 88,
+        cloudMaskedPercent: 12,
+        coveragePercent: 100,
+        metricsProvisional: false,
+      },
+      {
+        acquisitionDate: '2026-06-01',
+        mean: 0.56,
+        min: 0.1,
+        max: 0.8,
+        stddev: 0.12,
+        validPixelPercent: 91,
+        cloudMaskedPercent: 6,
+        coveragePercent: 97,
+        metricsProvisional: false,
+      },
+    ],
+    metadata: {
+      formula: '(B08 - B04) / (B08 + B04)',
+      bands: ['B08', 'B04'],
+    },
+    ...overrides,
+  };
+}
+
 class ResizeObserverMock {
   observe() {}
   unobserve() {}
@@ -183,16 +264,20 @@ function stubAkashaFetch({
   ],
   plots = [],
   fieldScenes,
+  fieldStatistics = makeFieldStatistics(),
+  fieldTrend = makeFieldTrend(),
 }: {
   sentinel2Dates?: SceneDate[];
   sentinel1Dates?: SceneDate[];
   plots?: Plot[];
   fieldScenes?: FieldSceneListResponse;
+  fieldStatistics?: FieldStatisticsResponse;
+  fieldTrend?: FieldTrendResponse;
 } = {}) {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   vi.stubGlobal(
     'fetch',
-    vi.fn((input: RequestInfo | URL) => {
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
 
       if (path === '/api/config') {
@@ -281,6 +366,20 @@ function stubAkashaFetch({
         );
       }
 
+      if (path === '/api/fields/plot-1/indices/statistics') {
+        const requestBody = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+        return Promise.resolve(
+          jsonResponse({
+            ...fieldStatistics,
+            indexType: requestBody.indexType ?? fieldStatistics.indexType,
+          }),
+        );
+      }
+
+      if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+        return Promise.resolve(jsonResponse(fieldTrend));
+      }
+
       if (path === '/api/fields/plot-1/providers/eos/sync') {
         return Promise.resolve(
           jsonResponse({
@@ -313,6 +412,17 @@ function stubAkashaFetch({
 }
 
 describe('MapPage Sentinel-1 source behavior', () => {
+  it('shows the field-required analytics state before a field is selected', async () => {
+    stubAkashaFetch();
+
+    renderMapPage();
+
+    await screen.findByTestId('index-panel');
+    expect(
+      screen.getByText('Select a field to view cloud-masked statistics and trend analytics.'),
+    ).toBeTruthy();
+  });
+
   it('shows SAR notes and hides optical index controls after Sentinel-1 selection', async () => {
     stubAkashaFetch();
 
@@ -414,6 +524,9 @@ describe('MapPage field-aware scene behavior', () => {
     });
     expect(screen.getByTestId('timeline-bar').textContent).toContain('Jun');
     expect(screen.queryByTestId('map-legend')).toBeNull();
+    expect((await screen.findAllByText('0.56')).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('field-trend-chart')).toBeTruthy();
+    expect(screen.getByText('Akasha masked-raster fallback')).toBeTruthy();
   });
 
   it('switches field display modes and applies cloud mask query params', async () => {
@@ -435,6 +548,37 @@ describe('MapPage field-aware scene behavior', () => {
       );
     });
     expect(screen.getByTestId('map-legend').getAttribute('data-display-mode')).toBe('NDVI');
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      const trendRequest = calls
+        .map(([input]) => String(input))
+        .find((path) => path.includes('/api/fields/plot-1/analytics/trend') && path.includes('cloudShadows=false'));
+      expect(trendRequest).toBeTruthy();
+    });
+  });
+
+  it('switches analytics indices and refetches selected-field statistics', async () => {
+    stubAkashaFetch({
+      plots: [FIELD_PLOT],
+      fieldScenes: makeFieldScenes({ displayModes: ['RGB', 'NDVI', 'MSAVI'] }),
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    fireEvent.click(await screen.findByTestId('analytics-index-MSAVI'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      const statsCall = calls
+        .filter(([input]) => String(input) === '/api/fields/plot-1/indices/statistics')
+        .map(([, init]) => (typeof init?.body === 'string' ? init.body : ''))
+        .find((body) => body.includes('"indexType":"MSAVI"'));
+      expect(statsCall).toBeTruthy();
+    });
   });
 
   it('shows sync and download affordances for an unsynced selected field without replacing global imagery', async () => {

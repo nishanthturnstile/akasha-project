@@ -3,6 +3,8 @@ import {
   createPlot,
   deletePlot,
   getFieldScenes,
+  getFieldStatistics,
+  getFieldTrend,
   getConfig,
   getDates,
   getDefaultLayer,
@@ -13,6 +15,7 @@ import {
   updatePlot,
 } from '@/lib/api';
 import type { PlotUpdatePayload } from '@/types/api';
+import type { CloudMaskOptions } from '@/types/api';
 
 export const queryKeys = {
   config: ['config'] as const,
@@ -21,6 +24,46 @@ export const queryKeys = {
   defaultLayer: ['layers', 'default'] as const,
   plots: ['plots'] as const,
   fieldScenes: (plotId: string, provider = 'auto') => ['fields', plotId, 'scenes', provider] as const,
+  fieldStatistics: (
+    plotId: string,
+    sourceId: string,
+    acquisitionDate: string | null | undefined,
+    indexType: string,
+    cloudMask: CloudMaskOptions,
+  ) =>
+    [
+      'fields',
+      plotId,
+      'statistics',
+      sourceId,
+      acquisitionDate ?? 'latest',
+      indexType,
+      cloudMask.clouds,
+      cloudMask.cloudShadows,
+      cloudMask.cirrus,
+    ] as const,
+  fieldTrend: (
+    plotId: string,
+    sourceId: string,
+    indexType: string,
+    startDate: string | undefined,
+    endDate: string | undefined,
+    provider: string,
+    cloudMask: CloudMaskOptions,
+  ) =>
+    [
+      'fields',
+      plotId,
+      'trend',
+      sourceId,
+      indexType,
+      startDate ?? 'default-start',
+      endDate ?? 'default-end',
+      provider,
+      cloudMask.clouds,
+      cloudMask.cloudShadows,
+      cloudMask.cirrus,
+    ] as const,
 };
 
 interface UpdatePlotVariables {
@@ -100,6 +143,75 @@ export function useFieldScenes(plotId: string | null | undefined, provider: 'aut
     queryKey: plotId ? queryKeys.fieldScenes(plotId, provider) : (['fields', 'none', 'scenes', provider] as const),
     queryFn: () => getFieldScenes(plotId as string, { provider }),
     enabled: Boolean(plotId),
+  });
+}
+
+export function useFieldStatistics(
+  plotId: string | null | undefined,
+  options: {
+    sourceId: string | undefined;
+    acquisitionDate: string | null | undefined;
+    indexType: string;
+    cloudMask: CloudMaskOptions;
+  },
+) {
+  return useQuery({
+    queryKey:
+      plotId && options.sourceId
+        ? queryKeys.fieldStatistics(
+            plotId,
+            options.sourceId,
+            options.acquisitionDate,
+            options.indexType,
+            options.cloudMask,
+          )
+        : (['fields', 'none', 'statistics'] as const),
+    queryFn: () =>
+      getFieldStatistics(plotId as string, {
+        sourceId: options.sourceId as string,
+        acquisitionDate: options.acquisitionDate,
+        indexType: options.indexType,
+        cloudMask: options.cloudMask,
+      }),
+    enabled: Boolean(plotId && options.sourceId && options.acquisitionDate),
+  });
+}
+
+export function useFieldTrend(
+  plotId: string | null | undefined,
+  options: {
+    sourceId: string | undefined;
+    indexType: string;
+    startDate?: string;
+    endDate?: string;
+    provider?: 'auto' | 'eos' | 'native';
+    cloudMask: CloudMaskOptions;
+  },
+) {
+  const provider = options.provider ?? 'auto';
+  return useQuery({
+    queryKey:
+      plotId && options.sourceId
+        ? queryKeys.fieldTrend(
+            plotId,
+            options.sourceId,
+            options.indexType,
+            options.startDate,
+            options.endDate,
+            provider,
+            options.cloudMask,
+          )
+        : (['fields', 'none', 'trend'] as const),
+    queryFn: () =>
+      getFieldTrend(plotId as string, {
+        sourceId: options.sourceId,
+        indexType: options.indexType,
+        startDate: options.startDate,
+        endDate: options.endDate,
+        provider,
+        cloudMask: options.cloudMask,
+      }),
+    enabled: Boolean(plotId && options.sourceId),
   });
 }
 

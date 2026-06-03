@@ -486,6 +486,9 @@ export default function MapPage() {
   const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
   const basemapCredit = basemapAttribution(configQ.data);
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
+  const analyticsSupportedIndices = fieldSceneMode
+    ? fieldDisplayModes.filter((mode) => !['RGB', 'FALSE_COLOR'].includes(mode))
+    : sourceSupportedIndices;
   const showIndexPanel =
     fieldSceneMode || (selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0);
 
@@ -633,7 +636,17 @@ export default function MapPage() {
           displayMode={ selectedDisplayMode }
           onDisplayModeChange={ view.setDisplayMode }
         />
-        { showIndexPanel && <IndexPanel /> }
+        { showIndexPanel && (
+          <IndexPanel
+            selectedPlot={ selectedPlot }
+            selectedDate={ selectedDate }
+            sourceId={ fieldSceneMode ? fieldScenesQ.data?.sourceId : effectiveSourceId }
+            displayMode={ selectedDisplayMode }
+            supportedIndices={ analyticsSupportedIndices }
+            cloudMask={ cloudMask }
+            selectedScene={ selectedFieldScene }
+          />
+        ) }
       </div>
 
       {/* Right: coordinate readout + map controls (lifted above the timeline) */ }

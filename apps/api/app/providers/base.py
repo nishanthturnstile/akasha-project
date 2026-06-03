@@ -76,6 +76,7 @@ class AnalyticsProvider(Protocol):
         *,
         index: str,
         data_source: str,
+        cloud_mask: CloudMaskOptions | None = None,
     ) -> ProviderAsyncRequest: ...
 
     def get_trend_result(

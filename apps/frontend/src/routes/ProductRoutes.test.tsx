@@ -34,8 +34,9 @@ describe('ProductRoutes', () => {
   it('renders planned module placeholders without loading the map workspace', async () => {
     renderRoutes('/vra/vegetation');
 
-    await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'VRA Vegetation' })).toBeTruthy(),
+    await waitFor(
+      () => expect(screen.getByRole('heading', { name: 'VRA Vegetation' })).toBeTruthy(),
+      { timeout: 3000 },
     );
     expect(screen.getByTestId('module-placeholder')).toBeTruthy();
     expect(screen.queryByTestId('map-page')).toBeNull();

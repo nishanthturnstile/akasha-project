@@ -209,6 +209,91 @@ export interface FieldSceneListResponse {
   fallbackReason?: string | null;
 }
 
+export interface IndexStatistics {
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  stddev: number | null;
+  validPixelPercent: number;
+  cloudMaskedPercent: number;
+  coveragePercent: number;
+}
+
+export interface PixelCounts {
+  totalPixels: number;
+  nodataPixels: number;
+  coveragePixels: number;
+  sclExcludedPixels: number;
+  validPixels: number;
+}
+
+export interface FieldStatisticsRequest {
+  sourceId: string;
+  acquisitionDate?: string | null;
+  indexType: string;
+  cloudMask?: CloudMaskOptions;
+}
+
+export interface FieldStatisticsResponse {
+  plotId: string;
+  provider: 'native';
+  scope: 'field';
+  indexType: string;
+  sourceId: string;
+  acquisitionDate: string;
+  cloudMask: CloudMaskOptions;
+  statistics: IndexStatistics;
+  pixelCounts: PixelCounts;
+  metadata: {
+    formula?: string;
+    bands?: string[];
+    cloudMask?: string;
+    cloudMaskOptions?: CloudMaskOptions;
+    reflectanceCorrection?: string;
+    itemId?: string | null;
+    areaHa?: number | null;
+    vertices?: number | null;
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface FieldTrendPoint {
+  acquisitionDate: string;
+  sceneId?: string | null;
+  viewId?: string | null;
+  mean: number | null;
+  min: number | null;
+  max: number | null;
+  stddev: number | null;
+  validPixelPercent?: number | null;
+  cloudMaskedPercent?: number | null;
+  coveragePercent?: number | null;
+  cloudPercent?: number | null;
+  metricsProvisional: boolean;
+  unavailableReason?: string | null;
+}
+
+export interface FieldTrendResponse {
+  plotId: string;
+  provider: string;
+  scope: 'field' | 'native_fallback';
+  sourceId: string;
+  indexType: string;
+  startDate: string;
+  endDate: string;
+  points: FieldTrendPoint[];
+  fallbackReason?: string | null;
+  metadata: {
+    formula?: string;
+    bands?: string[];
+    cloudMaskOptions?: CloudMaskOptions;
+    requestStatus?: string;
+    rangeLimitDays?: number;
+    [key: string]: unknown;
+  };
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

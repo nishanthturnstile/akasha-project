@@ -1,11 +1,7 @@
 """Supported vegetation/water index registry + STAC band-position mapping.
 
-All Akasha Wave 1 indices are normalized-difference indices of the form:
-
-    index = (band_a - band_b) / (band_a + band_b)
-
-where band_a / band_b are reflectance-corrected reflectances. The frozen
-analytic band order (data-ingestion-and-satellite-rules.md) is:
+Akasha keeps index definitions centralized here so routes and UI never hard-code
+band formulas. The frozen analytic band order (data-ingestion-and-satellite-rules.md) is:
 
     pos: 1    2    3    4    5    6    7    8    9
     band:B04  B08  B05  B06  B07  B11  B12  B03  B02
@@ -17,6 +13,7 @@ hard-coded outside this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 # Frozen Wave 1 analytic band order (source of truth mirrored from STAC eo:bands).
 FROZEN_ANALYTIC_BANDS: list[str] = [
@@ -46,28 +43,43 @@ DEFAULT_OFFSET: float = -0.1
 
 @dataclass(frozen=True)
 class IndexDef:
-    """Normalized-difference index = (band_a - band_b) / (band_a + band_b)."""
+    """Formula and band requirements for one supported index."""
 
     id: str
     label: str
+    formula_kind: Literal["normalized_difference", "msavi", "reci"]
     band_a: str
-    band_b: str
+    band_b: str | None = None
 
     @property
     def formula(self) -> str:
+        if self.formula_kind == "msavi":
+            return "(2 * B08 + 1 - sqrt((2 * B08 + 1)^2 - 8 * (B08 - B04))) / 2"
+        if self.formula_kind == "reci":
+            return "(B08 / B05) - 1"
+        if self.band_b is None:  # pragma: no cover - registry guard
+            raise ValueError(f"{self.id} requires band_b")
         return f"({self.band_a} - {self.band_b}) / ({self.band_a} + {self.band_b})"
 
     @property
-    def required_bands(self) -> tuple[str, str]:
-        return (self.band_a, self.band_b)
+    def required_bands(self) -> tuple[str, ...]:
+        return (self.band_a,) if self.band_b is None else (self.band_a, self.band_b)
 
 
 # Supported indices (data-ingestion-and-satellite-rules.md § Supported index formulas).
 INDEX_REGISTRY: dict[str, IndexDef] = {
-    "NDVI": IndexDef("NDVI", "NDVI", "B08", "B04"),
-    "NDRE": IndexDef("NDRE", "NDRE", "B08", "B05"),
-    "NDMI": IndexDef("NDMI", "NDMI (vegetation moisture)", "B08", "B11"),
-    "NDWI_GREEN_NIR": IndexDef("NDWI_GREEN_NIR", "Water NDWI (McFeeters)", "B03", "B08"),
+    "NDVI": IndexDef("NDVI", "NDVI", "normalized_difference", "B08", "B04"),
+    "NDRE": IndexDef("NDRE", "NDRE", "normalized_difference", "B08", "B05"),
+    "NDMI": IndexDef("NDMI", "NDMI (vegetation moisture)", "normalized_difference", "B08", "B11"),
+    "NDWI_GREEN_NIR": IndexDef(
+        "NDWI_GREEN_NIR",
+        "Water NDWI (McFeeters)",
+        "normalized_difference",
+        "B03",
+        "B08",
+    ),
+    "MSAVI": IndexDef("MSAVI", "MSAVI", "msavi", "B08", "B04"),
+    "RECI": IndexDef("RECI", "RECI", "reci", "B08", "B05"),
 }
 
 SUPPORTED_INDICES: list[str] = list(INDEX_REGISTRY.keys())

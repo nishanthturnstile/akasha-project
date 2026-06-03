@@ -14,6 +14,7 @@ from app import plots_repo
 from app.config import settings
 from app.main import app
 from app.providers.eos.client import EosClient
+from app.providers.eos.analytics_provider import EosAnalyticsProvider
 from app.providers.eos.field_provider import EosFieldProvider
 from app.providers.eos.scene_provider import EosSceneProvider
 from app.providers.eos.tile_provider import EosTileProvider
@@ -243,3 +244,46 @@ def test_tile_provider_returns_same_origin_template_only():
     assert "api-connect.eos.com" not in tile.tile_url_template
     assert "api_key" not in tile.tile_url_template
     assert "x-api-key" not in tile.tile_url_template
+
+
+def test_analytics_provider_normalizes_trend_points():
+    calls: list[dict[str, Any]] = []
+
+    class FakeClient:
+        def request(self, method, path, **kwargs):
+            calls.append({"method": method, "path": path, **kwargs})
+            if method == "POST":
+                return {"status": "created", "request_id": "trend-1"}
+            return {
+                "status": "success",
+                "result": [
+                    {
+                        "scene_id": "S2B_tile_20230420_13REL_0",
+                        "view_id": "S2/13/R/EL/2023/4/20/0",
+                        "date": "2023-04-20",
+                        "cloud": 7,
+                        "min": 0.1,
+                        "max": 0.8,
+                        "average": 0.6,
+                        "std": 0.12,
+                    }
+                ],
+            }
+
+    provider = EosAnalyticsProvider(client=FakeClient())
+    request = provider.create_trend_request(
+        "9793351",
+        date(2023, 4, 1),
+        date(2023, 4, 30),
+        index="NDVI",
+        data_source="S2",
+    )
+    points = provider.get_trend_result("9793351", request.request_id, index="NDVI")
+
+    assert calls[0]["path"] == "/field-analytics/trend/9793351"
+    assert calls[0]["json"]["params"]["distinct_by_date"] is True
+    assert calls[1]["path"] == "/field-analytics/trend/9793351/trend-1"
+    assert points[0].mean == pytest.approx(0.6)
+    assert points[0].minimum == pytest.approx(0.1)
+    assert points[0].maximum == pytest.approx(0.8)
+    assert points[0].cloud_percent == pytest.approx(7)

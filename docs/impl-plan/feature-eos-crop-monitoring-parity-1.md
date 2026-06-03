@@ -170,15 +170,17 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-048 | Extend `apps/api/app/raster/indices.py` to support MSAVI and RECI for native calculations where band metadata permits. Preserve existing NDVI, NDRE, NDMI, and NDWI_GREEN_NIR behavior. Depends on: TASK-002. | | |
-| TASK-049 | Add `POST /api/fields/{plot_id}/indices/statistics` that can compute statistics for the selected field geometry and selected source/date/index without requiring the frontend to send geometry manually. Depends on: TASK-014, TASK-048. | | |
-| TASK-050 | Add `GET /api/fields/{plot_id}/analytics/trend` with query params `indexType`, `startDate`, `endDate`, `provider`, and `cloudMask`. It must use EOS analytics provider during trial and return normalized trend points. Depends on: TASK-025, TASK-037. | | |
-| TASK-051 | Add backend tests for field statistics route, invalid index handling, missing field handling, and trend normalization from mocked EOS responses. Depends on: TASK-049, TASK-050. | | |
-| TASK-052 | Choose and add a chart dependency in `apps/frontend/package.json`. The selected dependency must support accessible line charts, tooltips, responsive layout, and deterministic tests. Depends on: TASK-050. | | |
-| TASK-053 | Replace `apps/frontend/src/components/scaffold/IndexPanel.tsx` with a real `FieldAnalyticsPanel` that displays selected index, latest statistics, valid/cloud/coverage percentages, trend chart, loading/error/empty states, and provider metadata. Depends on: TASK-052, TASK-049, TASK-050. | | |
-| TASK-054 | Add analytics tabs or sections for Crop info, Chart, Activities, Crop rotation, Growth stages, Current risks, and NDVI value split. Sections without implemented data must show explicit planned-state copy, not silent empty UI. Depends on: TASK-053. | | |
-| TASK-055 | Add frontend API functions/hooks for field statistics and field trend queries. Depends on: TASK-049, TASK-050. | | |
-| TASK-056 | Add tests for analytics panel rendering, chart empty state, cloud warning display, index switch, selected-field required state, and failed request state. Depends on: TASK-053, TASK-055. | | |
+| TASK-048 | Extend `apps/api/app/raster/indices.py` to support MSAVI and RECI for native calculations where band metadata permits. Preserve existing NDVI, NDRE, NDMI, and NDWI_GREEN_NIR behavior. Depends on: TASK-002. | ✅ | 2026-06-03 |
+| TASK-049 | Add `POST /api/fields/{plot_id}/indices/statistics` that can compute statistics for the selected field geometry and selected source/date/index without requiring the frontend to send geometry manually. Depends on: TASK-014, TASK-048. | ✅ | 2026-06-03 |
+| TASK-050 | Add `GET /api/fields/{plot_id}/analytics/trend` with query params `indexType`, `startDate`, `endDate`, `provider`, and `cloudMask`. It must use EOS analytics provider during trial and return normalized trend points. Depends on: TASK-025, TASK-037. | ✅ | 2026-06-03 |
+| TASK-051 | Add backend tests for field statistics route, invalid index handling, missing field handling, and trend normalization from mocked EOS responses. Depends on: TASK-049, TASK-050. | ✅ | 2026-06-03 |
+| TASK-052 | Choose and add a chart dependency in `apps/frontend/package.json`. The selected dependency must support accessible line charts, tooltips, responsive layout, and deterministic tests. Depends on: TASK-050. | ✅ | 2026-06-03 |
+| TASK-053 | Replace `apps/frontend/src/components/scaffold/IndexPanel.tsx` with a real `FieldAnalyticsPanel` that displays selected index, latest statistics, valid/cloud/coverage percentages, trend chart, loading/error/empty states, and provider metadata. Depends on: TASK-052, TASK-049, TASK-050. | ✅ | 2026-06-03 |
+| TASK-054 | Add analytics tabs or sections for Crop info, Chart, Activities, Crop rotation, Growth stages, Current risks, and NDVI value split. Sections without implemented data must show explicit planned-state copy, not silent empty UI. Depends on: TASK-053. | ✅ | 2026-06-03 |
+| TASK-055 | Add frontend API functions/hooks for field statistics and field trend queries. Depends on: TASK-049, TASK-050. | ✅ | 2026-06-03 |
+| TASK-056 | Add tests for analytics panel rendering, chart empty state, cloud warning display, index switch, selected-field required state, and failed request state. Depends on: TASK-053, TASK-055. | ✅ | 2026-06-03 |
+
+Phase 5 chart decision: no package was added for TASK-052. The selected implementation is a deterministic accessible SVG chart to avoid dependency churn.
 
 ### Implementation Phase 6 — Cloud Masking, Legends, and Exports
 
@@ -314,7 +316,7 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 - **DEP-007**: EOSDA API Connect endpoints for Field Management, Scene Search/Search, Render, Imagery, Field Analytics/Statistics, Weather, Soil Moisture, Zoning, Colorization, Terrain, and Point Value where available.
 - **DEP-008**: TanStack Query already installed in `apps/frontend` for server-state management.
 - **DEP-009**: Terra Draw and Terra Draw MapLibre adapter already installed for map drawing workflows.
-- **DEP-010**: A charting library to be selected in Phase 5.
+- **DEP-010**: Phase 5 selected a no-dependency accessible SVG chart for the initial analytics trend view.
 - **DEP-011**: A routing library to be selected in Phase 3, preferably `react-router-dom` for React 18 compatibility.
 - **DEP-012**: A backend HTTP client dependency to be selected in Phase 2, preferably `httpx`.
 - **DEP-013**: Optional export dependencies for SHP/XLSX/PDF after CSV/GeoJSON exports are working.

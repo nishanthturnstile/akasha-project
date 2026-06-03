@@ -28,8 +28,15 @@ IN_FOOTPRINT_POLY = {
 # --------------------------------------------------------------------------
 # index registry + band mapping
 # --------------------------------------------------------------------------
-def test_index_registry_has_four_supported_indices():
-    assert set(indices.INDEX_REGISTRY) == {"NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"}
+def test_index_registry_has_supported_phase5_indices():
+    assert set(indices.INDEX_REGISTRY) == {
+        "NDVI",
+        "NDRE",
+        "NDMI",
+        "NDWI_GREEN_NIR",
+        "MSAVI",
+        "RECI",
+    }
     assert indices.DEFAULT_INDEX == "NDVI"
 
 
@@ -86,6 +93,49 @@ def test_ndvi_reference_with_offset_and_masking():
     assert s["validPixelPercent"] == pytest.approx(75.0)
     assert s["cloudMaskedPercent"] == pytest.approx(12.5)
     assert s["coveragePercent"] == pytest.approx(87.5)
+
+
+def test_msavi_reference_uses_formula_registry():
+    nir = np.full((1, 1), 4000, dtype="uint16")  # 0.3 reflectance
+    red = np.full((1, 1), 2000, dtype="uint16")  # 0.1 reflectance
+    scl = np.full((1, 1), 4, dtype="uint8")
+    geom = np.ones((1, 1), dtype=bool)
+
+    s = compute_index_statistics(
+        index_type="MSAVI",
+        band_a_dn=nir,
+        band_b_dn=red,
+        scl=scl,
+        geometry_mask=geom,
+        scale=0.0001,
+        offset=-0.1,
+        nodata=0,
+    )
+
+    expected = (2 * 0.3 + 1 - np.sqrt((2 * 0.3 + 1) ** 2 - 8 * (0.3 - 0.1))) / 2
+    assert s.mean == pytest.approx(expected)
+    assert indices.get_index("MSAVI").formula.startswith("(2 * B08")
+
+
+def test_reci_reference_uses_red_edge_band():
+    nir = np.full((1, 1), 4000, dtype="uint16")  # 0.3 reflectance
+    red_edge = np.full((1, 1), 2000, dtype="uint16")  # 0.1 reflectance
+    scl = np.full((1, 1), 4, dtype="uint8")
+    geom = np.ones((1, 1), dtype=bool)
+
+    s = compute_index_statistics(
+        index_type="RECI",
+        band_a_dn=nir,
+        band_b_dn=red_edge,
+        scl=scl,
+        geometry_mask=geom,
+        scale=0.0001,
+        offset=-0.1,
+        nodata=0,
+    )
+
+    assert s.mean == pytest.approx(2.0)
+    assert indices.get_index("RECI").required_bands == ("B08", "B05")
 
 
 def test_offset_does_not_cancel_in_ndvi():
@@ -164,7 +214,14 @@ def test_config_endpoint_contract():
     r = client.get("/api/config")
     assert r.status_code == 200
     body = r.json()
-    assert body["supportedIndices"] == ["NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"]
+    assert body["supportedIndices"] == [
+        "NDVI",
+        "NDRE",
+        "NDMI",
+        "NDWI_GREEN_NIR",
+        "MSAVI",
+        "RECI",
+    ]
     assert body["defaultIndex"] == "NDVI"
     assert body["indexFieldsKind"] == "global-optical-defaults"
     assert body["maxPolygonAreaHa"] == 50

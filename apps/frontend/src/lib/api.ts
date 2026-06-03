@@ -3,6 +3,10 @@ import type {
   AppConfig,
   DefaultLayer,
   FieldSceneListResponse,
+  FieldStatisticsRequest,
+  FieldStatisticsResponse,
+  FieldTrendResponse,
+  CloudMaskOptions,
   Plot,
   PlotCreatePayload,
   PlotGeometry,
@@ -194,6 +198,43 @@ export const getFieldScenes = (
   const query = params.toString();
   return request<FieldSceneListResponse>(
     `/api/fields/${encodeURIComponent(plotId)}/scenes${query ? `?${query}` : ''}`,
+  );
+};
+
+export const getFieldStatistics = (
+  plotId: string,
+  payload: FieldStatisticsRequest,
+): Promise<FieldStatisticsResponse> =>
+  request<FieldStatisticsResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/indices/statistics`,
+    { method: 'POST', body: payload },
+  );
+
+export const getFieldTrend = (
+  plotId: string,
+  options: {
+    indexType: string;
+    sourceId?: string;
+    provider?: 'auto' | 'eos' | 'native';
+    startDate?: string;
+    endDate?: string;
+    cloudMask?: CloudMaskOptions;
+  },
+): Promise<FieldTrendResponse> => {
+  const params = new URLSearchParams({
+    indexType: options.indexType,
+  });
+  if (options.provider) params.set('provider', options.provider);
+  if (options.sourceId) params.set('sourceId', options.sourceId);
+  if (options.startDate) params.set('startDate', options.startDate);
+  if (options.endDate) params.set('endDate', options.endDate);
+  if (options.cloudMask) {
+    params.set('clouds', String(options.cloudMask.clouds));
+    params.set('cloudShadows', String(options.cloudMask.cloudShadows));
+    params.set('cirrus', String(options.cloudMask.cirrus));
+  }
+  return request<FieldTrendResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/analytics/trend?${params.toString()}`,
   );
 };
 

@@ -132,7 +132,8 @@ def _index_band_positions(
 ) -> tuple[int, int]:
     band_names: list[str] = assets["bandNames"]
     name_to_pos = band_name_to_position(band_names)
-    for band in index_def.required_bands:
+    required_bands = tuple(index_def.required_bands)
+    for band in required_bands:
         if band not in name_to_pos:
             raise bad_request(
                 f"Band '{band}' required by {index_type} is not present in the analytic asset.",
@@ -140,7 +141,14 @@ def _index_band_positions(
                 band=band,
                 available=band_names,
             )
-    return name_to_pos[index_def.band_a], name_to_pos[index_def.band_b]
+    if len(required_bands) != 2:  # pragma: no cover - current registry is two-band only
+        raise bad_request(
+            f"Index '{index_type}' requires an unsupported number of bands.",
+            code="UNSUPPORTED_INDEX_FORMULA",
+            indexType=index_type,
+            requiredBands=list(required_bands),
+        )
+    return name_to_pos[required_bands[0]], name_to_pos[required_bands[1]]
 
 
 def _candidate_assets_for_geometry(

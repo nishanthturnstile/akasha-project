@@ -229,12 +229,12 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-077 | Add `GET /api/reports/field-leaderboard` returning fields ranked by latest index value, index delta, cloud-free recency, weather risk summary, crop, group, season, area, and image date. Depends on: TASK-050, TASK-064, TASK-014. | | |
-| TASK-078 | Add `POST /api/reports/templates`, `GET /api/reports/templates`, and `PATCH /api/reports/templates/{template_id}` for custom report column templates. Store templates in a new migration `005_report_templates.sql`. Depends on: TASK-077. | | |
-| TASK-079 | Add `GET /api/reports/field-leaderboard/export.csv` and optional `export.xlsx` after choosing an XLSX library. CSV is required first. Depends on: TASK-077. | | |
-| TASK-080 | Implement `FieldLeaderboardPage` with filters/columns matching EOS: index, group, crop, variety, report date, field, location, coordinates, area, sowing/planting, index value, value change, actual yield, image date, and preview/open. Depends on: TASK-077, TASK-034. | | |
-| TASK-081 | Implement `ReportingPage` with create-template workflow and selectable columns. Depends on: TASK-078, TASK-034. | | |
-| TASK-082 | Add backend and frontend tests for leaderboard sorting, report template CRUD, CSV export, and UI filters. Depends on: TASK-077, TASK-078, TASK-080, TASK-081. | | |
+| TASK-077 | Add `GET /api/reports/field-leaderboard` returning fields ranked by latest index value, index delta, cloud-free recency, weather risk summary, crop, group, season, area, and image date. Depends on: TASK-050, TASK-064, TASK-014. | Yes | 2026-06-04 |
+| TASK-078 | Add `POST /api/reports/templates`, `GET /api/reports/templates`, and `PATCH /api/reports/templates/{template_id}` for custom report column templates. Store templates in a new migration `005_report_templates.sql`. Depends on: TASK-077. | Yes | 2026-06-04 |
+| TASK-079 | Add `GET /api/reports/field-leaderboard/export.csv` and optional `export.xlsx` after choosing an XLSX library. CSV is required first. Depends on: TASK-077. | Yes | 2026-06-04 |
+| TASK-080 | Implement `FieldLeaderboardPage` with filters/columns matching EOS: index, group, crop, variety, report date, field, location, coordinates, area, sowing/planting, index value, value change, actual yield, image date, and preview/open. Depends on: TASK-077, TASK-034. | Yes | 2026-06-04 |
+| TASK-081 | Implement `ReportingPage` with create-template workflow and selectable columns. Depends on: TASK-078, TASK-034. | Yes | 2026-06-04 |
+| TASK-082 | Add backend and frontend tests for leaderboard sorting, report template CRUD, CSV export, and UI filters. Depends on: TASK-077, TASK-078, TASK-080, TASK-081. | Yes | 2026-06-04 |
 
 ### Implementation Phase 10 — Field Activity Log, Scout Tasks, Data Manager, and Field Groups
 

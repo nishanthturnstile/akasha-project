@@ -69,6 +69,20 @@ describe('ProductRoutes', () => {
     expect(screen.queryByTestId('module-placeholder')).toBeNull();
   });
 
+  it('renders real report pages instead of placeholders', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
+    );
+    renderRoutes('/monitoring/field-leaderboard');
+
+    await waitFor(
+      () => expect(screen.getByRole('heading', { name: 'Field leaderboard' })).toBeTruthy(),
+      { timeout: 8000 },
+    );
+    expect(screen.queryByTestId('module-placeholder')).toBeNull();
+  });
+
   it('renders the real VRA vegetation page instead of a placeholder', async () => {
     vi.stubGlobal(
       'fetch',

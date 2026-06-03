@@ -11,9 +11,15 @@ import {
   getFieldWeatherHistory,
   getFieldWeatherSoilMoisture,
   createVegetationZoning,
+  createReportTemplate,
   exportZoningMap,
+  exportFieldLeaderboardCsv,
+  getFieldLeaderboard,
+  getReportTemplate,
   getZoningMap,
   listZoningMaps,
+  listReportTemplates,
+  updateReportTemplate,
   getConfig,
   getDates,
   getDefaultLayer,
@@ -32,6 +38,9 @@ import type {
   WeatherSeriesId,
   VegetationZoningRequest,
   ZoningExportFormat,
+  FieldLeaderboardFilters,
+  ReportTemplatePayload,
+  ReportTemplateUpdatePayload,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -118,6 +127,10 @@ export const queryKeys = {
   zoningMaps: (plotId: string) => ['fields', plotId, 'zoning', 'maps'] as const,
   zoningMap: (plotId: string, mapId: string) =>
     ['fields', plotId, 'zoning', 'maps', mapId] as const,
+  fieldLeaderboard: (filters: FieldLeaderboardFilters) =>
+    ['reports', 'field-leaderboard', filters] as const,
+  reportTemplates: ['reports', 'templates'] as const,
+  reportTemplate: (templateId: string) => ['reports', 'templates', templateId] as const,
 };
 
 interface UpdatePlotVariables {
@@ -148,6 +161,17 @@ interface ZoningExportVariables {
   plotId: string;
   mapId: string;
   format: ZoningExportFormat;
+}
+
+interface LeaderboardExportVariables {
+  filters?: FieldLeaderboardFilters;
+  templateId?: string;
+  columns?: string[];
+}
+
+interface UpdateReportTemplateVariables {
+  templateId: string;
+  payload: ReportTemplateUpdatePayload;
 }
 
 export function useConfig() {
@@ -406,6 +430,52 @@ export function useExportZoningMap() {
   return useMutation({
     mutationFn: ({ plotId, mapId, format }: ZoningExportVariables) =>
       exportZoningMap(plotId, mapId, format),
+  });
+}
+
+export function useFieldLeaderboard(filters: FieldLeaderboardFilters = {}) {
+  return useQuery({
+    queryKey: queryKeys.fieldLeaderboard(filters),
+    queryFn: () => getFieldLeaderboard(filters),
+  });
+}
+
+export function useExportFieldLeaderboardCsv() {
+  return useMutation({
+    mutationFn: ({ filters = {}, templateId, columns }: LeaderboardExportVariables) =>
+      exportFieldLeaderboardCsv(filters, { templateId, columns }),
+  });
+}
+
+export function useReportTemplates() {
+  return useQuery({ queryKey: queryKeys.reportTemplates, queryFn: listReportTemplates });
+}
+
+export function useReportTemplate(templateId: string | null | undefined) {
+  return useQuery({
+    queryKey: templateId ? queryKeys.reportTemplate(templateId) : (['reports', 'templates', 'none'] as const),
+    queryFn: () => getReportTemplate(templateId as string),
+    enabled: Boolean(templateId),
+  });
+}
+
+export function useCreateReportTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ReportTemplatePayload) => createReportTemplate(payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.reportTemplates }),
+  });
+}
+
+export function useUpdateReportTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, payload }: UpdateReportTemplateVariables) =>
+      updateReportTemplate(templateId, payload),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reportTemplates });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reportTemplate(data.id) });
+    },
   });
 }
 

@@ -3,12 +3,15 @@ import {
   ApiError,
   composeTileTemplate,
   createPlot,
+  createReportTemplate,
   deletePlot,
   exportAllPlotsGeoJson,
   exportFieldIndex,
   exportFieldReportCsv,
+  exportFieldLeaderboardCsv,
   exportPlotGeoJson,
   getConfig,
+  getFieldLeaderboard,
   getFieldWeatherForecast,
   getFieldWeatherHistory,
   getFieldWeatherSoilMoisture,
@@ -16,9 +19,11 @@ import {
   exportZoningMap,
   getZoningMap,
   listZoningMaps,
+  listReportTemplates,
   getPlots,
   getSources,
   importPlotsGeoJson,
+  updateReportTemplate,
   updatePlot,
 } from '@/lib/api';
 import type { PlotGeometry } from '@/types/api';
@@ -322,6 +327,56 @@ describe('api client error mapping', () => {
         4,
         '/api/fields/plot%201/zoning/maps/map%201/export.shp',
         expect.objectContaining({ method: 'GET' }),
+      );
+    });
+
+    it('uses same-origin report routes and handles CSV downloads', async () => {
+      const blob = new Blob(['csv'], { type: 'text/csv' });
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        if (String(input).includes('/export.csv')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'Content-Disposition': 'attachment; filename="leaderboard.csv"' }),
+            blob: async () => blob,
+          });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ rows: [] }) });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await getFieldLeaderboard({ indexType: 'NDVI', cropType: 'Paddy', limit: 10 });
+      const file = await exportFieldLeaderboardCsv(
+        { indexType: 'NDVI' },
+        { columns: ['field', 'latestIndexValue'] },
+      );
+      await listReportTemplates();
+      await createReportTemplate({ name: 'Summary', columns: ['field'] });
+      await updateReportTemplate('template 1', { name: 'Updated' });
+
+      expect(file.filename).toBe('leaderboard.csv');
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        '/api/reports/field-leaderboard?indexType=NDVI&cropType=Paddy&limit=10',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(String(fetchMock.mock.calls[1][0])).toBe(
+        '/api/reports/field-leaderboard/export.csv?indexType=NDVI&columns=field&columns=latestIndexValue',
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        3,
+        '/api/reports/templates',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        4,
+        '/api/reports/templates',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        5,
+        '/api/reports/templates/template%201',
+        expect.objectContaining({ method: 'PATCH' }),
       );
     });
   });

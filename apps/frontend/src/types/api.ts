@@ -465,6 +465,112 @@ export interface ZoningMapListResponse {
 
 export type ZoningExportFormat = 'geojson' | 'shp';
 
+export type LeaderboardSortKey =
+  | 'rank'
+  | 'score'
+  | 'latestIndexValue'
+  | 'indexDelta'
+  | 'cloudFreeRecencyDays'
+  | 'areaHa'
+  | 'name'
+  | 'latestImageDate';
+
+export interface FieldLeaderboardFilters {
+  indexType?: string;
+  groupName?: string;
+  cropType?: string;
+  variety?: string;
+  seasonLabel?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  lookbackDays?: number;
+  sortBy?: LeaderboardSortKey;
+  sortOrder?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+  evaluationLimit?: number;
+  sceneScanLimit?: number;
+}
+
+export interface LeaderboardScoreComponents {
+  vigor?: number | null;
+  trend?: number | null;
+  recency?: number | null;
+  weather?: number | null;
+}
+
+export interface FieldLeaderboardRow {
+  plotId: string;
+  rank?: number | null;
+  name: string;
+  field: string;
+  groupName?: string | null;
+  cropType?: string | null;
+  variety?: string | null;
+  seasonLabel?: string | null;
+  location?: string | null;
+  coordinates?: [number, number] | null;
+  areaHa?: number | null;
+  sowingDate?: string | null;
+  plantingDate?: string | null;
+  latestIndexValue?: number | null;
+  latestImageDate?: string | null;
+  indexDelta?: number | null;
+  previousImageDate?: string | null;
+  cloudFreeRecencyDays?: number | null;
+  weatherRiskLabel: string;
+  weatherRiskLevel: 'unknown';
+  actualYield?: number | null;
+  score?: number | null;
+  scoreComponents: LeaderboardScoreComponents;
+  dataAvailable: boolean;
+  unavailableReason?: string | null;
+  preview?: string | null;
+  open?: string | null;
+}
+
+export interface FieldLeaderboardResponse {
+  indexType: string;
+  generatedAt: string;
+  rows: FieldLeaderboardRow[];
+  metadata: {
+    rankingScope?: string;
+    truncated?: boolean;
+    totalFilteredFields?: number;
+    evaluatedFieldCount?: number;
+    evaluationLimit?: number;
+    partialUnavailableCount?: number;
+    weatherRiskAvailable?: boolean;
+    weatherRiskSource?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface ReportTemplate {
+  id: string;
+  name: string;
+  columns: string[];
+  filters: Record<string, unknown>;
+  sort: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ReportTemplatePayload {
+  name: string;
+  columns: string[];
+  filters?: Record<string, unknown>;
+  sort?: Record<string, unknown>;
+}
+
+export interface ReportTemplateUpdatePayload {
+  name?: string;
+  columns?: string[];
+  filters?: Record<string, unknown>;
+  sort?: Record<string, unknown>;
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

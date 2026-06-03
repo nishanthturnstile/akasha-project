@@ -9,6 +9,8 @@ import type {
   FieldStatisticsResponse,
   FieldTrendResponse,
   FileDownload,
+  FieldLeaderboardFilters,
+  FieldLeaderboardResponse,
   WeatherForecastResponse,
   WeatherHistoryResponse,
   WeatherProviderChoice,
@@ -18,6 +20,9 @@ import type {
   ZoningExportFormat,
   ZoningMap,
   ZoningMapListResponse,
+  ReportTemplate,
+  ReportTemplatePayload,
+  ReportTemplateUpdatePayload,
   CloudMaskOptions,
   Plot,
   PlotCreatePayload,
@@ -357,6 +362,57 @@ export const exportZoningMap = (
   requestDownload(
     `/api/fields/${encodeURIComponent(plotId)}/zoning/maps/${encodeURIComponent(mapId)}/export.${format}`,
     `zoning_${mapId}.${format === 'shp' ? 'zip' : 'geojson'}`,
+  );
+
+function appendLeaderboardParams(params: URLSearchParams, filters: FieldLeaderboardFilters = {}) {
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    params.set(key, String(value));
+  });
+}
+
+export const getFieldLeaderboard = (
+  filters: FieldLeaderboardFilters = {},
+): Promise<FieldLeaderboardResponse> => {
+  const params = new URLSearchParams();
+  appendLeaderboardParams(params, filters);
+  const query = params.toString();
+  return request<FieldLeaderboardResponse>(
+    `/api/reports/field-leaderboard${query ? `?${query}` : ''}`,
+  );
+};
+
+export const exportFieldLeaderboardCsv = (
+  filters: FieldLeaderboardFilters = {},
+  options: { templateId?: string; columns?: string[] } = {},
+): Promise<FileDownload> => {
+  const params = new URLSearchParams();
+  appendLeaderboardParams(params, filters);
+  if (options.templateId) params.set('templateId', options.templateId);
+  options.columns?.forEach((column) => params.append('columns', column));
+  const query = params.toString();
+  return requestDownload(
+    `/api/reports/field-leaderboard/export.csv${query ? `?${query}` : ''}`,
+    'field-leaderboard.csv',
+  );
+};
+
+export const listReportTemplates = (): Promise<ReportTemplate[]> =>
+  request<ReportTemplate[]>('/api/reports/templates');
+
+export const getReportTemplate = (templateId: string): Promise<ReportTemplate> =>
+  request<ReportTemplate>(`/api/reports/templates/${encodeURIComponent(templateId)}`);
+
+export const createReportTemplate = (payload: ReportTemplatePayload): Promise<ReportTemplate> =>
+  request<ReportTemplate>('/api/reports/templates', { method: 'POST', body: payload });
+
+export const updateReportTemplate = (
+  templateId: string,
+  payload: ReportTemplateUpdatePayload,
+): Promise<ReportTemplate> =>
+  request<ReportTemplate>(
+    `/api/reports/templates/${encodeURIComponent(templateId)}`,
+    { method: 'PATCH', body: payload },
   );
 
 export const exportFieldIndex = (

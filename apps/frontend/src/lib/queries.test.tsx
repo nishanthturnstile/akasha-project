@@ -4,6 +4,7 @@ import type { PropsWithChildren } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   queryKeys,
+  useCreateReportTemplate,
   useCreateVegetationZoning,
   useCreatePlot,
   useDeletePlot,
@@ -11,6 +12,8 @@ import {
   usePlots,
   useFieldWeatherForecast,
   useFieldWeatherHistory,
+  useFieldLeaderboard,
+  useUpdateReportTemplate,
   useUpdatePlot,
   useZoningMaps,
 } from '@/lib/queries';
@@ -185,5 +188,51 @@ describe('weather query hooks', () => {
       '/api/fields/plot-1/weather/history?provider=auto&startDate=2026-06-01&endDate=2026-06-02&parameters=dailyTemperature',
       expect.objectContaining({ method: 'GET' }),
     );
+  });
+});
+
+describe('report query hooks', () => {
+  it('fetches leaderboard using filter-scoped query keys', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ rows: [], metadata: {} }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { Provider } = wrapper();
+
+    const { result } = renderHook(
+      () => useFieldLeaderboard({ indexType: 'NDVI', cropType: 'Paddy' }),
+      { wrapper: Provider },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/reports/field-leaderboard?indexType=NDVI&cropType=Paddy',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('invalidates report templates after create and update', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === '/api/reports/templates' && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({ id: 'template-1', name: 'Summary', columns: [] }, 201));
+        }
+        if (String(input) === '/api/reports/templates/template-1' && init?.method === 'PATCH') {
+          return Promise.resolve(jsonResponse({ id: 'template-1', name: 'Updated', columns: [] }));
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+    const { Provider, invalidateSpy } = wrapper();
+    const create = renderHook(() => useCreateReportTemplate(), { wrapper: Provider });
+    const update = renderHook(() => useUpdateReportTemplate(), { wrapper: Provider });
+
+    await create.result.current.mutateAsync({ name: 'Summary', columns: ['field'] });
+    await update.result.current.mutateAsync({
+      templateId: 'template-1',
+      payload: { name: 'Updated' },
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.reportTemplates });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.reportTemplate('template-1') });
   });
 });

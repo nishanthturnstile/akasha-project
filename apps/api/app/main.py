@@ -47,6 +47,7 @@ from .raster.errors import (
     akasha_error_handler,
     request_validation_error_handler,
 )
+from .reports import router as reports_router
 from .weather import router as weather_router
 
 logging.basicConfig(
@@ -241,6 +242,9 @@ app.include_router(weather_router)
 
 # --- Field Zoning API (EOS parity Phase 8) ---------------------------------
 app.include_router(field_zoning_router)
+
+# --- Reports API (EOS parity Phase 9) --------------------------------------
+app.include_router(reports_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)

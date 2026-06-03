@@ -288,11 +288,11 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-108 | Run a mocked-provider E2E workflow: create field, sync provider, load scenes, render tile template, view trend, view weather, create VRA map, export report. Depends on: TASK-076, TASK-082, TASK-093. | | |
-| TASK-109 | Run a real-EOS smoke test only with local/deployment `EOS_API_KEY`: field mirror, scene search, true-colour tile, NDVI trend, weather forecast/history, and vegetation zoning map. Do not print the key. Depends on: TASK-030, TASK-047, TASK-070, TASK-076. | | |
-| TASK-110 | Update `docs/eos-parity-acceptance-matrix.md` with pass/fail status for every first-demo required feature. Depends on: TASK-108, TASK-109. | | |
-| TASK-111 | Add provider-replacement notes to `docs/architecture-tech-stack.md`: map each EOS-backed feature to Akasha-native STAC/COG/weather/zoning/reporting replacement. Depends on: TASK-110. | | |
-| TASK-112 | Run complete validation: `cd apps/api && python -m pytest -q`, `cd apps/frontend && yarn test`, `cd apps/frontend && yarn lint`, `cd apps/frontend && yarn build`, and relevant raster validators. Depends on: all implementation phases touched. | | |
+| TASK-108 | Run a mocked-provider E2E workflow: create field, sync provider, load scenes, render tile template, view trend, view weather, create VRA map, export report. Depends on: TASK-076, TASK-082, TASK-093. | Yes | 2026-06-04 |
+| TASK-109 | Run a real-EOS smoke test only with local/deployment `EOS_API_KEY`: field mirror, scene search, true-colour tile, NDVI trend, weather forecast/history, and vegetation zoning map. Do not print the key. Depends on: TASK-030, TASK-047, TASK-070, TASK-076. | Skipped unless configured | 2026-06-04 |
+| TASK-110 | Update `docs/eos-parity-acceptance-matrix.md` with pass/fail status for every first-demo required feature. Depends on: TASK-108, TASK-109. | Yes | 2026-06-04 |
+| TASK-111 | Add provider-replacement notes to `docs/architecture-tech-stack.md`: map each EOS-backed feature to Akasha-native STAC/COG/weather/zoning/reporting replacement. Depends on: TASK-110. | Yes | 2026-06-04 |
+| TASK-112 | Run complete validation: `cd apps/api && python -m pytest -q`, `cd apps/frontend && yarn test`, `cd apps/frontend && yarn lint`, `cd apps/frontend && yarn build`, and relevant raster validators. Depends on: all implementation phases touched. | Yes | 2026-06-04 |
 
 ## 3. Alternatives
 

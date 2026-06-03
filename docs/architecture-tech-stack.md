@@ -278,3 +278,22 @@ STAC/pgSTAC owns satellite collections, items, asset URLs, acquisition timestamp
 - Keep frontend dependencies locked.
 - Prefer explicit Dockerfiles for each deployable service.
 - Add `/health` endpoints before configuring Railway health checks.
+
+## Provider replacement map
+
+EOSDA remains a trial provider behind BFF adapter interfaces. The browser must never call EOS directly; it only uses same-origin `/api/*` and `/tiles/*` routes.
+
+| Trial/provider-backed capability | Current adapter seam | Akasha-native replacement direction |
+|---|---|---|
+| Field mirroring/sync | `FieldProvider` behind the FastAPI BFF | Native `akasha.plots` + field AOI metadata; no external mirror required. |
+| Field scene timeline | `SceneProvider` / STAC fallback | pgSTAC/STAC query filtered by field AOI, scene coverage, and cloud/valid-pixel metrics. |
+| True-colour and index display tiles | `TileProvider` for EOS field tiles; native `/api/tiles/*` for COGs | COG/TiTiler-backed same-origin tiles with true-colour `[1,8,9]` default and optional index overlays. |
+| Field analytics trend | `AnalyticsProvider` and native masked-statistics fallback | BFF rasterio/rio-tiler statistics over STAC/COG assets with cloud-mask rules. |
+| Imagery export | `ImageryExportProvider` for provider GeoTIFFs; BFF native CSV/GeoJSON | Server-side BFF/TiTiler export; never provider-signed URLs in the browser. |
+| Weather forecast/history | `WeatherProvider` | IMD/GFS/Open-Meteo/ECMWF weather adapter, normalized to current BFF weather DTOs. |
+| Soil moisture | optional provider response with `available=false` fallback | SMAP/native soil-moisture service behind the same weather/provider abstraction. |
+| Vegetation VRA zoning | `ZoningProvider` with Akasha public map IDs | Native BFF zoning using quantile/k-means over cloud-masked index rasters, exporting GeoJSON/SHP. |
+| Reports/leaderboard | Akasha-native BFF reports | Continue composing from fields, cloud-free index statistics, weather, operations, and risk evidence. |
+| Risk/disease/pest context | Akasha-native transparent rule model | Validated crop/stage/weather/scout models; no disease/pest diagnosis from NDVI alone. |
+
+Replacement work must preserve the same public DTOs, standard error shape, and secret-leak guardrails used by the EOS parity slice.

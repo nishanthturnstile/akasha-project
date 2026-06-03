@@ -109,6 +109,29 @@ All ten steps green = first-demo acceptance.
 - *Configured demo mode* (real key present): the live EOS sync, weather, and zoning flows must
   actually succeed end-to-end. This is the client-demo acceptance.
 
+## Phase 13 acceptance evidence
+
+| Area | Status | Evidence |
+|---|---|---|
+| Mocked first-demo workflow | PASS offline/test | `apps/api/tests/test_eos_parity_e2e.py` drives field creation, mocked provider sync, scene timeline, same-origin tile rendering, analytics trend, weather forecast/history, vegetation zoning, zone export, and leaderboard CSV without a real EOS key. |
+| Real EOS configured-demo smoke | SKIPPED automated run | Guarded automated test never prints secrets and skips until a non-secret live EOS fixture is approved. Configured-demo remains an operator-run checklist with `EOS_API_KEY` and smoke inputs. |
+| Weather forecast/history | PASS offline/test | `apps/api/tests/test_weather.py` and `apps/frontend/src/pages/weather/*test.tsx` cover success, unavailable, rate-limit, no field, and same-origin frontend routes. |
+| Vegetation VRA + exports | PASS offline/test | `apps/api/tests/test_field_zoning.py` and `apps/frontend/src/pages/vra/VraVegetationPage.test.tsx` cover Akasha public map IDs, normalized zones, GeoJSON/SHP exports, and no provider ID leaks. |
+| Reports/templates | PASS offline/test | `apps/api/tests/test_reports.py` plus frontend report page/API tests cover bounded ranking, CSV injection hardening, templates, and export. |
+| Operations/data/groups | PASS offline/test | `apps/api/tests/test_phase10_operations.py` and route/API tests cover activities, scout tasks, datasets, field groups, attachments, and John Deere placeholder. |
+| Risk/crop-stage context | PASS offline/test | `apps/api/tests/test_risk.py` and `DiseasesPestsPage.test.tsx` cover non-diagnostic field-watch context, weather unavailable/populated paths, and generic crop stage. |
+| Account/admin/notifications | PASS offline/test | `apps/api/tests/test_phase12_auth.py` and frontend route/API tests cover dev auth, fail-closed deployment guard, hash-only API-key list, notification read flows, and assistant shell. |
+
+## Secret and internal URL leakage checklist
+
+- [x] `EOS_API_KEY` is BFF-only and never returned by provider status, errors, exports, or frontend code.
+- [x] Browser-facing tile/export URLs are same-origin `/api/*` or `/tiles/*`; no provider-signed URLs are surfaced.
+- [x] VRA public `mapId` values are Akasha UUIDs; raw provider zmap/request IDs stay server-side.
+- [x] API key list responses omit raw keys and key hashes; raw key appears only in the create response.
+- [x] Dataset/attachment responses omit internal storage keys and object URLs.
+- [x] CSV exports harden spreadsheet-leading characters where user-controlled text is exported.
+- [x] Provider-unavailable/rate-limit/upstream failures use sanitized Akasha error envelopes.
+
 ## Non-goals for first demo
 
 The following are explicitly **out of scope** for the first parity demo and remain `defer` until

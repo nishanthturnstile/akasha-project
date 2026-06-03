@@ -575,14 +575,20 @@ def measurement_path_for_pol(safe_dir: Path, pol: str) -> Path:
 
 def annotation_path_for_pol(safe_dir: Path, pol: str) -> Path:
     matches = sorted((safe_dir / "annotation").glob(f"*{pol.lower()}*.xml"))
-    matches = [path for path in matches if "calibration" not in path.parts and "rfi" not in path.parts]
+    matches = [
+        path
+        for path in matches
+        if "calibration" not in path.parts and "rfi" not in path.parts
+    ]
     if not matches:
         raise SystemExit(f"COG_SAFE fallback could not find {pol} annotation XML in {safe_dir}")
     return matches[0]
 
 
 def calibration_path_for_pol(safe_dir: Path, pol: str) -> Path:
-    matches = sorted((safe_dir / "annotation" / "calibration").glob(f"calibration-*{pol.lower()}*.xml"))
+    matches = sorted(
+        (safe_dir / "annotation" / "calibration").glob(f"calibration-*{pol.lower()}*.xml")
+    )
     if not matches:
         raise SystemExit(f"COG_SAFE fallback could not find {pol} calibration XML in {safe_dir}")
     return matches[0]
@@ -691,7 +697,10 @@ def write_cog_safe_display_db_intermediate(
     display_pols = [pol for pol in ["VV", "VH"] if pol in display_pols]
 
     measurement_paths = {pol: measurement_path_for_pol(safe_dir, pol) for pol in display_pols}
-    calibration = {pol: load_sigma_calibration(calibration_path_for_pol(safe_dir, pol)) for pol in display_pols}
+    calibration = {
+        pol: load_sigma_calibration(calibration_path_for_pol(safe_dir, pol))
+        for pol in display_pols
+    }
     transform = transform_from_annotation_gcps(deps, annotation_path_for_pol(safe_dir, "VV"))
 
     with rasterio.open(measurement_paths["VV"]) as src0:

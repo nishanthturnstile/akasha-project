@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any
+from urllib.parse import quote
 
 from ..cloud_mask import eos_request_params
 from ..models import AnalyticsTrendPoint, CloudMaskOptions, ProviderAsyncRequest
+from .async_requests import poll_result
 from .client import EosClient
 
 
@@ -33,9 +35,10 @@ class EosAnalyticsProvider:
         if cloud_mask is not None:
             params.update(eos_request_params(cloud_mask))
 
+        field_id = quote(external_field_id, safe="")
         response = self.client.request(
             "POST",
-            f"/field-analytics/trend/{external_field_id}",
+            f"/field-analytics/trend/{field_id}",
             json={"params": params},
         )
         return ProviderAsyncRequest(
@@ -50,10 +53,19 @@ class EosAnalyticsProvider:
         request_id: str,
         *,
         index: str,
+        timeout_seconds: float | None = None,
+        poll_interval_seconds: float = 0.75,
     ) -> list[AnalyticsTrendPoint]:
-        response = self.client.request(
-            "GET",
-            f"/field-analytics/trend/{external_field_id}/{request_id}",
+        field_id = quote(external_field_id, safe="")
+        request_token = quote(request_id, safe="")
+        response = poll_result(
+            lambda: self.client.request(
+                "GET",
+                f"/field-analytics/trend/{field_id}/{request_token}",
+            ),
+            operation="trend analytics",
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
         )
         return [_trend_point(item, index) for item in response.get("result", [])]
 

@@ -13,8 +13,8 @@ from fastapi import APIRouter, Body, Query, Request
 from . import plots_repo
 from .config import settings
 from .product import _enforce_index_rate_limit
-from .providers.eos.analytics_provider import EosAnalyticsProvider
 from .providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
+from .providers.eos.analytics_provider import EosAnalyticsProvider
 from .providers.models import (
     CloudMaskOptions,
     FieldTrendPoint,

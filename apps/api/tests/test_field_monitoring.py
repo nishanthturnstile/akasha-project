@@ -97,12 +97,20 @@ def test_eos_field_scenes_normalize_and_dedupe(monkeypatch):
     monkeypatch.setattr(
         field_monitoring.plots_repo,
         "get_plot",
-        lambda _: _plot(externalProvider="eos", externalFieldId="eos-field-1", providerSyncStatus="synced"),
+        lambda _: _plot(
+            externalProvider="eos",
+            externalFieldId="eos-field-1",
+            providerSyncStatus="synced",
+        ),
     )
 
     class FakeSceneProvider:
         def search_scenes(self, *args, **kwargs):
-            return ProviderAsyncRequest(request_id="request-1", status="done", external_field_id="eos-field-1")
+            return ProviderAsyncRequest(
+                request_id="request-1",
+                status="done",
+                external_field_id="eos-field-1",
+            )
 
         def get_scene_search_result(self, *args, **kwargs):
             return [
@@ -138,7 +146,14 @@ def test_eos_field_scenes_normalize_and_dedupe(monkeypatch):
 
 
 def test_field_tile_proxy_returns_image_bytes_without_provider_url(monkeypatch):
-    monkeypatch.setattr(field_monitoring.plots_repo, "get_plot", lambda _: _plot(externalProvider="eos"))
+    monkeypatch.setattr(settings, "eos_api_key", FAKE_KEY)
+    monkeypatch.setattr(settings, "provider_mode", "eos")
+    monkeypatch.setattr(settings, "eos_enabled", True)
+    monkeypatch.setattr(
+        field_monitoring.plots_repo,
+        "get_plot",
+        lambda _: _plot(externalProvider="eos"),
+    )
     scene = SceneMetadata(
         scene_id="scene-best",
         view_id="S2/scene-best",
@@ -162,8 +177,38 @@ def test_field_tile_proxy_returns_image_bytes_without_provider_url(monkeypatch):
     assert FAKE_BASE_URL.encode() not in r.content
 
 
+def test_field_tile_proxy_respects_eos_kill_switch(monkeypatch):
+    monkeypatch.setattr(settings, "eos_api_key", FAKE_KEY)
+    monkeypatch.setattr(settings, "provider_mode", "disabled")
+    monkeypatch.setattr(settings, "eos_enabled", False)
+    monkeypatch.setattr(
+        field_monitoring.plots_repo,
+        "get_plot",
+        lambda _: _plot(externalProvider="eos"),
+    )
+    scene = SceneMetadata(
+        scene_id="scene-best",
+        view_id="S2/scene-best",
+        acquisition_date=date(2026, 6, 1),
+    )
+    token = field_monitoring._scene_token(scene)
+    r = client.get(f"/api/tiles/fields/plot-1/{token}/RGB/1/2/3.png")
+
+    assert r.status_code == 503
+    assert r.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert FAKE_KEY not in r.text
+    assert FAKE_BASE_URL not in r.text
+
+
 def test_unknown_field_tile_mode_is_sanitized(monkeypatch):
-    monkeypatch.setattr(field_monitoring.plots_repo, "get_plot", lambda _: _plot(externalProvider="eos"))
+    monkeypatch.setattr(settings, "eos_api_key", FAKE_KEY)
+    monkeypatch.setattr(settings, "provider_mode", "eos")
+    monkeypatch.setattr(settings, "eos_enabled", True)
+    monkeypatch.setattr(
+        field_monitoring.plots_repo,
+        "get_plot",
+        lambda _: _plot(externalProvider="eos"),
+    )
     scene = SceneMetadata(
         scene_id="scene-best",
         view_id="S2/scene-best",

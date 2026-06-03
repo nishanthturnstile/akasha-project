@@ -13,13 +13,13 @@ import pytest
 from app import plots_repo
 from app.config import settings
 from app.main import app
-from app.providers.eos.client import EosClient
+from app.providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
 from app.providers.eos.analytics_provider import EosAnalyticsProvider
+from app.providers.eos.client import EosClient
 from app.providers.eos.field_provider import EosFieldProvider
 from app.providers.eos.imagery_provider import EosImageryProvider
 from app.providers.eos.scene_provider import EosSceneProvider
 from app.providers.eos.tile_provider import EosTileProvider
-from app.providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
 from app.providers.models import CloudMaskOptions, SceneMetadata
 from app.raster.errors import AkashaError
 from fastapi.testclient import TestClient
@@ -99,6 +99,33 @@ def test_eos_client_sends_x_api_key_header_without_exposing_it():
     eos = EosClient(api_key=FAKE_KEY, base_url="https://example.test", client=http_client)
     assert eos.request("GET", "/field-management/1") == {"ok": True}
     assert seen["header"] == FAKE_KEY
+
+
+def test_eos_client_does_not_send_api_key_to_cross_origin_download_url():
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["header"] = request.headers.get("x-api-key")
+        seen["accept"] = request.headers.get("accept")
+        return httpx.Response(
+            200,
+            content=b"downloaded-tiff",
+            headers={"Content-Type": "image/tiff"},
+        )
+
+    http_client = httpx.Client(
+        base_url=FAKE_BASE_URL,
+        transport=httpx.MockTransport(handler),
+    )
+    eos = EosClient(api_key=FAKE_KEY, base_url=FAKE_BASE_URL, client=http_client)
+    body, content_type = eos.request_bytes("GET", "https://downloads.example.test/export.tif")
+
+    assert body == b"downloaded-tiff"
+    assert content_type == "image/tiff"
+    assert seen["url"] == "https://downloads.example.test/export.tif"
+    assert seen["header"] is None
+    assert "image/png" in str(seen["accept"])
 
 
 def test_eos_client_missing_key_is_sanitized():
@@ -234,6 +261,41 @@ def test_scene_provider_normalizes_async_search_and_results():
     assert scenes[0].cloud_percent == pytest.approx(8.5)
 
 
+def test_scene_provider_polls_pending_result_before_returning_scenes():
+    get_count = 0
+
+    class FakeClient:
+        def request(self, method, path, **kwargs):
+            nonlocal get_count
+            if method == "POST":
+                return {"status": "pending", "request_id": "request-1"}
+            get_count += 1
+            if get_count == 1:
+                return {"status": "pending", "result": []}
+            return {
+                "status": "success",
+                "result": [
+                    {
+                        "date": "2026-06-01",
+                        "view_id": "S2/43/P/FM/2026/6/1/0",
+                        "cloud": 8.5,
+                    }
+                ],
+            }
+
+    provider = EosSceneProvider(client=FakeClient())
+    request = provider.search_scenes("9793351", date(2026, 6, 1), date(2026, 6, 30))
+    scenes = provider.get_scene_search_result(
+        "9793351",
+        request.request_id,
+        poll_interval_seconds=0,
+        timeout_seconds=1,
+    )
+
+    assert get_count == 2
+    assert scenes[0].scene_id == "S2/43/P/FM/2026/6/1/0"
+
+
 def test_tile_provider_returns_same_origin_template_only():
     scene = SceneMetadata(
         scene_id="S2/43/P/FM/2026/6/1/0",
@@ -309,6 +371,47 @@ def test_analytics_provider_normalizes_trend_points():
     assert points[0].minimum == pytest.approx(0.1)
     assert points[0].maximum == pytest.approx(0.8)
     assert points[0].cloud_percent == pytest.approx(7)
+
+
+def test_analytics_provider_polls_pending_result_before_returning_points():
+    get_count = 0
+
+    class FakeClient:
+        def request(self, method, path, **kwargs):
+            nonlocal get_count
+            if method == "POST":
+                return {"status": "created", "request_id": "trend-1"}
+            get_count += 1
+            if get_count == 1:
+                return {"status": "running", "result": []}
+            return {
+                "status": "success",
+                "result": [
+                    {
+                        "date": "2023-04-20",
+                        "average": 0.6,
+                    }
+                ],
+            }
+
+    provider = EosAnalyticsProvider(client=FakeClient())
+    request = provider.create_trend_request(
+        "9793351",
+        date(2023, 4, 1),
+        date(2023, 4, 30),
+        index="NDVI",
+        data_source="S2",
+    )
+    points = provider.get_trend_result(
+        "9793351",
+        request.request_id,
+        index="NDVI",
+        poll_interval_seconds=0,
+        timeout_seconds=1,
+    )
+
+    assert get_count == 2
+    assert points[0].mean == pytest.approx(0.6)
 
 
 def test_imagery_provider_exports_geotiff_bytes_without_exposing_download_url():

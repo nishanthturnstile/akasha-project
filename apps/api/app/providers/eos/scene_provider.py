@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any
+from urllib.parse import quote
 
 from ..models import ProviderAsyncRequest, SceneMetadata
+from .async_requests import poll_result
 from .client import EosClient
 
 
@@ -32,9 +34,10 @@ class EosSceneProvider:
             params["limit"] = limit
         if max_cloud_cover_in_aoi is not None:
             params["max_cloud_cover_in_aoi"] = max_cloud_cover_in_aoi
+        field_id = quote(external_field_id, safe="")
         response = self.client.request(
             "POST",
-            f"/scene-search/for-field/{external_field_id}",
+            f"/scene-search/for-field/{field_id}",
             json={"params": params},
         )
         return ProviderAsyncRequest(
@@ -47,10 +50,20 @@ class EosSceneProvider:
         self,
         external_field_id: str,
         request_id: str,
+        *,
+        timeout_seconds: float | None = None,
+        poll_interval_seconds: float = 0.75,
     ) -> list[SceneMetadata]:
-        response = self.client.request(
-            "GET",
-            f"/scene-search/for-field/{external_field_id}/{request_id}",
+        field_id = quote(external_field_id, safe="")
+        request_token = quote(request_id, safe="")
+        response = poll_result(
+            lambda: self.client.request(
+                "GET",
+                f"/scene-search/for-field/{field_id}/{request_token}",
+            ),
+            operation="scene search",
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
         )
         return [_scene_from_eos(item) for item in response.get("result", [])]
 
@@ -81,4 +94,3 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-

@@ -384,6 +384,13 @@ async def get_field_tile(
             "Field tile proxy supports provider field scenes only.",
             code="UNSUPPORTED_FIELD_TILE_SOURCE",
         )
+    if not _is_eos_ready():
+        raise AkashaError(
+            "PROVIDER_UNAVAILABLE",
+            "EOS provider is not available.",
+            503,
+            {"provider": "eos"},
+        )
     cloud_mask = CloudMaskOptions(
         clouds=clouds,
         cloud_shadows=cloudShadows,

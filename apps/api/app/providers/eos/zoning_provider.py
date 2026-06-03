@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import quote
 
 from ..models import ProviderAsyncRequest, ZoningMapStatus, ZoningZone
 from .client import EosClient
@@ -44,21 +45,26 @@ class EosZoningProvider:
         )
 
     def get_zoning_map(self, external_field_id: str, external_zmap_id: str) -> ZoningMapStatus:
+        field_id = quote(external_field_id, safe="")
+        zmap_id = quote(external_zmap_id, safe="")
         response = self.client.request(
             "GET",
-            f"/zoning/maps/{external_field_id}/{external_zmap_id}",
+            f"/zoning/maps/{field_id}/{zmap_id}",
         )
         return _zoning_status(response, fallback_field_id=external_field_id)
 
     def list_zoning_maps(self, external_field_id: str) -> list[ZoningMapStatus]:
-        response = self.client.request("GET", f"/api/zoning/{external_field_id}")
+        field_id = quote(external_field_id, safe="")
+        response = self.client.request("GET", f"/api/zoning/{field_id}")
         maps = response.get("maps") or []
         return [_zoning_list_item(external_field_id, item) for item in maps]
 
     def delete_zoning_map(self, external_field_id: str, external_zmap_id: str) -> None:
+        field_id = quote(external_field_id, safe="")
+        zmap_id = quote(external_zmap_id, safe="")
         self.client.request(
             "DELETE",
-            f"/api/zoning/{external_field_id}/{external_zmap_id}",
+            f"/api/zoning/{field_id}/{zmap_id}",
             expected_status=(204,),
         )
 
@@ -122,4 +128,3 @@ def _to_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
-

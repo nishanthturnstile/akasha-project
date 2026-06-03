@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 from ... import plots_repo
 from ...raster.errors import AkashaError
@@ -42,9 +43,10 @@ class EosFieldProvider:
         return result
 
     def update_mirror(self, plot: dict[str, Any], external_field_id: str) -> FieldMirrorResult:
+        field_id = quote(external_field_id, safe="")
         response = self.client.request(
             "PATCH",
-            f"/field-management/{external_field_id}",
+            f"/field-management/{field_id}",
             json=_plot_to_eos_feature(plot),
         )
         return FieldMirrorResult(
@@ -56,14 +58,16 @@ class EosFieldProvider:
         )
 
     def delete_mirror(self, external_field_id: str) -> None:
+        field_id = quote(external_field_id, safe="")
         self.client.request(
             "DELETE",
-            f"/field-management/{external_field_id}",
+            f"/field-management/{field_id}",
             expected_status=(204,),
         )
 
     def get_mirror(self, external_field_id: str) -> FieldMirrorResult:
-        response = self.client.request("GET", f"/field-management/{external_field_id}")
+        field_id = quote(external_field_id, safe="")
+        response = self.client.request("GET", f"/field-management/{field_id}")
         return FieldMirrorResult(
             plot_id="",
             external_field_id=str(response.get("id", external_field_id)),
@@ -100,4 +104,3 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-

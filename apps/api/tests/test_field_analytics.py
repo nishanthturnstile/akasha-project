@@ -44,7 +44,10 @@ def _plot(**overrides: Any) -> dict[str, Any]:
     return plot
 
 
-def _stats_response(index_type: str = "NDVI", acquisition_date: str = "2026-01-15") -> dict[str, Any]:
+def _stats_response(
+    index_type: str = "NDVI",
+    acquisition_date: str = "2026-01-15",
+) -> dict[str, Any]:
     return {
         "indexType": index_type,
         "sourceId": "sentinel-2-l2a",
@@ -81,7 +84,10 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
 
     def fake_compute_statistics(**kwargs):
         calls.append(kwargs)
-        return _stats_response(index_type=kwargs["index_type"], acquisition_date=kwargs["acquisition_date"])
+        return _stats_response(
+            index_type=kwargs["index_type"],
+            acquisition_date=kwargs["acquisition_date"],
+        )
 
     monkeypatch.setattr(field_analytics, "compute_statistics", fake_compute_statistics)
     r = client.post(

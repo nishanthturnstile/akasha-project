@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Literal
+from urllib.parse import quote
 
 from ..models import WeatherRecord, WeatherResponse
 from .client import EosClient
@@ -18,9 +19,10 @@ class EosWeatherProvider:
         date_start: date,
         date_end: date,
     ) -> WeatherResponse:
+        field_id = quote(external_field_id, safe="")
         response = self.client.request(
             "POST",
-            f"/weather/forecast/{external_field_id}",
+            f"/weather/forecast/{field_id}",
             json={
                 "params": {
                     "date_start": date_start.isoformat(),
@@ -36,9 +38,10 @@ class EosWeatherProvider:
         date_start: date,
         date_end: date,
     ) -> WeatherResponse:
+        field_id = quote(external_field_id, safe="")
         response = self.client.request(
             "POST",
-            f"/weather/historical-high-accuracy/{external_field_id}",
+            f"/weather/historical-high-accuracy/{field_id}",
             json={
                 "params": {
                     "date_start": date_start.isoformat(),
@@ -54,9 +57,10 @@ class EosWeatherProvider:
         date_start: date,
         date_end: date,
     ) -> WeatherResponse:
+        field_id = quote(external_field_id, safe="")
         response = self.client.request(
             "POST",
-            f"/weather/historical-accumulated/{external_field_id}",
+            f"/weather/historical-accumulated/{field_id}",
             json={
                 "params": {
                     "date_start": date_start.isoformat(),

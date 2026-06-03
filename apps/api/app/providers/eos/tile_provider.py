@@ -11,7 +11,6 @@ from ..cloud_mask import eos_cloud_masking_level
 from ..models import CloudMaskOptions, SceneMetadata, TileBytes, TileTemplateMetadata
 from .client import EosClient
 
-
 _DISPLAY_MODE_TO_BANDS = {
     "RGB": "B04,B03,B02",
     "FALSE_COLOR": "B08,B04,B03",

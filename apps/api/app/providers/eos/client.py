@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -28,6 +29,7 @@ class EosClient:
         self.base_url = (base_url if base_url is not None else settings.eos_base_url).rstrip("/")
         timeout = timeout_seconds if timeout_seconds is not None else settings.eos_timeout_seconds
         self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
+        self._base_origin = _origin(self.base_url)
 
     def request(
         self,
@@ -105,11 +107,15 @@ class EosClient:
         safe_path = path.split("?", 1)[0]
         logger.info("EOS provider bytes request: method=%s path=%s", method.upper(), safe_path)
         try:
+            headers = {"Accept": "image/png,*/*"}
+            if _origin(path) in {None, self._base_origin}:
+                headers["x-api-key"] = self.api_key
+
             response = self._client.request(
                 method,
                 path,
                 params=params,
-                headers={"x-api-key": self.api_key, "Accept": "image/png,*/*"},
+                headers=headers,
             )
         except httpx.TimeoutException as exc:
             raise AkashaError(
@@ -160,3 +166,10 @@ class EosClient:
             status,
             sanitize_error_value(details),
         )
+
+
+def _origin(value: str) -> tuple[str, str, int | None] | None:
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    return parsed.scheme.lower(), parsed.hostname.lower(), parsed.port

@@ -78,7 +78,10 @@ def _disposition(filename: str) -> dict[str, str]:
 
 def _required_acquisition_date(value: date | None) -> date:
     if value is None:
-        raise bad_request("acquisitionDate is required for selected-field exports.", code="MISSING_DATE")
+        raise bad_request(
+            "acquisitionDate is required for selected-field exports.",
+            code="MISSING_DATE",
+        )
     return value
 
 
@@ -390,7 +393,10 @@ async def export_field_report_csv(
             supported=sorted(PROVIDER_INDEX_TYPES),
         )
 
-    if provider == "native" or not (external_field_id and _is_eos_ready() and index_type in PROVIDER_INDEX_TYPES):
+    use_native_export = provider == "native" or not (
+        external_field_id and _is_eos_ready() and index_type in PROVIDER_INDEX_TYPES
+    )
+    if use_native_export:
         response = await _run_blocking(
             _native_trend_response,
             plot_id=plot_id,

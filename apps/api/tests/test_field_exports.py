@@ -9,7 +9,7 @@ from app import field_analytics, field_exports
 from app.config import settings
 from app.main import app
 from app.providers.cloud_mask import cloud_mask_mapping
-from app.providers.models import CloudMaskOptions, ExportFile, FieldExportMetadata
+from app.providers.models import ExportFile, FieldExportMetadata
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -44,7 +44,10 @@ def _plot(**overrides: Any) -> dict[str, Any]:
     return plot
 
 
-def _stats_response(index_type: str = "NDVI", acquisition_date: str = "2026-06-01") -> dict[str, Any]:
+def _stats_response(
+    index_type: str = "NDVI",
+    acquisition_date: str = "2026-06-01",
+) -> dict[str, Any]:
     return {
         "indexType": index_type,
         "sourceId": "sentinel-2-l2a",
@@ -75,7 +78,10 @@ def test_index_csv_export_uses_server_side_geometry_and_cloud_mapping(monkeypatc
 
     def fake_compute_statistics(**kwargs):
         calls.append(kwargs)
-        return _stats_response(index_type=kwargs["index_type"], acquisition_date=kwargs["acquisition_date"])
+        return _stats_response(
+            index_type=kwargs["index_type"],
+            acquisition_date=kwargs["acquisition_date"],
+        )
 
     monkeypatch.setattr(field_analytics, "compute_statistics", fake_compute_statistics)
     r = client.get(
@@ -95,7 +101,11 @@ def test_index_csv_export_uses_server_side_geometry_and_cloud_mapping(monkeypatc
 
 
 def test_index_geojson_export_contains_safe_field_statistics(monkeypatch):
-    monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda _: _plot(externalFieldId="secret-provider-id"))
+    monkeypatch.setattr(
+        field_exports.plots_repo,
+        "get_plot",
+        lambda _: _plot(externalFieldId="secret-provider-id"),
+    )
     monkeypatch.setattr(
         field_analytics,
         "compute_statistics",
@@ -200,7 +210,11 @@ def test_shp_export_is_explicitly_unavailable(monkeypatch):
 
 def test_report_csv_export_uses_native_trend_points(monkeypatch):
     monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda _: _plot())
-    monkeypatch.setattr(field_analytics.catalog, "list_dates", lambda _: [{"acquisitionDate": "2026-06-01"}])
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "list_dates",
+        lambda _: [{"acquisitionDate": "2026-06-01"}],
+    )
     monkeypatch.setattr(
         field_analytics,
         "compute_statistics",

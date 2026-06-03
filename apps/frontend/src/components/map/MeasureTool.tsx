@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { Ruler, Spline, Pentagon, X } from 'lucide-react';
 import type { TerraDraw } from 'terra-draw';
+import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import { cn } from '@/lib/utils';
 import {
     formatArea,
@@ -11,7 +12,10 @@ import {
 } from '@/lib/measure';
 
 interface MeasureToolProps {
+    activeTool?: ActiveMapTool;
     map: maplibregl.Map | null;
+    onReleaseTool?: (owner: MapToolOwner) => void;
+    onRequestTool?: (owner: MapToolOwner) => boolean;
 }
 
 type MeasureMode = 'distance' | 'area';
@@ -33,7 +37,12 @@ const MODE_NAME: Record<MeasureMode, string> = {
  * on first activation so it stays out of the initial bundle. A single active
  * measurement is kept; drawing geometry updates the readout live.
  */
-export function MeasureTool({ map }: MeasureToolProps) {
+export function MeasureTool({
+    activeTool = null,
+    map,
+    onReleaseTool,
+    onRequestTool,
+}: MeasureToolProps) {
     const [open, setOpen] = useState(false);
     const [mode, setMode] = useState<MeasureMode | null>(null);
     const [result, setResult] = useState<MeasureResult | null>(null);
@@ -110,15 +119,24 @@ export function MeasureTool({ map }: MeasureToolProps) {
         }
         setMode(null);
         setResult(null);
-    }, []);
+        onReleaseTool?.('measure');
+    }, [onReleaseTool]);
 
     const toggleOpen = useCallback(() => {
         setOpen((prev) => {
             const nextOpen = !prev;
+            if (nextOpen && onRequestTool && !onRequestTool('measure')) return prev;
             if (!nextOpen) stopMeasuring();
             return nextOpen;
         });
-    }, [stopMeasuring]);
+    }, [onRequestTool, stopMeasuring]);
+
+    useEffect(() => {
+        if (open && activeTool && activeTool !== 'measure') {
+            setOpen(false);
+            stopMeasuring();
+        }
+    }, [activeTool, open, stopMeasuring]);
 
     // Tear down Terra Draw on unmount.
     useEffect(() => {

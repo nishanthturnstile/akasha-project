@@ -159,6 +159,10 @@ function stubAkashaFetch({
         );
       }
 
+      if (path === '/api/plots') {
+        return Promise.resolve(jsonResponse([]));
+      }
+
       if (path === '/api/sources/sentinel-2-l2a/dates') {
         return Promise.resolve(jsonResponse(sentinel2Dates));
       }

@@ -24,12 +24,13 @@ from __future__ import annotations
 import functools
 import logging
 import uuid
-from typing import Any
+from datetime import UTC, date, datetime
+from typing import Any, Literal
 
 import anyio
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError, field_validator
 
 from . import plots_repo
 from .config import settings
@@ -49,28 +50,75 @@ router = APIRouter(prefix="/api", tags=["plots"])
 GEOJSON_MEDIA_TYPE = "application/geo+json"
 MAX_NAME_LENGTH = 200
 MAX_IMPORT_FEATURES = 500
+PlotStatus = Literal["planned", "active", "inactive", "archived"]
+ProviderSyncStatus = Literal["not_synced", "pending", "synced", "failed"]
+USER_METADATA_FIELDS = (
+    "groupName",
+    "cropType",
+    "variety",
+    "seasonLabel",
+    "sowingDate",
+    "plantingDate",
+    "status",
+)
+SAFE_EXPORT_METADATA_FIELDS = (
+    *USER_METADATA_FIELDS,
+    "externalProvider",
+    "externalFieldId",
+    "providerSyncStatus",
+    "providerSyncedAt",
+)
 
 
 # --------------------------------------------------------------------------
 # Pydantic v2 models
 # --------------------------------------------------------------------------
-class PlotCreate(BaseModel):
+class PlotUserMetadata(BaseModel):
+    groupName: str | None = None
+    cropType: str | None = None
+    variety: str | None = None
+    seasonLabel: str | None = None
+    sowingDate: date | None = None
+    plantingDate: date | None = None
+    status: PlotStatus | None = None
+
+    @field_validator("sowingDate", "plantingDate", mode="before")
+    @classmethod
+    def _validate_date_only(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, datetime):
+            raise ValueError("must be a date-only value")
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            if "T" in value or " " in value:
+                raise ValueError("must be a date-only value")
+            return value
+        raise ValueError("must be a date-only value")
+
+
+class PlotCreate(PlotUserMetadata):
     name: str
     geometry: dict[str, Any]
 
 
-class PlotUpdate(BaseModel):
+class PlotUpdate(PlotUserMetadata):
     name: str | None = None
     geometry: dict[str, Any] | None = None
 
 
-class PlotResponse(BaseModel):
+class PlotResponse(PlotUserMetadata):
     id: str
     name: str
     geometry: dict[str, Any]
     areaHa: float | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
+    externalProvider: str | None = None
+    externalFieldId: str | None = None
+    providerSyncStatus: ProviderSyncStatus | None = None
+    providerSyncedAt: str | None = None
 
 
 class RejectedFeature(BaseModel):
@@ -142,18 +190,49 @@ def _validate_geometry(geometry: dict[str, Any]) -> float | None:
     return facts["areaHa"]
 
 
+def _metadata_from_model(
+    payload: PlotUserMetadata,
+    *,
+    include_nulls: bool,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    for field in USER_METADATA_FIELDS:
+        if field not in payload.model_fields_set:
+            continue
+        value = getattr(payload, field)
+        if value is None and not include_nulls:
+            continue
+        metadata[field] = value
+    return metadata
+
+
+def _safe_json_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
 def _to_feature(plot: dict[str, Any]) -> dict[str, Any]:
+    properties = {
+        "id": plot["id"],
+        "name": plot["name"],
+        "areaHa": plot["areaHa"],
+        "createdAt": plot["createdAt"],
+        "updatedAt": plot["updatedAt"],
+    }
+    for field in SAFE_EXPORT_METADATA_FIELDS:
+        value = plot.get(field)
+        if value is not None:
+            properties[field] = _safe_json_value(value)
     return {
         "type": "Feature",
         "id": plot["id"],
         "geometry": plot["geometry"],
-        "properties": {
-            "id": plot["id"],
-            "name": plot["name"],
-            "areaHa": plot["areaHa"],
-            "createdAt": plot["createdAt"],
-            "updatedAt": plot["updatedAt"],
-        },
+        "properties": properties,
     }
 
 
@@ -211,10 +290,39 @@ def _resolve_import_name(feature: dict[str, Any], index: int) -> str:
     return f"Imported plot {index + 1}"
 
 
+def _sanitized_validation_errors(exc: ValidationError) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": err.get("type"),
+            "loc": list(err.get("loc", [])),
+            "msg": err.get("msg"),
+        }
+        for err in exc.errors()
+    ]
+
+
+def _extract_import_metadata(feature: dict[str, Any]) -> dict[str, Any]:
+    props = feature.get("properties") or {}
+    if not isinstance(props, dict):
+        return {}
+    raw_metadata = {field: props[field] for field in USER_METADATA_FIELDS if field in props}
+    if not raw_metadata:
+        return {}
+    try:
+        metadata = PlotUserMetadata.model_validate(raw_metadata)
+    except ValidationError as exc:
+        raise bad_request(
+            "Feature metadata is invalid.",
+            code="INVALID_FIELD_METADATA",
+            errors=_sanitized_validation_errors(exc),
+        ) from exc
+    return metadata.model_dump(exclude_unset=True)
+
+
 # --------------------------------------------------------------------------
 # Routes — specific paths BEFORE parameterized ones
 # --------------------------------------------------------------------------
-@router.get("/plots", response_model=list[PlotResponse])
+@router.get("/plots", response_model=list[PlotResponse], response_model_exclude_none=True)
 async def list_plots() -> list[dict[str, Any]]:
     return await _run_repo(plots_repo.list_plots)
 
@@ -229,14 +337,32 @@ async def export_all_plots() -> JSONResponse:
     return JSONResponse(content=feature_collection, media_type=GEOJSON_MEDIA_TYPE)
 
 
-@router.post("/plots", response_model=PlotResponse, status_code=201)
+@router.post(
+    "/plots",
+    response_model=PlotResponse,
+    response_model_exclude_none=True,
+    status_code=201,
+)
 async def create_plot(payload: PlotCreate) -> dict[str, Any]:
     name = _clean_name(payload.name, required=True)
     area_ha = _validate_geometry(payload.geometry)
+    metadata = _metadata_from_model(payload, include_nulls=False)
+    if metadata:
+        return await _run_repo(
+            plots_repo.create_plot,
+            name,
+            payload.geometry,
+            area_ha,
+            metadata,
+        )
     return await _run_repo(plots_repo.create_plot, name, payload.geometry, area_ha)
 
 
-@router.post("/plots/import/geojson", response_model=ImportResponse)
+@router.post(
+    "/plots/import/geojson",
+    response_model=ImportResponse,
+    response_model_exclude_none=True,
+)
 async def import_geojson(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     features = _extract_features(payload)
     valid: list[dict[str, Any]] = []
@@ -246,7 +372,15 @@ async def import_geojson(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             geometry = _feature_geometry(feature)
             name = _resolve_import_name(feature, index)
             area_ha = _validate_geometry(geometry)
-            valid.append({"name": name, "geometry": geometry, "areaHa": area_ha})
+            metadata = _extract_import_metadata(feature)
+            valid.append(
+                {
+                    "name": name,
+                    "geometry": geometry,
+                    "areaHa": area_ha,
+                    "metadata": metadata,
+                }
+            )
         except AkashaError as exc:
             rejected.append({"index": index, "code": exc.code, "message": exc.message})
     imported = await _run_repo(plots_repo.create_plots_bulk, valid) if valid else []
@@ -258,7 +392,11 @@ async def import_geojson(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     }
 
 
-@router.get("/plots/{plot_id}", response_model=PlotResponse)
+@router.get(
+    "/plots/{plot_id}",
+    response_model=PlotResponse,
+    response_model_exclude_none=True,
+)
 async def get_plot(plot_id: str) -> dict[str, Any]:
     pid = _valid_uuid(plot_id)
     plot = await _run_repo(plots_repo.get_plot, pid)
@@ -276,12 +414,17 @@ async def export_plot(plot_id: str) -> JSONResponse:
     return JSONResponse(content=_to_feature(plot), media_type=GEOJSON_MEDIA_TYPE)
 
 
-@router.patch("/plots/{plot_id}", response_model=PlotResponse)
+@router.patch(
+    "/plots/{plot_id}",
+    response_model=PlotResponse,
+    response_model_exclude_none=True,
+)
 async def update_plot(plot_id: str, payload: PlotUpdate) -> dict[str, Any]:
     pid = _valid_uuid(plot_id)
-    if payload.name is None and payload.geometry is None:
+    metadata = _metadata_from_model(payload, include_nulls=True)
+    if payload.name is None and payload.geometry is None and not metadata:
         raise bad_request(
-            "Provide at least one of 'name' or 'geometry' to update.",
+            "Provide at least one of 'name', 'geometry', or metadata to update.",
             code="NO_UPDATE_FIELDS",
         )
     name = _clean_name(payload.name, required=False)
@@ -290,7 +433,17 @@ async def update_plot(plot_id: str, payload: PlotUpdate) -> dict[str, Any]:
     if payload.geometry is not None:
         area_ha = _validate_geometry(payload.geometry)
         geometry = payload.geometry
-    plot = await _run_repo(plots_repo.update_plot, pid, name, geometry, area_ha)
+    if metadata:
+        plot = await _run_repo(
+            plots_repo.update_plot,
+            pid,
+            name,
+            geometry,
+            area_ha,
+            metadata,
+        )
+    else:
+        plot = await _run_repo(plots_repo.update_plot, pid, name, geometry, area_ha)
     if plot is None:
         raise not_found("Plot not found.", plotId=plot_id)
     return plot

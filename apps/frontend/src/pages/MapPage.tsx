@@ -1,15 +1,30 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError, composeTileTemplate, getDates } from '@/lib/api';
-import { queryKeys, useConfig, useDates, useDefaultLayer, useSources } from '@/lib/queries';
+import { ApiError, composeTileTemplate, exportAllPlotsGeoJson, exportPlotGeoJson, getDates, type PlotGeoJsonImportPayload } from '@/lib/api';
+import {
+  queryKeys,
+  useConfig,
+  useCreatePlot,
+  useDates,
+  useDefaultLayer,
+  useDeletePlot,
+  useImportPlotsGeoJson,
+  usePlots,
+  useSources,
+  useUpdatePlot,
+} from '@/lib/queries';
 import { basemapAttribution, resolveBasemapStyle } from '@/map/basemap';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
+import { AllFieldsPanel } from '@/components/fields/AllFieldsPanel';
+import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
+import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
 import { MeasureTool } from '@/components/map/MeasureTool';
+import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import { CompareControl } from '@/components/map/CompareControl';
 import { CommandPalette } from '@/components/map/CommandPalette';
 import { CoordinateReadout } from '@/components/map/CoordinateReadout';
@@ -23,6 +38,7 @@ import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/mapViewContext';
+import type { Plot, PlotGeometry } from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -76,6 +92,48 @@ function FullScreenError({ message, onRetry }: { message: string; onRetry: () =>
   );
 }
 
+function geometryCoordinates(geometry: PlotGeometry): [number, number][] {
+  if (geometry.type === 'Polygon') {
+    return geometry.coordinates.flat() as [number, number][];
+  }
+  return geometry.coordinates.flat(2) as [number, number][];
+}
+
+function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
+  const coordinates = geometryCoordinates(plot.geometry);
+  if (!map || coordinates.length === 0) return;
+  const lngs = coordinates.map(([lng]) => lng);
+  const lats = coordinates.map(([, lat]) => lat);
+  map.fitBounds(
+    [
+      [Math.min(...lngs), Math.min(...lats)],
+      [Math.max(...lngs), Math.max(...lats)],
+    ],
+    { padding: 96, maxZoom: 16, duration: 650 },
+  );
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function geoJsonFilename(plot: Plot | null): string {
+  if (!plot) return 'fields.geojson';
+  const safeName = plot.name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${safeName || 'field'}.geojson`;
+}
+
 export default function MapPage() {
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -92,6 +150,7 @@ export default function MapPage() {
     layersOpen,
     compareEnabled,
     compareDate,
+    selectedPlotId,
   } = view;
 
   const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
@@ -103,6 +162,31 @@ export default function MapPage() {
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
+  const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const plotsQ = usePlots();
+  const createPlotMutation = useCreatePlot();
+  const updatePlotMutation = useUpdatePlot();
+  const importPlotsMutation = useImportPlotsGeoJson();
+  const deletePlotMutation = useDeletePlot({
+    onDeleted: (plotId) => {
+      if (plotId === selectedPlotId) view.clearSelectedPlot();
+    },
+  });
+
+  const selectedPlot = useMemo(() => {
+    if (!selectedPlotId) return null;
+    return plotsQ.data?.find((plot) => plot.id === selectedPlotId) ?? null;
+  }, [plotsQ.data, selectedPlotId]);
+
+  useEffect(() => {
+    if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
+    if (!plotsQ.data.some((plot) => plot.id === selectedPlotId)) {
+      view.clearSelectedPlot();
+    }
+  }, [plotsQ.data, plotsQ.isLoading, selectedPlotId, view]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
@@ -248,6 +332,45 @@ export default function MapPage() {
     });
   };
 
+  const requestMapTool = (owner: MapToolOwner): boolean => {
+    setActiveMapTool(owner);
+    return true;
+  };
+
+  const releaseMapTool = (owner: MapToolOwner) => {
+    setActiveMapTool((current) => (current === owner ? null : current));
+  };
+
+  const selectAndFocusPlot = (plot: Plot) => {
+    view.setSelectedPlotId(plot.id);
+    focusPlot(map, plot);
+  };
+
+  const importGeoJsonFile = async (file: File) => {
+    const text = await file.text();
+    const payload = JSON.parse(text) as PlotGeoJsonImportPayload;
+    const result = await importPlotsMutation.mutateAsync(payload);
+    const first = result.imported[0];
+    if (first) {
+      view.setSelectedPlotId(first.id);
+      focusPlot(map, first);
+    }
+  };
+
+  const exportGeoJson = async () => {
+    const blob = selectedPlot
+      ? await exportPlotGeoJson(selectedPlot.id)
+      : await exportAllPlotsGeoJson();
+    downloadBlob(blob, geoJsonFilename(selectedPlot));
+  };
+
+  const deleteSelectedField = async () => {
+    if (!selectedPlot) return;
+    const confirmed = window.confirm(`Delete field "${selectedPlot.name}"?`);
+    if (!confirmed) return;
+    await deletePlotMutation.mutateAsync(selectedPlot.id);
+  };
+
   if (configQ.isLoading) return <FullScreenLoading />;
   if (configQ.isError || !configQ.data) {
     return <FullScreenError message={ messageFor(configQ.error) } onRetry={ () => configQ.refetch() } />;
@@ -280,6 +403,29 @@ export default function MapPage() {
         visible={ visible }
         onMapReady={ setMap }
       />
+      <FieldBoundaryLayer map={ map } plot={ selectedPlot } />
+      <FieldDrawController
+        activeTool={ activeMapTool }
+        map={ map }
+        mode={ fieldMode }
+        selectedPlot={ selectedPlot }
+        onCancel={ () => setFieldMode(null) }
+        onCreateField={ async (payload) => {
+          const created = await createPlotMutation.mutateAsync(payload);
+          view.setSelectedPlotId(created.id);
+          focusPlot(map, created);
+          return created;
+        } }
+        onUpdateField={ async (plotId, payload) => {
+          const updated = await updatePlotMutation.mutateAsync({ plotId, payload });
+          view.setSelectedPlotId(updated.id);
+          focusPlot(map, updated);
+          return updated;
+        } }
+        onRequestTool={ requestMapTool }
+        onReleaseTool={ releaseMapTool }
+        className="absolute left-4 top-[68px] z-popover translate-y-12"
+      />
 
       {/* Top chrome: layers toggle · search · theme */ }
       <TopBar
@@ -299,13 +445,57 @@ export default function MapPage() {
         onToggleLayers={ view.toggleLayers }
       />
 
-      {/* Left: plot tools (Phase 5 placeholder) */ }
+      <input
+        ref={ fileInputRef }
+        type="file"
+        accept=".geojson,application/geo+json,application/json"
+        className="hidden"
+        data-testid="field-import-input"
+        onChange={ (event) => {
+          const file = event.target.files?.[0];
+          event.currentTarget.value = '';
+          if (file) void importGeoJsonFile(file);
+        } }
+      />
+
+      {/* Left: field tools */ }
       <div className="absolute left-4 top-[68px] z-toolbar">
-        <PlotToolbar />
+        <PlotToolbar
+          activeAction={ fieldMode }
+          disabledActions={ {
+            draw: !map ? 'The map must finish loading before drawing a field.' : undefined,
+            edit:
+              selectedPlot && selectedPlot.geometry.type !== 'Polygon'
+                ? 'Multi-part field editing is not available in this first field workflow.'
+                : undefined,
+          } }
+          hasSelectedField={ Boolean(selectedPlot) }
+          isMapAvailable={ Boolean(map) }
+          selectedFieldName={ selectedPlot?.name }
+          onDrawField={ () => setFieldMode((current) => (current === 'draw' ? null : 'draw')) }
+          onEditSelectedField={ () => setFieldMode((current) => (current === 'edit' ? null : 'edit')) }
+          onImportGeoJSON={ () => fileInputRef.current?.click() }
+          onExportGeoJSON={ () => void exportGeoJson() }
+          onDeleteSelectedField={ () => void deleteSelectedField() }
+        />
       </div>
 
       {/* Layers surface — left drawer (≥md) / bottom sheet (<md) */ }
-      <div className="absolute left-4 top-[112px]">
+      <div className="absolute left-4 top-[112px] z-panel">
+        <AllFieldsPanel
+          plots={ plotsQ.data }
+          isLoading={ plotsQ.isLoading }
+          error={ plotsQ.isError ? messageFor(plotsQ.error) : null }
+          onRetry={ () => void plotsQ.refetch() }
+          selectedPlotId={ selectedPlotId }
+          onSelect={ (plot) => view.setSelectedPlotId(plot.id) }
+          onFocus={ selectAndFocusPlot }
+          onAdd={ () => setFieldMode('draw') }
+          onImport={ () => fileInputRef.current?.click() }
+        />
+      </div>
+
+      <div className="absolute left-[392px] top-[112px]">
         <LayersSurface open={ layersOpen } onClose={ () => view.setLayersOpen(false) }>
           <SourceList
             sources={ sourcesQ.data }
@@ -331,7 +521,12 @@ export default function MapPage() {
       {/* Right: coordinate readout + map controls (lifted above the timeline) */ }
       <div className="absolute bottom-[calc(var(--timeline-height)+1.125rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <CoordinateReadout map={ map } />
-        <MeasureTool map={ map } />
+        <MeasureTool
+          activeTool={ activeMapTool }
+          map={ map }
+          onRequestTool={ requestMapTool }
+          onReleaseTool={ releaseMapTool }
+        />
         <CompareControl
           enabled={ compareEnabled }
           onEnabledChange={ view.setCompareEnabled }

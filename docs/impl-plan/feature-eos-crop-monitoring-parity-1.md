@@ -87,11 +87,11 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-000 | Create `docs/eos-parity-acceptance-matrix.md` from `docs/eos-crop-monitoring-replication-research.md`. Include one row per EOS module and columns: `Module`, `EOS capability`, `Akasha status`, `Implementation owner`, `Provider strategy`, `First-demo required`, `Acceptance check`, and `Dependencies`. Depends on: none. | | |
-| TASK-001 | In `docs/eos-parity-acceptance-matrix.md`, classify every feature as one of `reuse-existing-akasha`, `wire-existing-backend`, `eos-backed-trial`, `akasha-native-first-party`, or `defer`. Depends on: TASK-000. | | |
-| TASK-002 | Define first-demo acceptance as this exact path: create/import field, select field, sync to EOS, load scene timeline, display true-colour layer, switch to NDVI, show NDVI trend, show weather forecast/history, create vegetation VRA zones, export one result. Depends on: TASK-001. | | |
-| TASK-003 | Add a short section to `docs/eos-parity-acceptance-matrix.md` named `Non-goals for first demo` listing full disease models, yield estimation, AI assistant, marketplace, John Deere integration, full team roles, and paid high-resolution imagery. Depends on: TASK-002. | | |
-| TASK-004 | Add a cross-reference from `docs/README.md` to this implementation plan and the acceptance matrix. Depends on: TASK-000. | | |
+| TASK-000 | Create `docs/eos-parity-acceptance-matrix.md` from `docs/eos-crop-monitoring-replication-research.md`. Include one row per EOS module and columns: `Module`, `EOS capability`, `Akasha status`, `Implementation owner`, `Provider strategy`, `First-demo required`, `Acceptance check`, and `Dependencies`. Depends on: none. | ✅ | 2026-06-03 |
+| TASK-001 | In `docs/eos-parity-acceptance-matrix.md`, classify every feature as one of `reuse-existing-akasha`, `wire-existing-backend`, `eos-backed-trial`, `akasha-native-first-party`, or `defer`. Depends on: TASK-000. | ✅ | 2026-06-03 |
+| TASK-002 | Define first-demo acceptance as this exact path: create/import field, select field, sync to EOS, load scene timeline, display true-colour layer, switch to NDVI, show NDVI trend, show weather forecast/history, create vegetation VRA zones, export one result. Depends on: TASK-001. | ✅ | 2026-06-03 |
+| TASK-003 | Add a short section to `docs/eos-parity-acceptance-matrix.md` named `Non-goals for first demo` listing full disease models, yield estimation, AI assistant, marketplace, John Deere integration, full team roles, and paid high-resolution imagery. Depends on: TASK-002. | ✅ | 2026-06-03 |
+| TASK-004 | Add a cross-reference from `docs/README.md` to this implementation plan and the acceptance matrix. Depends on: TASK-000. | ✅ | 2026-06-03 |
 
 ### Implementation Phase 1 — Field Foundation and Existing Plot API Wiring
 
@@ -99,18 +99,18 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-005 | In `apps/frontend/src/types/api.ts`, add `Plot`, `PlotCreatePayload`, `PlotUpdatePayload`, `PlotImportResponse`, and `RejectedFeature` interfaces matching `apps/api/app/plots.py` response models. Depends on: TASK-002. | | |
-| TASK-006 | In `apps/frontend/src/lib/api.ts`, add typed functions `getPlots`, `createPlot`, `updatePlot`, `deletePlot`, `importPlotsGeoJson`, `exportAllPlotsGeoJson`, and `exportPlotGeoJson`. Add POST/PATCH/DELETE support in the shared request helper without breaking existing GET behavior. Depends on: TASK-005. | | |
-| TASK-007 | In `apps/frontend/src/lib/queries.ts`, add query keys and TanStack Query hooks/mutations: `usePlots`, `useCreatePlot`, `useUpdatePlot`, `useDeletePlot`, and `useImportPlotsGeoJson`. Each mutation must invalidate the plots list and selected plot where applicable. Depends on: TASK-006. | | |
-| TASK-008 | Replace the disabled controls in `apps/frontend/src/components/scaffold/PlotToolbar.tsx` with real actions for draw, edit, import GeoJSON, export GeoJSON, and delete selected field. Keep inaccessible actions disabled with explanatory tooltips when no field is selected. Depends on: TASK-007. | | |
-| TASK-009 | Add Terra Draw polygon creation/editing support to the map workflow. Preferred location: new component `apps/frontend/src/components/fields/FieldDrawController.tsx` used by `apps/frontend/src/pages/MapPage.tsx`. Persist created polygons via `useCreatePlot`. Depends on: TASK-008. | | |
-| TASK-010 | Add selected-field client state to `apps/frontend/src/state/mapViewContext.tsx`: `selectedPlotId`, `setSelectedPlotId`, and a reset rule when a deleted field is selected. Depends on: TASK-007. | | |
-| TASK-011 | Create `apps/frontend/src/components/fields/AllFieldsPanel.tsx` with search, field cards, area display, selected-field focus action, add/import action, and empty/error/loading states. Depends on: TASK-010. | | |
-| TASK-012 | Render selected field geometry on MapLibre with a thick white outline and subtle fill. Preferred location: extend `apps/frontend/src/components/map/MapLayerManager.tsx` or create `apps/frontend/src/components/fields/FieldBoundaryLayer.tsx`. Depends on: TASK-010. | | |
-| TASK-013 | Add database migration `apps/api/migrations/003_field_metadata_provider_links.sql` with tables or columns for field metadata and provider links. Required fields: group name, crop type, variety, season label, sowing date, planting date, status, external provider, external field id, provider sync status, provider synced at, provider metadata JSON. Depends on: TASK-005. | | |
-| TASK-014 | Extend `apps/api/app/plots.py` and `apps/api/app/plots_repo.py` to read/write optional field metadata without breaking existing plot CRUD clients. Depends on: TASK-013. | | |
-| TASK-015 | Add backend tests for metadata create/update/list/export behavior in `apps/api/tests/`. Depends on: TASK-014. | | |
-| TASK-016 | Add frontend tests for plot API functions, plot query hooks, field toolbar states, field import behavior, and field selection behavior. Depends on: TASK-007, TASK-008, TASK-011. | | |
+| TASK-005 | In `apps/frontend/src/types/api.ts`, add `Plot`, `PlotCreatePayload`, `PlotUpdatePayload`, `PlotImportResponse`, and `RejectedFeature` interfaces matching `apps/api/app/plots.py` response models. Depends on: TASK-002. | ✅ | 2026-06-03 |
+| TASK-006 | In `apps/frontend/src/lib/api.ts`, add typed functions `getPlots`, `createPlot`, `updatePlot`, `deletePlot`, `importPlotsGeoJson`, `exportAllPlotsGeoJson`, and `exportPlotGeoJson`. Add POST/PATCH/DELETE support in the shared request helper without breaking existing GET behavior. Depends on: TASK-005. | ✅ | 2026-06-03 |
+| TASK-007 | In `apps/frontend/src/lib/queries.ts`, add query keys and TanStack Query hooks/mutations: `usePlots`, `useCreatePlot`, `useUpdatePlot`, `useDeletePlot`, and `useImportPlotsGeoJson`. Each mutation must invalidate the plots list and selected plot where applicable. Depends on: TASK-006. | ✅ | 2026-06-03 |
+| TASK-008 | Replace the disabled controls in `apps/frontend/src/components/scaffold/PlotToolbar.tsx` with real actions for draw, edit, import GeoJSON, export GeoJSON, and delete selected field. Keep inaccessible actions disabled with explanatory tooltips when no field is selected. Depends on: TASK-007. | ✅ | 2026-06-03 |
+| TASK-009 | Add Terra Draw polygon creation/editing support to the map workflow. Preferred location: new component `apps/frontend/src/components/fields/FieldDrawController.tsx` used by `apps/frontend/src/pages/MapPage.tsx`. Persist created polygons via `useCreatePlot`. Depends on: TASK-008. | ✅ | 2026-06-03 |
+| TASK-010 | Add selected-field client state to `apps/frontend/src/state/mapViewContext.tsx`: `selectedPlotId`, `setSelectedPlotId`, and a reset rule when a deleted field is selected. Depends on: TASK-007. | ✅ | 2026-06-03 |
+| TASK-011 | Create `apps/frontend/src/components/fields/AllFieldsPanel.tsx` with search, field cards, area display, selected-field focus action, add/import action, and empty/error/loading states. Depends on: TASK-010. | ✅ | 2026-06-03 |
+| TASK-012 | Render selected field geometry on MapLibre with a thick white outline and subtle fill. Preferred location: extend `apps/frontend/src/components/map/MapLayerManager.tsx` or create `apps/frontend/src/components/fields/FieldBoundaryLayer.tsx`. Depends on: TASK-010. | ✅ | 2026-06-03 |
+| TASK-013 | Add database migration `apps/api/migrations/003_field_metadata_provider_links.sql` with tables or columns for field metadata and provider links. Required fields: group name, crop type, variety, season label, sowing date, planting date, status, external provider, external field id, provider sync status, provider synced at, provider metadata JSON. Depends on: TASK-005. | ✅ | 2026-06-03 |
+| TASK-014 | Extend `apps/api/app/plots.py` and `apps/api/app/plots_repo.py` to read/write optional field metadata without breaking existing plot CRUD clients. Depends on: TASK-013. | ✅ | 2026-06-03 |
+| TASK-015 | Add backend tests for metadata create/update/list/export behavior in `apps/api/tests/`. Depends on: TASK-014. | ✅ | 2026-06-03 |
+| TASK-016 | Add frontend tests for plot API functions, plot query hooks, field toolbar states, field import behavior, and field selection behavior. Depends on: TASK-007, TASK-008, TASK-011. | ✅ | 2026-06-03 |
 
 ### Implementation Phase 2 — EOS Provider Adapter Foundation Behind the BFF
 

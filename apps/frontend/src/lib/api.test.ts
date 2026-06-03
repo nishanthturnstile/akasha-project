@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, composeTileTemplate, getConfig, getSources } from '@/lib/api';
+import {
+  ApiError,
+  composeTileTemplate,
+  createPlot,
+  deletePlot,
+  exportAllPlotsGeoJson,
+  exportPlotGeoJson,
+  getConfig,
+  getPlots,
+  getSources,
+  importPlotsGeoJson,
+  updatePlot,
+} from '@/lib/api';
+import type { PlotGeometry } from '@/types/api';
 
 describe('api client error mapping', () => {
   beforeEach(() => {
@@ -85,5 +98,99 @@ describe('api client error mapping', () => {
   it('throws NETWORK_ERROR when fetch itself rejects', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')));
     await expect(getConfig()).rejects.toMatchObject({ code: 'NETWORK_ERROR', status: 0 });
+  });
+
+  describe('plot field functions', () => {
+    const geometry: PlotGeometry = {
+      type: 'Polygon',
+      coordinates: [[[77, 12], [77.01, 12], [77.01, 12.01], [77, 12.01], [77, 12]]],
+    };
+
+    it('fetches plots from the same-origin plot route', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => [],
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(getPlots()).resolves.toEqual([]);
+      expect(fetchMock).toHaveBeenCalledWith('/api/plots', expect.objectContaining({ method: 'GET' }));
+    });
+
+    it('sends JSON bodies for create, update, and import', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'plot-1', name: 'Field', geometry, areaHa: 1 }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await createPlot({ name: 'Field', geometry, cropType: 'Paddy' });
+      await updatePlot('plot-1', { status: 'active' });
+      await importPlotsGeoJson({ type: 'Feature', geometry, properties: { name: 'Imported' } });
+
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        '/api/plots',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ name: 'Field', geometry, cropType: 'Paddy' }),
+        }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        '/api/plots/plot-1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'active' }),
+        }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        3,
+        '/api/plots/import/geojson',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('handles 204 delete responses', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+        json: async () => {
+          throw new Error('delete should not parse JSON');
+        },
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(deletePlot('plot-1')).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledWith('/api/plots/plot-1', expect.objectContaining({ method: 'DELETE' }));
+    });
+
+    it('returns GeoJSON blobs for exports without exposing provider URLs', async () => {
+      const blob = new Blob(['{"type":"FeatureCollection","features":[]}'], {
+        type: 'application/geo+json',
+      });
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'application/geo+json' }),
+        blob: async () => blob,
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(exportAllPlotsGeoJson()).resolves.toBe(blob);
+      await expect(exportPlotGeoJson('plot-1')).resolves.toBe(blob);
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        '/api/plots/export.geojson',
+        expect.objectContaining({ method: 'GET' }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        '/api/plots/plot-1/export.geojson',
+        expect.objectContaining({ method: 'GET' }),
+      );
+    });
   });
 });

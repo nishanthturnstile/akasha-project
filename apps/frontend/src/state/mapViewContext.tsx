@@ -30,6 +30,8 @@ export interface MapViewState {
     compareEnabled: boolean;
     /** The "B" acquisition date to blend under the active date; `null` when unset. */
     compareDate: string | null;
+    /** Client-only selected field/plot id; server field data stays in TanStack Query. */
+    selectedPlotId: string | null;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -41,6 +43,7 @@ export const initialMapViewState: MapViewState = {
     layersOpen: false,
     compareEnabled: false,
     compareDate: null,
+    selectedPlotId: null,
 };
 
 type MapViewAction =
@@ -52,13 +55,15 @@ type MapViewAction =
     | { type: 'SET_LAYERS_OPEN'; open: boolean }
     | { type: 'TOGGLE_LAYERS' }
     | { type: 'SET_COMPARE_ENABLED'; enabled: boolean }
-    | { type: 'SET_COMPARE_DATE'; date: string | null };
+    | { type: 'SET_COMPARE_DATE'; date: string | null }
+    | { type: 'SET_SELECTED_PLOT_ID'; plotId: string | null }
+    | { type: 'CLEAR_SELECTED_PLOT' };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
         case 'SET_SOURCE':
             if (action.sourceId === state.activeSourceId) return state;
-            // Switching source invalidates source-scoped selections so the new source
+            // Switching source invalidates source-scoped imagery selections so the new source
             // recomputes its own default date / display mode and compare scene.
             return {
                 ...state,
@@ -93,6 +98,12 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_COMPARE_DATE':
             if (action.date === state.compareDate) return state;
             return { ...state, compareDate: action.date };
+        case 'SET_SELECTED_PLOT_ID':
+            if (action.plotId === state.selectedPlotId) return state;
+            return { ...state, selectedPlotId: action.plotId };
+        case 'CLEAR_SELECTED_PLOT':
+            if (state.selectedPlotId === null) return state;
+            return { ...state, selectedPlotId: null };
         default:
             return state;
     }
@@ -108,6 +119,8 @@ export interface MapViewContextValue extends MapViewState {
     toggleLayers: () => void;
     setCompareEnabled: (enabled: boolean) => void;
     setCompareDate: (date: string | null) => void;
+    setSelectedPlotId: (plotId: string | null) => void;
+    clearSelectedPlot: () => void;
 }
 
 const MapViewContext = createContext<MapViewContextValue | null>(null);
@@ -136,6 +149,8 @@ export function MapViewProvider({
             toggleLayers: () => dispatch({ type: 'TOGGLE_LAYERS' }),
             setCompareEnabled: (enabled) => dispatch({ type: 'SET_COMPARE_ENABLED', enabled }),
             setCompareDate: (date) => dispatch({ type: 'SET_COMPARE_DATE', date }),
+            setSelectedPlotId: (plotId) => dispatch({ type: 'SET_SELECTED_PLOT_ID', plotId }),
+            clearSelectedPlot: () => dispatch({ type: 'CLEAR_SELECTED_PLOT' }),
         }),
         [state],
     );

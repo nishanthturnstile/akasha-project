@@ -74,6 +74,81 @@ export interface DefaultLayer {
   metricsProvisional: boolean;
 }
 
+export type PlotStatus = 'planned' | 'active' | 'inactive' | 'archived';
+
+export type ProviderSyncStatus = 'not_synced' | 'pending' | 'synced' | 'failed';
+
+export type GeoJsonPosition = [number, number] | [number, number, number];
+
+export interface GeoJsonPolygonGeometry {
+  type: 'Polygon';
+  coordinates: GeoJsonPosition[][];
+}
+
+export interface GeoJsonMultiPolygonGeometry {
+  type: 'MultiPolygon';
+  coordinates: GeoJsonPosition[][][];
+}
+
+export type PlotGeometry = GeoJsonPolygonGeometry | GeoJsonMultiPolygonGeometry;
+
+export interface Plot {
+  id: string;
+  name: string;
+  geometry: PlotGeometry;
+  areaHa: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  groupName?: string | null;
+  cropType?: string | null;
+  variety?: string | null;
+  seasonLabel?: string | null;
+  sowingDate?: string | null;
+  plantingDate?: string | null;
+  status?: PlotStatus | null;
+  externalProvider?: string | null;
+  externalFieldId?: string | null;
+  providerSyncStatus?: ProviderSyncStatus | null;
+  providerSyncedAt?: string | null;
+}
+
+export interface PlotCreatePayload {
+  name: string;
+  geometry: PlotGeometry;
+  groupName?: string | null;
+  cropType?: string | null;
+  variety?: string | null;
+  seasonLabel?: string | null;
+  sowingDate?: string | null;
+  plantingDate?: string | null;
+  status?: PlotStatus | null;
+}
+
+export interface PlotUpdatePayload {
+  name?: string;
+  geometry?: PlotGeometry;
+  groupName?: string | null;
+  cropType?: string | null;
+  variety?: string | null;
+  seasonLabel?: string | null;
+  sowingDate?: string | null;
+  plantingDate?: string | null;
+  status?: PlotStatus | null;
+}
+
+export interface RejectedFeature {
+  index: number;
+  code: string;
+  message: string;
+}
+
+export interface PlotImportResponse {
+  imported: Plot[];
+  rejected: RejectedFeature[];
+  importedCount: number;
+  rejectedCount: number;
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

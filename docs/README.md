@@ -16,3 +16,9 @@ Research notes:
 Implementation plans:
 
 - [`impl-plan/feature-eos-crop-monitoring-parity-1.md`](./impl-plan/feature-eos-crop-monitoring-parity-1.md) — sequenced EOSDA Crop Monitoring functional-parity roadmap with dependencies, tasks, files, testing, and risks.
+- [`impl-plan/feature-eos-crop-monitoring-parity-phase-1-field-foundation.md`](./impl-plan/feature-eos-crop-monitoring-parity-phase-1-field-foundation.md) — standalone Phase 1 field-foundation implementation plan and acceptance checks.
+- [`eos-parity-acceptance-matrix.md`](./eos-parity-acceptance-matrix.md) — Phase 0 execution checklist: per-module EOS parity acceptance matrix, provider-strategy classification, first-demo acceptance path, and non-goals.
+
+Prompt packs:
+
+- [`prompts/eos-parity-phase-wise-agent-prompts.md`](./prompts/eos-parity-phase-wise-agent-prompts.md) — copy/paste Copilot CLI prompts for planning, reviewing, implementing, and validating each EOS parity phase.

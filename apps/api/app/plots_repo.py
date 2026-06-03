@@ -183,6 +183,42 @@ def delete_plot(plot_id: str) -> bool:
         return cur.rowcount > 0
 
 
+def update_provider_link(
+    plot_id: str,
+    *,
+    external_provider: str,
+    external_field_id: str | None,
+    provider_sync_status: str,
+    provider_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Update adapter-owned provider-link fields for one plot."""
+    set_clauses = [
+        "external_provider = %s",
+        "external_field_id = %s",
+        "provider_sync_status = %s",
+        "provider_synced_at = CASE WHEN %s = 'synced' THEN NOW() ELSE provider_synced_at END",
+    ]
+    params: list[Any] = [
+        external_provider,
+        external_field_id,
+        provider_sync_status,
+        provider_sync_status,
+    ]
+    if provider_metadata is not None:
+        set_clauses.append("provider_metadata = %s::jsonb")
+        params.append(json.dumps(provider_metadata))
+    params.append(plot_id)
+    sql = (
+        "UPDATE akasha.plots SET "
+        + ", ".join(set_clauses)
+        + f" WHERE id = %s RETURNING {_COLUMNS}"
+    )
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        return _row_to_plot(row) if row else None
+
+
 def create_plots_bulk(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Insert many plots in one transaction.
 

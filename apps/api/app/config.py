@@ -23,6 +23,13 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
 @dataclass
 class Settings:
     """Typed view over the documented `api` service environment variables.
@@ -64,6 +71,21 @@ class Settings:
     max_request_body_bytes: int = field(
         default_factory=lambda: _get_int("MAX_REQUEST_BODY_BYTES", 1_048_576)
     )
+
+    # EOSDA API Connect provider adapter (server-side only).
+    eos_api_key: str = field(default_factory=lambda: _get("EOS_API_KEY", ""))
+    eos_base_url: str = field(
+        default_factory=lambda: _get("EOS_BASE_URL", "https://api-connect.eos.com")
+    )
+    provider_mode: str = field(default_factory=lambda: _get("PROVIDER_MODE", "disabled"))
+    eos_timeout_seconds: int = field(default_factory=lambda: _get_int("EOS_TIMEOUT_SECONDS", 30))
+    eos_cache_ttl_seconds: int = field(
+        default_factory=lambda: _get_int("EOS_CACHE_TTL_SECONDS", 300)
+    )
+    eos_rate_limit_per_minute: int = field(
+        default_factory=lambda: _get_int("EOS_RATE_LIMIT_PER_MINUTE", 10)
+    )
+    eos_enabled: bool = field(default_factory=lambda: _get_bool("EOS_ENABLED", False))
 
     @property
     def cors_allowed_origins(self) -> list[str]:

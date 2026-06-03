@@ -384,7 +384,7 @@ export default function MapPage() {
   const showIndexPanel = selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0;
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-background" data-testid="map-page">
+    <div className="relative h-full min-h-[640px] w-full overflow-hidden bg-background" data-testid="map-page">
       {/* Accessibility: bypass the map canvas (WCAG 2.4.1). */ }
       <a
         href="#timeline-bar"

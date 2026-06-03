@@ -37,6 +37,7 @@ from . import skeleton
 from .config import settings
 from .plots import router as plots_router
 from .product import router as product_router
+from .providers.router import router as providers_router
 from .raster.errors import (
     AkashaError,
     akasha_error_handler,
@@ -226,6 +227,9 @@ app.include_router(product_router)
 
 # --- Plot API (Slice 3: plot CRUD + GeoJSON import/export) -----------------
 app.include_router(plots_router)
+
+# --- Provider API (EOS adapter foundation) ---------------------------------
+app.include_router(providers_router)
 
 # Standard Akasha error shape: { "error": { code, message, details } }.
 app.add_exception_handler(AkashaError, akasha_error_handler)

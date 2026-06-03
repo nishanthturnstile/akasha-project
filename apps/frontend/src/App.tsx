@@ -1,10 +1,13 @@
-import MapPage from '@/pages/MapPage';
+import { BrowserRouter } from 'react-router-dom';
+import { ProductRoutes } from '@/routes/ProductRoutes';
 import { MapViewProvider } from '@/state/mapViewContext';
 
 export default function App() {
   return (
-    <MapViewProvider>
-      <MapPage />
-    </MapViewProvider>
+    <BrowserRouter>
+      <MapViewProvider>
+        <ProductRoutes />
+      </MapViewProvider>
+    </BrowserRouter>
   );
 }

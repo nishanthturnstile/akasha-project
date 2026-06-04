@@ -536,7 +536,7 @@ export default function MapPage() {
         } }
         onRequestTool={ requestMapTool }
         onReleaseTool={ releaseMapTool }
-        className="absolute left-4 top-[68px] z-popover translate-y-12"
+        className="absolute left-[392px] top-[112px] z-popover max-[760px]:left-4 max-[760px]:top-[37.5rem]"
       />
 
       {/* Top chrome: layers toggle · search · theme */ }
@@ -602,7 +602,7 @@ export default function MapPage() {
           selectedPlotId={ selectedPlotId }
           onSelect={ (plot) => view.setSelectedPlotId(plot.id) }
           onFocus={ selectAndFocusPlot }
-          onAdd={ () => setFieldMode('draw') }
+          onAdd={ map ? () => setFieldMode('draw') : undefined }
           onImport={ () => fileInputRef.current?.click() }
         />
       </div>

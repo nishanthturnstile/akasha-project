@@ -1,6 +1,6 @@
 # EOS Parity Phase-wise Agent Prompts
 
-Use this prompt pack when running Copilot CLI or another coding agent phase-by-phase against `docs/impl-plan/feature-eos-crop-monitoring-parity-1.md`.
+Use this prompt pack when running Copilot CLI or another coding agent phase-by-phase against `docs/eos/feature-eos-crop-monitoring-parity-1.md`.
 
 The workflow is intentionally two-step for every phase:
 
@@ -37,8 +37,8 @@ Paste these instructions at the top of every planning, implementation, and revie
 You are working in the Akasha repository.
 
 Primary source of truth:
-- docs/impl-plan/feature-eos-crop-monitoring-parity-1.md
-- docs/eos-crop-monitoring-replication-research.md
+- docs/eos/feature-eos-crop-monitoring-parity-1.md
+- docs/eos/eos-crop-monitoring-replication-research.md
 - docs/architecture-tech-stack.md
 - docs/engineering-dos-donts.md
 - docs/data-ingestion-and-satellite-rules.md
@@ -57,7 +57,7 @@ Critical architecture rules:
 - Preserve production-relevant native Akasha logic: STAC/COG catalog, BFF masked statistics, PostGIS fields/plots, MapLibre/Terra Draw, same-origin tile routes.
 
 Required workflow:
-1. Read the phase tasks in docs/impl-plan/feature-eos-crop-monitoring-parity-1.md.
+1. Read the phase tasks in docs/eos/feature-eos-crop-monitoring-parity-1.md.
 2. Inspect current implementation before editing.
 3. Identify what already exists, what should be reused, what should be removed/replaced, and what must be made adapter-ready.
 4. Use official docs or current repository docs when uncertain.
@@ -119,7 +119,7 @@ Return:
 Use this prompt for implementation of any phase after the phase plan has passed review. Do not add a separate phase-specific implementation prompt; the approved phase plan is the implementation specification.
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Implement the approved execution plan for Phase <N> only.
 
@@ -157,16 +157,16 @@ Final response required:
 ### Phase 0 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
-Plan Phase 0 from docs/impl-plan/feature-eos-crop-monitoring-parity-1.md.
+Plan Phase 0 from docs/eos/feature-eos-crop-monitoring-parity-1.md.
 
 Phase goal:
 Create a concrete EOS parity acceptance matrix and demo definition before implementation starts.
 
 Required research and inspection:
-- Read docs/eos-crop-monitoring-replication-research.md.
-- Read docs/impl-plan/feature-eos-crop-monitoring-parity-1.md, Phase 0.
+- Read docs/eos/eos-crop-monitoring-replication-research.md.
+- Read docs/eos/feature-eos-crop-monitoring-parity-1.md, Phase 0.
 - Inspect docs/README.md and docs/platform-plan.md for documentation conventions.
 - Identify any already-existing matrix/checklist/doc that should be reused instead of duplicated.
 
@@ -188,15 +188,15 @@ Do not edit files in this planning step.
 ### Phase 1 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
-Plan Phase 1 from docs/impl-plan/feature-eos-crop-monitoring-parity-1.md.
+Plan Phase 1 from docs/eos/feature-eos-crop-monitoring-parity-1.md.
 
 Phase goal:
 Make field creation/selection real by wiring the existing plot API into the frontend and extending metadata without duplicating geometry storage.
 
 Required research and inspection:
-- Read Phase 1 tasks in docs/impl-plan/feature-eos-crop-monitoring-parity-1.md.
+- Read Phase 1 tasks in docs/eos/feature-eos-crop-monitoring-parity-1.md.
 - Inspect apps/api/app/plots.py, plots_repo.py, migrations, and tests.
 - Inspect apps/frontend/src/components/scaffold/PlotToolbar.tsx.
 - Inspect apps/frontend/src/lib/api.ts, lib/queries.ts, types/api.ts, state/mapViewContext.tsx, MapPage.tsx, MapLayerManager.tsx.
@@ -222,9 +222,9 @@ Do not edit files in this planning step.
 ### Phase 2 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
-Plan Phase 2 from docs/impl-plan/feature-eos-crop-monitoring-parity-1.md.
+Plan Phase 2 from docs/eos/feature-eos-crop-monitoring-parity-1.md.
 
 Phase goal:
 Add secure server-side EOS provider plumbing without exposing EOS keys or raw EOS contracts to the frontend.
@@ -256,14 +256,14 @@ Do not edit files in this planning step.
 ### Phase 3 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 3 only: add EOS-like product navigation/routes while preserving the current map workspace.
 
 Inspect:
-- docs/impl-plan/feature-eos-crop-monitoring-parity-1.md Phase 3.
+- docs/eos/feature-eos-crop-monitoring-parity-1.md Phase 3.
 - Current App.tsx, main.tsx, MapPage.tsx, frontend components/tests/package.json.
-- EOS UI findings in docs/eos-crop-monitoring-replication-research.md.
+- EOS UI findings in docs/eos/eos-crop-monitoring-replication-research.md.
 
 Decide in the plan:
 1. Route map, shell layout, and lazy-loading approach.
@@ -281,7 +281,7 @@ Do not edit files in this planning step.
 ### Phase 4 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 4 only: make Monitoring field-aware with scenes, RGB/index layers, cloud controls, and download affordances.
 
@@ -306,7 +306,7 @@ Do not edit files in this planning step.
 ### Phase 5 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 5 only: replace IndexPanel placeholder with selected-field statistics and multi-temporal analytics trends.
 
@@ -331,7 +331,7 @@ Do not edit files in this planning step.
 ### Phase 6 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 6 only: add cloud-mask options, legend behavior, and selected field/date/index exports.
 
@@ -355,7 +355,7 @@ Do not edit files in this planning step.
 ### Phase 7 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 7 only: add field weather forecast and historical weather analytics via normalized provider contracts.
 
@@ -379,7 +379,7 @@ Do not edit files in this planning step.
 ### Phase 8 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 8 only: implement vegetation-based VRA zoning creation, retrieval, display, polling, and export.
 
@@ -404,7 +404,7 @@ Do not edit files in this planning step.
 ### Phase 9 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 9 only: build Akasha-native field leaderboard and reporting from normalized field, analytics, weather, and activity data.
 
@@ -427,7 +427,7 @@ Do not edit files in this planning step.
 ### Phase 10 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 10 only: add Akasha-native operations modules for activity log, scout tasks, data manager, connections placeholder, and field groups.
 
@@ -450,7 +450,7 @@ Do not edit files in this planning step.
 ### Phase 11 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 11 only: add transparent decision-support foundations and India-specific productization path.
 
@@ -473,7 +473,7 @@ Do not edit files in this planning step.
 ### Phase 12 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 12 only: add ownership, collaboration, account/admin, API settings, and notification foundations for pilot readiness.
 
@@ -497,13 +497,13 @@ Do not edit files in this planning step.
 ### Phase 13 planning prompt
 
 ```text
-Use the global instructions from docs/prompts/eos-parity-phase-wise-agent-prompts.md.
+Use the global instructions from docs/eos/eos-parity-phase-wise-agent-prompts.md.
 
 Plan Phase 13 only: verify the full EOS-like workflow, update acceptance evidence, and prove EOS remains replaceable.
 
 Inspect:
 - All changed docs/code from Phases 0-12.
-- docs/eos-parity-acceptance-matrix.md.
+- docs/eos/eos-parity-acceptance-matrix.md.
 - Provider interfaces and frontend DTOs for EOS leakage.
 
 Decide in the plan:

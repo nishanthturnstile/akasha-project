@@ -13,7 +13,7 @@ This is the executable checklist for the EOSDA Crop Monitoring functional-parity
 converts the findings in [`eos-crop-monitoring-replication-research.md`](./eos-crop-monitoring-replication-research.md)
 into one row per EOS module, classifies how Akasha will deliver each module, and defines the exact
 **first parity demo** slice and its non-goals. It is the shared scope reference for
-[`impl-plan/feature-eos-crop-monitoring-parity-1.md`](./impl-plan/feature-eos-crop-monitoring-parity-1.md)
+[`impl-plan/feature-eos-crop-monitoring-parity-1.md`](./feature-eos-crop-monitoring-parity-1.md)
 (Phase 0, GOAL-000).
 
 ## How to read this document
@@ -32,6 +32,35 @@ into one row per EOS module, classifies how Akasha will deliver each module, and
 - **First-demo required** marks the modules in the first parity demo slice (TASK-002 / GUD-001).
 - **Acceptance check** is a concrete, verifiable pass condition. `eos-backed-trial` checks must pass
   with **no real EOS key** by surfacing a `provider-unconfigured` status (PAT-003).
+
+## Client Phase 1 scope mapping (authoritative client scope)
+
+The committed **client-facing scope** for the current 3-month engagement is defined in
+[`client/phase-1-scope.md`](../client/phase-1-scope.md). This matrix below describes the **full
+EOSDA parity effort** and is broader than that committed scope. Use the mapping here to separate
+what is **in Phase 1** from what is **deferred to Phase 2+**.
+
+**In Phase 1 client scope:**
+
+- Basic username/password login (Akasha-native; *not* an EOS feature — must be built).
+- Field management — Module 1 (season + field create, draw, import/export).
+- Scene / date timeline — Module 2.
+- True-colour map tiles — Module 3.
+- Vegetation index layers — Module 4, limited to **NDVI, NDRE, MSAVI, RECI**.
+- Cloud masking & data quality — Module 8 (supporting the indices above).
+- Weather forecast — Module 10.
+- Weather historical — Module 11.
+- Vegetation VRA zoning map — Module 13.
+- Navigation shell — Module 27, limited to **Monitoring / Weather / VRA Maps**.
+
+**Deferred to Phase 2+ (out of client Phase 1 scope)** — Modules 5, 7, 9, 12, 14, 16, 17, 18, 19,
+20, 21, 22, 23, 24, 25, 26, 28, 30, plus Crop Info, analytics charts, activities, CDSE-to-Akasha
+authentication, Bhoonidhi portal integration, and the guided onboarding flow. Rows for these
+modules remain below for internal roadmap continuity but are **not** Phase 1 client deliverables.
+
+> Note: the "First-demo required" column below reflects the broader internal parity demo, **not**
+> the committed client Phase 1 scope. Where the two differ, `client/phase-1-scope.md` wins for
+> client commitments.
 
 ## Acceptance matrix
 

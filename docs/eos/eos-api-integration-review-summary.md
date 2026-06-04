@@ -1,5 +1,12 @@
 # EOS API Integration Review Summary
 
+> **Client-facing scope is defined in [`client/phase-1-scope.md`](../client/phase-1-scope.md).**
+> This document is an **internal engineering review** of the full EOSDA integration and
+> intentionally covers more modules than the committed Phase 1 client scope (login, season/field
+> creation, field drawing, timeline + index selection, NDVI/NDRE/MSAVI/RECI, and the Monitoring /
+> Weather / VRA Maps modules). Modules described here that are not in `phase-1-scope.md` are
+> **deferred to Phase 2+** and must not be presented to the client as Phase 1 deliverables.
+
 **Status headline:** Akasha is **demo-ready behind the FastAPI BFF** for EOS-style crop monitoring workflows, with **live EOS validation and production auth/tenant isolation still pending**.
 
 This handoff summarizes the EOSDA API Connect trial integration, architecture review, prior implementation audit findings, and recommended next steps for optimization and production hardening. It does not claim fresh live EOS verification, and it intentionally excludes secrets, private URLs, and raw stack traces.

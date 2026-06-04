@@ -10,7 +10,7 @@ tags: feature, eos, crop-monitoring, field-management, plots, frontend, fastapi,
 # Introduction
 
 This document is the standalone execution plan for Phase 1 of
-`docs/impl-plan/feature-eos-crop-monitoring-parity-1.md`.
+`docs/eos/feature-eos-crop-monitoring-parity-1.md`.
 
 Phase 1 goal: make field creation and selection real by wiring the existing plot API into the
 canonical frontend and extending field metadata/provider-link storage without duplicating geometry.
@@ -47,9 +47,9 @@ Phase 1 covers `TASK-005` through `TASK-016` in the main implementation plan:
 
 Use these docs as source of truth:
 
-- `docs/impl-plan/feature-eos-crop-monitoring-parity-1.md`
-- `docs/eos-parity-acceptance-matrix.md`
-- `docs/eos-crop-monitoring-replication-research.md`
+- `docs/eos/feature-eos-crop-monitoring-parity-1.md`
+- `docs/eos/eos-parity-acceptance-matrix.md`
+- `docs/eos/eos-crop-monitoring-replication-research.md`
 - `docs/architecture-tech-stack.md`
 - `docs/engineering-dos-donts.md`
 - `docs/data-ingestion-and-satellite-rules.md`

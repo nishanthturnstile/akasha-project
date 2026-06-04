@@ -2,7 +2,7 @@
 goal: EOSDA Crop Monitoring Functional Parity Implementation Plan
 version: 1.0
 date_created: 2026-06-03
-last_updated: 2026-06-03
+last_updated: 2026-06-04
 owner: Akasha Engineering
 tags: feature, eos, crop-monitoring, provider-adapter, frontend, fastapi, field-management, analytics, weather, vra, reports
 ---
@@ -81,6 +81,11 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 
 ## 2. Implementation Steps
 
+Completion status legend: `✅` means implemented and validated in offline/mock mode; `Partial`
+means the implementation foundation exists but the full acceptance condition still has a live-provider,
+production-auth, or operator-environment caveat; `Skipped unless configured` means the task requires
+operator-supplied live EOS credentials and must not run by default.
+
 ### Implementation Phase 0 — Scope, Acceptance Matrix, and Demo Definition
 
 - GOAL-000: Convert the EOS research findings into an executable acceptance matrix and define the first parity demo slice.
@@ -118,20 +123,20 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-017 | Add EOS/provider settings to `apps/api/app/config.py`: `eos_api_key`, `eos_base_url`, `provider_mode`, `eos_timeout_seconds`, `eos_cache_ttl_seconds`, `eos_rate_limit_per_minute`, and `eos_enabled`. Use safe defaults and never expose `eos_api_key`. Depends on: TASK-013. | | |
-| TASK-018 | Add a pinned HTTP client dependency to `apps/api/requirements.txt`. Preferred: `httpx` with an explicit version range compatible with FastAPI. Depends on: TASK-017. | | |
-| TASK-019 | Create `apps/api/app/providers/models.py` containing Pydantic DTOs for provider status, field mirror result, scene metadata, tile template metadata, analytics trend points, weather responses, zoning map status, and normalized provider errors. Depends on: TASK-017. | | |
-| TASK-020 | Create `apps/api/app/providers/base.py` defining protocol-style interfaces: `FieldProvider`, `SceneProvider`, `TileProvider`, `AnalyticsProvider`, `WeatherProvider`, and `ZoningProvider`. Depends on: TASK-019. | | |
-| TASK-021 | Create `apps/api/app/providers/eos/client.py` implementing EOS API Connect requests with `x-api-key`, timeout handling, sanitized error mapping, request logging without secrets, and dependency-injected base URL. Depends on: TASK-018, TASK-019. | | |
-| TASK-022 | Create `apps/api/app/providers/eos/field_provider.py` with `mirror_field`, `update_mirror`, `delete_mirror`, and `get_mirror` methods using EOS Field Management API. Store provider link fields via repository functions. Depends on: TASK-021, TASK-014. | | |
-| TASK-023 | Create `apps/api/app/providers/eos/scene_provider.py` with field-based scene search methods and normalized scene DTO output containing acquisition date, sensor, cloud percent, usable percent when available, coverage, EOS scene/request/view IDs, and bounds. Depends on: TASK-021, TASK-022. | | |
-| TASK-024 | Create `apps/api/app/providers/eos/tile_provider.py` returning Akasha same-origin tile metadata for EOS-backed true-colour and index routes. It must not return direct EOS URLs to the browser. Depends on: TASK-023. | | |
-| TASK-025 | Create `apps/api/app/providers/eos/analytics_provider.py` for EOS Field Analytics or Statistics `mt_stats`, normalized to Akasha trend-point DTOs. Depends on: TASK-021, TASK-022. | | |
-| TASK-026 | Create `apps/api/app/providers/eos/weather_provider.py` for field forecast, high-accuracy forecast where enabled, historical, accumulated precipitation/temperature, and soil moisture where enabled. Depends on: TASK-021, TASK-022. | | |
-| TASK-027 | Create `apps/api/app/providers/eos/zoning_provider.py` for vegetation-map create, retrieve, list, delete, and SHP export operations. Depends on: TASK-021, TASK-022. | | |
-| TASK-028 | Add `apps/api/app/providers/router.py` with `GET /api/providers/eos/status`. Response must show configured/enabled/unconfigured state without returning the API key. Depends on: TASK-017, TASK-021. | | |
-| TASK-029 | Include provider router in `apps/api/app/main.py`. Depends on: TASK-028. | | |
-| TASK-030 | Add provider unit tests using mocked HTTP responses. Cover missing key, sanitized errors, timeout, successful field mirror, successful scene search, and request header behavior without exposing secrets. Depends on: TASK-021, TASK-028. | | |
+| TASK-017 | Add EOS/provider settings to `apps/api/app/config.py`: `eos_api_key`, `eos_base_url`, `provider_mode`, `eos_timeout_seconds`, `eos_cache_ttl_seconds`, `eos_rate_limit_per_minute`, and `eos_enabled`. Use safe defaults and never expose `eos_api_key`. Depends on: TASK-013. | ✅ | 2026-06-04 |
+| TASK-018 | Add a pinned HTTP client dependency to `apps/api/requirements.txt`. Preferred: `httpx` with an explicit version range compatible with FastAPI. Depends on: TASK-017. | ✅ | 2026-06-04 |
+| TASK-019 | Create `apps/api/app/providers/models.py` containing Pydantic DTOs for provider status, field mirror result, scene metadata, tile template metadata, analytics trend points, weather responses, zoning map status, and normalized provider errors. Depends on: TASK-017. | ✅ | 2026-06-04 |
+| TASK-020 | Create `apps/api/app/providers/base.py` defining protocol-style interfaces: `FieldProvider`, `SceneProvider`, `TileProvider`, `AnalyticsProvider`, `WeatherProvider`, and `ZoningProvider`. Depends on: TASK-019. | ✅ | 2026-06-04 |
+| TASK-021 | Create `apps/api/app/providers/eos/client.py` implementing EOS API Connect requests with `x-api-key`, timeout handling, sanitized error mapping, request logging without secrets, and dependency-injected base URL. Depends on: TASK-018, TASK-019. | ✅ | 2026-06-04 |
+| TASK-022 | Create `apps/api/app/providers/eos/field_provider.py` with `mirror_field`, `update_mirror`, `delete_mirror`, and `get_mirror` methods using EOS Field Management API. Store provider link fields via repository functions. Depends on: TASK-021, TASK-014. | ✅ | 2026-06-04 |
+| TASK-023 | Create `apps/api/app/providers/eos/scene_provider.py` with field-based scene search methods and normalized scene DTO output containing acquisition date, sensor, cloud percent, usable percent when available, coverage, EOS scene/request/view IDs, and bounds. Depends on: TASK-021, TASK-022. | ✅ | 2026-06-04 |
+| TASK-024 | Create `apps/api/app/providers/eos/tile_provider.py` returning Akasha same-origin tile metadata for EOS-backed true-colour and index routes. It must not return direct EOS URLs to the browser. Depends on: TASK-023. | ✅ | 2026-06-04 |
+| TASK-025 | Create `apps/api/app/providers/eos/analytics_provider.py` for EOS Field Analytics or Statistics `mt_stats`, normalized to Akasha trend-point DTOs. Depends on: TASK-021, TASK-022. | ✅ | 2026-06-04 |
+| TASK-026 | Create `apps/api/app/providers/eos/weather_provider.py` for field forecast, high-accuracy forecast where enabled, historical, accumulated precipitation/temperature, and soil moisture where enabled. Depends on: TASK-021, TASK-022. | ✅ | 2026-06-04 |
+| TASK-027 | Create `apps/api/app/providers/eos/zoning_provider.py` for vegetation-map create, retrieve, list, delete, and SHP export operations. Depends on: TASK-021, TASK-022. | ✅ | 2026-06-04 |
+| TASK-028 | Add `apps/api/app/providers/router.py` with `GET /api/providers/eos/status`. Response must show configured/enabled/unconfigured state without returning the API key. Depends on: TASK-017, TASK-021. | ✅ | 2026-06-04 |
+| TASK-029 | Include provider router in `apps/api/app/main.py`. Depends on: TASK-028. | ✅ | 2026-06-04 |
+| TASK-030 | Add provider unit tests using mocked HTTP responses. Cover missing key, sanitized errors, timeout, successful field mirror, successful scene search, and request header behavior without exposing secrets. Depends on: TASK-021, TASK-028. | ✅ | 2026-06-04 |
 
 ### Implementation Phase 3 — EOS-Like Product Shell and Navigation
 
@@ -139,12 +144,12 @@ This plan is ordered so each phase unlocks the next phase. Field creation and se
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-031 | Add a routing dependency to `apps/frontend/package.json`. Preferred: `react-router-dom` pinned to a stable compatible version for React 18. Depends on: TASK-002. | | |
-| TASK-032 | Update `apps/frontend/src/App.tsx` to use the router and render a persistent product shell around the map workspace. Depends on: TASK-031. | | |
-| TASK-033 | Create `apps/frontend/src/components/shell/AppShell.tsx` with module navigation groups: Monitoring, Weather, Field activity log, VRA maps, Scout tasks, Data manager, Field manager, AI assistant, Notifications, Help, Marketplace, and Account/API/settings. Depends on: TASK-032. | | |
-| TASK-034 | Create route components for `MonitoringGlobalView`, `FieldAnalyticsPage`, `FieldLeaderboardPage`, `ReportingPage`, `DiseasesPestsPage`, `WeatherAnalyticsPage`, `WeatherForecastPage`, `FieldActivityLogPage`, `VraSowingPage`, `VraVegetationPage`, `VraPkPage`, `VraMapBuilderPage`, `VraSoilSamplingPage`, `ScoutTasksPage`, `DataManagerPage`, `ConnectionsPage`, `FieldGroupsPage`, `AiAssistantPage`, `NotificationsPage`, `AccountSettingsPage`, and `ApiSettingsPage`. Initial routes may be functional shells with clear status. Depends on: TASK-033. | | |
-| TASK-035 | Move the current `MapPage` into the Monitoring/Field Analytics context without breaking direct `/` loading. Redirect `/` to the main monitoring route. Depends on: TASK-032, TASK-034. | | |
-| TASK-036 | Add shell tests for navigation rendering, route transitions, selected module highlighting, and map route compatibility. Depends on: TASK-033, TASK-034, TASK-035. | | |
+| TASK-031 | Add a routing dependency to `apps/frontend/package.json`. Preferred: `react-router-dom` pinned to a stable compatible version for React 18. Depends on: TASK-002. | ✅ | 2026-06-04 |
+| TASK-032 | Update `apps/frontend/src/App.tsx` to use the router and render a persistent product shell around the map workspace. Depends on: TASK-031. | ✅ | 2026-06-04 |
+| TASK-033 | Create `apps/frontend/src/components/shell/AppShell.tsx` with module navigation groups: Monitoring, Weather, Field activity log, VRA maps, Scout tasks, Data manager, Field manager, AI assistant, Notifications, Help, Marketplace, and Account/API/settings. Depends on: TASK-032. | ✅ | 2026-06-04 |
+| TASK-034 | Create route components for `MonitoringGlobalView`, `FieldAnalyticsPage`, `FieldLeaderboardPage`, `ReportingPage`, `DiseasesPestsPage`, `WeatherAnalyticsPage`, `WeatherForecastPage`, `FieldActivityLogPage`, `VraSowingPage`, `VraVegetationPage`, `VraPkPage`, `VraMapBuilderPage`, `VraSoilSamplingPage`, `ScoutTasksPage`, `DataManagerPage`, `ConnectionsPage`, `FieldGroupsPage`, `AiAssistantPage`, `NotificationsPage`, `AccountSettingsPage`, and `ApiSettingsPage`. Initial routes may be functional shells with clear status. Depends on: TASK-033. | ✅ | 2026-06-04 |
+| TASK-035 | Move the current `MapPage` into the Monitoring/Field Analytics context without breaking direct `/` loading. Redirect `/` to the main monitoring route. Depends on: TASK-032, TASK-034. | ✅ | 2026-06-04 |
+| TASK-036 | Add shell tests for navigation rendering, route transitions, selected module highlighting, and map route compatibility. Depends on: TASK-033, TASK-034, TASK-035. | ✅ | 2026-06-04 |
 
 ### Implementation Phase 4 — Monitoring Map Parity with Field-Aware EOS Scenes and Tiles
 
@@ -202,13 +207,13 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-064 | Add `GET /api/fields/{plot_id}/weather/forecast` returning normalized forecast cards for temperature, precipitation, relative humidity, clouds, and wind. Depends on: TASK-026, TASK-037. | Yes | 2026-06-03 |
-| TASK-065 | Add `GET /api/fields/{plot_id}/weather/history` returning time series for accumulated precipitation, daily precipitation, daily temperature, sum active temperatures, evapotranspiration, relative humidity, and global radiation. Depends on: TASK-026, TASK-037. | Yes | 2026-06-03 |
-| TASK-066 | Add `GET /api/fields/{plot_id}/weather/soil-moisture` where EOS trial access supports it. If unsupported, return a clear provider-unavailable response. Depends on: TASK-026. | Yes | 2026-06-03 |
-| TASK-067 | Implement `apps/frontend/src/pages/weather/WeatherForecastPage.tsx` with current cards, forecast timeline, field-required empty state, loading state, and provider-unavailable state. Depends on: TASK-064, TASK-034. | Yes | 2026-06-03 |
-| TASK-068 | Implement `apps/frontend/src/pages/weather/WeatherAnalyticsPage.tsx` with parameter selectors, date range controls, comparison mode placeholder, and charts for all supported weather series. Depends on: TASK-065, TASK-052, TASK-034. | Yes | 2026-06-03 |
-| TASK-069 | Add weather API functions/hooks in `apps/frontend/src/lib/api.ts` and `apps/frontend/src/lib/queries.ts`. Depends on: TASK-064, TASK-065, TASK-066. | Yes | 2026-06-03 |
-| TASK-070 | Add backend provider tests and frontend page tests for forecast/history success, rate-limit/provider errors, and no selected field. Depends on: TASK-064, TASK-065, TASK-067, TASK-068. | Yes | 2026-06-03 |
+| TASK-064 | Add `GET /api/fields/{plot_id}/weather/forecast` returning normalized forecast cards for temperature, precipitation, relative humidity, clouds, and wind. Depends on: TASK-026, TASK-037. | ✅ | 2026-06-03 |
+| TASK-065 | Add `GET /api/fields/{plot_id}/weather/history` returning time series for accumulated precipitation, daily precipitation, daily temperature, sum active temperatures, evapotranspiration, relative humidity, and global radiation. Depends on: TASK-026, TASK-037. | ✅ | 2026-06-03 |
+| TASK-066 | Add `GET /api/fields/{plot_id}/weather/soil-moisture` where EOS trial access supports it. If unsupported, return a clear provider-unavailable response. Depends on: TASK-026. | ✅ | 2026-06-03 |
+| TASK-067 | Implement `apps/frontend/src/pages/weather/WeatherForecastPage.tsx` with current cards, forecast timeline, field-required empty state, loading state, and provider-unavailable state. Depends on: TASK-064, TASK-034. | ✅ | 2026-06-03 |
+| TASK-068 | Implement `apps/frontend/src/pages/weather/WeatherAnalyticsPage.tsx` with parameter selectors, date range controls, comparison mode placeholder, and charts for all supported weather series. Depends on: TASK-065, TASK-052, TASK-034. | ✅ | 2026-06-03 |
+| TASK-069 | Add weather API functions/hooks in `apps/frontend/src/lib/api.ts` and `apps/frontend/src/lib/queries.ts`. Depends on: TASK-064, TASK-065, TASK-066. | ✅ | 2026-06-03 |
+| TASK-070 | Add backend provider tests and frontend page tests for forecast/history success, rate-limit/provider errors, and no selected field. Depends on: TASK-064, TASK-065, TASK-067, TASK-068. | ✅ | 2026-06-03 |
 
 ### Implementation Phase 8 — VRA Vegetation Zoning and Zoning Module Shells
 
@@ -216,12 +221,12 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-071 | Add `POST /api/fields/{plot_id}/zoning/vegetation` with request body `indexType`, `imageDate`, `zoneCount`, `minZoneArea`, and optional provider callback/async flags. Depends on: TASK-027, TASK-037, TASK-043. | Yes | 2026-06-03 |
-| TASK-072 | Add `GET /api/fields/{plot_id}/zoning/maps` and `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}` returning normalized zone geometry, area, percentage, cluster values, status, and provider metadata. Depends on: TASK-071. | Yes | 2026-06-03 |
-| TASK-073 | Add `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}/export.shp` and optional `export.geojson`. Depends on: TASK-072. | Yes | 2026-06-03 |
-| TASK-074 | Implement `VraVegetationPage` with form controls for selected field, date, index, zone count, minimum zone area, create action, processing state, zone map overlay, zone table, and export actions. Depends on: TASK-071, TASK-072, TASK-073, TASK-034. | Yes | 2026-06-03 |
-| TASK-075 | Implement clear shells for `VraSowingPage`, `VraPkPage`, `VraMapBuilderPage`, and `VraSoilSamplingPage` with descriptions and dependency notes. Depends on: TASK-034. | Yes | 2026-06-03 |
-| TASK-076 | Add tests for zoning create/retrieve/export backend flows and VRA Vegetation UI form/processing/result states. Depends on: TASK-071, TASK-072, TASK-074. | Yes | 2026-06-03 |
+| TASK-071 | Add `POST /api/fields/{plot_id}/zoning/vegetation` with request body `indexType`, `imageDate`, `zoneCount`, `minZoneArea`, and optional provider callback/async flags. Depends on: TASK-027, TASK-037, TASK-043. | ✅ | 2026-06-03 |
+| TASK-072 | Add `GET /api/fields/{plot_id}/zoning/maps` and `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}` returning normalized zone geometry, area, percentage, cluster values, status, and provider metadata. Depends on: TASK-071. | ✅ | 2026-06-03 |
+| TASK-073 | Add `GET /api/fields/{plot_id}/zoning/maps/{zmap_id}/export.shp` and optional `export.geojson`. Depends on: TASK-072. | ✅ | 2026-06-03 |
+| TASK-074 | Implement `VraVegetationPage` with form controls for selected field, date, index, zone count, minimum zone area, create action, processing state, zone map overlay, zone table, and export actions. Depends on: TASK-071, TASK-072, TASK-073, TASK-034. | ✅ | 2026-06-03 |
+| TASK-075 | Implement clear shells for `VraSowingPage`, `VraPkPage`, `VraMapBuilderPage`, and `VraSoilSamplingPage` with descriptions and dependency notes. Depends on: TASK-034. | ✅ | 2026-06-03 |
+| TASK-076 | Add tests for zoning create/retrieve/export backend flows and VRA Vegetation UI form/processing/result states. Depends on: TASK-071, TASK-072, TASK-074. | ✅ | 2026-06-03 |
 
 ### Implementation Phase 9 — Field Leaderboard, Reporting, and Report Templates
 
@@ -229,12 +234,12 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-077 | Add `GET /api/reports/field-leaderboard` returning fields ranked by latest index value, index delta, cloud-free recency, weather risk summary, crop, group, season, area, and image date. Depends on: TASK-050, TASK-064, TASK-014. | Yes | 2026-06-04 |
-| TASK-078 | Add `POST /api/reports/templates`, `GET /api/reports/templates`, and `PATCH /api/reports/templates/{template_id}` for custom report column templates. Store templates in a new migration `005_report_templates.sql`. Depends on: TASK-077. | Yes | 2026-06-04 |
-| TASK-079 | Add `GET /api/reports/field-leaderboard/export.csv` and optional `export.xlsx` after choosing an XLSX library. CSV is required first. Depends on: TASK-077. | Yes | 2026-06-04 |
-| TASK-080 | Implement `FieldLeaderboardPage` with filters/columns matching EOS: index, group, crop, variety, report date, field, location, coordinates, area, sowing/planting, index value, value change, actual yield, image date, and preview/open. Depends on: TASK-077, TASK-034. | Yes | 2026-06-04 |
-| TASK-081 | Implement `ReportingPage` with create-template workflow and selectable columns. Depends on: TASK-078, TASK-034. | Yes | 2026-06-04 |
-| TASK-082 | Add backend and frontend tests for leaderboard sorting, report template CRUD, CSV export, and UI filters. Depends on: TASK-077, TASK-078, TASK-080, TASK-081. | Yes | 2026-06-04 |
+| TASK-077 | Add `GET /api/reports/field-leaderboard` returning fields ranked by latest index value, index delta, cloud-free recency, weather risk summary, crop, group, season, area, and image date. Depends on: TASK-050, TASK-064, TASK-014. | ✅ | 2026-06-04 |
+| TASK-078 | Add `POST /api/reports/templates`, `GET /api/reports/templates`, and `PATCH /api/reports/templates/{template_id}` for custom report column templates. Store templates in a new migration `005_report_templates.sql`. Depends on: TASK-077. | ✅ | 2026-06-04 |
+| TASK-079 | Add `GET /api/reports/field-leaderboard/export.csv` and optional `export.xlsx` after choosing an XLSX library. CSV is required first. Depends on: TASK-077. | ✅ | 2026-06-04 |
+| TASK-080 | Implement `FieldLeaderboardPage` with filters/columns matching EOS: index, group, crop, variety, report date, field, location, coordinates, area, sowing/planting, index value, value change, actual yield, image date, and preview/open. Depends on: TASK-077, TASK-034. | ✅ | 2026-06-04 |
+| TASK-081 | Implement `ReportingPage` with create-template workflow and selectable columns. Depends on: TASK-078, TASK-034. | ✅ | 2026-06-04 |
+| TASK-082 | Add backend and frontend tests for leaderboard sorting, report template CRUD, CSV export, and UI filters. Depends on: TASK-077, TASK-078, TASK-080, TASK-081. | ✅ | 2026-06-04 |
 
 ### Implementation Phase 10 — Field Activity Log, Scout Tasks, Data Manager, and Field Groups
 
@@ -242,17 +247,17 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-083 | Add migration `006_operations_tasks_data_manager.sql` with tables for field activities, scout tasks, field groups, uploaded datasets, and attachments metadata. Depends on: TASK-013. | Yes | 2026-06-04 |
-| TASK-084 | Add `apps/api/app/operations.py` with CRUD endpoints for field activities: type, date, field, assignee, status, input/product, cost, notes, and attachment references. Depends on: TASK-083. | Yes | 2026-06-04 |
-| TASK-085 | Add `apps/api/app/scout_tasks.py` with CRUD endpoints for map-pin tasks, status `new|closed`, assignee, priority, notes, photos/attachments, and field linkage. Depends on: TASK-083. | Yes | 2026-06-04 |
-| TASK-086 | Add `apps/api/app/data_manager.py` with dataset upload metadata endpoints for GeoJSON/SHP ZIP first. ISO-XML may be stored as uploaded metadata until parsing rules are implemented. Depends on: TASK-083. | Yes | 2026-06-04 |
-| TASK-087 | Add `apps/api/app/field_groups.py` with CRUD endpoints for field groups and field assignment. Depends on: TASK-083. | Yes | 2026-06-04 |
-| TASK-088 | Implement `FieldActivityLogPage` with filters for group/crop/variety/activity/assignee, yearly calendar timeline, add activity, and download report action. Depends on: TASK-084, TASK-034. | Yes | 2026-06-04 |
-| TASK-089 | Implement `ScoutTasksPage` with map task pins, task list, search/filter, New/Closed tabs, and add-new-task-by-pin workflow. Depends on: TASK-085, TASK-034. | Yes | 2026-06-04 |
-| TASK-090 | Implement `DataManagerPage` with upload/drop zone for GeoJSON/SHP ZIP and ISO-XML ZIP, max upload copy, upload status, and dataset list. Depends on: TASK-086, TASK-034. | Yes | 2026-06-04 |
-| TASK-091 | Implement `ConnectionsPage` with John Deere placeholder and clear `not connected` state. Do not implement OAuth until client confirms need. Depends on: TASK-034. | Yes | 2026-06-04 |
-| TASK-092 | Implement `FieldGroupsPage` with add group, edit group, delete group, and assign fields. Depends on: TASK-087, TASK-034. | Yes | 2026-06-04 |
-| TASK-093 | Add backend/frontend tests for activities, scout tasks, dataset metadata upload, field groups, and corresponding pages. Depends on: TASK-084, TASK-085, TASK-086, TASK-087, TASK-088, TASK-089, TASK-090, TASK-092. | Yes | 2026-06-04 |
+| TASK-083 | Add migration `006_operations_tasks_data_manager.sql` with tables for field activities, scout tasks, field groups, uploaded datasets, and attachments metadata. Depends on: TASK-013. | ✅ | 2026-06-04 |
+| TASK-084 | Add `apps/api/app/operations.py` with CRUD endpoints for field activities: type, date, field, assignee, status, input/product, cost, notes, and attachment references. Depends on: TASK-083. | ✅ | 2026-06-04 |
+| TASK-085 | Add `apps/api/app/scout_tasks.py` with CRUD endpoints for map-pin tasks, status `new|closed`, assignee, priority, notes, photos/attachments, and field linkage. Depends on: TASK-083. | ✅ | 2026-06-04 |
+| TASK-086 | Add `apps/api/app/data_manager.py` with dataset upload metadata endpoints for GeoJSON/SHP ZIP first. ISO-XML may be stored as uploaded metadata until parsing rules are implemented. Depends on: TASK-083. | ✅ | 2026-06-04 |
+| TASK-087 | Add `apps/api/app/field_groups.py` with CRUD endpoints for field groups and field assignment. Depends on: TASK-083. | ✅ | 2026-06-04 |
+| TASK-088 | Implement `FieldActivityLogPage` with filters for group/crop/variety/activity/assignee, yearly calendar timeline, add activity, and download report action. Depends on: TASK-084, TASK-034. | ✅ | 2026-06-04 |
+| TASK-089 | Implement `ScoutTasksPage` with map task pins, task list, search/filter, New/Closed tabs, and add-new-task-by-pin workflow. Depends on: TASK-085, TASK-034. | ✅ | 2026-06-04 |
+| TASK-090 | Implement `DataManagerPage` with upload/drop zone for GeoJSON/SHP ZIP and ISO-XML ZIP, max upload copy, upload status, and dataset list. Depends on: TASK-086, TASK-034. | ✅ | 2026-06-04 |
+| TASK-091 | Implement `ConnectionsPage` with John Deere placeholder and clear `not connected` state. Do not implement OAuth until client confirms need. Depends on: TASK-034. | ✅ | 2026-06-04 |
+| TASK-092 | Implement `FieldGroupsPage` with add group, edit group, delete group, and assign fields. Depends on: TASK-087, TASK-034. | ✅ | 2026-06-04 |
+| TASK-093 | Add backend/frontend tests for activities, scout tasks, dataset metadata upload, field groups, and corresponding pages. Depends on: TASK-084, TASK-085, TASK-086, TASK-087, TASK-088, TASK-089, TASK-090, TASK-092. | ✅ | 2026-06-04 |
 
 ### Implementation Phase 11 — Risk Map, Crop Stages, Diseases/Pests Shell, and India-Specific Intelligence Path
 
@@ -260,12 +265,12 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-094 | Add `apps/api/app/risk.py` with `GET /api/fields/{plot_id}/risk/summary`. Initial risk inputs: latest index value, index delta between latest two clean scenes, weather stress flags, cloud-data gap, crop/season metadata, and open scout tasks. Depends on: TASK-050, TASK-064, TASK-085, TASK-014. | Yes | 2026-06-04 |
-| TASK-095 | Implement a transparent rule-based risk scoring model with output levels `low`, `medium`, `high`, and `unknown`. Do not claim disease diagnosis from NDVI alone. Depends on: TASK-094. | Yes | 2026-06-04 |
-| TASK-096 | Add crop-stage timeline calculation from crop type and sowing/planting date. Start with generic stages and explicit `modelVersion`. Depends on: TASK-014. | Yes | 2026-06-04 |
-| TASK-097 | Implement `DiseasesPestsPage` with manage-disease-list placeholder, low/medium/high risk legend, crop/growth-stage context, and clear statement when no validated model is available. Depends on: TASK-095, TASK-096, TASK-034. | Yes | 2026-06-04 |
-| TASK-098 | Add `docs/india-specific-productization-plan.md` covering Kharif/Rabi/Zaid seasons, Indian crop catalog, IMD weather warnings, regional languages, smallholder workflows, WhatsApp/SMS advisory path, and government/insurance workflows. Depends on: TASK-095, TASK-096. | Yes | 2026-06-04 |
-| TASK-099 | Add tests for risk summary levels, crop-stage calculation, and disease/pest page states. Depends on: TASK-094, TASK-096, TASK-097. | Yes | 2026-06-04 |
+| TASK-094 | Add `apps/api/app/risk.py` with `GET /api/fields/{plot_id}/risk/summary`. Initial risk inputs: latest index value, index delta between latest two clean scenes, weather stress flags, cloud-data gap, crop/season metadata, and open scout tasks. Depends on: TASK-050, TASK-064, TASK-085, TASK-014. | ✅ | 2026-06-04 |
+| TASK-095 | Implement a transparent rule-based risk scoring model with output levels `low`, `medium`, `high`, and `unknown`. Do not claim disease diagnosis from NDVI alone. Depends on: TASK-094. | ✅ | 2026-06-04 |
+| TASK-096 | Add crop-stage timeline calculation from crop type and sowing/planting date. Start with generic stages and explicit `modelVersion`. Depends on: TASK-014. | ✅ | 2026-06-04 |
+| TASK-097 | Implement `DiseasesPestsPage` with manage-disease-list placeholder, low/medium/high risk legend, crop/growth-stage context, and clear statement when no validated model is available. Depends on: TASK-095, TASK-096, TASK-034. | ✅ | 2026-06-04 |
+| TASK-098 | Add `docs/india-specific-productization-plan.md` covering Kharif/Rabi/Zaid seasons, Indian crop catalog, IMD weather warnings, regional languages, smallholder workflows, WhatsApp/SMS advisory path, and government/insurance workflows. Depends on: TASK-095, TASK-096. | ✅ | 2026-06-04 |
+| TASK-099 | Add tests for risk summary levels, crop-stage calculation, and disease/pest page states. Depends on: TASK-094, TASK-096, TASK-097. | ✅ | 2026-06-04 |
 
 ### Implementation Phase 12 — Auth, Teams, API/Admin, Notifications, and Pilot Readiness
 
@@ -273,14 +278,14 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-100 | Decide authentication provider and document decision in `docs/auth-team-admin-plan.md`. Minimum decision fields: provider, local dev mode, Railway deployment mode, session storage, user table, team table, and migration approach. Depends on: TASK-010, TASK-083. | Yes | 2026-06-04 |
-| TASK-101 | Add migrations for users, teams, memberships, roles, API keys, and ownership columns on fields/activities/tasks/reports/uploads/provider links. Depends on: TASK-100. | Yes | 2026-06-04 |
-| TASK-102 | Add authentication middleware/dependencies in FastAPI and ownership checks for field, activity, task, report, data manager, and provider routes. Depends on: TASK-101. | Yes | 2026-06-04 |
-| TASK-103 | Implement account/team/settings/API pages and team switching UI. Depends on: TASK-102, TASK-034. | Yes | 2026-06-04 |
-| TASK-104 | Add notification tables and routes for field changes, risk alerts, task assignment, report availability, and provider sync failures. Depends on: TASK-102, TASK-094, TASK-085. | Yes | 2026-06-04 |
-| TASK-105 | Implement Notifications page/panel with empty state, unread count, and notification detail actions. Depends on: TASK-104, TASK-034. | Yes | 2026-06-04 |
-| TASK-106 | Implement AI assistant shell only after analytics/weather/risk endpoints exist. It may summarize field data from Akasha APIs but must not invent agronomic advice beyond available evidence. Depends on: TASK-050, TASK-065, TASK-094. | Yes | 2026-06-04 |
-| TASK-107 | Add security and authorization tests for every protected route and frontend tests for team/settings/notifications states. Depends on: TASK-102, TASK-103, TASK-104, TASK-105. | Yes | 2026-06-04 |
+| TASK-100 | Decide authentication provider and document decision in `docs/auth-team-admin-plan.md`. Minimum decision fields: provider, local dev mode, Railway deployment mode, session storage, user table, team table, and migration approach. Depends on: TASK-010, TASK-083. | ✅ | 2026-06-04 |
+| TASK-101 | Add migrations for users, teams, memberships, roles, API keys, and ownership columns on fields/activities/tasks/reports/uploads/provider links. Depends on: TASK-100. | ✅ | 2026-06-04 |
+| TASK-102 | Add authentication middleware/dependencies in FastAPI and ownership checks for field, activity, task, report, data manager, and provider routes. Depends on: TASK-101. | Partial (dev auth shell; production session and full tenant isolation pending) | 2026-06-04 |
+| TASK-103 | Implement account/team/settings/API pages and team switching UI. Depends on: TASK-102, TASK-034. | ✅ (dev/pilot shell) | 2026-06-04 |
+| TASK-104 | Add notification tables and routes for field changes, risk alerts, task assignment, report availability, and provider sync failures. Depends on: TASK-102, TASK-094, TASK-085. | ✅ | 2026-06-04 |
+| TASK-105 | Implement Notifications page/panel with empty state, unread count, and notification detail actions. Depends on: TASK-104, TASK-034. | ✅ | 2026-06-04 |
+| TASK-106 | Implement AI assistant shell only after analytics/weather/risk endpoints exist. It may summarize field data from Akasha APIs but must not invent agronomic advice beyond available evidence. Depends on: TASK-050, TASK-065, TASK-094. | ✅ (shell) | 2026-06-04 |
+| TASK-107 | Add security and authorization tests for every protected route and frontend tests for team/settings/notifications states. Depends on: TASK-102, TASK-103, TASK-104, TASK-105. | Partial (dev-shell/fail-closed tests; real auth coverage pending) | 2026-06-04 |
 
 ### Implementation Phase 13 — End-to-End EOS Parity Verification and Native Replacement Readiness
 
@@ -288,11 +293,11 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-108 | Run a mocked-provider E2E workflow: create field, sync provider, load scenes, render tile template, view trend, view weather, create VRA map, export report. Depends on: TASK-076, TASK-082, TASK-093. | Yes | 2026-06-04 |
+| TASK-108 | Run a mocked-provider E2E workflow: create field, sync provider, load scenes, render tile template, view trend, view weather, create VRA map, export report. Depends on: TASK-076, TASK-082, TASK-093. | ✅ | 2026-06-04 |
 | TASK-109 | Run a real-EOS smoke test only with local/deployment `EOS_API_KEY`: field mirror, scene search, true-colour tile, NDVI trend, weather forecast/history, and vegetation zoning map. Do not print the key. Depends on: TASK-030, TASK-047, TASK-070, TASK-076. | Skipped unless configured | 2026-06-04 |
-| TASK-110 | Update `docs/eos-parity-acceptance-matrix.md` with pass/fail status for every first-demo required feature. Depends on: TASK-108, TASK-109. | Yes | 2026-06-04 |
-| TASK-111 | Add provider-replacement notes to `docs/architecture-tech-stack.md`: map each EOS-backed feature to Akasha-native STAC/COG/weather/zoning/reporting replacement. Depends on: TASK-110. | Yes | 2026-06-04 |
-| TASK-112 | Run complete validation: `cd apps/api && python -m pytest -q`, `cd apps/frontend && yarn test`, `cd apps/frontend && yarn lint`, `cd apps/frontend && yarn build`, and relevant raster validators. Depends on: all implementation phases touched. | Yes | 2026-06-04 |
+| TASK-110 | Update `docs/eos-parity-acceptance-matrix.md` with pass/fail status for every first-demo required feature. Depends on: TASK-108, TASK-109. | Partial (offline/test evidence updated; live EOS pass pending TASK-109) | 2026-06-04 |
+| TASK-111 | Add provider-replacement notes to `docs/architecture-tech-stack.md`: map each EOS-backed feature to Akasha-native STAC/COG/weather/zoning/reporting replacement. Depends on: TASK-110. | ✅ | 2026-06-04 |
+| TASK-112 | Run complete validation: `cd apps/api && python -m pytest -q`, `cd apps/frontend && yarn test`, `cd apps/frontend && yarn lint`, `cd apps/frontend && yarn build`, and relevant raster validators. Depends on: all implementation phases touched. | ✅ (npm equivalents used; local `yarn` unavailable) | 2026-06-04 |
 
 ## 3. Alternatives
 
@@ -324,9 +329,9 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 ## 5. Files
 
-- **FILE-001**: `docs/eos-crop-monitoring-replication-research.md` — Current EOS feature/API inventory and UI findings.
-- **FILE-002**: `docs/eos-parity-acceptance-matrix.md` — New execution checklist generated in Phase 0.
-- **FILE-003**: `docs/impl-plan/feature-eos-crop-monitoring-parity-1.md` — This implementation plan.
+- **FILE-001**: `docs/eos/eos-crop-monitoring-replication-research.md` — Current EOS feature/API inventory and UI findings.
+- **FILE-002**: `docs/eos/eos-parity-acceptance-matrix.md` — New execution checklist generated in Phase 0.
+- **FILE-003**: `docs/eos/feature-eos-crop-monitoring-parity-1.md` — This implementation plan.
 - **FILE-004**: `docs/README.md` — Documentation index link target.
 - **FILE-005**: `apps/api/app/config.py` — Provider settings including EOS configuration.
 - **FILE-006**: `apps/api/requirements.txt` — Add backend HTTP client dependency.
@@ -424,7 +429,7 @@ Phase 5 chart decision: no package was added for TASK-052. The selected implemen
 
 ## 8. Related Specifications / Further Reading
 
-- `docs/eos-crop-monitoring-replication-research.md`
+- `docs/eos/eos-crop-monitoring-replication-research.md`
 - `docs/platform-plan.md`
 - `docs/architecture-tech-stack.md`
 - `docs/engineering-dos-donts.md`

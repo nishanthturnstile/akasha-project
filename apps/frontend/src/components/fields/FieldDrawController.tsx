@@ -75,9 +75,17 @@ export function FieldDrawController({
   const stopDraw = useCallback(() => {
     const draw = drawRef.current;
     if (draw && startedRef.current) {
-      draw.clear();
-      draw.stop();
       startedRef.current = false;
+      try {
+        draw.clear();
+      } catch {
+        // Terra Draw can already be disabled during React cleanup/re-renders.
+      }
+      try {
+        draw.stop();
+      } catch {
+        // Cleanup must stay idempotent so draw failures do not blank the map.
+      }
     }
     setDraftGeometry(null);
     setDraftName('');

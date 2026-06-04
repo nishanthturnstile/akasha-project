@@ -2,6 +2,7 @@ import { useMapView } from '@/state/mapViewContext';
 import { useFieldRiskSummary, usePlots } from '@/lib/queries';
 import { reportErrorMessage, fmt } from '@/pages/reports/reportUtils';
 import type { RiskLevel } from '@/types/api';
+import { SelectFieldNotice } from '@/components/shell/SelectFieldNotice';
 
 const LEVELS: RiskLevel[] = ['low', 'medium', 'high', 'unknown'];
 
@@ -21,12 +22,10 @@ export default function DiseasesPestsPage() {
   if (!selectedPlotId) {
     return (
       <main className="h-full overflow-auto bg-background p-4 text-foreground" data-testid="diseases-pests-page">
-        <section className="rounded-xl border border-dashed border-border/80 bg-card/80 p-6">
-          <h1 className="text-2xl font-semibold">Diseases & Pests</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Select a field to view non-diagnostic field-watch context.
-          </p>
-        </section>
+        <SelectFieldNotice
+          title="Diseases & Pests"
+          message="Select a field to view non-diagnostic field-watch context."
+        />
       </main>
     );
   }

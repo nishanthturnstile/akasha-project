@@ -13,6 +13,7 @@ import {
   weatherErrorMessage,
 } from '@/pages/weather/weatherPageUtils';
 import type { WeatherSeriesId } from '@/types/api';
+import { SelectFieldNotice } from '@/components/shell/SelectFieldNotice';
 
 const WEATHER_PARAMETERS: { id: WeatherSeriesId; label: string }[] = [
   { id: 'accumulatedPrecipitation', label: 'Accumulated precipitation' },
@@ -34,10 +35,10 @@ function latestNonNullValue(points: { value: number | null }[]): number | null {
 
 function EmptyState() {
   return (
-    <section className="rounded-xl border border-dashed border-border/80 bg-card/80 p-6 text-sm text-muted-foreground">
-      <h1 className="text-lg font-semibold text-foreground">Weather Analytics</h1>
-      <p className="mt-2">Select a field to view historical weather charts.</p>
-    </section>
+    <SelectFieldNotice
+      title="Weather Analytics"
+      message="Select a field to view historical weather charts."
+    />
   );
 }
 

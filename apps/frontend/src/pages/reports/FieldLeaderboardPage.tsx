@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useExportFieldLeaderboardCsv, useFieldLeaderboard } from '@/lib/queries';
+import { fieldLabel } from '@/lib/fieldLabels';
 import type { FieldLeaderboardFilters } from '@/types/api';
 import { DEFAULT_REPORT_COLUMNS, REPORT_COLUMNS } from '@/pages/reports/reportColumns';
 import { downloadFile, fmt, reportErrorMessage, valueForColumn } from '@/pages/reports/reportUtils';
@@ -51,7 +52,7 @@ export default function FieldLeaderboardPage() {
         </label>
         { ['groupName', 'cropType', 'variety', 'seasonLabel'].map((key) => (
           <label key={ key } className="text-sm text-muted-foreground">
-            { key.replace(/([A-Z])/g, ' $1') }
+            { fieldLabel(key) }
             <input
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground"
               value={ String((filters as Record<string, unknown>)[key] ?? '') }

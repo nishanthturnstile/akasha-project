@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, useReducer, type ReactNode } from 'react';
+import {
+    createContext,
+    useContext,
+    useEffect,
+    useMemo,
+    useReducer,
+    type ReactNode,
+} from 'react';
 
 /**
  * Client-only UI state for the Map screen redesign (docs/map-screen-redesign.md §6).
@@ -151,6 +158,35 @@ export interface MapViewContextValue extends MapViewState {
 
 const MapViewContext = createContext<MapViewContextValue | null>(null);
 
+/**
+ * Persist the selected field across reloads and module navigations so weather,
+ * VRA, analytics, and risk pages remain usable when opened directly. Only the
+ * field id is persisted; all server data stays in TanStack Query.
+ */
+const SELECTED_PLOT_STORAGE_KEY = 'akasha.selectedPlotId';
+
+function readPersistedPlotId(): string | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        return window.localStorage.getItem(SELECTED_PLOT_STORAGE_KEY) || null;
+    } catch {
+        return null;
+    }
+}
+
+function writePersistedPlotId(plotId: string | null): void {
+    if (typeof window === 'undefined') return;
+    try {
+        if (plotId) {
+            window.localStorage.setItem(SELECTED_PLOT_STORAGE_KEY, plotId);
+        } else {
+            window.localStorage.removeItem(SELECTED_PLOT_STORAGE_KEY);
+        }
+    } catch {
+        /* storage unavailable (private mode / quota) — selection stays in-memory only */
+    }
+}
+
 export function MapViewProvider({
     children,
     initialState,
@@ -160,8 +196,13 @@ export function MapViewProvider({
 }) {
     const [state, dispatch] = useReducer(reducer, {
         ...initialMapViewState,
+        selectedPlotId: readPersistedPlotId(),
         ...initialState,
     });
+
+    useEffect(() => {
+        writePersistedPlotId(state.selectedPlotId);
+    }, [state.selectedPlotId]);
 
     const value = useMemo<MapViewContextValue>(
         () => ({

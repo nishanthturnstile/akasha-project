@@ -1,13 +1,14 @@
 import { useMapView } from '@/state/mapViewContext';
 import { useFieldWeatherForecast, usePlots } from '@/lib/queries';
 import { formatNumber, selectedPlotLabel, weatherErrorMessage } from '@/pages/weather/weatherPageUtils';
+import { SelectFieldNotice } from '@/components/shell/SelectFieldNotice';
 
 function EmptyState() {
   return (
-    <section className="rounded-xl border border-dashed border-border/80 bg-card/80 p-6 text-sm text-muted-foreground">
-      <h1 className="text-lg font-semibold text-foreground">Weather Forecast</h1>
-      <p className="mt-2">Select a field to view forecast cards and the weather timeline.</p>
-    </section>
+    <SelectFieldNotice
+      title="Weather Forecast"
+      message="Select a field to view forecast cards and the weather timeline."
+    />
   );
 }
 

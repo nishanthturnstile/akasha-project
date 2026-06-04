@@ -13,7 +13,7 @@ from typing import Any, Literal
 import anyio
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from . import plots_repo, reports_repo
 from .auth import get_current_team
@@ -145,6 +145,8 @@ class FieldLeaderboardResponse(ProviderModel):
 
 
 class ReportTemplatePayload(ProviderModel):
+    model_config = ConfigDict(alias_generator=None, populate_by_name=True)
+
     name: str
     columns: list[str] = Field(default_factory=lambda: list(DEFAULT_COLUMNS))
     filters: dict[str, Any] = Field(default_factory=dict)
@@ -152,6 +154,8 @@ class ReportTemplatePayload(ProviderModel):
 
 
 class ReportTemplateUpdate(ProviderModel):
+    model_config = ConfigDict(alias_generator=None, populate_by_name=True)
+
     name: str | None = None
     columns: list[str] | None = None
     filters: dict[str, Any] | None = None

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { AppShell } from '@/components/shell/AppShell';
@@ -26,6 +26,16 @@ describe('AppShell', () => {
     expect(screen.getByTestId('product-shell')).toBeTruthy();
     expect(screen.getByTestId('forecast-page')).toBeTruthy();
     expect(screen.getByTestId('nav-link-forecast').getAttribute('aria-current')).toBe('page');
+  });
+
+  it('keeps non-active nav groups collapsed until expanded', () => {
+    renderShell();
+
+    // Monitoring group is collapsed by default because the active route is in Weather.
+    expect(screen.queryByTestId('nav-link-field-analytics')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('nav-group-toggle-monitoring'));
+
     expect(screen.getByTestId('nav-link-field-analytics')).toBeTruthy();
   });
 

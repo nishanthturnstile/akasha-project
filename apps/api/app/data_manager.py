@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 import anyio
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from pydantic import Field
 
 from . import phase10_repo
 from .auth import get_current_team
@@ -27,7 +28,7 @@ MAX_UPLOAD_BYTES = 1_048_576
 class DatasetPayload(ProviderModel):
     name: str
     dataset_type: Literal["geojson", "shp_zip", "iso_xml"]
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class UploadedDataset(ProviderModel):
@@ -40,7 +41,7 @@ class UploadedDataset(ProviderModel):
     file_size_bytes: int | None = None
     feature_count: int | None = None
     validation_message: str | None = None
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str | None = None
     updated_at: str | None = None
 

@@ -7,6 +7,7 @@ import {
   useUpdateFieldActivity,
 } from '@/lib/queries';
 import { downloadFile, reportErrorMessage } from '@/pages/reports/reportUtils';
+import { fieldLabel } from '@/lib/fieldLabels';
 import type { ActivityFilters } from '@/types/api';
 
 export default function FieldActivityLogPage() {
@@ -53,7 +54,7 @@ export default function FieldActivityLogPage() {
       <section className="mt-4 grid gap-3 rounded-xl border border-border/80 bg-card/90 p-4 md:grid-cols-5">
         { ['groupName', 'cropType', 'variety', 'activityType', 'assignee'].map((key) => (
           <label key={ key } className="text-sm text-muted-foreground">
-            { key.replace(/([A-Z])/g, ' $1') }
+            { fieldLabel(key) }
             <input
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground"
               value={ String((filters as Record<string, unknown>)[key] ?? '') }

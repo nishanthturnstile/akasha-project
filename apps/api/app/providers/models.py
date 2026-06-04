@@ -94,7 +94,7 @@ class CloudMaskMapping(ProviderModel):
     native_excluded_scl_classes: list[int]
     eos_cloud_masking_level: int | None = None
     eos_exact: bool = True
-    warnings: list[str] = []
+    warnings: list[str] = Field(default_factory=list)
 
 
 class FieldExportMetadata(ProviderModel):
@@ -106,7 +106,7 @@ class FieldExportMetadata(ProviderModel):
     format: str
     cloud_mask: CloudMaskOptions | None = None
     cloud_mask_mapping: CloudMaskMapping | None = None
-    warnings: list[str] = []
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ExportFile(ProviderModel):
@@ -140,7 +140,7 @@ class FieldScene(ProviderModel):
     tile_available: bool = True
     metrics_provisional: bool = False
     scene_count: int | None = None
-    layers: list[FieldLayer] = []
+    layers: list[FieldLayer] = Field(default_factory=list)
 
 
 class FieldSceneListResponse(ProviderModel):
@@ -201,7 +201,7 @@ class FieldTrendResponse(ProviderModel):
     end_date: date
     points: list[FieldTrendPoint]
     fallback_reason: str | None = None
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class WeatherRecord(ProviderModel):
@@ -248,4 +248,4 @@ class ZoningMapStatus(ProviderModel):
     map_type: str
     index: str | None = None
     zone_count: int | None = None
-    zones: list[ZoningZone] = []
+    zones: list[ZoningZone] = Field(default_factory=list)

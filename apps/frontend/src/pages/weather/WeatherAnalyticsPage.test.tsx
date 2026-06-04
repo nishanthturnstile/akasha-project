@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WeatherAnalyticsPage from '@/pages/weather/WeatherAnalyticsPage';
+import { MemoryRouter } from 'react-router-dom';
 import { MapViewProvider, type MapViewState } from '@/state/mapViewContext';
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -18,9 +19,11 @@ function renderPage(initialState?: Partial<MapViewState>) {
   });
   return render(
     <QueryClientProvider client={ queryClient }>
-      <MapViewProvider initialState={ initialState }>
-        <WeatherAnalyticsPage />
-      </MapViewProvider>
+      <MemoryRouter>
+        <MapViewProvider initialState={ initialState }>
+          <WeatherAnalyticsPage />
+        </MapViewProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }

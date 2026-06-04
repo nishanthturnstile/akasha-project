@@ -1,5 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { Satellite } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { ChevronDown, Satellite } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -9,7 +10,56 @@ function testIdFor(label: string): string {
   return `nav-link-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 }
 
+function slugFor(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+function groupLabelForPath(pathname: string): string | null {
+  for (const group of productNavigation) {
+    const matches = group.items.some(
+      (item) => pathname === item.path || pathname.startsWith(`${item.path}/`),
+    );
+    if (matches) {
+      return group.label;
+    }
+  }
+  return null;
+}
+
 export function AppShell() {
+  const location = useLocation();
+  const activeGroupLabel = useMemo(
+    () => groupLabelForPath(location.pathname),
+    [location.pathname],
+  );
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    () => new Set(activeGroupLabel ? [activeGroupLabel] : []),
+  );
+
+  // Adjust state during render (React-recommended) so the group containing the
+  // active route auto-expands when navigation changes the active group.
+  const [trackedGroup, setTrackedGroup] = useState(activeGroupLabel);
+  if (activeGroupLabel !== trackedGroup) {
+    setTrackedGroup(activeGroupLabel);
+    if (activeGroupLabel && !expandedGroups.has(activeGroupLabel)) {
+      const next = new Set(expandedGroups);
+      next.add(activeGroupLabel);
+      setExpandedGroups(next);
+    }
+  }
+
+  const toggleGroup = (label: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
+  };
+
   return (
     <div
       className="grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-1"
@@ -36,7 +86,7 @@ export function AppShell() {
                     key={ item.path }
                     to={ item.path }
                     data-testid={ `mobile-${testIdFor(item.label)}` }
-                    className={({ isActive }) =>
+                    className={ ({ isActive }) =>
                       cn(
                         'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
                         isActive && 'bg-primary/15 text-foreground shadow-e1',
@@ -69,47 +119,69 @@ export function AppShell() {
         </div>
         <Separator />
         <ScrollArea className="min-h-0 flex-1">
-          <nav aria-label="Product modules" className="flex flex-col gap-5 px-3 py-4">
-            { productNavigation.map((group) => (
-              <section key={ group.label } aria-labelledby={ `nav-group-${testIdFor(group.label)}` }>
-                <h2
-                  id={ `nav-group-${testIdFor(group.label)}` }
-                  className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-                >
-                  { group.label }
-                </h2>
-                <div className="flex flex-col gap-1">
-                  { group.items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <NavLink
-                        key={ item.path }
-                        to={ item.path }
-                        data-testid={ testIdFor(item.label) }
-                        className={({ isActive }) =>
-                          cn(
-                            'group flex items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                            isActive && 'bg-primary/15 text-foreground shadow-e1',
-                          )
-                        }
-                      >
-                        <Icon
-                          className="size-4 shrink-0 text-muted-foreground group-hover:text-accent-foreground"
-                          strokeWidth={ 1.75 }
-                          aria-hidden="true"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{ item.label }</span>
-                        { item.status === 'planned' && (
-                          <span className="rounded-sm bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                            Planned
-                          </span>
-                        ) }
-                      </NavLink>
-                    );
-                  }) }
-                </div>
-              </section>
-            )) }
+          <nav aria-label="Product modules" className="flex flex-col gap-2 px-3 py-4">
+            { productNavigation.map((group) => {
+              const slug = slugFor(group.label);
+              const isExpanded = expandedGroups.has(group.label);
+              const panelId = `nav-group-panel-${slug}`;
+              return (
+                <section key={ group.label } aria-labelledby={ `nav-group-${slug}` }>
+                  <h2 id={ `nav-group-${slug}` } className="sr-only">
+                    { group.label }
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={ () => toggleGroup(group.label) }
+                    data-testid={ `nav-group-toggle-${slug}` }
+                    aria-expanded={ isExpanded }
+                    aria-controls={ panelId }
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <span className="truncate">{ group.label }</span>
+                    <ChevronDown
+                      className={ cn(
+                        'size-4 shrink-0 text-muted-foreground transition-transform duration-fast',
+                        isExpanded && 'rotate-180',
+                      ) }
+                      strokeWidth={ 1.75 }
+                      aria-hidden="true"
+                    />
+                  </button>
+                  { isExpanded && (
+                    <div id={ panelId } className="mt-1 flex flex-col gap-1">
+                      { group.items.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <NavLink
+                            key={ item.path }
+                            to={ item.path }
+                            data-testid={ testIdFor(item.label) }
+                            className={ ({ isActive }) =>
+                              cn(
+                                'group flex items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                isActive && 'bg-primary/15 text-foreground shadow-e1',
+                              )
+                            }
+                          >
+                            <Icon
+                              className="size-4 shrink-0 text-muted-foreground group-hover:text-accent-foreground"
+                              strokeWidth={ 1.75 }
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                            { item.status === 'planned' && (
+                              <span className="rounded-sm bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                                Planned
+                              </span>
+                            ) }
+                          </NavLink>
+                        );
+                      }) }
+                    </div>
+                  ) }
+                </section>
+              );
+            }) }
           </nav>
         </ScrollArea>
       </aside>

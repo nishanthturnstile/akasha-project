@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 import anyio
 from fastapi import APIRouter, Body, Depends, Query, Request
+from pydantic import Field
 
 from . import plots_repo
 from .auth import get_current_team
@@ -45,7 +46,7 @@ class FieldStatisticsRequest(ProviderModel):
     source_id: str = "sentinel-2-l2a"
     acquisition_date: str | None = None
     index_type: str = DEFAULT_INDEX
-    cloud_mask: CloudMaskOptions = CloudMaskOptions()
+    cloud_mask: CloudMaskOptions = Field(default_factory=CloudMaskOptions)
 
 
 class FieldStatisticsResponse(ProviderModel):

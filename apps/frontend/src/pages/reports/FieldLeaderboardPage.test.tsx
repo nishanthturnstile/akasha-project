@@ -81,7 +81,7 @@ describe('FieldLeaderboardPage', () => {
         fetchMock.mock.calls.some((call) => String(call[0]).includes('/export.csv')),
       ).toBe(true),
     );
-    fireEvent.change(screen.getByLabelText('crop Type'), { target: { value: 'Paddy' } });
+    fireEvent.change(screen.getByLabelText('Crop'), { target: { value: 'Paddy' } });
     await waitFor(() =>
       expect(
         fetchMock.mock.calls.some((call) => String(call[0]).includes('cropType=Paddy')),

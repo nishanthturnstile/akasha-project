@@ -10,6 +10,7 @@ import {
 } from '@/lib/queries';
 import { useMapView } from '@/state/mapViewContext';
 import type { FileDownload, ZoningMap, ZoningZone } from '@/types/api';
+import { SelectFieldNotice } from '@/components/shell/SelectFieldNotice';
 
 const INDEX_OPTIONS = ['NDVI', 'NDRE', 'NDMI', 'MSAVI', 'RECI'];
 
@@ -133,12 +134,10 @@ export default function VraVegetationPage() {
   if (!selectedPlotId) {
     return (
       <main className="h-full overflow-auto bg-background p-4 text-foreground" data-testid="vra-vegetation-page">
-        <section className="rounded-xl border border-dashed border-border/80 bg-card/80 p-6">
-          <h1 className="text-2xl font-semibold">VRA Vegetation</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Select a field before creating vegetation zones.
-          </p>
-        </section>
+        <SelectFieldNotice
+          title="VRA Vegetation"
+          message="Select a field before creating vegetation zones."
+        />
       </main>
     );
   }

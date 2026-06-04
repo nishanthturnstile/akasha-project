@@ -42,16 +42,16 @@ import { CompareControl } from '@/components/map/CompareControl';
 import { CommandPalette } from '@/components/map/CommandPalette';
 import { CoordinateReadout } from '@/components/map/CoordinateReadout';
 import { Legend } from '@/components/map/Legend';
-import { TopBar } from '@/components/map/TopBar';
-import { LayersSurface } from '@/components/layers/LayersSurface';
-import { SourceList } from '@/components/layers/SourceList';
+import { FieldContextHeader } from '@/components/map/FieldContextHeader';
+import { LayerControlBar } from '@/components/layers/LayerControlBar';
 import { TimelineBar } from '@/components/timeline/TimelineBar';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/mapViewContext';
-import type { FieldScene, Plot, PlotGeometry, SceneDate } from '@/types/api';
+import { useMapUrlState } from '@/hooks/useMapUrlState';
+import type { FieldScene, Plot, PlotGeometry, SceneDate, Source } from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -159,7 +159,17 @@ function sceneDateFromFieldScene(scene: FieldScene, latest: boolean): SceneDate 
     tileAvailable: scene.tileAvailable,
     sceneCount: scene.sceneCount ?? undefined,
     bounds: scene.bounds,
+    sensor: scene.sensor ?? null,
   };
+}
+
+/** Map an Akasha {@link Source} → EOS-style 2-letter sensor badge (e.g. `S2`, `S1`). */
+function sensorBadgeForSource(source: Source | null | undefined): string | null {
+  if (!source) return null;
+  const haystack = `${source.id} ${source.label}`.toLowerCase();
+  if (haystack.includes('sentinel-2') || haystack.includes('sentinel 2')) return 'S2';
+  if (haystack.includes('sentinel-1') || haystack.includes('sentinel 1')) return 'S1';
+  return null;
 }
 
 function fieldLayerFor(scene: FieldScene | null | undefined, displayMode: string) {
@@ -172,6 +182,7 @@ function fieldLayerFor(scene: FieldScene | null | undefined, displayMode: string
 }
 
 export default function MapPage() {
+  useMapUrlState();
   const configQ = useConfig();
   const sourcesQ = useSources();
   const defaultLayerQ = useDefaultLayer();
@@ -184,12 +195,13 @@ export default function MapPage() {
     displayMode: displayModeOverride,
     opacity,
     visible,
-    layersOpen,
     compareEnabled,
     compareDate,
     selectedPlotId,
     cloudMask,
     legendOpen,
+    periodFrom,
+    periodTo,
   } = view;
 
   const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
@@ -201,6 +213,7 @@ export default function MapPage() {
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [allFieldsOpen, setAllFieldsOpen] = useState(false);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -292,13 +305,13 @@ export default function MapPage() {
       ? (displayModeOverride as string)
       : 'RGB'
     : displayModeOverride ??
-      selectedSource?.displayMode ??
-      selectedSource?.defaultDisplayMode ??
-      selectedSource?.displayModes?.[0] ??
-      (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
-        ? defaultLayerQ.data.displayMode
-        : undefined) ??
-      'RGB';
+    selectedSource?.displayMode ??
+    selectedSource?.defaultDisplayMode ??
+    selectedSource?.displayModes?.[0] ??
+    (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
+      ? defaultLayerQ.data.displayMode
+      : undefined) ??
+    'RGB';
 
   const scene = useMemo<SatelliteScene | null>(() => {
     if (fieldSceneMode) {
@@ -539,10 +552,19 @@ export default function MapPage() {
         className="absolute left-[392px] top-[112px] z-popover max-[760px]:left-4 max-[760px]:top-[37.5rem]"
       />
 
-      {/* Top chrome: layers toggle · search · theme */ }
-      <TopBar
-        layersOpen={ layersOpen }
-        onToggleLayers={ view.toggleLayers }
+      {/* Top chrome: field context · layers · search · theme · all-fields trigger */ }
+      <FieldContextHeader
+        selectedPlot={ selectedPlot }
+        fieldCount={ plotsQ.data?.length ?? 0 }
+        allFieldsOpen={ allFieldsOpen }
+        onToggleAllFields={ () => setAllFieldsOpen((open) => !open) }
+        onBack={ () => {
+          view.clearSelectedPlot();
+          setAllFieldsOpen(true);
+        } }
+        onEditGeometry={ () =>
+          selectedPlot ? setFieldMode((current) => (current === 'edit' ? null : 'edit')) : undefined
+        }
         onOpenCommand={ () => setCommandOpen(true) }
       />
 
@@ -593,40 +615,30 @@ export default function MapPage() {
       </div>
 
       {/* Layers surface — left drawer (≥md) / bottom sheet (<md) */ }
-      <div className="absolute left-4 top-[112px] z-panel">
-        <AllFieldsPanel
-          plots={ plotsQ.data }
-          isLoading={ plotsQ.isLoading }
-          error={ plotsQ.isError ? messageFor(plotsQ.error) : null }
-          onRetry={ () => void plotsQ.refetch() }
-          selectedPlotId={ selectedPlotId }
-          onSelect={ (plot) => view.setSelectedPlotId(plot.id) }
-          onFocus={ selectAndFocusPlot }
-          onAdd={ map ? () => setFieldMode('draw') : undefined }
-          onImport={ () => fileInputRef.current?.click() }
-        />
-      </div>
-
-      <div className="absolute left-[392px] top-[112px]">
-        <LayersSurface open={ layersOpen } onClose={ () => view.setLayersOpen(false) }>
-          <SourceList
-            sources={ sourcesQ.data }
-            activeSourceId={ effectiveSourceId }
-            selectedDate={ selectedDate }
-            displayMode={ selectedDisplayMode }
-            visible={ visible }
-            opacity={ opacity }
-            onSelectSource={ view.setSource }
-            onDisplayModeChange={ view.setDisplayMode }
-            onVisibleChange={ view.setVisible }
-            onOpacityChange={ view.setOpacity }
-            onPrefetchSource={ prefetchDates }
+      <div className="absolute left-4 top-[112px] z-panel" id="all-fields-panel">
+        { allFieldsOpen && (
+          <AllFieldsPanel
+            plots={ plotsQ.data }
+            isLoading={ plotsQ.isLoading }
+            error={ plotsQ.isError ? messageFor(plotsQ.error) : null }
+            onRetry={ () => void plotsQ.refetch() }
+            selectedPlotId={ selectedPlotId }
+            onSelect={ (plot) => {
+              view.setSelectedPlotId(plot.id);
+              setAllFieldsOpen(false);
+            } }
+            onFocus={ (plot) => {
+              selectAndFocusPlot(plot);
+              setAllFieldsOpen(false);
+            } }
+            onAdd={ map ? () => setFieldMode('draw') : undefined }
+            onImport={ () => fileInputRef.current?.click() }
           />
-        </LayersSurface>
+        ) }
       </div>
 
       {/* Right: field scene status + index panel (Phase 5 placeholder) */ }
-      <div className="absolute right-4 top-[68px] z-toolbar hidden max-w-[300px] flex-col gap-2 xl:flex">
+      <div className="absolute right-4 top-[68px] z-toolbar hidden max-w-[320px] flex-col gap-2 xl:flex">
         <FieldSceneStatusPanel
           selectedPlot={ selectedPlot }
           response={ fieldScenesQ.data }
@@ -648,12 +660,14 @@ export default function MapPage() {
             supportedIndices={ analyticsSupportedIndices }
             cloudMask={ cloudMask }
             selectedScene={ selectedFieldScene }
+            periodFrom={ periodFrom }
+            periodTo={ periodTo }
           />
         ) }
       </div>
 
-      {/* Right: coordinate readout + map controls (lifted above the timeline) */ }
-      <div className="absolute bottom-[calc(var(--timeline-height)+1.125rem)] right-4 z-toolbar flex flex-col items-end gap-2">
+      {/* Right: coordinate readout, measure, and consolidated layer-control bar (above timeline). */ }
+      <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <CoordinateReadout map={ map } />
         <MeasureTool
           activeTool={ activeMapTool }
@@ -661,30 +675,41 @@ export default function MapPage() {
           onRequestTool={ requestMapTool }
           onReleaseTool={ releaseMapTool }
         />
-        <CompareControl
-          enabled={ compareEnabled }
-          onEnabledChange={ view.setCompareEnabled }
-          dates={ comparableDates }
+        <LayerControlBar
+          sources={ sourcesQ.data }
+          activeSourceId={ effectiveSourceId }
+          onSelectSource={ view.setSource }
+          displayModes={ fieldSceneMode ? fieldDisplayModes : ['RGB'] }
+          displayMode={ selectedDisplayMode }
+          onDisplayModeChange={ view.setDisplayMode }
+          cloudMask={ cloudMask }
+          onCloudMaskChange={ view.setCloudMask }
+          cloudMaskDisabled={ !fieldSceneMode }
+          compareEnabled={ compareEnabled }
+          onCompareEnabledChange={ view.setCompareEnabled }
+          comparableDates={ comparableDates }
           activeDate={ selectedDate }
           compareDate={ compareDate }
           onCompareDateChange={ view.setCompareDate }
           blend={ opacity }
           onBlendChange={ view.setOpacity }
-        />
-        <CloudMaskControl
-          value={ cloudMask }
-          onChange={ view.setCloudMask }
-          disabled={ !fieldSceneMode }
-        />
-        <DownloadMenu
           selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
-          displayMode={ selectedDisplayMode }
-          sourceId={ fieldSceneMode ? fieldScenesQ.data?.sourceId : effectiveSourceId }
-          indexType={ exportIndexType }
-          cloudMask={ cloudMask }
+          exportSourceId={ fieldSceneMode ? fieldScenesQ.data?.sourceId : effectiveSourceId }
+          exportIndexType={ exportIndexType }
           selectedScene={ selectedFieldScene }
+          collapsed={ view.layerBarCollapsed }
+          onCollapsedChange={ view.setLayerBarCollapsed }
         />
+      </div>
+
+      {/* Left: legend + navigation map controls (zoom / compass / locate / fullscreen),
+        * stacked in a single bottom-left column so they never overlap each other.
+        * Raised above the attribution line so the two never collide at any width. */ }
+      <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
+        { visible && legendOpen && (
+          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } />
+        ) }
         <MapControls
           map={ map }
           hasSelectedField={ Boolean(selectedPlot) }
@@ -696,17 +721,13 @@ export default function MapPage() {
         />
       </div>
 
-      {/* Bottom-left: legend (per display mode) + attribution, above the timeline */ }
-      <div className="absolute bottom-[calc(var(--timeline-height)+1.125rem)] left-4 z-toolbar flex flex-col items-start gap-2">
-        { visible && legendOpen && (
-          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } />
-        ) }
-        <div
-          className="pointer-events-none max-w-[60vw] truncate text-[11px] text-foreground/70 on-map-text"
-          data-testid="attribution"
-        >
-          { attribution } · { basemapCredit }
-        </div>
+      {/* Map attribution — its own thin line pinned just above the timeline so it
+        * never overlaps the floating control clusters on any screen size. */ }
+      <div
+        className="pointer-events-none absolute bottom-[calc(var(--timeline-height)+0.5rem)] left-4 z-toolbar max-w-[calc(100vw-2rem)] truncate rounded-sm bg-[hsl(var(--panel)/0.55)] px-1.5 py-0.5 text-[11px] text-foreground/80 backdrop-blur-sm"
+        data-testid="attribution"
+      >
+        { attribution } · { basemapCredit }
       </div>
 
       {/* Bottom: temporal filmstrip */ }
@@ -716,6 +737,7 @@ export default function MapPage() {
           selectedDate={ selectedDate }
           onSelect={ view.setDate }
           sourceKind={ activeSourceKind }
+          sensorBadge={ sensorBadgeForSource(selectedSource) }
           loading={ fieldSceneMode ? fieldScenesQ.isLoading : datesQ.isLoading }
           error={
             fieldSceneMode
@@ -726,6 +748,9 @@ export default function MapPage() {
           marginalNote={ marginalNote }
           nearestPassNote={ nearestPassNote }
           onPrefetchDate={ undefined }
+          periodFrom={ periodFrom }
+          periodTo={ periodTo }
+          onPeriodChange={ view.setPeriod }
         />
       </div>
     </div>

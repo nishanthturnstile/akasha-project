@@ -242,7 +242,7 @@
     --secondary: 220 24% 16%;
     --secondary-foreground: 210 28% 92%;
     --muted: 220 22% 15%;
-    --muted-foreground: 215 16% 62%;
+    --muted-foreground: 215 18% 70%;
     --accent: 30 55% 18%;
     --accent-foreground: 33 90% 75%;
 
@@ -258,10 +258,10 @@
     --ring: 33 96% 56%;
 
     --panel: 222 30% 12%;
-    --panel-alpha: 0.62;
+    --panel-alpha: 0.86;
     --panel-blur: 18px;
     --on-map-ring: 0 0% 100%;
-    --on-map-ring-alpha: 0.1;
+    --on-map-ring-alpha: 0.16;
     --halo: 0 0% 0%;
     --halo-alpha: 0.45;
     --scrim-from: 222 40% 4% / 0;

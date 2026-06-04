@@ -430,12 +430,13 @@ describe('MapPage Sentinel-1 source behavior', () => {
 
     await screen.findByTestId('index-panel');
 
-    // Open the Layers surface, then switch to the Sentinel-1 (SAR) source.
-    fireEvent.click(screen.getByTestId('layers-toggle'));
+    // Open the source popover on the layer bar, then switch to Sentinel-1 (SAR).
+    fireEvent.click(screen.getByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-sentinel-1-grd'));
 
-    await screen.findByText('Radar layer · cloud-penetrating · not true colour');
-    expect(screen.queryByTestId('index-panel')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByTestId('index-panel')).toBeNull();
+    });
 
     // The nearest-pass note and SAR tile template depend on the Sentinel-1
     // dates query resolving, so wait for them.
@@ -496,7 +497,7 @@ describe('MapPage Sentinel-1 source behavior', () => {
       ).toContain('/api/tiles/sentinel-2-l2a/2026-04-20/RGB/{z}/{x}/{y}.png');
     });
 
-    fireEvent.click(screen.getByTestId('layers-toggle'));
+    fireEvent.click(screen.getByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-sentinel-1-grd'));
 
     await waitFor(() => {
@@ -524,6 +525,9 @@ describe('MapPage field-aware scene behavior', () => {
     });
     expect(screen.getByTestId('timeline-bar').textContent).toContain('Jun');
     expect(screen.queryByTestId('map-legend')).toBeNull();
+    const chartTab = await screen.findByTestId('index-panel-tab-chart');
+    fireEvent.mouseDown(chartTab);
+    fireEvent.click(chartTab);
     expect((await screen.findAllByText('0.56')).length).toBeGreaterThan(0);
     expect(screen.getByTestId('field-trend-chart')).toBeTruthy();
     expect(screen.getByText('Akasha masked-raster fallback')).toBeTruthy();
@@ -541,7 +545,8 @@ describe('MapPage field-aware scene behavior', () => {
       );
     });
 
-    fireEvent.click(screen.getByTestId('cloud-mask-cloudShadows'));
+    fireEvent.click(screen.getByTestId('layer-cloud-mask-trigger'));
+    fireEvent.click(await screen.findByTestId('cloud-mask-cloudShadows'));
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
         'clouds=true&cloudShadows=false&cirrus=true',
@@ -566,6 +571,10 @@ describe('MapPage field-aware scene behavior', () => {
     });
 
     renderMapPage({ selectedPlotId: 'plot-1' });
+
+    const chartTab = await screen.findByTestId('index-panel-tab-chart');
+    fireEvent.mouseDown(chartTab);
+    fireEvent.click(chartTab);
 
     fireEvent.click(await screen.findByTestId('analytics-index-MSAVI'));
 

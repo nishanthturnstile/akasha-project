@@ -51,6 +51,8 @@ export interface SceneDate {
   sceneCount?: number;
   /** [west, south, east, north] */
   bounds?: [number, number, number, number];
+  /** Short sensor badge for the chip (e.g. `S2`, `S1`). */
+  sensor?: string | null;
 }
 
 export interface DefaultLayer {

@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, BarChart3, Loader2 } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Layers, Lock, Plus, Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
+import { cn } from '@/lib/utils';
 import type { CloudMaskOptions, FieldScene, Plot } from '@/types/api';
+
+type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
 interface IndexPanelProps {
   selectedPlot: Plot | null;
@@ -13,16 +17,19 @@ interface IndexPanelProps {
   supportedIndices: string[];
   cloudMask: CloudMaskOptions;
   selectedScene?: FieldScene | null;
+  /** Inclusive lower bound (YYYY-MM-DD) carried from the timeline calendar range. */
+  periodFrom?: string | null;
+  /** Inclusive upper bound (YYYY-MM-DD) carried from the timeline calendar range. */
+  periodTo?: string | null;
 }
 
-const PLANNED_SECTIONS = [
-  'Crop info',
-  'Activities',
-  'Crop rotation',
-  'Growth stages',
-  'Current risks',
-  'NDVI value split',
+const TAB_ITEMS: { value: AnalyticsTab; label: string }[] = [
+  { value: 'crop-info', label: 'Crop info' },
+  { value: 'chart', label: 'Chart' },
+  { value: 'activities', label: 'Activities' },
 ];
+
+const HISTORICAL_YEARS = [2025, 2024, 2023, 2022];
 
 function fmt(value: number | null | undefined, suffix = ''): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'n/a';
@@ -51,7 +58,11 @@ export function IndexPanel({
   supportedIndices,
   cloudMask,
   selectedScene,
+  periodFrom,
+  periodTo,
 }: IndexPanelProps) {
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>('crop-info');
+
   const analyticsIndices = useMemo(
     () => supportedIndices.filter((index) => index !== 'NDWI_GREEN_NIR'),
     [supportedIndices],
@@ -60,7 +71,9 @@ export function IndexPanel({
   const [indexType, setIndexType] = useState(desiredIndex);
   const activeIndexType = analyticsIndices.includes(indexType) ? indexType : desiredIndex;
 
-  const startDate = useMemo(() => startDateFor(selectedDate), [selectedDate]);
+  const trendStart = periodFrom ?? startDateFor(selectedDate);
+  const trendEnd = periodTo ?? selectedDate ?? undefined;
+
   const statisticsQ = useFieldStatistics(selectedPlot?.id, {
     sourceId,
     acquisitionDate: selectedDate,
@@ -70,8 +83,8 @@ export function IndexPanel({
   const trendQ = useFieldTrend(selectedPlot?.id, {
     sourceId,
     indexType: activeIndexType,
-    startDate,
-    endDate: selectedDate ?? undefined,
+    startDate: trendStart,
+    endDate: trendEnd,
     cloudMask,
   });
 
@@ -84,7 +97,7 @@ export function IndexPanel({
 
   return (
     <section
-      className="glass w-[300px] max-w-[84vw] overflow-hidden opacity-95"
+      className="glass w-[320px] max-w-[84vw] overflow-hidden opacity-95"
       data-testid="index-panel"
       aria-label="Field analytics"
     >
@@ -100,106 +113,450 @@ export function IndexPanel({
         ) }
       </header>
 
-      <div className="flex max-h-[calc(100vh-220px)] flex-col gap-3 overflow-y-auto px-4 py-3">
-        { !selectedPlot && (
-          <div className="rounded-md border border-dashed border-border/80 p-3 text-[12px] leading-5 text-muted-foreground">
+      { !selectedPlot ? (
+        <div className="px-4 py-3">
+          <div
+            className="rounded-md border border-dashed border-border/80 p-3 text-[12px] leading-5 text-muted-foreground"
+            data-testid="index-panel-no-field"
+          >
             Select a field to view cloud-masked statistics and trend analytics.
+          </div>
+        </div>
+      ) : (
+        <Tabs
+          value={ activeTab }
+          onValueChange={ (next) => setActiveTab(next as AnalyticsTab) }
+          className="px-4 pb-3 pt-2"
+        >
+          <TabsList
+            className="grid w-full grid-cols-3"
+            data-testid="index-panel-tabs"
+            aria-label="Field analytics tabs"
+          >
+            { TAB_ITEMS.map((tab) => (
+              <TabsTrigger
+                key={ tab.value }
+                value={ tab.value }
+                data-testid={ `index-panel-tab-${tab.value}` }
+              >
+                { tab.label }
+              </TabsTrigger>
+            )) }
+          </TabsList>
+
+          <div className="max-h-[calc(100vh-260px)] overflow-y-auto pr-1">
+            <TabsContent
+              value="crop-info"
+              data-testid="index-panel-content-crop-info"
+              className="space-y-2"
+            >
+              <CropInfoTab seasonLabel={ selectedScene?.acquisitionDate ?? selectedDate ?? null } />
+            </TabsContent>
+
+            <TabsContent
+              value="chart"
+              data-testid="index-panel-content-chart"
+              className="space-y-3"
+            >
+              <ChartTab
+                indices={ analyticsIndices }
+                activeIndex={ activeIndexType }
+                onSelectIndex={ setIndexType }
+                stats={ stats }
+                loading={ statisticsQ.isLoading }
+                error={
+                  statisticsQ.isError
+                    ? statisticsQ.error instanceof Error
+                      ? statisticsQ.error.message
+                      : 'Unable to load statistics.'
+                    : null
+                }
+                trendPoints={ trendQ.data?.points ?? [] }
+                trendLoading={ trendQ.isLoading }
+                trendError={
+                  trendQ.isError
+                    ? trendQ.error instanceof Error
+                      ? trendQ.error.message
+                      : 'Unable to load trend.'
+                    : null
+                }
+                selectedDate={ selectedDate }
+                providerCopy={ providerCopy }
+                fallbackReason={ trendQ.data?.fallbackReason ?? null }
+                formula={ statisticsQ.data?.metadata.formula }
+                bands={
+                  statisticsQ.data?.metadata.bands ?? trendQ.data?.metadata.bands ?? null
+                }
+                warnings={ warnings }
+                periodFrom={ trendStart ?? null }
+                periodTo={ trendEnd ?? null }
+              />
+            </TabsContent>
+
+            <TabsContent
+              value="activities"
+              data-testid="index-panel-content-activities"
+              className="space-y-3"
+            >
+              <ActivitiesTab />
+            </TabsContent>
+          </div>
+        </Tabs>
+      ) }
+    </section>
+  );
+}
+
+function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
+  return (
+    <div className="space-y-2 pt-1">
+      <CropInfoCard
+        testId="crop-info-card-crop-rotation"
+        title="Crop rotation"
+        icon={ <Sprout className="size-3.5 text-primary" strokeWidth={ 1.75 } /> }
+      >
+        <p className="text-[11px] text-muted-foreground">
+          Season · { seasonLabel ? `as of ${seasonLabel}` : 'no scene selected' }
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[11px]"
+            data-testid="crop-info-add-crop"
+            disabled
+          >
+            <Plus className="size-3" strokeWidth={ 1.75 } /> Add crop
+          </Button>
+          <span className="text-[11px] text-muted-foreground">Show all</span>
+        </div>
+      </CropInfoCard>
+
+      <CropInfoCard
+        testId="crop-info-card-sown-area"
+        title="Sown area detected"
+        locked
+      >
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Sown-area detection is available on the Essential or Professional plan.
+        </p>
+      </CropInfoCard>
+
+      <CropInfoCard
+        testId="crop-info-card-management-guide"
+        title="Crop management guide"
+      >
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Browse Akasha crop-management notes for each supported crop.
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 px-0 text-[11px] text-primary"
+          data-testid="crop-info-guide-link"
+          disabled
+        >
+          Go to guide
+        </Button>
+      </CropInfoCard>
+
+      <CropInfoCard
+        testId="crop-info-card-growth-stages"
+        title="Growth stages"
+      >
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Select a crop to view its growth stages.
+        </p>
+      </CropInfoCard>
+
+      <CropInfoCard
+        testId="crop-info-card-current-risks"
+        title="Current risks"
+        locked
+      >
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Risk diagnostics are available on the Essential or Professional plan.
+        </p>
+      </CropInfoCard>
+
+      <CropInfoCard
+        testId="crop-info-card-ndvi-split"
+        title="NDVI value split"
+        locked
+      >
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Vegetation-class split is available on the Essential or Professional plan.
+        </p>
+      </CropInfoCard>
+    </div>
+  );
+}
+
+function CropInfoCard({
+  title,
+  children,
+  testId,
+  icon,
+  locked = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  testId: string;
+  icon?: React.ReactNode;
+  locked?: boolean;
+}) {
+  return (
+    <div
+      data-testid={ testId }
+      className={ cn(
+        'rounded-md border border-border/70 bg-background/40 p-2.5',
+        locked && 'opacity-80',
+      ) }
+    >
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          { icon }
+          <p className="text-[12px] font-medium text-foreground">{ title }</p>
+        </div>
+        { locked && (
+          <Lock
+            className="size-3 text-muted-foreground"
+            strokeWidth={ 1.75 }
+            aria-label="Plan-gated feature"
+          />
+        ) }
+      </div>
+      <div className="space-y-1.5">{ children }</div>
+    </div>
+  );
+}
+
+interface ChartTabProps {
+  indices: string[];
+  activeIndex: string;
+  onSelectIndex: (next: string) => void;
+  stats: {
+    mean: number | null;
+    stddev: number | null;
+    min: number | null;
+    max: number | null;
+    validPixelPercent: number | null;
+    cloudMaskedPercent: number | null;
+    coveragePercent: number | null;
+  } | undefined;
+  loading: boolean;
+  error: string | null;
+  trendPoints: { acquisitionDate: string; mean: number | null }[];
+  trendLoading: boolean;
+  trendError: string | null;
+  selectedDate: string | null;
+  providerCopy: string;
+  fallbackReason: string | null;
+  formula?: string | null;
+  bands: string[] | null | undefined;
+  warnings: string[];
+  periodFrom: string | null;
+  periodTo: string | null;
+}
+
+function ChartTab({
+  indices,
+  activeIndex,
+  onSelectIndex,
+  stats,
+  loading,
+  error,
+  trendPoints,
+  trendLoading,
+  trendError,
+  selectedDate,
+  providerCopy,
+  fallbackReason,
+  formula,
+  bands,
+  warnings,
+  periodFrom,
+  periodTo,
+}: ChartTabProps) {
+  return (
+    <div className="space-y-3 pt-1">
+      <div className="flex flex-wrap gap-1.5" aria-label="Analytics index">
+        { indices.map((index) => (
+          <Button
+            key={ index }
+            type="button"
+            size="sm"
+            variant={ index === activeIndex ? 'primary' : 'ghost' }
+            className="h-7 px-2 text-[11px]"
+            onClick={ () => onSelectIndex(index) }
+            data-testid={ `analytics-index-${index}` }
+          >
+            { index }
+          </Button>
+        )) }
+      </div>
+
+      <div className="rounded-md border border-border/80 bg-background/50 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-[11px] uppercase text-muted-foreground">
+            { selectedDate ?? 'Latest date' }
+          </p>
+          { loading && (
+            <span
+              className="text-[11px] text-muted-foreground"
+              data-testid="analytics-stats-loading"
+            >
+              Loading…
+            </span>
+          ) }
+        </div>
+
+        { error && (
+          <div className="flex gap-2 text-[12px] leading-5 text-destructive">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <span>{ error }</span>
           </div>
         ) }
 
-        { selectedPlot && (
+        { stats && (
           <>
-            <div className="flex flex-wrap gap-1.5" aria-label="Analytics index">
-              { analyticsIndices.map((index) => (
-                <Button
-                  key={ index }
-                  type="button"
-                  size="sm"
-                  variant={ index === activeIndexType ? 'primary' : 'ghost' }
-                  className="h-7 px-2 text-[11px]"
-                  onClick={ () => setIndexType(index) }
-                  data-testid={ `analytics-index-${index}` }
-                >
-                  { index }
-                </Button>
-              )) }
+            <div className="grid grid-cols-2 gap-2">
+              <Metric label="Mean" value={ fmt(stats.mean, '') } />
+              <Metric label="Std dev" value={ fmt(stats.stddev, '') } />
+              <Metric label="Min" value={ fmt(stats.min, '') } />
+              <Metric label="Max" value={ fmt(stats.max, '') } />
             </div>
-
-            <div className="rounded-md border border-border/80 bg-background/50 p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-[11px] uppercase text-muted-foreground">
-                  { selectedDate ?? 'Latest date' }
-                </p>
-                { statisticsQ.isLoading && <Loader2 className="size-3.5 animate-spin text-primary" /> }
-              </div>
-
-              { statisticsQ.isError && (
-                <div className="flex gap-2 text-[12px] leading-5 text-destructive">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                  <span>{ statisticsQ.error instanceof Error ? statisticsQ.error.message : 'Unable to load statistics.' }</span>
-                </div>
-              ) }
-
-              { stats && (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Metric label="Mean" value={ fmt(stats.mean, '') } />
-                    <Metric label="Std dev" value={ fmt(stats.stddev, '') } />
-                    <Metric label="Min" value={ fmt(stats.min, '') } />
-                    <Metric label="Max" value={ fmt(stats.max, '') } />
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-1.5">
-                    <Metric label="Valid" value={ fmt(stats.validPixelPercent, '%') } compact />
-                    <Metric label="Cloud" value={ fmt(stats.cloudMaskedPercent, '%') } compact />
-                    <Metric label="Cover" value={ fmt(stats.coveragePercent, '%') } compact />
-                  </div>
-                </>
-              ) }
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[11px] uppercase text-muted-foreground">Trend</p>
-                { trendQ.isLoading && <Loader2 className="size-3.5 animate-spin text-primary" /> }
-              </div>
-              { trendQ.isError ? (
-                <div className="rounded-md border border-destructive/30 p-3 text-[12px] leading-5 text-destructive">
-                  { trendQ.error instanceof Error ? trendQ.error.message : 'Unable to load trend.' }
-                </div>
-              ) : (
-                <FieldTrendChart points={ trendQ.data?.points ?? [] } indexType={ activeIndexType } />
-              ) }
-              <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-                { providerCopy }
-                { trendQ.data?.fallbackReason ? ` · ${trendQ.data.fallbackReason}` : '' }
-              </p>
-            </div>
-
-            <div className="space-y-1 text-[11px] leading-4 text-muted-foreground">
-              <p>{ statisticsQ.data?.metadata.formula ?? `${activeIndexType} formula unavailable` }</p>
-              <p>
-                Bands: { statisticsQ.data?.metadata.bands?.join(', ') ?? trendQ.data?.metadata.bands?.join(', ') ?? 'n/a' }
-              </p>
-              { warnings.map((warning) => (
-                <p key={ warning } className="text-amber-300">{ warning }</p>
-              )) }
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5">
-              { PLANNED_SECTIONS.map((section) => (
-                <div
-                  key={ section }
-                  className="rounded border border-border/70 px-2 py-1.5 text-[11px] text-muted-foreground"
-                >
-                  <span className="block text-foreground/80">{ section }</span>
-                  <span>Planned</span>
-                </div>
-              )) }
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
+              <Metric label="Valid" value={ fmt(stats.validPixelPercent, '%') } compact />
+              <Metric label="Cloud" value={ fmt(stats.cloudMaskedPercent, '%') } compact />
+              <Metric label="Cover" value={ fmt(stats.coveragePercent, '%') } compact />
             </div>
           </>
         ) }
       </div>
-    </section>
+
+      <div data-testid="analytics-chart-section">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[11px] uppercase text-muted-foreground">Trend</p>
+          { trendLoading && (
+            <span
+              className="text-[11px] text-muted-foreground"
+              data-testid="analytics-trend-loading"
+            >
+              Loading…
+            </span>
+          ) }
+        </div>
+        { trendError ? (
+          <div className="rounded-md border border-destructive/30 p-3 text-[12px] leading-5 text-destructive">
+            { trendError }
+          </div>
+        ) : (
+          <FieldTrendChart points={ trendPoints } indexType={ activeIndex } />
+        ) }
+
+        {/* Multi-year series toggles (current year active, prior years plan-locked). */ }
+        <div
+          className="mt-2 flex flex-wrap items-center gap-1.5"
+          data-testid="analytics-year-toggles"
+          aria-label="Multi-year series"
+        >
+          <span className="inline-flex h-6 items-center gap-1 rounded-pill border border-primary/40 bg-primary/15 px-2 text-[11px] font-medium text-primary">
+            <Layers className="size-3" strokeWidth={ 1.75 } />
+            { activeIndex } · current
+          </span>
+          { HISTORICAL_YEARS.map((year) => (
+            <span
+              key={ year }
+              className="inline-flex h-6 items-center gap-1 rounded-pill border border-border/60 bg-card/40 px-2 text-[11px] text-muted-foreground"
+              data-testid={ `analytics-year-${year}` }
+            >
+              <Lock className="size-3" strokeWidth={ 1.75 } />
+              { activeIndex } { year }
+            </span>
+          )) }
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2" data-testid="analytics-date-bounds">
+          <DateField label="Start date" value={ periodFrom } />
+          <DateField label="End date" value={ periodTo } />
+        </div>
+
+        {/* Weather overlay placeholder. */ }
+        <div
+          className="mt-2 flex items-center justify-between rounded-md border border-border/70 bg-background/40 px-2 py-1.5"
+          data-testid="analytics-weather-overlay"
+        >
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <CalendarDays className="size-3" strokeWidth={ 1.75 } />
+            <span>Weather overlay</span>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Lock className="size-3" strokeWidth={ 1.75 } /> Plan-gated
+          </span>
+        </div>
+
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+          { providerCopy }
+          { fallbackReason ? ` · ${fallbackReason}` : '' }
+        </p>
+      </div>
+
+      <div className="space-y-1 text-[11px] leading-4 text-muted-foreground">
+        <p>{ formula ?? `${activeIndex} formula unavailable` }</p>
+        <p>Bands: { bands && bands.length > 0 ? bands.join(', ') : 'n/a' }</p>
+        { warnings.map((warning) => (
+          <p key={ warning } className="text-amber-300">{ warning }</p>
+        )) }
+      </div>
+    </div>
+  );
+}
+
+function ActivitiesTab() {
+  return (
+    <div className="space-y-3 pt-1" data-testid="activities-tab">
+      <div className="flex items-center justify-between">
+        <p className="text-[12px] font-medium text-foreground">Activities</p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-[11px]"
+          data-testid="activities-add-trigger"
+          disabled
+        >
+          <Plus className="size-3" strokeWidth={ 1.75 } /> Add
+        </Button>
+      </div>
+      <div
+        className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border/80 p-4 text-center"
+        data-testid="activities-empty-state"
+      >
+        <p className="text-[12px] text-muted-foreground">No activities added to this field.</p>
+        <Button
+          type="button"
+          size="sm"
+          variant="primary"
+          className="h-8 px-3 text-[12px]"
+          data-testid="activities-add-button"
+          disabled
+        >
+          <Plus className="size-3.5" strokeWidth={ 1.75 } /> Add activity
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DateField({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="rounded-md border border-border/70 bg-background/40 px-2 py-1.5">
+      <p className="text-[10px] uppercase text-muted-foreground">{ label }</p>
+      <p className="font-mono tnum text-[12px] text-foreground">{ value ?? '—' }</p>
+    </div>
   );
 }
 

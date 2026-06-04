@@ -47,6 +47,14 @@ export interface MapViewState {
     };
     /** Legend visibility toggle. RGB still renders no legend content. */
     legendOpen: boolean;
+    /** Inclusive timeline window start (YYYY-MM-DD); `null` => no lower bound. */
+    periodFrom: string | null;
+    /** Inclusive timeline window end (YYYY-MM-DD); `null` => no upper bound. */
+    periodTo: string | null;
+    /** Discrete (classified) palette mode for the active index legend/raster. */
+    legendStatic: boolean;
+    /** Layer control bar collapsed (icon-only) state. */
+    layerBarCollapsed: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -65,6 +73,10 @@ export const initialMapViewState: MapViewState = {
         cirrus: true,
     },
     legendOpen: true,
+    periodFrom: null,
+    periodTo: null,
+    legendStatic: false,
+    layerBarCollapsed: false,
 };
 
 type MapViewAction =
@@ -83,7 +95,10 @@ type MapViewAction =
         type: 'SET_CLOUD_MASK';
         cloudMask: { clouds: boolean; cloudShadows: boolean; cirrus: boolean };
     }
-    | { type: 'SET_LEGEND_OPEN'; open: boolean };
+    | { type: 'SET_LEGEND_OPEN'; open: boolean }
+    | { type: 'SET_PERIOD'; from: string | null; to: string | null }
+    | { type: 'SET_LEGEND_STATIC'; staticMode: boolean }
+    | { type: 'SET_LAYER_BAR_COLLAPSED'; collapsed: boolean };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -135,6 +150,15 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_LEGEND_OPEN':
             if (action.open === state.legendOpen) return state;
             return { ...state, legendOpen: action.open };
+        case 'SET_PERIOD':
+            if (action.from === state.periodFrom && action.to === state.periodTo) return state;
+            return { ...state, periodFrom: action.from, periodTo: action.to };
+        case 'SET_LEGEND_STATIC':
+            if (action.staticMode === state.legendStatic) return state;
+            return { ...state, legendStatic: action.staticMode };
+        case 'SET_LAYER_BAR_COLLAPSED':
+            if (action.collapsed === state.layerBarCollapsed) return state;
+            return { ...state, layerBarCollapsed: action.collapsed };
         default:
             return state;
     }
@@ -154,6 +178,9 @@ export interface MapViewContextValue extends MapViewState {
     clearSelectedPlot: () => void;
     setCloudMask: (cloudMask: MapViewState['cloudMask']) => void;
     setLegendOpen: (open: boolean) => void;
+    setPeriod: (from: string | null, to: string | null) => void;
+    setLegendStatic: (staticMode: boolean) => void;
+    setLayerBarCollapsed: (collapsed: boolean) => void;
 }
 
 const MapViewContext = createContext<MapViewContextValue | null>(null);
@@ -220,6 +247,11 @@ export function MapViewProvider({
             clearSelectedPlot: () => dispatch({ type: 'CLEAR_SELECTED_PLOT' }),
             setCloudMask: (cloudMask) => dispatch({ type: 'SET_CLOUD_MASK', cloudMask }),
             setLegendOpen: (open) => dispatch({ type: 'SET_LEGEND_OPEN', open }),
+            setPeriod: (from, to) => dispatch({ type: 'SET_PERIOD', from, to }),
+            setLegendStatic: (staticMode) =>
+                dispatch({ type: 'SET_LEGEND_STATIC', staticMode }),
+            setLayerBarCollapsed: (collapsed) =>
+                dispatch({ type: 'SET_LAYER_BAR_COLLAPSED', collapsed }),
         }),
         [state],
     );

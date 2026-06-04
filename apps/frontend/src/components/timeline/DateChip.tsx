@@ -1,12 +1,18 @@
 import { forwardRef } from 'react';
+import { Cloud } from 'lucide-react';
 import type { SceneDate, SourceKind } from '@/types/api';
 import { CloudUsabilityChip } from '@/components/layers/CloudUsabilityChip';
 import { cn } from '@/lib/utils';
+
+/** Above this share of cloud-masked pixels we draw a Cloud overlay icon (EOS parity). */
+const CLOUDY_THRESHOLD_PERCENT = 30;
 
 interface DateChipProps {
     date: SceneDate;
     selected: boolean;
     sourceKind?: SourceKind;
+    /** Short sensor badge (e.g. `S2`, `S1`). Falls back to `date.sensor`. */
+    sensorBadge?: string | null;
     onSelect: () => void;
     onPrefetch?: () => void;
 }
@@ -27,12 +33,22 @@ function shortLabel(acquisitionDate: string): { month: string; day: string } {
 
 /** A single date in the bottom filmstrip: label + usability badge, button semantics. */
 export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function DateChip(
-    { date, selected, sourceKind, onSelect, onPrefetch },
+    { date, selected, sourceKind, sensorBadge, onSelect, onPrefetch },
     ref,
 ) {
     const disabled = !date.tileAvailable;
     const { month, day } = shortLabel(date.acquisitionDate);
     const latestLabel = sourceKind === 'sar' ? 'Latest radar pass' : 'Latest usable scene';
+    const badge = (sensorBadge ?? date.sensor ?? '').trim() || null;
+    const showCloudIcon =
+        sourceKind !== 'sar' &&
+        date.cloudMaskedPercent != null &&
+        !Number.isNaN(date.cloudMaskedPercent) &&
+        date.cloudMaskedPercent > CLOUDY_THRESHOLD_PERCENT;
+    const ariaParts = [date.acquisitionDate];
+    if (badge) ariaParts.push(badge);
+    if (date.isLatestUsable) ariaParts.push(latestLabel);
+    if (showCloudIcon) ariaParts.push('cloudy');
 
     return (
         <button
@@ -41,7 +57,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
             role="option"
             aria-selected={ selected }
             aria-current={ selected }
-            aria-label={ `${date.acquisitionDate}${date.isLatestUsable ? ` · ${latestLabel}` : ''}` }
+            aria-label={ ariaParts.join(' · ') }
             disabled={ disabled }
             data-testid={ `date-chip-${date.acquisitionDate}` }
             data-selected={ selected }
@@ -68,6 +84,14 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                     }
                 />
             ) }
+            { showCloudIcon && (
+                <Cloud
+                    className="absolute left-1 top-1 size-2.5 text-muted-foreground"
+                    strokeWidth={ 1.75 }
+                    aria-hidden="true"
+                    data-testid={ `date-chip-cloud-${date.acquisitionDate}` }
+                />
+            ) }
             <span className="leading-tight">
                 <span className="block text-[9px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                     { month }
@@ -76,12 +100,21 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                     { day }
                 </span>
             </span>
-            <CloudUsabilityChip
-                percent={ date.usablePixelPercent }
-                coveragePercent={ date.coveragePercent }
-                sourceKind={ sourceKind }
-                className="max-w-full gap-1 overflow-hidden px-1 py-0 text-[9px] leading-3 [&>span:first-child]:size-1"
-            />
+            { badge && sourceKind !== 'sar' ? (
+                <span
+                    className="font-mono tnum mt-0.5 inline-flex h-3 items-center rounded-pill border border-border/60 bg-card/40 px-1 text-[8px] leading-none tracking-[0.04em] text-muted-foreground"
+                    data-testid={ `date-chip-sensor-${date.acquisitionDate}` }
+                >
+                    { badge }
+                </span>
+            ) : (
+                <CloudUsabilityChip
+                    percent={ date.usablePixelPercent }
+                    coveragePercent={ date.coveragePercent }
+                    sourceKind={ sourceKind }
+                    className="max-w-full gap-1 overflow-hidden px-1 py-0 text-[9px] leading-3 [&>span:first-child]:size-1"
+                />
+            ) }
         </button>
     );
 });

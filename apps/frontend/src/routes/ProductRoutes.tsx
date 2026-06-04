@@ -62,6 +62,10 @@ export function ProductRoutes() {
           path="monitoring/field-analytics"
           element={ withSuspense(FieldAnalyticsPage) }
         />
+        <Route
+          path="monitoring/field-analytics/field/:plotId"
+          element={ withSuspense(FieldAnalyticsPage) }
+        />
         <Route path="monitoring/global" element={ withSuspense(MonitoringGlobalView) } />
         <Route path="monitoring/field-leaderboard" element={ withSuspense(FieldLeaderboardPage) } />
         <Route path="monitoring/reporting" element={ withSuspense(ReportingPage) } />

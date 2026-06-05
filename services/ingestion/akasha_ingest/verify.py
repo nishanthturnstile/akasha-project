@@ -27,21 +27,22 @@ def check_postgis() -> tuple[bool, str]:
         return False, f"PostGIS check failed: {exc}"
 
 
-def check_stac_collection() -> tuple[bool, str]:
+def check_stac_collection(collection_id: str | None = None) -> tuple[bool, str]:
     try:
-        url = config.STAC_API_URL.rstrip("/") + f"/collections/{config.COLLECTION_ID}"
+        source_id = collection_id or config.COLLECTION_ID
+        url = config.STAC_API_URL.rstrip("/") + f"/collections/{source_id}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
-        if data.get("id") == config.COLLECTION_ID:
-            return True, f"STAC API returns collection '{config.COLLECTION_ID}'"
+        if data.get("id") == source_id:
+            return True, f"STAC API returns collection '{source_id}'"
         return False, f"STAC API returned unexpected id: {data.get('id')}"
     except Exception as exc:  # noqa: BLE001
         return False, f"STAC collection check failed: {exc}"
 
 
-def check_minio() -> tuple[bool, str]:
-    return storage.bucket_reachable()
+def check_minio(collection_id: str | None = None) -> tuple[bool, str]:
+    return storage.bucket_reachable(collection_id=collection_id)
 
 
 def check_real_cogs() -> tuple[bool, str]:
@@ -49,23 +50,26 @@ def check_real_cogs() -> tuple[bool, str]:
     return storage.verify_real_cogs()
 
 
-def run() -> int:
+def run(collection_id: str | None = None) -> int:
+    source_id = collection_id or config.COLLECTION_ID
     checks = [
         ("PostGIS (SELECT postgis_version())", check_postgis),
-        (f"STAC API collection '{config.COLLECTION_ID}'", check_stac_collection),
-        (f"MinIO bucket '{config.BUCKET}' reachable", check_minio),
+        (f"STAC API collection '{source_id}'", lambda: check_stac_collection(source_id)),
+        (f"MinIO bucket '{config.BUCKET}' reachable", lambda: check_minio(source_id)),
     ]
     return _run_checks("Akasha Slice 1 — exit-criteria verification", checks)
 
 
-def run_phase2() -> int:
+def run_phase2(collection_id: str | None = None) -> int:
     """Phase 2 verification: Slice 1 criteria PLUS non-empty real COG objects."""
+    source_id = collection_id or config.COLLECTION_ID
     checks = [
         ("PostGIS (SELECT postgis_version())", check_postgis),
-        (f"STAC API collection '{config.COLLECTION_ID}'", check_stac_collection),
-        (f"MinIO bucket '{config.BUCKET}' reachable", check_minio),
-        ("MinIO real (non-empty) COG objects", check_real_cogs),
+        (f"STAC API collection '{source_id}'", lambda: check_stac_collection(source_id)),
+        (f"MinIO bucket '{config.BUCKET}' reachable", lambda: check_minio(source_id)),
     ]
+    if source_id == config.SENTINEL2_COLLECTION_ID:
+        checks.append(("MinIO real (non-empty) COG objects", check_real_cogs))
     return _run_checks("Akasha Slice 2 (Phase 2) — raster de-risk verification", checks)
 
 

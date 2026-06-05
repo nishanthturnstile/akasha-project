@@ -3,6 +3,8 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-dotenv==1.0.1
+httpx>=0.28,<0.29
+python-multipart==0.0.20
 # Slice 1: app-schema migration CLI only (no product DB endpoints yet).
 # Imported lazily so `app.main` (runtime/preview) never requires a DB driver.
 psycopg[binary]>=3.2,<4
@@ -17,3 +19,5 @@ rasterio==1.4.3
 rio-tiler==9.0.6
 shapely==2.1.2
 pyproj==3.7.2
+# Phase 8 vector zoning export: pure-Python zipped Shapefile writer.
+pyshp==2.3.1

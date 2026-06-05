@@ -6,16 +6,9 @@ Minimal product surface needed to verify the raster proof path end-to-end:
   * GET  /api/sources
   * GET  /api/sources/{sourceId}/dates
   * GET  /api/layers/default
-  * GET  /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png   (BFF->TiTiler proxy)
+  * GET  /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png   (legacy RGB)
+  * GET  /api/tiles/{sourceId}/{acquisitionDate}/{displayMode}/{z}/{x}/{y}.png
   * POST /api/indices/statistics                                       (BFF masked NDVI)
-
-Design notes:
-  * The tile route lives under `/api/tiles/...` (not `/tiles/...`) so it is
-    reachable both behind the Caddy gateway (`/api/*` -> api) and the Emergent
-    ingress (which routes only `/api/*` to the backend). MinIO object URLs and
-    credentials stay server-side.
-  * Heavy geospatial deps (rasterio/shapely/pyproj) are imported lazily inside
-    `app.raster.*`, so importing this module never requires them.
 """
 from __future__ import annotations
 
@@ -31,15 +24,19 @@ from fastapi.responses import Response
 from .config import settings
 from .raster import catalog_resolver as catalog
 from .raster import tiles
-from .raster.errors import bad_request, index_timeout, rate_limited, upstream_error
+from .raster.errors import (
+    bad_request,
+    index_timeout,
+    mosaic_tiles_unavailable,
+    rate_limited,
+    upstream_error,
+)
 from .raster.indices import DEFAULT_INDEX, SUPPORTED_INDICES, rgb_band_positions
 from .raster.models import StatisticsRequest
 from .raster.service import compute_statistics
 
 router = APIRouter(prefix="/api", tags=["product"])
 
-# Bangalore AOI defaults (data-ingestion/architecture). Configurable, not magic
-# in components — the frontend reads these from /api/config.
 _AOI = {
     "id": "bangalore",
     "name": "Bangalore",
@@ -47,7 +44,6 @@ _AOI = {
     "zoom": 11,
     "bounds": [77.4, 12.8, 77.8, 13.2],
 }
-_ATTRIBUTION = "Copernicus Sentinel-2"
 _RATE_BUCKETS: dict[str, list[float]] = {}
 
 
@@ -81,7 +77,7 @@ def _enforce_index_rate_limit(request: Request) -> None:
 
 @router.get("/config")
 async def get_config() -> dict[str, Any]:
-    """App configuration: AOI, map defaults, limits, supported indices."""
+    """App configuration: AOI, map defaults, limits, and global optical index defaults."""
     return {
         "appName": os.environ.get("PUBLIC_APP_NAME", "Akasha"),
         "aoi": _AOI,
@@ -91,66 +87,79 @@ async def get_config() -> dict[str, Any]:
         "usablePixelThresholdPercent": settings.usable_pixel_threshold_percent,
         "supportedIndices": SUPPORTED_INDICES,
         "defaultIndex": DEFAULT_INDEX,
+        "indexFieldsKind": "global-optical-defaults",
+        "indexAvailabilitySource": "/api/sources",
     }
 
 
 @router.get("/sources")
 async def get_sources() -> list[dict[str, Any]]:
-    """Satellite/product source list derived from STAC collections."""
-    source_id = catalog.COLLECTION_ID
-    return [
-        {
-            "id": source_id,
-            "label": catalog.SOURCE_LABEL,
-            "provider": catalog.SOURCE_PROVIDER,
-            "supportedIndices": catalog.supported_indices(source_id),
-        }
-    ]
+    """Satellite/product source list derived from the source registry/STAC metadata."""
+    return catalog.list_sources()
 
 
 @router.get("/sources/{source_id}/dates")
 async def get_source_dates(source_id: str) -> list[dict[str, Any]]:
-    """Available acquisition dates with AOI cloud/usable-pixel percentages."""
+    """Available acquisition dates with source-specific metadata semantics."""
     return catalog.list_dates(source_id)
 
 
 @router.get("/layers/default")
-async def get_default_layer() -> dict[str, Any]:
-    """Default source/date/layer metadata + same-origin RGB tile template."""
-    source_id = catalog.COLLECTION_ID
-    item = catalog.latest_item(source_id)
-    props = item.get("properties", {})
-    acquisition_date = props.get("akasha:acquisition_date") or (
-        props.get("datetime", "") or ""
-    )[:10]
+async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
+    """Default source/date/layer metadata + same-origin tile template."""
+    source_id = sourceId or settings.default_source_id or catalog.COLLECTION_ID
+    source = catalog.get_source(source_id)
+    dates = catalog.list_dates(source_id)
+    selectable_dates = [d for d in dates if bool(d.get("tileAvailable", True))]
+    date_pool = selectable_dates or dates
+    date = next((d for d in date_pool if d["isLatestUsable"]), date_pool[0])
+    acquisition_date = date["acquisitionDate"]
+    items = catalog.items_for_date(source_id, acquisition_date)
+    display_mode = source["defaultDisplayMode"]
     return {
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
-        "tileUrlTemplate": (
-            f"/api/tiles/{source_id}/{acquisition_date}/rgb/{{z}}/{{x}}/{{y}}.png"
-        ),
-        "bounds": item.get("bbox"),
+        "displayMode": display_mode,
+        "displayModes": source["displayModes"],
+        "kind": source["kind"],
+        "tileUrlTemplate": catalog.tile_url_template(source_id, acquisition_date),
+        "bounds": catalog.merged_bbox(items),
         "minzoom": 8,
         "maxzoom": 14,
-        "attribution": _ATTRIBUTION,
-        "usablePixelPercent": props.get("akasha:usable_pixel_percent"),
-        "metricsProvisional": bool(props.get("akasha:metrics_provisional", False)),
+        "attribution": source["attribution"],
+        "sceneCount": date.get("sceneCount"),
+        "usablePixelPercent": date.get("usablePixelPercent"),
+        "cloudMaskedPercent": date.get("cloudMaskedPercent"),
+        "coveragePercent": date.get("coveragePercent"),
+        "metricsProvisional": bool(date.get("metricsProvisional", False)),
+        "tileAvailable": bool(date.get("tileAvailable", True)),
     }
 
 
-@router.get("/tiles/{source_id}/{acquisition_date}/rgb/{z}/{x}/{y}.png")
-async def get_rgb_tile(
+async def _render_rgb_tile(
     source_id: str, acquisition_date: str, z: int, x: int, y: int
 ) -> Response:
-    """Proxy one true-colour RGB PNG tile from TiTiler (server-side).
+    source = catalog.get_source(source_id)
+    if "RGB" not in source["displayModes"]:
+        raise bad_request(
+            f"Display mode 'RGB' is not supported for source '{source_id}'.",
+            code="UNSUPPORTED_DISPLAY_MODE",
+            sourceId=source_id,
+            displayMode="RGB",
+            supportedDisplayModes=source["displayModes"],
+        )
 
-    Builds the TiTiler request from the analytic COG + RGB band positions
-    [1, 8, 9] = (B04, B03, B02). The COG url/credentials are never exposed to
-    the browser. Raises AkashaError (502/503) if TiTiler/MinIO is unavailable.
-    """
-    assets = catalog.resolve_assets(source_id, acquisition_date)
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    assets = assets_for_date[0]
     try:
         positions = rgb_band_positions(assets["bandNames"])
+        for item_assets in assets_for_date[1:]:
+            item_positions = rgb_band_positions(item_assets["bandNames"])
+            if item_positions != positions:
+                raise upstream_error(
+                    "Same-date STAC items use inconsistent RGB band positions.",
+                    code="INCONSISTENT_RGB_BANDS",
+                )
     except KeyError as exc:
         raise upstream_error(
             "STAC analytic asset is missing a required true-colour RGB band.",
@@ -158,9 +167,38 @@ async def get_rgb_tile(
             missingBand=str(exc).strip("'"),
             availableBands=assets.get("bandNames", []),
         ) from exc
-    url = tiles.build_rgb_tile_url(
-        analytic_href=assets["analyticHref"],
-        rgb_positions=positions,
+    if len(assets_for_date) == 1:
+        url = tiles.build_rgb_tile_url(
+            analytic_href=assets["analyticHref"],
+            rgb_positions=positions,
+            z=z,
+            x=x,
+            y=y,
+        )
+    else:
+        url = tiles.build_mosaic_rgb_tile_url(
+            analytic_hrefs=[item_assets["analyticHref"] for item_assets in assets_for_date],
+            rgb_positions=positions,
+            z=z,
+            x=x,
+            y=y,
+        )
+    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+    return Response(content=body, media_type=content_type)
+
+
+async def _render_sentinel1_vv_tile(
+    source_id: str, acquisition_date: str, z: int, x: int, y: int
+) -> Response:
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    if len(assets_for_date) != 1:
+        raise mosaic_tiles_unavailable(
+            "Date-level Sentinel-1 tiles for multiple scenes require a configured mosaic backend.",
+            sceneCount=len(assets_for_date),
+            supportedSceneCount=1,
+        )
+    url = tiles.build_sentinel1_vv_tile_url(
+        backscatter_href=assets_for_date[0]["backscatterHref"],
         z=z,
         x=x,
         y=y,
@@ -169,16 +207,47 @@ async def get_rgb_tile(
     return Response(content=body, media_type=content_type)
 
 
+@router.get("/tiles/{source_id}/{acquisition_date}/rgb/{z}/{x}/{y}.png")
+async def get_rgb_tile(
+    source_id: str, acquisition_date: str, z: int, x: int, y: int
+) -> Response:
+    """Legacy same-origin RGB tile route preserved for Sentinel-2 compatibility."""
+    return await _render_rgb_tile(source_id, acquisition_date, z, x, y)
+
+
+@router.get("/tiles/{source_id}/{acquisition_date}/{display_mode}/{z}/{x}/{y}.png")
+async def get_display_mode_tile(
+    source_id: str, acquisition_date: str, display_mode: str, z: int, x: int, y: int
+) -> Response:
+    """Display-mode-aware same-origin tile route."""
+    source = catalog.get_source(source_id)
+    normalized_mode = display_mode.upper()
+    if normalized_mode not in source["displayModes"]:
+        raise bad_request(
+            f"Display mode '{display_mode}' is not supported for source '{source_id}'.",
+            code="UNSUPPORTED_DISPLAY_MODE",
+            sourceId=source_id,
+            displayMode=display_mode,
+            supportedDisplayModes=source["displayModes"],
+        )
+    if normalized_mode == "RGB":
+        return await _render_rgb_tile(source_id, acquisition_date, z, x, y)
+    if normalized_mode == "VV_GRAYSCALE":
+        return await _render_sentinel1_vv_tile(source_id, acquisition_date, z, x, y)
+    raise bad_request(
+        f"Display mode '{display_mode}' is not implemented for source '{source_id}'.",
+        code="UNSUPPORTED_DISPLAY_MODE",
+        sourceId=source_id,
+        displayMode=display_mode,
+        supportedDisplayModes=source["displayModes"],
+    )
+
+
 @router.post("/indices/statistics")
 async def post_index_statistics(
     request: Request, payload: StatisticsRequest = Body(...)
 ) -> dict[str, Any]:
-    """Compute cloud/SCL-masked, offset-corrected index statistics in the BFF.
-
-    Reads the analytic + SCL COG windows for the request polygon via rasterio,
-    applies per-band scale/offset, applies the SCL mask, then computes
-    min/max/mean/stddev and the pixel-percentage fields.
-    """
+    """Compute cloud/SCL-masked, offset-corrected optical index statistics."""
     geometry = payload.geometry.model_dump()
     if not payload.sourceId:
         raise bad_request("sourceId is required.", code="MISSING_SOURCE")

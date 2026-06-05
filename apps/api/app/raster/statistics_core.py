@@ -112,7 +112,7 @@ def compute_index_statistics(
         already so this engine stays index-agnostic.
     band_a_dn, band_b_dn:
         Raw DN windows for the index's two bands (same shape).
-        index = (a - b) / (a + b) after reflectance correction.
+    index is computed from the formula registered for index_type after reflectance correction.
     scl:
         Scene Classification Layer window (same shape, categorical uint8).
     geometry_mask:
@@ -160,14 +160,13 @@ def compute_index_statistics(
     if valid_pixels > 0:
         a_ref = correct_reflectance(a[valid_mask], scale, offset)
         b_ref = correct_reflectance(b[valid_mask], scale, offset)
-        denom = a_ref + b_ref
-        good = denom != 0
+        index_vals, good = _evaluate_index(index_def.formula_kind, a_ref, b_ref)
         if not good.all():
             warnings.append(
-                f"{int((~good).sum())} valid pixel(s) had a zero index denominator and "
+                f"{int((~good).sum())} valid pixel(s) could not be evaluated for {index_type} and "
                 "were excluded from min/max/mean/stddev."
             )
-        index_vals = (a_ref[good] - b_ref[good]) / denom[good]
+        index_vals = index_vals[good]
         index_vals = index_vals[np.isfinite(index_vals)]
         if index_vals.size > 0:
             min_v = _round(np.min(index_vals))
@@ -198,3 +197,27 @@ def compute_index_statistics(
         coverage_percent=pct(coverage_pixels),
         warnings=warnings,
     )
+
+
+def _evaluate_index(
+    formula_kind: str,
+    a_ref: np.ndarray,
+    b_ref: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    if formula_kind == "msavi":
+        term = (2 * a_ref + 1) ** 2 - 8 * (a_ref - b_ref)
+        good = term >= 0
+        values = np.full(a_ref.shape, np.nan, dtype="float64")
+        values[good] = (2 * a_ref[good] + 1 - np.sqrt(term[good])) / 2
+        return values, good
+    if formula_kind == "reci":
+        good = b_ref != 0
+        values = np.full(a_ref.shape, np.nan, dtype="float64")
+        values[good] = (a_ref[good] / b_ref[good]) - 1
+        return values, good
+
+    denom = a_ref + b_ref
+    good = denom != 0
+    values = np.full(a_ref.shape, np.nan, dtype="float64")
+    values[good] = (a_ref[good] - b_ref[good]) / denom[good]
+    return values, good

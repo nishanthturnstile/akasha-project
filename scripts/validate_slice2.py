@@ -121,9 +121,10 @@ for mod in [
 
 from app.raster import indices  # noqa: E402
 
+core_indices = {"NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"}
 check(
-    set(indices.INDEX_REGISTRY) == {"NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"},
-    "4 supported indices",
+    core_indices.issubset(indices.INDEX_REGISTRY),
+    "core Slice 2 indices remain supported",
 )
 ndvi = indices.get_index("NDVI")
 check(ndvi.band_a == "B08" and ndvi.band_b == "B04", "NDVI = (B08 - B04)/(B08 + B04)")
@@ -297,11 +298,13 @@ try:
         dst.write(analytic_arr)
     with rasterio.open(s_path, "w", **dict(prof, count=1, dtype="uint8")) as dst:
         dst.write(scl_arr, 1)
-    catalog.resolve_assets = lambda source_id, acquisition_date: {
+    synthetic_assets = {
         "itemId": "synthetic", "analyticHref": str(a_path), "sclHref": str(s_path),
         "bandNames": indices.FROZEN_ANALYTIC_BANDS, "scale": 0.0001, "offset": -0.1,
         "nodata": 0, "epsg": 32643, "bbox": None,
     }
+    catalog.resolve_assets = lambda source_id, acquisition_date: synthetic_assets
+    catalog.resolve_assets_for_date = lambda source_id, acquisition_date: [synthetic_assets]
     catalog.supported_indices = lambda source_id="sentinel-2-l2a": list(indices.SUPPORTED_INDICES)
     resp = compute_statistics(
         geometry=poly, source_id="sentinel-2-l2a", acquisition_date="2025-09-14",

@@ -7,7 +7,7 @@ the standard error shapes without a database.
 import logging
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from app import plots_repo
@@ -22,13 +22,39 @@ VALID_POLY = {
 }
 VALID_MULTIPOLY = {
     "type": "MultiPolygon",
-    "coordinates": [[[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.105], [78.2, 12.1]]]],
+    "coordinates": [
+        [[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.105], [78.2, 12.1]]]
+    ],
 }
 OVERSIZED_POLY = {
     "type": "Polygon",
     "coordinates": [[[78, 12], [79, 12], [79, 13], [78, 13], [78, 12]]],
 }
 POINT_GEOM = {"type": "Point", "coordinates": [78.2, 12.1]}
+USER_METADATA_FIELDS = (
+    "groupName",
+    "cropType",
+    "variety",
+    "seasonLabel",
+    "sowingDate",
+    "plantingDate",
+    "status",
+)
+PROVIDER_LINK_FIELDS = (
+    "externalProvider",
+    "externalFieldId",
+    "providerSyncStatus",
+    "providerSyncedAt",
+)
+FIELD_METADATA = {
+    "groupName": "North Farm",
+    "cropType": "Paddy",
+    "variety": "IR64",
+    "seasonLabel": "Kharif 2026",
+    "sowingDate": "2026-06-01",
+    "plantingDate": "2026-06-15",
+    "status": "active",
+}
 
 
 def _dense_polygon(n: int = 5002) -> dict:
@@ -50,9 +76,15 @@ class FakeStore:
         self._seq = 0
 
     def _now(self) -> str:
-        return datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        return datetime(2026, 1, 1, tzinfo=UTC).isoformat().replace("+00:00", "Z")
 
-    def create(self, name, geometry, area_ha):
+    def _public(self, row):
+        return {k: v for k, v in row.items() if not k.startswith("_")}
+
+    def _metadata_defaults(self) -> dict:
+        return {field: None for field in (*USER_METADATA_FIELDS, *PROVIDER_LINK_FIELDS)}
+
+    def create(self, name, geometry, area_ha, metadata=None):
         self._seq += 1
         pid = str(uuid.uuid4())
         row = {
@@ -63,19 +95,22 @@ class FakeStore:
             "createdAt": self._now(),
             "updatedAt": self._now(),
             "_seq": self._seq,
+            **self._metadata_defaults(),
         }
+        if metadata:
+            row.update(metadata)
         self.rows[pid] = row
-        return {k: v for k, v in row.items() if not k.startswith("_")}
+        return self._public(row)
 
     def list(self):
         ordered = sorted(self.rows.values(), key=lambda r: r["_seq"], reverse=True)
-        return [{k: v for k, v in r.items() if not k.startswith("_")} for r in ordered]
+        return [self._public(r) for r in ordered]
 
     def get(self, pid):
         row = self.rows.get(pid)
-        return {k: v for k, v in row.items() if not k.startswith("_")} if row else None
+        return self._public(row) if row else None
 
-    def update(self, pid, name=None, geometry=None, area_ha=None):
+    def update(self, pid, name=None, geometry=None, area_ha=None, metadata=None):
         row = self.rows.get(pid)
         if row is None:
             return None
@@ -84,14 +119,19 @@ class FakeStore:
         if geometry is not None:
             row["geometry"] = geometry
             row["areaHa"] = round(float(area_ha), 4) if area_ha is not None else None
+        if metadata is not None:
+            row.update(metadata)
         row["updatedAt"] = self._now()
-        return {k: v for k, v in row.items() if not k.startswith("_")}
+        return self._public(row)
 
     def delete(self, pid):
         return self.rows.pop(pid, None) is not None
 
     def bulk(self, items):
-        return [self.create(it["name"], it["geometry"], it.get("areaHa")) for it in items]
+        return [
+            self.create(it["name"], it["geometry"], it.get("areaHa"), it.get("metadata"))
+            for it in items
+        ]
 
 
 @pytest.fixture
@@ -120,6 +160,19 @@ def test_create_plot_returns_201_typed(store):
     assert body["createdAt"].endswith("Z")
 
 
+def test_create_plot_with_field_metadata(store):
+    r = client.post(
+        "/api/plots",
+        json={"name": "North field", "geometry": VALID_POLY, **FIELD_METADATA},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    for field, value in FIELD_METADATA.items():
+        assert body[field] == value
+    for field in (*PROVIDER_LINK_FIELDS, "providerMetadata", "provider_metadata"):
+        assert field not in body
+
+
 def test_create_plot_accepts_multipolygon(store):
     r = client.post("/api/plots", json={"name": "MP", "geometry": VALID_MULTIPOLY})
     assert r.status_code == 201
@@ -143,6 +196,32 @@ def test_create_plot_missing_geometry_uses_standard_error_shape(store):
     assert "Missing geometry" not in r.text
 
 
+def test_create_plot_invalid_status_uses_standard_error_shape(store):
+    r = client.post(
+        "/api/plots",
+        json={"name": "p", "geometry": VALID_POLY, "status": "harvested-secret"},
+    )
+    assert r.status_code == 422
+    body = r.json()
+    assert set(body) == {"error"}
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["details"]["errors"]
+    assert "harvested-secret" not in r.text
+
+
+@pytest.mark.parametrize("metadata_field", ["sowingDate", "plantingDate"])
+def test_create_plot_malformed_metadata_dates_use_standard_error_shape(store, metadata_field):
+    r = client.post(
+        "/api/plots",
+        json={"name": "p", "geometry": VALID_POLY, metadata_field: "2026-06-01T00:00:00Z"},
+    )
+    assert r.status_code == 422
+    body = r.json()
+    assert set(body) == {"error"}
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["details"]["errors"]
+
+
 # --------------------------------------------------------------------------
 # 2) list returns typed payloads (newest first)
 # --------------------------------------------------------------------------
@@ -153,6 +232,18 @@ def test_list_plots_newest_first(store):
     assert r.status_code == 200
     names = [p["name"] for p in r.json()]
     assert names == ["second", "first"]
+
+
+def test_list_and_get_preserve_metadata(store):
+    created = client.post(
+        "/api/plots",
+        json={"name": "metadata field", "geometry": VALID_POLY, **FIELD_METADATA},
+    ).json()
+    listed = next(p for p in client.get("/api/plots").json() if p["id"] == created["id"])
+    fetched = client.get(f"/api/plots/{created['id']}").json()
+    for payload in (listed, fetched):
+        for field, value in FIELD_METADATA.items():
+            assert payload[field] == value
 
 
 # --------------------------------------------------------------------------
@@ -188,6 +279,67 @@ def test_patch_updates_name_and_geometry(store):
     assert r2.status_code == 200
     assert r2.json()["geometry"]["type"] == "MultiPolygon"
     assert isinstance(r2.json()["areaHa"], float)
+
+
+def test_patch_metadata_only_fields_without_changing_geometry(store):
+    created = client.post(
+        "/api/plots",
+        json={"name": "field", "geometry": VALID_POLY, **FIELD_METADATA},
+    ).json()
+    r = client.patch(
+        f"/api/plots/{created['id']}",
+        json={"cropType": "Tomato", "seasonLabel": "Rabi 2026", "status": "inactive"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["geometry"] == created["geometry"]
+    assert body["groupName"] == FIELD_METADATA["groupName"]
+    assert body["cropType"] == "Tomato"
+    assert body["seasonLabel"] == "Rabi 2026"
+    assert body["status"] == "inactive"
+
+
+def test_patch_geometry_preserves_metadata(store):
+    created = client.post(
+        "/api/plots",
+        json={"name": "field", "geometry": VALID_POLY, **FIELD_METADATA},
+    ).json()
+    r = client.patch(f"/api/plots/{created['id']}", json={"geometry": VALID_MULTIPOLY})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["geometry"]["type"] == "MultiPolygon"
+    for field, value in FIELD_METADATA.items():
+        assert body[field] == value
+
+
+def test_public_provider_link_fields_are_return_only_for_public_payloads(store):
+    provider_payload = {
+        "externalProvider": "eos",
+        "externalFieldId": "provider-field-123",
+        "providerSyncStatus": "synced",
+        "providerSyncedAt": "2026-06-20T00:00:00Z",
+        "providerMetadata": {"secret": "do-not-expose", "internalUrl": "http://minio:9000"},
+    }
+    created = client.post(
+        "/api/plots",
+        json={"name": "field", "geometry": VALID_POLY, **provider_payload},
+    )
+    assert created.status_code == 201
+    for leak in provider_payload:
+        assert leak not in created.json()
+    assert "do-not-expose" not in created.text
+    assert "http://minio:9000" not in created.text
+
+    r = client.patch(
+        f"/api/plots/{created.json()['id']}",
+        json={"providerSyncStatus": "invalid-secret-status", "providerSyncedAt": "not-a-date"},
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert set(body) == {"error"}
+    assert body["error"]["code"] == "NO_UPDATE_FIELDS"
+    assert "details" in body["error"]
+    assert "invalid-secret-status" not in r.text
 
 
 def test_patch_missing_plot_404(store):
@@ -266,6 +418,36 @@ def test_import_geojson_partial_success(store):
     assert rej["index"] == 1 and rej["code"] == "INVALID_GEOMETRY"
 
 
+def test_import_geojson_reads_metadata_and_preserves_partial_success(store):
+    fc = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": "Good A", **FIELD_METADATA},
+                "geometry": VALID_POLY,
+            },
+            {"type": "Feature", "properties": {"name": "Bad"}, "geometry": POINT_GEOM},
+            {
+                "type": "Feature",
+                "properties": {"title": "Good B", "cropType": "Maize", "status": "planned"},
+                "geometry": VALID_MULTIPOLY,
+            },
+        ],
+    }
+    r = client.post("/api/plots/import/geojson", json=fc)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["importedCount"] == 2
+    assert body["rejectedCount"] == 1
+    by_name = {p["name"]: p for p in body["imported"]}
+    for field, value in FIELD_METADATA.items():
+        assert by_name["Good A"][field] == value
+    assert by_name["Good B"]["cropType"] == "Maize"
+    assert by_name["Good B"]["status"] == "planned"
+    assert body["rejected"][0]["code"] == "INVALID_GEOMETRY"
+
+
 def test_import_raw_geometry_and_default_name(store):
     r = client.post("/api/plots/import/geojson", json=VALID_POLY)
     assert r.status_code == 200
@@ -302,6 +484,45 @@ def test_export_single_plot_media_type(store):
     assert feat["type"] == "Feature"
     assert feat["geometry"]["type"] == "Polygon"
     assert feat["properties"]["name"] == "p"
+
+
+def test_export_geojson_includes_safe_metadata_and_omits_raw_provider_metadata(store):
+    created = client.post(
+        "/api/plots",
+        json={"name": "metadata field", "geometry": VALID_POLY, **FIELD_METADATA},
+    ).json()
+    store.rows[created["id"]].update(
+        {
+            "externalProvider": "eos",
+            "externalFieldId": "provider-field-123",
+            "providerSyncStatus": "synced",
+            "providerSyncedAt": "2026-06-20T00:00:00Z",
+            "providerMetadata": {
+                "apiKey": "provider-secret",
+                "internalUrl": "http://minio:9000/private-cog.tif",
+            },
+            "provider_metadata": {"raw": "provider-secret"},
+        }
+    )
+
+    r = client.get(f"/api/plots/{created['id']}/export.geojson")
+    assert r.status_code == 200
+    props = r.json()["properties"]
+    for field, value in FIELD_METADATA.items():
+        assert props[field] == value
+    assert props["externalProvider"] == "eos"
+    assert props["externalFieldId"] == "provider-field-123"
+    assert props["providerSyncStatus"] == "synced"
+    assert props["providerSyncedAt"] == "2026-06-20T00:00:00Z"
+    assert "providerMetadata" not in props
+    assert "provider_metadata" not in props
+    for leak in ["provider-secret", "http://minio:9000", "private-cog"]:
+        assert leak not in r.text
+
+    exported_all = client.get("/api/plots/export.geojson")
+    assert exported_all.status_code == 200
+    for leak in ["providerMetadata", "provider_metadata", "provider-secret", "http://minio:9000"]:
+        assert leak not in exported_all.text
 
 
 def test_export_all_plots_feature_collection(store):

@@ -66,6 +66,7 @@ services:
       GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
       CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
       AKASHA_RGB_RESCALE: "0,3000"
+      AKASHA_S1_VV_RESCALE: "-25,5"
       DEFAULT_SOURCE_ID: "sentinel-2-l2a"
       DEFAULT_AOI_ID: "bangalore"
       USABLE_PIXEL_THRESHOLD_PERCENT: "70"
@@ -228,6 +229,32 @@ services:
     #   docker compose run --rm ingestion-worker python worker.py verify
     restart: "no"
 
+  ingestion-sar:
+    build:
+      context: ../..
+      dockerfile: services/ingestion-sar/Dockerfile
+    image: akasha-ingestion-sar:s1
+    environment:
+      PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      SNAP_USER_DIR: "/snap-cache"
+      SNAP_CACHE_SIZE: "${SNAP_CACHE_SIZE:-8G}"
+      SNAP_PARALLELISM: "${SNAP_PARALLELISM:-4}"
+      JAVA_TOOL_OPTIONS: "-Xmx${SNAP_JAVA_MAX_HEAP:-12g}"
+      AKASHA_S1_DEM_SOURCE: "${AKASHA_S1_DEM_SOURCE:-Copernicus 30m Global DEM}"
+      AKASHA_S1_FALLBACK_DEM_SOURCE: "${AKASHA_S1_FALLBACK_DEM_SOURCE:-SRTM 1Sec HGT}"
+      AKASHA_S1_TARGET_CRS: "${AKASHA_S1_TARGET_CRS:-EPSG:4326}"
+      AKASHA_S1_PIXEL_SPACING_METERS: "${AKASHA_S1_PIXEL_SPACING_METERS:-10}"
+      AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
+      AKASHA_S1_VH_RESCALE: "${AKASHA_S1_VH_RESCALE:--30,-5}"
+    volumes:
+      - ../../data:/app/data
+      - ../../scripts:/app/scripts:ro
+      - snap_cache:/snap-cache
+    # One-shot SAR preprocessing runtime. Example:
+    #   docker compose run --rm ingestion-sar python scripts/prepare_sentinel1_grd_cogs.py --selection-manifest data/raw/sentinel-1-grd/coverage_manifest.json --overwrite
+    restart: "no"
+
 volumes:
   postgis_data:
   minio_data:
+  snap_cache:

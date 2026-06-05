@@ -68,9 +68,9 @@ WEB_PORT=18080 docker compose --env-file infra/docker/.env -f infra/docker/docke
 
 `verify-cogs` result: 4/4 passed.
 
-Uploaded MinIO keys:
+Uploaded MinIO keys (legacy single-sample layout used by this historical Slice 2 validation; manifest-driven production keys include `{date}/{mgrsTile}/`):
 
-- `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif`
+- `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif` (legacy sample layout)
 - `s3://akasha-cogs/sentinel-2-l2a/2025-09-14/scl.tif`
 
 ## Strict smoke test

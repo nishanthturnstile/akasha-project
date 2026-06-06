@@ -57,7 +57,11 @@ def test_sync_field_provider_mirrors_unsynced_plot(monkeypatch):
                 provider_area_ha=5.1,
             )
 
-    monkeypatch.setattr(field_monitoring, "EosFieldProvider", lambda: FakeFieldProvider())
+    monkeypatch.setattr(
+        field_monitoring.provider_factory,
+        "field_provider",
+        lambda provider="eos": FakeFieldProvider(),
+    )
     r = client.post("/api/fields/plot-1/providers/eos/sync")
     assert r.status_code == 200
     body = r.json()
@@ -132,7 +136,11 @@ def test_eos_field_scenes_normalize_and_dedupe(monkeypatch):
                 ),
             ]
 
-    monkeypatch.setattr(field_monitoring, "EosSceneProvider", lambda: FakeSceneProvider())
+    monkeypatch.setattr(
+        field_monitoring.provider_factory,
+        "scene_provider",
+        lambda provider="eos": FakeSceneProvider(),
+    )
     r = client.get("/api/fields/plot-1/scenes?provider=eos&startDate=2026-01-01&endDate=2026-06-30")
     assert r.status_code == 200
     body = r.json()
@@ -142,6 +150,64 @@ def test_eos_field_scenes_normalize_and_dedupe(monkeypatch):
     assert body["scenes"][0]["usablePixelPercent"] == 95
     assert body["scenes"][0]["layers"][0]["tileUrlTemplate"].startswith("/api/tiles/fields/")
     assert "/api/providers/eos" not in r.text
+    assert FAKE_BASE_URL not in r.text
+
+
+def test_auto_field_scenes_prefers_eos_for_synced_configured_field(monkeypatch):
+    monkeypatch.setattr(settings, "eos_api_key", FAKE_KEY)
+    monkeypatch.setattr(settings, "provider_mode", "hybrid")
+    monkeypatch.setattr(settings, "eos_enabled", True)
+    monkeypatch.setattr(
+        field_monitoring.plots_repo,
+        "get_plot",
+        lambda _: _plot(
+            externalProvider="eos",
+            externalFieldId="eos-field-1",
+            providerSyncStatus="synced",
+        ),
+    )
+
+    class FakeSceneProvider:
+        def search_scenes(self, external_field_id, *_args, **_kwargs):
+            assert external_field_id == "eos-field-1"
+            return ProviderAsyncRequest(
+                request_id="request-1",
+                status="done",
+                external_field_id=external_field_id,
+            )
+
+        def get_scene_search_result(self, *_args, **_kwargs):
+            return [
+                SceneMetadata(
+                    scene_id="scene-best",
+                    view_id="S2/scene-best",
+                    acquisition_date=date(2026, 6, 1),
+                    cloud_percent=5,
+                    usable_percent=95,
+                )
+            ]
+
+    monkeypatch.setattr(
+        field_monitoring.provider_factory,
+        "scene_provider",
+        lambda provider="eos": FakeSceneProvider(),
+    )
+
+    r = client.get(
+        "/api/fields/plot-1/scenes"
+        "?provider=auto&startDate=2026-01-01&endDate=2026-06-30"
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "eos"
+    assert body["scope"] == "field"
+    assert body["defaultDisplayMode"] == "RGB"
+    assert body["displayModes"][0] == "RGB"
+    assert body["scenes"][0]["layers"][0]["tileUrlTemplate"].startswith(
+        "/api/tiles/fields/"
+    )
+    assert FAKE_KEY not in r.text
     assert FAKE_BASE_URL not in r.text
 
 
@@ -167,7 +233,11 @@ def test_field_tile_proxy_returns_image_bytes_without_provider_url(monkeypatch):
             assert kwargs["cloud_mask"].cloud_shadows is False
             return TileBytes(content=b"\x89PNG\r\n\x1a\nfake", content_type="image/png")
 
-    monkeypatch.setattr(field_monitoring, "EosTileProvider", lambda: FakeTileProvider())
+    monkeypatch.setattr(
+        field_monitoring.provider_factory,
+        "tile_provider",
+        lambda provider="eos": FakeTileProvider(),
+    )
     r = client.get(
         f"/api/tiles/fields/plot-1/{token}/NDVI/1/2/3.png?clouds=true&cloudShadows=false&cirrus=true"
     )

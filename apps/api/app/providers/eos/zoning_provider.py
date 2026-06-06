@@ -43,6 +43,7 @@ class EosZoningProvider:
                 "image_date": image_date.isoformat(),
                 "need_answer": False,
             },
+            expected_status=(200, 201),
         )
         external_zmap_id = _extract_zmap_id(str(response.get("request_url", "")))
         return ProviderAsyncRequest(

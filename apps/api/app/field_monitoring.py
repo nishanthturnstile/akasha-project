@@ -16,9 +16,7 @@ from fastapi.responses import Response
 from . import plots_repo
 from .auth import get_current_team
 from .config import settings
-from .providers.eos.field_provider import EosFieldProvider
-from .providers.eos.scene_provider import EosSceneProvider
-from .providers.eos.tile_provider import EosTileProvider
+from .providers import factory as provider_factory
 from .providers.models import (
     CloudMaskOptions,
     FieldLayer,
@@ -73,8 +71,7 @@ async def _get_plot_or_404(plot_id: str) -> dict:
 
 
 def _is_eos_ready() -> bool:
-    mode = (settings.provider_mode or "disabled").strip().lower()
-    return bool(settings.eos_api_key.strip()) and settings.eos_enabled and mode in {"eos", "hybrid"}
+    return provider_factory.is_ready("eos")
 
 
 def _default_range() -> tuple[date, date]:
@@ -250,7 +247,7 @@ def _eos_scenes_response(
     date_start: date,
     date_end: date,
 ) -> FieldSceneListResponse:
-    scene_provider = EosSceneProvider()
+    scene_provider = provider_factory.scene_provider("eos")
     request = scene_provider.search_scenes(
         external_field_id,
         date_start,
@@ -281,7 +278,7 @@ async def sync_field_provider(plot_id: str) -> ProviderSyncResponse:
     plot = await _get_plot_or_404(plot_id)
 
     def _sync() -> ProviderSyncResponse:
-        provider = EosFieldProvider()
+        provider = provider_factory.field_provider("eos")
         external_field_id = plot.get("externalFieldId")
         if plot.get("externalProvider") == "eos" and external_field_id:
             result = provider.update_mirror(plot, str(external_field_id))
@@ -403,7 +400,7 @@ async def get_field_tile(
     )
 
     def _render():
-        return EosTileProvider().render_tile(
+        return provider_factory.tile_provider("eos").render_tile(
             scene,
             display_mode=display_mode,
             z=z,

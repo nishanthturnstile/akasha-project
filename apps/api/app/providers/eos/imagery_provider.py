@@ -44,6 +44,7 @@ class EosImageryProvider:
             "POST",
             "/api/gdw/api",
             json={"type": "bandmath", "params": params},
+            expected_status=(200, 201),
         )
         task_id = str(task.get("task_id") or task.get("request_id") or task.get("id") or "")
         if not task_id:

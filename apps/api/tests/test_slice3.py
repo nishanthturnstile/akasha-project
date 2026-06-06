@@ -10,8 +10,9 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from app import plots_repo
+from app import plots, plots_repo
 from app.main import app
+from app.providers.models import FieldMirrorResult
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -127,6 +128,27 @@ class FakeStore:
     def delete(self, pid):
         return self.rows.pop(pid, None) is not None
 
+    def provider_link(
+        self,
+        pid,
+        *,
+        external_provider,
+        external_field_id,
+        provider_sync_status,
+        provider_metadata=None,
+    ):
+        row = self.rows.get(pid)
+        if row is None:
+            return None
+        row["externalProvider"] = external_provider
+        row["externalFieldId"] = external_field_id
+        row["providerSyncStatus"] = provider_sync_status
+        if provider_sync_status == "synced":
+            row["providerSyncedAt"] = self._now()
+        row["providerMetadata"] = provider_metadata
+        row["updatedAt"] = self._now()
+        return self._public(row)
+
     def bulk(self, items):
         return [
             self.create(it["name"], it["geometry"], it.get("areaHa"), it.get("metadata"))
@@ -143,6 +165,8 @@ def store(monkeypatch):
     monkeypatch.setattr(plots_repo, "update_plot", s.update)
     monkeypatch.setattr(plots_repo, "delete_plot", s.delete)
     monkeypatch.setattr(plots_repo, "create_plots_bulk", s.bulk)
+    monkeypatch.setattr(plots_repo, "update_provider_link", s.provider_link)
+    monkeypatch.setattr(plots.provider_factory, "is_ready", lambda provider="eos": False)
     return s
 
 
@@ -177,6 +201,60 @@ def test_create_plot_accepts_multipolygon(store):
     r = client.post("/api/plots", json={"name": "MP", "geometry": VALID_MULTIPOLY})
     assert r.status_code == 201
     assert r.json()["geometry"]["type"] == "MultiPolygon"
+
+
+def test_create_plot_auto_syncs_to_eos_when_provider_ready(store, monkeypatch):
+    calls = []
+
+    class FakeFieldProvider:
+        def mirror_field(self, plot):
+            calls.append(plot)
+            return FieldMirrorResult(
+                plot_id=plot["id"],
+                external_field_id="eos-field-123",
+                sync_status="synced",
+                synced_at=datetime(2026, 1, 1, tzinfo=UTC),
+                provider_area_ha=plot["areaHa"],
+            )
+
+    monkeypatch.setattr(plots.provider_factory, "is_ready", lambda provider="eos": True)
+    monkeypatch.setattr(
+        plots.provider_factory,
+        "field_provider",
+        lambda provider="eos": FakeFieldProvider(),
+    )
+
+    r = client.post("/api/plots", json={"name": "EOS field", "geometry": VALID_POLY})
+
+    assert r.status_code == 201
+    assert len(calls) == 1
+    body = r.json()
+    assert body["externalProvider"] == "eos"
+    assert body["externalFieldId"] == "eos-field-123"
+    assert body["providerSyncStatus"] == "synced"
+    assert "providerMetadata" not in body
+
+
+def test_create_plot_keeps_local_plot_when_eos_sync_fails(store, monkeypatch):
+    class FailingFieldProvider:
+        def mirror_field(self, plot):
+            raise RuntimeError("secret upstream failure")
+
+    monkeypatch.setattr(plots.provider_factory, "is_ready", lambda provider="eos": True)
+    monkeypatch.setattr(
+        plots.provider_factory,
+        "field_provider",
+        lambda provider="eos": FailingFieldProvider(),
+    )
+
+    r = client.post("/api/plots", json={"name": "Failed EOS field", "geometry": VALID_POLY})
+
+    assert r.status_code == 201
+    body = r.json()
+    assert body["name"] == "Failed EOS field"
+    assert body["externalProvider"] == "eos"
+    assert body["providerSyncStatus"] == "failed"
+    assert "secret upstream failure" not in r.text
 
 
 def test_create_plot_blank_name_400(store):

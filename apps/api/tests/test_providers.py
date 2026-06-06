@@ -13,8 +13,10 @@ import pytest
 from app import plots_repo
 from app.config import settings
 from app.main import app
+from app.providers import factory as provider_factory
 from app.providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
 from app.providers.eos.analytics_provider import EosAnalyticsProvider
+from app.providers.eos.async_requests import poll_result
 from app.providers.eos.client import EosClient
 from app.providers.eos.field_provider import EosFieldProvider
 from app.providers.eos.imagery_provider import EosImageryProvider
@@ -216,6 +218,7 @@ def test_field_mirror_normalizes_response_and_updates_provider_link(monkeypatch)
     )
     assert calls[0]["method"] == "POST"
     assert calls[0]["path"] == "/field-management"
+    assert calls[0]["expected_status"] == (200, 201)
     assert result.plot_id == "akasha-plot-1"
     assert result.external_field_id == "9793351"
     assert result.provider_area_ha == pytest.approx(77.0)
@@ -235,6 +238,7 @@ def test_scene_provider_normalizes_async_search_and_results():
         def request(self, method, path, **kwargs):
             if method == "POST":
                 assert path == "/scene-search/for-field/9793351"
+                assert kwargs["expected_status"] == (200, 201)
                 assert kwargs["json"]["params"]["data_source"] == ["sentinel2"]
                 return {"status": "pending", "request_id": "request-1"}
             assert path == "/scene-search/for-field/9793351/request-1"
@@ -258,6 +262,7 @@ def test_scene_provider_normalizes_async_search_and_results():
     )
     scenes = provider.get_scene_search_result("9793351", request.request_id)
     assert request.request_id == "request-1"
+    assert request.status == "pending"
     assert scenes[0].scene_id == "S2/43/P/FM/2026/6/1/0"
     assert scenes[0].sensor == "S2"
     assert scenes[0].cloud_percent == pytest.approx(8.5)
@@ -390,6 +395,7 @@ def test_zoning_provider_create_parses_zmap_id_and_sends_image_date():
     assert result.external_zmap_id == "zmap-456"
     assert result.request_id == "zmap-456"
     assert calls[0]["path"] == "/zoning/vegetation-map"
+    assert calls[0]["expected_status"] == (200, 201)
     assert calls[0]["json"]["image_date"] == "2026-06-01"
     assert calls[0]["json"]["dataset_id"] == "dataset-1"
 
@@ -429,6 +435,22 @@ def test_scene_provider_polls_pending_result_before_returning_scenes():
     assert scenes[0].scene_id == "S2/43/P/FM/2026/6/1/0"
 
 
+def test_async_polling_defaults_to_provider_rate_limit(monkeypatch):
+    monkeypatch.setattr(settings, "eos_rate_limit_per_minute", 12)
+    responses = iter([{"status": "pending"}, {"status": "success", "result": []}])
+    sleeps: list[float] = []
+
+    result = poll_result(
+        lambda: next(responses),
+        operation="scene search",
+        timeout_seconds=30,
+        sleeper=sleeps.append,
+    )
+
+    assert result["status"] == "success"
+    assert sleeps == [pytest.approx(5.0)]
+
+
 def test_tile_provider_returns_same_origin_template_only():
     scene = SceneMetadata(
         scene_id="S2/43/P/FM/2026/6/1/0",
@@ -441,6 +463,22 @@ def test_tile_provider_returns_same_origin_template_only():
     assert "api-connect.eos.com" not in tile.tile_url_template
     assert "api_key" not in tile.tile_url_template
     assert "x-api-key" not in tile.tile_url_template
+
+
+def test_provider_factory_returns_eos_provider_instances():
+    assert isinstance(provider_factory.field_provider("eos"), EosFieldProvider)
+    assert isinstance(provider_factory.scene_provider("eos"), EosSceneProvider)
+    assert isinstance(provider_factory.tile_provider("eos"), EosTileProvider)
+
+
+def test_provider_factory_rejects_unknown_provider_without_secret_leaks():
+    with pytest.raises(AkashaError) as ei:
+        provider_factory.scene_provider("other")  # type: ignore[arg-type]
+
+    payload = ei.value.to_payload()
+    assert payload["error"]["code"] == "UNKNOWN_PROVIDER"
+    assert FAKE_KEY not in str(payload)
+    assert FAKE_BASE_URL not in str(payload)
 
 
 def test_cloud_mask_mapping_exact_and_conservative_cases():
@@ -496,6 +534,7 @@ def test_analytics_provider_normalizes_trend_points():
     points = provider.get_trend_result("9793351", request.request_id, index="NDVI")
 
     assert calls[0]["path"] == "/field-analytics/trend/9793351"
+    assert calls[0]["expected_status"] == (200, 201)
     assert calls[0]["json"]["params"]["distinct_by_date"] is True
     assert calls[0]["json"]["params"]["exclude_cover_pixels"] is True
     assert calls[0]["json"]["params"]["cloud_masking_level"] == 3
@@ -573,6 +612,7 @@ def test_imagery_provider_exports_geotiff_bytes_without_exposing_download_url():
     )
 
     assert calls[0]["path"] == "/api/gdw/api"
+    assert calls[0]["expected_status"] == (200, 201)
     assert calls[0]["json"]["type"] == "bandmath"
     assert calls[0]["json"]["params"]["cloud_masking_level"] == 3
     assert exported.content == b"tiff-bytes"

@@ -39,6 +39,7 @@ class EosSceneProvider:
             "POST",
             f"/scene-search/for-field/{field_id}",
             json={"params": params},
+            expected_status=(200, 201),
         )
         return ProviderAsyncRequest(
             request_id=str(response.get("request_id", "")),
@@ -52,7 +53,7 @@ class EosSceneProvider:
         request_id: str,
         *,
         timeout_seconds: float | None = None,
-        poll_interval_seconds: float = 0.75,
+        poll_interval_seconds: float | None = None,
     ) -> list[SceneMetadata]:
         field_id = quote(external_field_id, safe="")
         request_token = quote(request_id, safe="")

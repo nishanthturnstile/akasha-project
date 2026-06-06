@@ -239,9 +239,21 @@ def test_mocked_eos_parity_happy_path(monkeypatch):
         "updatedAt": "2026-06-04T00:00:00Z",
     }
 
-    monkeypatch.setattr(field_monitoring, "EosFieldProvider", lambda: FakeFieldProvider())
-    monkeypatch.setattr(field_monitoring, "EosSceneProvider", lambda: FakeSceneProvider())
-    monkeypatch.setattr(field_monitoring, "EosTileProvider", lambda: FakeTileProvider())
+    monkeypatch.setattr(
+        field_monitoring.provider_factory,
+        "field_provider",
+        lambda provider="eos": FakeFieldProvider(),
+    )
+    monkeypatch.setattr(
+        field_monitoring.provider_factory,
+        "scene_provider",
+        lambda provider="eos": FakeSceneProvider(),
+    )
+    monkeypatch.setattr(
+        field_monitoring.provider_factory,
+        "tile_provider",
+        lambda provider="eos": FakeTileProvider(),
+    )
     monkeypatch.setattr(field_analytics, "EosAnalyticsProvider", lambda: FakeAnalyticsProvider())
     monkeypatch.setattr(weather, "EosWeatherProvider", lambda: FakeWeatherProvider())
     monkeypatch.setattr(field_zoning, "EosSceneProvider", lambda: FakeSceneProvider())

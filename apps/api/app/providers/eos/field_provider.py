@@ -17,7 +17,12 @@ class EosFieldProvider:
 
     def mirror_field(self, plot: dict[str, Any]) -> FieldMirrorResult:
         payload = _plot_to_eos_feature(plot)
-        response = self.client.request("POST", "/field-management", json=payload)
+        response = self.client.request(
+            "POST",
+            "/field-management",
+            json=payload,
+            expected_status=(200, 201),
+        )
         external_field_id = str(response.get("id", ""))
         if not external_field_id:
             raise AkashaError(

@@ -11,6 +11,10 @@ from ...raster.errors import AkashaError
 PENDING_STATUSES = {"created", "pending", "processing", "running", "queued"}
 
 
+def default_poll_interval_seconds() -> float:
+    return max(1.0, 60.0 / max(1, settings.eos_rate_limit_per_minute))
+
+
 def is_pending_status(value: Any) -> bool:
     return str(value or "").strip().lower() in PENDING_STATUSES
 
@@ -20,7 +24,7 @@ def poll_result(
     *,
     operation: str,
     timeout_seconds: float | None = None,
-    poll_interval_seconds: float = 0.75,
+    poll_interval_seconds: float | None = None,
     sleeper: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     """Fetch an EOS async result until it is no longer pending or the budget expires."""
@@ -43,4 +47,9 @@ def poll_result(
                 503,
                 {"provider": "eos"},
             )
-        sleeper(min(max(0.0, poll_interval_seconds), remaining))
+        interval = (
+            default_poll_interval_seconds()
+            if poll_interval_seconds is None
+            else max(0.0, poll_interval_seconds)
+        )
+        sleeper(min(interval, remaining))

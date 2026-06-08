@@ -19,6 +19,7 @@ Usage:  python scripts/validate_slice2.py
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -170,7 +171,13 @@ section("Product endpoints (in-process TestClient)")
 try:
     from fastapi.testclient import TestClient  # noqa: I001
 
+    from app.config import settings
     from app.main import app
+
+    os.environ.pop("RAILWAY_ENVIRONMENT", None)
+    settings.auth_mode = "disabled"
+    settings.auth_allow_disabled = True
+    settings.app_env = "test"
 
     tc = TestClient(app)
     cfg = tc.get("/api/config")

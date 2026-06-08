@@ -4,15 +4,11 @@ Geospatial MVP for browsing true-colour Sentinel-2 imagery over an Area of
 Interest (Bangalore) and computing cloud-masked vegetation-index statistics for
 user-drawn plots. Railway-first, but fully portable to Docker Compose / on-prem.
 
-> **Status: Slice 1 — Storage / Catalog.** The multi-service skeleton (Slice 0)
-> is complete, and the storage/catalog foundation is now in place: the
-> PostgreSQL/PostGIS **app schema** (plots), **pgSTAC + STAC API** setup, a
-> **Sentinel-2 L2A STAC collection seed** (frozen 9-band order; reflectance
-> `scale 0.0001` / `offset -0.1`), the **MinIO `akasha-cogs`** bucket/key layout,
-> and **idempotent seeding** keyed on
-> `{satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}`.
-> Raster/index math, BFF product contracts, and the map UX are delivered in later
-> slices (see the roadmap below).
+> **Status: Slice 4 implementation in progress.** Slice 0 (skeleton), Slice 1
+> (storage/catalog), Slice 2 (raster de-risk), and Slice 3 (BFF product + plot
+> contracts) are implemented. The canonical frontend map/product shell now lives
+> in `apps/frontend`. Railway/local Docker still run the same multi-service
+> topology described below.
 
 ## Architecture (one public service)
 
@@ -34,12 +30,13 @@ are never given a public domain.
 
 ```text
 apps/
-  frontend/          React + Vite + TypeScript SPA (skeleton; map UX in Slice 4)
-  api/               FastAPI BFF (skeleton; /health + /api/_skeleton/*)
+  frontend/          Canonical React + Vite + TypeScript SPA
+  api/               Canonical FastAPI BFF (/api product, plot, auth, ops APIs)
 services/
   titiler/           TiTiler image/config (RGB display tiles)
   stac-api/          stac-fastapi-pgstac wrapper/config
-  ingestion/         Python ingestion worker (no-op skeleton)
+  ingestion/         Python ingestion worker and STAC/MinIO seed loader
+  ingestion-sar/     Sentinel-1/SAR preprocessing runtime
 infra/
   gateway/           Caddy reverse proxy + multi-stage web Dockerfile
   railway/           Per-service Railway config + env matrix + deploy notes
@@ -47,6 +44,8 @@ infra/
 docs/                Source-of-truth product/architecture/deploy docs
 scripts/             validate_slice0.py + smoke-test.py
 ```
+
+When changing application behavior, edit `apps/api` and `apps/frontend`.
 
 ## Services & health endpoints
 
@@ -60,11 +59,11 @@ scripts/             validate_slice0.py + smoke-test.py
 | minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
 | ingestion-worker | no | — | CLI | `python:3.11.14-slim-bookworm` |
 
-## Complete local setup (clone → run → verify Slice 1)
+## Complete local setup (clone → run → verify)
 
 This is the end-to-end onboarding flow. Follow it top-to-bottom from a fresh
-clone to get the storage/catalog foundation (Slice 1) running and verified on
-your machine. No prior project state is assumed.
+clone to get the local multi-service stack running and verify the storage,
+catalog, API, and raster de-risk foundations. No prior project state is assumed.
 
 ### 0. Prerequisites
 
@@ -110,7 +109,7 @@ curl http://localhost:8080/api/health        # proxied api  -> {"status":"ok"}
 python ../../scripts/smoke-test.py http://localhost:8080
 ```
 
-### 4. Bootstrap the data foundation (Slice 1)
+### 4. Bootstrap the data foundation
 
 The data foundation is seeded **deterministically and idempotently** — these
 commands are safe to re-run. Run them *inside* the running containers:
@@ -125,14 +124,12 @@ docker compose exec api python -m app.cli check        # postgis_version() + API
 # 4b) catalog + storage: pgSTAC migrate -> load collection/item -> MinIO bucket/keys (ingestion)
 docker compose exec ingestion-worker python worker.py seed
 
-# 4c) Slice 1 exit criteria: PostGIS, STAC collection, MinIO bucket + deterministic keys
+# 4c) storage/catalog exit criteria: PostGIS, STAC collection, MinIO bucket + deterministic keys
 docker compose exec ingestion-worker python worker.py verify
 ```
 
-`worker.py verify` passing (3/3 checks) means Slice 1 is correctly set up
-locally. Real COGs are operator-provided (not committed); absent rasters get
-empty placeholder objects at the deterministic keys so the layout is
-established (Slice 2 replaces them with validated COGs).
+`worker.py verify` passing (3/3 checks) means the storage/catalog foundation is
+correctly set up locally. Real COGs are operator-provided and not committed.
 
 ### 5. (Optional) Static validation — no Docker required
 
@@ -140,6 +137,7 @@ established (Slice 2 replaces them with validated COGs).
 # from repo root
 python scripts/validate_slice0.py     # skeleton artifacts (Slice 0)
 python scripts/validate_slice1.py     # storage/catalog artifacts (Slice 1)
+python scripts/validate_slice2.py     # raster de-risk artifacts + synthetic NDVI path
 ```
 
 ### Reset / teardown
@@ -173,10 +171,10 @@ and the deployment sequence.
 | Slice | Focus | Status |
 |---|---|---|
 | 0 | Repository & service skeleton | **done** |
-| 1 | Database, catalog & object storage foundation | **done (this slice)** |
-| 2 | Raster de-risk (tile + masked NDVI statistic) | planned |
-| 3 | BFF API implementation | planned |
-| 4 | Frontend map & layer UX | planned |
+| 1 | Database, catalog & object storage foundation | **done** |
+| 2 | Raster de-risk (tile + masked NDVI statistic) | **done** |
+| 3 | BFF API implementation | **done** |
+| 4 | Frontend map & layer UX | **implemented; active hardening** |
 | 5 | Plot & index UX | planned |
 | 6 | Railway deployment hardening | planned |
 | 7 | Acceptance & QA | planned |
@@ -185,9 +183,9 @@ Engineering guardrails: [`docs/engineering-dos-donts.md`](docs/engineering-dos-d
 
 ---
 
-### Emergent preview note
+### Preview note
 
-The Emergent sandbox has no Docker engine, so it runs a single FastAPI process
-(mounting `apps/api`) plus a React **Service Skeleton Dashboard** that visualises
-this topology live. The Dockerized multi-service stack above is the artifact that
-builds and runs on local Docker / Railway.
+This repository now keeps only the canonical multi-service tree. The old
+root-level Emergent preview shims (`backend/` and `frontend/`) were removed so
+there is one backend and one frontend source of truth: `apps/api` and
+`apps/frontend`.

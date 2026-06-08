@@ -165,10 +165,8 @@ Source-of-truth docs (read before coding):
 - `apps/frontend/.env.example` already declares `VITE_BASEMAP_STYLE_URL`.
 - The production SPA is built by `infra/gateway/Dockerfile` (`yarn build` → Caddy serves `/srv`).
   Your build must keep `yarn build` working with no new required env beyond `VITE_*` placeholders.
-- shadcn/ui components from an earlier scaffold live under `frontend/src/components/ui/` (note: the
-  legacy `frontend/`, not `apps/frontend/`). You may copy the primitives you need (button, card,
-  slider, switch, tooltip, badge, scroll-area, skeleton, separator) into `apps/frontend` and restyle
-  them to the design tokens. Do not add a dependency on the legacy `frontend/` folder.
+- shadcn-style UI primitives now live directly under `apps/frontend/src/components/ui/`.
+  Extend those local primitives when needed and keep them aligned with the design tokens.
 
 ### Required dependencies to add
 

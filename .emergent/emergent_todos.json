@@ -24,7 +24,7 @@
     "status": "completed"
   },
   {
-    "content": "Repoint /app/frontend start script to launch Vite app on port 3000; restart frontend",
+    "content": "Remove root frontend shim; canonical Vite app lives in apps/frontend",
     "status": "completed"
   },
   {

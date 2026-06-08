@@ -13,7 +13,7 @@ from pydantic import Field
 from . import phase10_repo
 from .auth import get_current_team
 from .operations import AttachmentPublic
-from .providers.models import ProviderModel
+from .api_models import ApiModel
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.scout_tasks")
@@ -24,7 +24,7 @@ router = APIRouter(
 )
 
 
-class ScoutTaskPayload(ProviderModel):
+class ScoutTaskPayload(ApiModel):
     plot_id: str | None = None
     longitude: float | None = None
     latitude: float | None = None
@@ -36,7 +36,7 @@ class ScoutTaskPayload(ProviderModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class ScoutTaskUpdate(ProviderModel):
+class ScoutTaskUpdate(ApiModel):
     plot_id: str | None = None
     longitude: float | None = None
     latitude: float | None = None
@@ -48,7 +48,7 @@ class ScoutTaskUpdate(ProviderModel):
     metadata: dict[str, Any] | None = None
 
 
-class ScoutTask(ProviderModel):
+class ScoutTask(ApiModel):
     id: str
     plot_id: str | None = None
     field_name: str | None = None

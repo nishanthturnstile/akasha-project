@@ -42,6 +42,7 @@ Run from repo root unless noted. The `Makefile` wraps the common ones (`make hel
 ruff check apps/api services/ingestion scripts          # lint (line-length 100, py311)
 black apps/api services/ingestion && isort apps/api services/ingestion   # format
 
+pip install -r apps/api/requirements-dev.txt             # BFF runtime + test deps (pytest, httpx)
 cd apps/api && python -m pytest -q                       # BFF unit tests
 cd apps/api && python -m pytest tests/test_slice2.py -q  # one test file
 cd apps/api && python -m pytest tests/test_slice2.py::<name>   # one test

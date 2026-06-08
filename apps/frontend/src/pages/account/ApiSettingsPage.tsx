@@ -19,7 +19,7 @@ export default function ApiSettingsPage() {
         <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Account</p>
         <h1 className="mt-1 text-2xl font-semibold">API settings</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Akasha API keys show only metadata after creation. Provider keys are never displayed here.
+          Akasha API keys show only metadata after creation. Raw keys are shown once and never stored in plain text.
         </p>
       </section>
       { createdKey && (

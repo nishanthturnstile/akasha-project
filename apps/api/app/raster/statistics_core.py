@@ -204,18 +204,6 @@ def _evaluate_index(
     a_ref: np.ndarray,
     b_ref: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    if formula_kind == "msavi":
-        term = (2 * a_ref + 1) ** 2 - 8 * (a_ref - b_ref)
-        good = term >= 0
-        values = np.full(a_ref.shape, np.nan, dtype="float64")
-        values[good] = (2 * a_ref[good] + 1 - np.sqrt(term[good])) / 2
-        return values, good
-    if formula_kind == "reci":
-        good = b_ref != 0
-        values = np.full(a_ref.shape, np.nan, dtype="float64")
-        values[good] = (a_ref[good] / b_ref[good]) - 1
-        return values, good
-
     denom = a_ref + b_ref
     good = denom != 0
     values = np.full(a_ref.shape, np.nan, dtype="float64")

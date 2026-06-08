@@ -87,6 +87,8 @@ describe('FieldLeaderboardPage', () => {
         fetchMock.mock.calls.some((call) => String(call[0]).includes('cropType=Paddy')),
       ).toBe(true),
     );
-    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('api-connect');
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith('/api/reports/'))).toBe(
+      true,
+    );
   });
 });

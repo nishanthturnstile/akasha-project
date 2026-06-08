@@ -194,7 +194,7 @@ export function AppShell() {
             </Tooltip>
           </div>
 
-          {/* Season selector placeholder (top of rail in EOS parity) */ }
+          {/* Season selector placeholder for the product rail. */ }
           <div className={ cn('px-3 py-2', railCollapsed && 'px-2') }>
             <Tooltip>
               <TooltipTrigger asChild>

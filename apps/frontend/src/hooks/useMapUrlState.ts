@@ -25,9 +25,7 @@ function normalizeIdParam(value: string | null | undefined): string | null {
  * with the {@link useMapView} reducer. Hydrates on mount and replaces history (no
  * pushes) on context changes so navigating back/forward feels like normal browsing.
  *
- * Mirrors the EOS deep-link model
- * (`/analytics/field/{id}?sceneID=...&period_from=...&period_to=...`) using Akasha-native
- * param names — never EOS scene ids — per docs/eos/eos-map-screen-ui-parity-plan.md §11.
+ * Uses Akasha-native param names, not backend scene identifiers.
  *
  * Safe to call outside a React Router context — becomes a no-op so that legacy unit
  * tests rendering `MapPage` without a router keep working.

@@ -96,10 +96,6 @@ ALTER TABLE akasha.report_templates
     ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES akasha.users(id),
     ADD COLUMN IF NOT EXISTS team_id uuid REFERENCES akasha.teams(id)
 --;;
-ALTER TABLE akasha.zoning_maps
-    ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES akasha.users(id),
-    ADD COLUMN IF NOT EXISTS team_id uuid REFERENCES akasha.teams(id)
---;;
 ALTER TABLE akasha.attachments
     ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES akasha.users(id),
     ADD COLUMN IF NOT EXISTS team_id uuid REFERENCES akasha.teams(id)
@@ -122,9 +118,6 @@ WHERE team_id IS NULL
 UPDATE akasha.report_templates SET team_id = (SELECT id FROM akasha.teams WHERE name = 'Akasha Dev Team' LIMIT 1)
 WHERE team_id IS NULL
 --;;
-UPDATE akasha.zoning_maps SET team_id = (SELECT id FROM akasha.teams WHERE name = 'Akasha Dev Team' LIMIT 1)
-WHERE team_id IS NULL
---;;
 UPDATE akasha.attachments SET team_id = (SELECT id FROM akasha.teams WHERE name = 'Akasha Dev Team' LIMIT 1)
 WHERE team_id IS NULL
 --;;
@@ -139,8 +132,6 @@ CREATE INDEX IF NOT EXISTS uploaded_datasets_team_idx ON akasha.uploaded_dataset
 CREATE INDEX IF NOT EXISTS field_groups_team_idx ON akasha.field_groups (team_id)
 --;;
 CREATE INDEX IF NOT EXISTS report_templates_team_idx ON akasha.report_templates (team_id)
---;;
-CREATE INDEX IF NOT EXISTS zoning_maps_team_idx ON akasha.zoning_maps (team_id)
 --;;
 CREATE INDEX IF NOT EXISTS attachments_team_idx ON akasha.attachments (team_id)
 --;;

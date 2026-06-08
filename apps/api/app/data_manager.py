@@ -12,7 +12,7 @@ from pydantic import Field
 
 from . import phase10_repo
 from .auth import get_current_team
-from .providers.models import ProviderModel
+from .api_models import ApiModel
 from .raster.errors import AkashaError, bad_request, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.data_manager")
@@ -25,13 +25,13 @@ router = APIRouter(
 MAX_UPLOAD_BYTES = 1_048_576
 
 
-class DatasetPayload(ProviderModel):
+class DatasetPayload(ApiModel):
     name: str
     dataset_type: Literal["geojson", "shp_zip", "iso_xml"]
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class UploadedDataset(ProviderModel):
+class UploadedDataset(ApiModel):
     id: str
     name: str
     dataset_type: str
@@ -46,7 +46,7 @@ class UploadedDataset(ProviderModel):
     updated_at: str | None = None
 
 
-class ConnectionStatus(ProviderModel):
+class ConnectionStatus(ApiModel):
     provider: str
     status: Literal["not_connected"]
     message: str

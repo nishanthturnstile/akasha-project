@@ -1,4 +1,4 @@
-"""Transparent field-watch risk context for Phase 11."""
+"""Transparent field-watch risk context."""
 from __future__ import annotations
 
 import asyncio
@@ -13,11 +13,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from . import phase10_repo, plots_repo
+from .api_models import ApiModel, CloudMaskOptions
 from .auth import get_current_team
 from .config import settings
 from .field_analytics import _field_statistics
-from .providers.eos.weather_provider import EosWeatherProvider
-from .providers.models import CloudMaskOptions, ProviderModel, WeatherRecord
 from .raster import catalog_resolver as catalog
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from .raster.indices import DEFAULT_INDEX, get_index
@@ -28,7 +27,7 @@ router = APIRouter(prefix="/api", tags=["risk"], dependencies=[Depends(get_curre
 RiskLevel = Literal["low", "medium", "high", "unknown"]
 MODEL_VERSION = "field-watch-generic-v1"
 STAGE_MODEL_VERSION = "generic-v1"
-NORMALIZED_RISK_INDICES = {"NDVI", "NDRE", "NDMI", "MSAVI"}
+NORMALIZED_RISK_INDICES = {"NDVI", "NDRE", "NDMI"}
 DEFAULT_LOOKBACK_DAYS = 90
 MAX_LOOKBACK_DAYS = 180
 DEFAULT_SCENE_SCAN_LIMIT = 8
@@ -50,13 +49,13 @@ class UsablePoint:
     cloud_masked_percent: float
 
 
-class WeatherStressFlags(ProviderModel):
+class WeatherStressFlags(ApiModel):
     heat: bool | None = None
     dryness: bool | None = None
     excess_rain: bool | None = None
 
 
-class RiskComponent(ProviderModel):
+class RiskComponent(ApiModel):
     id: str
     label: str
     available: bool
@@ -70,7 +69,7 @@ class RiskComponent(ProviderModel):
     flags: WeatherStressFlags | None = None
 
 
-class CropStageSummary(ProviderModel):
+class CropStageSummary(ApiModel):
     crop_type: str | None = None
     start_date: date | None = None
     start_date_type: Literal["sowingDate", "plantingDate", "unknown"] = "unknown"
@@ -80,7 +79,7 @@ class CropStageSummary(ProviderModel):
     limitations: list[str] = Field(default_factory=list)
 
 
-class FieldRiskSummaryResponse(ProviderModel):
+class FieldRiskSummaryResponse(ApiModel):
     plot_id: str
     field_watch_level: RiskLevel
     vegetation_stress_context: str
@@ -94,7 +93,6 @@ class FieldRiskSummaryResponse(ProviderModel):
 async def _run_blocking(
     func,
     *args,
-    error_scope: Literal["storage", "provider"] = "storage",
     **kwargs,
 ):
     call = functools.partial(func, *args, **kwargs)
@@ -104,13 +102,6 @@ async def _run_blocking(
         raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("risk backend unavailable: %s", type(exc).__name__)
-        if error_scope == "provider":
-            raise AkashaError(
-                "PROVIDER_UPSTREAM_ERROR",
-                "Risk evidence provider is unavailable.",
-                502,
-                {"provider": "weather"},
-            ) from exc
         raise plots_backend_unavailable("Risk storage is not available.") from exc
 
 
@@ -306,78 +297,17 @@ def _stage(plot: dict[str, Any]) -> CropStageSummary:
     )
 
 
-def _weather_records(external_field_id: str, start: date, end: date) -> list[WeatherRecord]:
-    return EosWeatherProvider().get_forecast(external_field_id, start, end).records
-
-
-async def _weather_component(plot: dict[str, Any]) -> RiskComponent:
-    if not plot.get("externalFieldId"):
-        return _component(
-            "weatherStress",
-            "Weather stress",
-            available=False,
-            score=None,
-            source="pending",
-            flags=WeatherStressFlags(),
-            limitations=[
-                "Weather evidence was not used because the field is not synced "
-                "to a weather provider."
-            ],
-        )
-    try:
-        today = datetime.now(UTC).date()
-        records = await asyncio.wait_for(
-            _run_blocking(
-                _weather_records,
-                str(plot["externalFieldId"]),
-                today,
-                today + timedelta(days=6),
-                error_scope="provider",
-            ),
-            timeout=settings.eos_timeout_seconds,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("weather stress unavailable: %s", type(exc).__name__)
-        return _component(
-            "weatherStress",
-            "Weather stress",
-            available=False,
-            score=None,
-            source="unavailable",
-            flags=WeatherStressFlags(),
-            limitations=["Weather evidence was unavailable and excluded from the aggregate."],
-        )
-    if not records:
-        return _component(
-            "weatherStress",
-            "Weather stress",
-            available=False,
-            score=None,
-            source="unavailable",
-            flags=WeatherStressFlags(),
-            limitations=["Weather forecast returned no records and was excluded."],
-        )
-    temps = [
-        value
-        for r in records
-        for value in (r.temperature_avg_c, r.temperature_max_c)
-        if value is not None
-    ]
-    precip = [r.precipitation_mm or 0 for r in records]
-    heat = any(value >= 35 for value in temps)
-    dryness = sum(precip) <= 5
-    excess = any(value >= 50 for value in precip)
-    count = sum(1 for flag in (heat, dryness, excess) if flag)
-    score = min(1.0, count / 3)
+async def _weather_component(_plot: dict[str, Any]) -> RiskComponent:
     return _component(
         "weatherStress",
         "Weather stress",
-        available=True,
-        score=score,
-        source="providerForecast",
-        flags=WeatherStressFlags(heat=heat, dryness=dryness, excess_rain=excess),
-        evidence=[f"{count} generic 7-day weather stress flags triggered."],
-        limitations=["Generic provisional thresholds; not crop-specific agronomic advice."],
+        available=False,
+        score=None,
+        source="unavailable",
+        flags=WeatherStressFlags(),
+        limitations=[
+            "Weather stress evidence is unavailable until a native weather source is configured."
+        ],
     )
 
 

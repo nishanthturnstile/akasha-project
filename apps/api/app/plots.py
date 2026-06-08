@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import functools
 import logging
-import uuid
 from datetime import UTC, date, datetime
+import uuid
 from typing import Any, Literal
 
 import anyio
@@ -35,8 +35,6 @@ from pydantic import BaseModel, ValidationError, field_validator
 from . import plots_repo
 from .auth import get_current_team
 from .config import settings
-from .providers import factory as provider_factory
-from .providers.models import FieldMirrorResult
 from .raster.errors import (
     AkashaError,
     bad_request,
@@ -54,7 +52,6 @@ GEOJSON_MEDIA_TYPE = "application/geo+json"
 MAX_NAME_LENGTH = 200
 MAX_IMPORT_FEATURES = 500
 PlotStatus = Literal["planned", "active", "inactive", "archived"]
-ProviderSyncStatus = Literal["not_synced", "pending", "synced", "failed"]
 USER_METADATA_FIELDS = (
     "groupName",
     "cropType",
@@ -63,13 +60,6 @@ USER_METADATA_FIELDS = (
     "sowingDate",
     "plantingDate",
     "status",
-)
-SAFE_EXPORT_METADATA_FIELDS = (
-    *USER_METADATA_FIELDS,
-    "externalProvider",
-    "externalFieldId",
-    "providerSyncStatus",
-    "providerSyncedAt",
 )
 
 
@@ -118,10 +108,6 @@ class PlotResponse(PlotUserMetadata):
     areaHa: float | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
-    externalProvider: str | None = None
-    externalFieldId: str | None = None
-    providerSyncStatus: ProviderSyncStatus | None = None
-    providerSyncedAt: str | None = None
 
 
 class RejectedFeature(BaseModel):
@@ -157,57 +143,6 @@ async def _run_repo(func, *args, **kwargs):
         raise plots_backend_unavailable(
             "Plot storage is not available in this environment."
         ) from exc
-
-
-def _update_provider_link_from_result(
-    plot_id: str,
-    result: FieldMirrorResult,
-) -> dict[str, Any] | None:
-    return plots_repo.update_provider_link(
-        plot_id,
-        external_provider=result.provider,
-        external_field_id=result.external_field_id,
-        provider_sync_status=result.sync_status,
-        provider_metadata={"fieldAreaHa": result.provider_area_ha},
-    )
-
-
-def _mark_provider_sync_failed(plot: dict[str, Any], code: str) -> dict[str, Any]:
-    try:
-        updated = plots_repo.update_provider_link(
-            str(plot["id"]),
-            external_provider="eos",
-            external_field_id=plot.get("externalFieldId"),
-            provider_sync_status="failed",
-            provider_metadata={"errorCode": code},
-        )
-        return updated or plot
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("provider sync failure state update failed: %s", type(exc).__name__)
-        return plot
-
-
-def _sync_plot_to_eos(plot: dict[str, Any]) -> dict[str, Any]:
-    try:
-        provider = provider_factory.field_provider("eos")
-        external_field_id = plot.get("externalFieldId")
-        if plot.get("externalProvider") == "eos" and external_field_id:
-            result = provider.update_mirror(plot, str(external_field_id))
-        else:
-            result = provider.mirror_field(plot)
-        return _update_provider_link_from_result(str(plot["id"]), result) or plot
-    except AkashaError as exc:
-        logger.warning("EOS field sync failed for plot %s: %s", plot.get("id"), exc.code)
-        return _mark_provider_sync_failed(plot, exc.code)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("EOS field sync failed for plot %s: %s", plot.get("id"), type(exc).__name__)
-        return _mark_provider_sync_failed(plot, "PROVIDER_SYNC_FAILED")
-
-
-async def _auto_sync_plot_to_eos(plot: dict[str, Any]) -> dict[str, Any]:
-    if not provider_factory.is_ready("eos"):
-        return plot
-    return await anyio.to_thread.run_sync(functools.partial(_sync_plot_to_eos, plot))
 
 
 def _clean_name(name: str | None, *, required: bool) -> str | None:
@@ -278,7 +213,7 @@ def _to_feature(plot: dict[str, Any]) -> dict[str, Any]:
         "createdAt": plot["createdAt"],
         "updatedAt": plot["updatedAt"],
     }
-    for field in SAFE_EXPORT_METADATA_FIELDS:
+    for field in USER_METADATA_FIELDS:
         value = plot.get(field)
         if value is not None:
             properties[field] = _safe_json_value(value)
@@ -411,7 +346,7 @@ async def create_plot(payload: PlotCreate) -> dict[str, Any]:
         )
     else:
         created = await _run_repo(plots_repo.create_plot, name, payload.geometry, area_ha)
-    return await _auto_sync_plot_to_eos(created)
+    return created
 
 
 @router.post(

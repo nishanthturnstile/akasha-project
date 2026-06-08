@@ -4,20 +4,14 @@ import {
   deletePlot,
   exportFieldIndex,
   exportFieldReportCsv,
-  getFieldScenes,
   getFieldStatistics,
   getFieldTrend,
-  getFieldWeatherForecast,
-  getFieldWeatherHistory,
-  getFieldWeatherSoilMoisture,
-  createVegetationZoning,
   createReportTemplate,
   createFieldActivity,
   createFieldGroup,
   createScoutTask,
   assignFieldGroupFields,
   deleteFieldGroup,
-  exportZoningMap,
   exportFieldLeaderboardCsv,
   exportActivitiesCsv,
   getJohnDeereConnection,
@@ -29,14 +23,12 @@ import {
   getNotificationUnreadCount,
   getFieldLeaderboard,
   getReportTemplate,
-  getZoningMap,
   listActivities,
   listApiKeys,
   listDatasets,
   listFieldGroups,
   listNotifications,
   listScoutTasks,
-  listZoningMaps,
   listReportTemplates,
   uploadDataset,
   markAllNotificationsRead,
@@ -52,7 +44,6 @@ import {
   getPlots,
   getSources,
   importPlotsGeoJson,
-  syncFieldProvider,
   updatePlot,
 } from '@/lib/api';
 import type {
@@ -60,10 +51,6 @@ import type {
   FieldIndexExportOptions,
   FieldReportExportOptions,
   PlotUpdatePayload,
-  WeatherProviderChoice,
-  WeatherSeriesId,
-  VegetationZoningRequest,
-  ZoningExportFormat,
   FieldLeaderboardFilters,
   ReportTemplatePayload,
   ReportTemplateUpdatePayload,
@@ -82,7 +69,6 @@ export const queryKeys = {
   dates: (sourceId: string) => ['dates', sourceId] as const,
   defaultLayer: ['layers', 'default'] as const,
   plots: ['plots'] as const,
-  fieldScenes: (plotId: string, provider = 'auto') => ['fields', plotId, 'scenes', provider] as const,
   fieldStatistics: (
     plotId: string,
     sourceId: string,
@@ -107,7 +93,6 @@ export const queryKeys = {
     indexType: string,
     startDate: string | undefined,
     endDate: string | undefined,
-    provider: string,
     cloudMask: CloudMaskOptions,
   ) =>
     [
@@ -118,48 +103,10 @@ export const queryKeys = {
       indexType,
       startDate ?? 'default-start',
       endDate ?? 'default-end',
-      provider,
       cloudMask.clouds,
       cloudMask.cloudShadows,
       cloudMask.cirrus,
     ] as const,
-  fieldWeatherForecast: (plotId: string, provider: WeatherProviderChoice, days: number) =>
-    ['fields', plotId, 'weather', 'forecast', provider, days] as const,
-  fieldWeatherHistory: (
-    plotId: string,
-    provider: WeatherProviderChoice,
-    startDate: string | undefined,
-    endDate: string | undefined,
-    parameters: readonly WeatherSeriesId[] | undefined,
-  ) =>
-    [
-      'fields',
-      plotId,
-      'weather',
-      'history',
-      provider,
-      startDate ?? 'default-start',
-      endDate ?? 'default-end',
-      ...(parameters ?? []),
-    ] as const,
-  fieldWeatherSoilMoisture: (
-    plotId: string,
-    provider: WeatherProviderChoice,
-    startDate: string | undefined,
-    endDate: string | undefined,
-  ) =>
-    [
-      'fields',
-      plotId,
-      'weather',
-      'soil-moisture',
-      provider,
-      startDate ?? 'default-start',
-      endDate ?? 'default-end',
-    ] as const,
-  zoningMaps: (plotId: string) => ['fields', plotId, 'zoning', 'maps'] as const,
-  zoningMap: (plotId: string, mapId: string) =>
-    ['fields', plotId, 'zoning', 'maps', mapId] as const,
   fieldLeaderboard: (filters: FieldLeaderboardFilters) =>
     ['reports', 'field-leaderboard', filters] as const,
   reportTemplates: ['reports', 'templates'] as const,
@@ -196,17 +143,6 @@ interface FieldIndexExportVariables {
 interface FieldReportExportVariables {
   plotId: string;
   options: FieldReportExportOptions;
-}
-
-interface CreateVegetationZoningVariables {
-  plotId: string;
-  payload: VegetationZoningRequest;
-}
-
-interface ZoningExportVariables {
-  plotId: string;
-  mapId: string;
-  format: ZoningExportFormat;
 }
 
 interface LeaderboardExportVariables {
@@ -303,14 +239,6 @@ export function useImportPlotsGeoJson() {
   });
 }
 
-export function useFieldScenes(plotId: string | null | undefined, provider: 'auto' | 'eos' | 'native' = 'auto') {
-  return useQuery({
-    queryKey: plotId ? queryKeys.fieldScenes(plotId, provider) : (['fields', 'none', 'scenes', provider] as const),
-    queryFn: () => getFieldScenes(plotId as string, { provider }),
-    enabled: Boolean(plotId),
-  });
-}
-
 export function useFieldStatistics(
   plotId: string | null | undefined,
   options: {
@@ -349,11 +277,9 @@ export function useFieldTrend(
     indexType: string;
     startDate?: string;
     endDate?: string;
-    provider?: 'auto' | 'eos' | 'native';
     cloudMask: CloudMaskOptions;
   },
 ) {
-  const provider = options.provider ?? 'auto';
   return useQuery({
     queryKey:
       plotId && options.sourceId
@@ -363,7 +289,6 @@ export function useFieldTrend(
             options.indexType,
             options.startDate,
             options.endDate,
-            provider,
             options.cloudMask,
           )
         : (['fields', 'none', 'trend'] as const),
@@ -373,129 +298,9 @@ export function useFieldTrend(
         indexType: options.indexType,
         startDate: options.startDate,
         endDate: options.endDate,
-        provider,
         cloudMask: options.cloudMask,
       }),
     enabled: Boolean(plotId && options.sourceId),
-  });
-}
-
-export function useFieldWeatherForecast(
-  plotId: string | null | undefined,
-  options: { provider?: WeatherProviderChoice; days?: number } = {},
-) {
-  const provider = options.provider ?? 'auto';
-  const days = options.days ?? 7;
-  return useQuery({
-    queryKey: plotId
-      ? queryKeys.fieldWeatherForecast(plotId, provider, days)
-      : (['fields', 'none', 'weather', 'forecast'] as const),
-    queryFn: () => getFieldWeatherForecast(plotId as string, { provider, days }),
-    enabled: Boolean(plotId),
-  });
-}
-
-export function useFieldWeatherHistory(
-  plotId: string | null | undefined,
-  options: {
-    provider?: WeatherProviderChoice;
-    startDate?: string;
-    endDate?: string;
-    parameters?: WeatherSeriesId[];
-  } = {},
-) {
-  const provider = options.provider ?? 'auto';
-  return useQuery({
-    queryKey: plotId
-      ? queryKeys.fieldWeatherHistory(
-          plotId,
-          provider,
-          options.startDate,
-          options.endDate,
-          options.parameters,
-        )
-      : (['fields', 'none', 'weather', 'history'] as const),
-    queryFn: () =>
-      getFieldWeatherHistory(plotId as string, {
-        provider,
-        startDate: options.startDate,
-        endDate: options.endDate,
-        parameters: options.parameters,
-      }),
-    enabled: Boolean(plotId && options.startDate && options.endDate),
-  });
-}
-
-export function useFieldWeatherSoilMoisture(
-  plotId: string | null | undefined,
-  options: {
-    provider?: WeatherProviderChoice;
-    startDate?: string;
-    endDate?: string;
-  } = {},
-) {
-  const provider = options.provider ?? 'auto';
-  return useQuery({
-    queryKey: plotId
-      ? queryKeys.fieldWeatherSoilMoisture(
-          plotId,
-          provider,
-          options.startDate,
-          options.endDate,
-        )
-      : (['fields', 'none', 'weather', 'soil-moisture'] as const),
-    queryFn: () =>
-      getFieldWeatherSoilMoisture(plotId as string, {
-        provider,
-        startDate: options.startDate,
-        endDate: options.endDate,
-      }),
-    enabled: Boolean(plotId && options.startDate && options.endDate),
-  });
-}
-
-export function useZoningMaps(plotId: string | null | undefined) {
-  return useQuery({
-    queryKey: plotId ? queryKeys.zoningMaps(plotId) : (['fields', 'none', 'zoning', 'maps'] as const),
-    queryFn: () => listZoningMaps(plotId as string),
-    enabled: Boolean(plotId),
-  });
-}
-
-export function useZoningMap(plotId: string | null | undefined, mapId: string | null | undefined) {
-  return useQuery({
-    queryKey:
-      plotId && mapId
-        ? queryKeys.zoningMap(plotId, mapId)
-        : (['fields', 'none', 'zoning', 'maps', 'none'] as const),
-    queryFn: () => getZoningMap(plotId as string, mapId as string),
-    enabled: Boolean(plotId && mapId),
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === 'processing' || status === 'unknown' ? 5000 : false;
-    },
-  });
-}
-
-export function useCreateVegetationZoning() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ plotId, payload }: CreateVegetationZoningVariables) =>
-      createVegetationZoning(plotId, payload),
-    onSuccess: (data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.zoningMaps(variables.plotId) });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.zoningMap(variables.plotId, data.mapId),
-      });
-    },
-  });
-}
-
-export function useExportZoningMap() {
-  return useMutation({
-    mutationFn: ({ plotId, mapId, format }: ZoningExportVariables) =>
-      exportZoningMap(plotId, mapId, format),
   });
 }
 
@@ -726,18 +531,6 @@ export function useAssignFieldGroupFields() {
     mutationFn: ({ groupId, plotIds }: { groupId: string; plotIds: string[] }) =>
       assignFieldGroupFields(groupId, plotIds),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldGroups }),
-  });
-}
-
-export function useSyncFieldProvider() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: syncFieldProvider,
-    onSuccess: (_data, plotId) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.plots });
-      void queryClient.invalidateQueries({ queryKey: ['fields', plotId, 'scenes'] });
-    },
   });
 }
 

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Download, FileArchive, FileDown, FileText, ImageDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExportFieldIndex, useExportFieldReportCsv } from '@/lib/queries';
-import type { CloudMaskOptions, FieldScene, FileDownload, Plot } from '@/types/api';
+import type { CloudMaskOptions, FileDownload, Plot } from '@/types/api';
 
 interface DownloadMenuProps {
   selectedPlot: Plot | null;
@@ -12,7 +12,6 @@ interface DownloadMenuProps {
   sourceId: string | undefined;
   indexType: string;
   cloudMask: CloudMaskOptions;
-  selectedScene: FieldScene | null;
 }
 
 function isIndexMode(mode: string): boolean {
@@ -39,7 +38,6 @@ export function DownloadMenu({
   sourceId,
   indexType,
   cloudMask,
-  selectedScene,
 }: DownloadMenuProps) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,12 +51,8 @@ export function DownloadMenu({
       : null;
   const fieldId = selectedPlot?.id;
   const canExportField = Boolean(fieldId && selectedDate && sourceId);
-  const canExportTiff = Boolean(
-    canExportField &&
-      selectedScene &&
-      selectedPlot?.externalFieldId &&
-      isIndexMode(displayMode),
-  );
+  const nativeGeoTiffAvailable = false;
+  const canExportTiff = Boolean(canExportField && isIndexMode(displayMode) && nativeGeoTiffAvailable);
   const busy = indexExport.isPending || reportExport.isPending;
 
   const exportIndex = async (format: 'geotiff' | 'geojson') => {
@@ -72,8 +66,6 @@ export function DownloadMenu({
           sourceId,
           acquisitionDate: selectedDate,
           indexType,
-          provider: format === 'geotiff' ? 'eos' : 'native',
-          sceneToken: selectedScene?.sceneToken,
           cloudMask,
         },
       });
@@ -92,7 +84,6 @@ export function DownloadMenu({
         options: {
           sourceId,
           indexType,
-          provider: 'auto',
           startDate: selectedDate,
           endDate: selectedDate,
           cloudMask,
@@ -120,7 +111,7 @@ export function DownloadMenu({
               reason={
                 canExportTiff
                   ? undefined
-                  : 'Select a synced field scene and an index layer for GeoTIFF export.'
+                  : 'Native GeoTIFF export is not available yet.'
               }
               onClick={ () => void exportIndex('geotiff') }
             />
@@ -145,14 +136,14 @@ export function DownloadMenu({
               label="Index SHP"
               icon={<FileArchive className="size-3.5" />}
               disabled
-              reason="Available after zoning/vector exports."
+              reason="Available after native vector exports."
             />
             <DownloadButton
               id="contours-shp"
               label="Contours SHP"
               icon={<FileArchive className="size-3.5" />}
               disabled
-              reason="Available after zoning/vector exports."
+              reason="Available after native vector exports."
             />
           </div>
           { disabledReason && (

@@ -126,7 +126,7 @@ Deliverables:
 - GeoJSON import/export endpoints.
 - `/api/indices/statistics` with validation, max-area enforcement, timeout handling, and normalized response shape.
 
-Prompt inputs — Include: architecture: BFF API contracts; product: acceptance; dos-donts backend rules
+Prompt inputs — Include: architecture: BFF API contracts; product: acceptance; backend engineering guardrails
 Slice mapping: Phase 3 → Slice 3
 Prompt inputs — Exclude: full Railway deploy, Wave 2
 Validation: API returns typed, frontend-ready payloads; invalid polygons and oversized polygons fail with clear errors; API never exposes raw MinIO credentials or direct internal service details.
@@ -148,7 +148,7 @@ Deliverables:
 - Layer panel with source/date selector, cloud indicator, visibility toggle, and opacity.
 - Loading, empty, and error states.
 
-Prompt inputs — Include: product: map browsing + journeys; architecture: frontend + tile URL contract; dos-donts frontend
+Prompt inputs — Include: product: map browsing + journeys; architecture: frontend + tile URL contract; frontend engineering guardrails
 Slice mapping: Phase 4 → Slice 4
 Prompt inputs — Exclude: ingestion automation, Wave 2
 Validation: user can switch dates without disturbing the basemap; the latest usable scene is selected by default; frontend has no hard-coded COG URLs.
@@ -170,7 +170,7 @@ Deliverables:
 - Index selector for NDVI, NDRE, NDMI, NDWI_GREEN_NIR.
 - Statistics panel with min/max/mean/stddev, valid-pixel percentage, cloud-masked percentage, and legend.
 
-Prompt inputs — Include: product: plot/index sections; architecture API contracts; dos-donts frontend+backend
+Prompt inputs — Include: product: plot/index sections; architecture API contracts; frontend and backend engineering guardrails
 Slice mapping: Phase 5 → Slice 5
 Prompt inputs — Exclude: Wave 2 analytics
 Validation: drawn/imported polygon can be analyzed; index request uses selected source/date; user sees clear cloud/no-data messaging.

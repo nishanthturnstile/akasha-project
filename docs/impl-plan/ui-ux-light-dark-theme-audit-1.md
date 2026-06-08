@@ -17,7 +17,7 @@ approved.
 
 Audit method: MapLibre map screen rendered live; element bounding boxes, computed colors, and grid
 tracks were read with scripted `getBoundingClientRect` / `getComputedStyle` probes; screenshots were
-captured per theme and per viewport; the EOSDA Crop Monitoring reference was used to sanity-check the
+captured per theme and per viewport; retained Akasha product workflows were used to sanity-check the
 intended chrome placement.
 
 ## Summary of findings (by severity)
@@ -61,7 +61,7 @@ intended chrome placement.
 ### C2 — Bottom-left legend overlaps map controls (Critical)
 - **Evidence (measured):** `[data-testid="map-controls"]` = 36×258 at (16,568..826); `[data-testid="map-legend"]` = 176×88 at (16,714..802). Overlap = **36×88px** at 1440 (and 36×87 at 1092). The legend paints over the bottom ~3 control buttons — *Find selected field*, *Hide legend*, *Enter full screen* — so only 4 of 7 buttons are clickable; the "Hide legend" button is fully occluded. The attribution row likewise overlaps the controls by 36×16px. Reproduces identically in Light and Dark.
 - **Root cause:** In `MapPage.tsx` two absolutely-positioned containers share the **same anchor** `absolute bottom-[calc(var(--timeline-height)+1.125rem)] left-4 z-toolbar` — one wraps `<MapControls>`, the other wraps `<Legend>` + attribution. Equal `z-toolbar` + later DOM order makes the legend paint over the controls.
-- **Proposed fix:** Merge the two bottom-left containers into **one** `flex flex-col items-start gap-2` anchored bottom-left, ordered `[Legend, MapControls, attribution]` so they stack with real layout (no overlap) at every width. (Matches the EOS pattern where controls and legend never share pixels.) Add a short-viewport guard so the legend hides under ~560px height if needed.
+- **Proposed fix:** Merge the two bottom-left containers into **one** `flex flex-col items-start gap-2` anchored bottom-left, ordered `[Legend, MapControls, attribution]` so they stack with real layout (no overlap) at every width. Add a short-viewport guard so the legend hides under ~560px height if needed.
 
 ### H1 — Dark-mode overlays fail contrast on the light basemap (High)
 - **Evidence (measured):** Glass panels compute `background: rgba(21,27,40,0.62)` with `blur(18px)`. The default basemap is the **light** OSM raster, so the composited panel background ≈ `rgb(105,108,114)`. Resulting contrast: legend caption (`--muted-foreground` `rgb(143,156,174)`) ≈ **1.8:1**; body text (`rgb(229,235,240)`) ≈ **4.0:1** — both below AA 4.5:1. Affects legend, timeline, layer bar, field header, command palette, cloud-mask popover (all use `.glass`).
@@ -117,4 +117,4 @@ intended chrome placement.
 
 ## 5. Out of scope
 
-- Backend/data tile availability (L1), new features, EOS pixel-parity, and any change to the satellite/index/mask domain rules.
+- Backend/data tile availability (L1), new features, pixel-parity audits, and any change to the satellite/index/mask domain rules.

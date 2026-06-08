@@ -15,8 +15,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import type {
     CloudMaskOptions,
-    FieldScene,
     Plot,
+    SceneDate,
     Source,
 } from '@/types/api';
 
@@ -32,7 +32,7 @@ interface LayerControlBarProps {
     cloudMaskDisabled?: boolean;
     compareEnabled: boolean;
     onCompareEnabledChange: (next: boolean) => void;
-    comparableDates: string[];
+    comparableDates: SceneDate[];
     activeDate: string | null;
     compareDate: string | null;
     onCompareDateChange: (date: string | null) => void;
@@ -42,7 +42,6 @@ interface LayerControlBarProps {
     selectedDate: string | null;
     exportSourceId: string | undefined;
     exportIndexType: string;
-    selectedScene: FieldScene | null;
     collapsed: boolean;
     onCollapsedChange: (next: boolean) => void;
 }
@@ -260,7 +259,6 @@ export function LayerControlBar({
     selectedDate,
     exportSourceId,
     exportIndexType,
-    selectedScene,
     collapsed,
     onCollapsedChange,
 }: LayerControlBarProps) {
@@ -368,7 +366,6 @@ export function LayerControlBar({
                     sourceId={ exportSourceId }
                     indexType={ exportIndexType }
                     cloudMask={ cloudMask }
-                    selectedScene={ selectedScene }
                 />
             </div>
 

@@ -25,7 +25,7 @@ export default function FieldGroupsPage() {
       <section className="rounded-xl border border-border/80 bg-card/90 p-4">
         <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Field manager</p>
         <h1 className="mt-1 text-2xl font-semibold">Field groups</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Create groups and assign fields without provider coupling.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Create groups and assign fields for team workflows.</p>
       </section>
       <section className="mt-4 flex gap-3 rounded-xl border border-border/80 bg-card/90 p-4">
         <input className="rounded-md border border-border bg-background px-3 py-2" value={ name } onChange={ (event) => setName(event.target.value) } />

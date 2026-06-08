@@ -11,9 +11,6 @@ from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
-FAKE_PROVIDER_ID = "raw-provider-field-secret"
-FAKE_URL = "https://api-connect.eos.com"
-
 
 def _plot(plot_id: str, name: str, **overrides: Any) -> dict[str, Any]:
     plot = {
@@ -30,7 +27,6 @@ def _plot(plot_id: str, name: str, **overrides: Any) -> dict[str, Any]:
         "seasonLabel": "Kharif",
         "sowingDate": "2026-06-01",
         "plantingDate": None,
-        "externalFieldId": FAKE_PROVIDER_ID,
     }
     plot.update(overrides)
     return plot
@@ -79,7 +75,7 @@ def _install_leaderboard_fakes(
 
 
 def _assert_no_leaks(text: str) -> None:
-    for leaked in [FAKE_PROVIDER_ID, FAKE_URL, "SELECT ", "Traceback", "externalFieldId"]:
+    for leaked in ["SELECT ", "Traceback", "internal-secret"]:
         assert leaked not in text
 
 
@@ -185,7 +181,7 @@ def test_report_template_crud_and_invalid_column(monkeypatch):
 
     bad = client.post(
         "/api/reports/templates",
-        json={"name": "Bad", "columns": ["externalFieldId"]},
+        json={"name": "Bad", "columns": ["unknownColumn"]},
     )
     assert bad.status_code == 400
     assert bad.json()["error"]["code"] == "INVALID_REPORT_COLUMN"
@@ -225,7 +221,7 @@ def test_field_leaderboard_csv_export_escapes_cells_and_uses_template(monkeypatc
 
 
 def test_field_leaderboard_csv_export_validates_sort_and_evaluation_limit(monkeypatch):
-    r_sort = client.get("/api/reports/field-leaderboard/export.csv?sortBy=externalFieldId")
+    r_sort = client.get("/api/reports/field-leaderboard/export.csv?sortBy=unknownColumn")
     assert r_sort.status_code == 400
     assert r_sort.json()["error"]["code"] == "INVALID_SORT"
     _assert_no_leaks(r_sort.text)

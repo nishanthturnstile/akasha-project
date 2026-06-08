@@ -154,7 +154,7 @@ Source-of-truth docs (read before coding):
 - `docs/architecture-tech-stack.md` — frontend stack, component names, and the tile URL contract.
 - `docs/design-system.md` — the **"Calm Instrument, Living Earth"** design system (authoritative for
   all colors, typography, tokens, motion, and component specs). Follow it exactly.
-- `docs/engineering-dos-donts.md` — frontend guardrails.
+- `docs/engineering-dos-donts.md` — frontend engineering guardrails.
 
 ### Current frontend state
 
@@ -285,7 +285,7 @@ apps/frontend/
 - Do not introduce any other required runtime env. No API base URL var — calls are same-origin
   `/api/*`. Update `apps/frontend/.env.example` if you add any new `VITE_*` placeholder.
 
-### Guardrails (engineering dos-donts)
+### Engineering Guardrails
 
 - Same-origin only: never `fetch` an absolute backend/COG/STAC/MinIO/TiTiler URL. Tile URLs come only
   from API metadata.

@@ -72,21 +72,6 @@ class Settings:
         default_factory=lambda: _get_int("MAX_REQUEST_BODY_BYTES", 1_048_576)
     )
 
-    # EOSDA API Connect provider adapter (server-side only).
-    eos_api_key: str = field(default_factory=lambda: _get("EOS_API_KEY", ""))
-    eos_base_url: str = field(
-        default_factory=lambda: _get("EOS_BASE_URL", "https://api-connect.eos.com")
-    )
-    provider_mode: str = field(default_factory=lambda: _get("PROVIDER_MODE", "disabled"))
-    eos_timeout_seconds: int = field(default_factory=lambda: _get_int("EOS_TIMEOUT_SECONDS", 30))
-    eos_cache_ttl_seconds: int = field(
-        default_factory=lambda: _get_int("EOS_CACHE_TTL_SECONDS", 300)
-    )
-    eos_rate_limit_per_minute: int = field(
-        default_factory=lambda: _get_int("EOS_RATE_LIMIT_PER_MINUTE", 10)
-    )
-    eos_enabled: bool = field(default_factory=lambda: _get_bool("EOS_ENABLED", False))
-
     # Phase 12 auth/team foundations. AUTH_MODE=disabled is local/dev only.
     auth_mode: str = field(default_factory=lambda: _get("AUTH_MODE", "disabled"))
     auth_dev_user_email: str = field(

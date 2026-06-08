@@ -55,18 +55,14 @@ describe('ProductRoutes', () => {
     expect(screen.queryByTestId('map-page')).toBeNull();
   });
 
-  it('renders real weather pages instead of placeholders', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
-    );
+  it('renders weather pages as planned native-module placeholders', async () => {
     renderRoutes('/weather/forecast');
 
     await waitFor(
       () => expect(screen.getByRole('heading', { name: 'Weather Forecast' })).toBeTruthy(),
       { timeout: 8000 },
     );
-    expect(screen.queryByTestId('module-placeholder')).toBeNull();
+    expect(screen.getByTestId('module-placeholder')).toBeTruthy();
   });
 
   it('renders real report pages instead of placeholders', async () => {
@@ -97,18 +93,14 @@ describe('ProductRoutes', () => {
     expect(screen.queryByTestId('module-placeholder')).toBeNull();
   });
 
-  it('renders the real VRA vegetation page instead of a placeholder', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
-    );
+  it('renders VRA vegetation as a planned native-module placeholder', async () => {
     renderRoutes('/vra/vegetation');
 
     await waitFor(
       () => expect(screen.getByRole('heading', { name: 'VRA Vegetation' })).toBeTruthy(),
       { timeout: 8000 },
     );
-    expect(screen.queryByTestId('module-placeholder')).toBeNull();
+    expect(screen.getByTestId('module-placeholder')).toBeTruthy();
   });
 
   it('renders real Phase 10 operations pages instead of placeholders', async () => {

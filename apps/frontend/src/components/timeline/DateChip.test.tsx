@@ -34,7 +34,7 @@ function renderChip(props: Partial<React.ComponentProps<typeof DateChip>> = {}) 
     return { date, ...utils };
 }
 
-describe('DateChip — Phase E parity', () => {
+describe('DateChip — timeline chip behavior', () => {
     it('renders the sensor badge from the global override on optical chips', () => {
         const { getByTestId } = renderChip({ sensorBadge: 'S2' });
         const badge = getByTestId('date-chip-sensor-2026-05-11');

@@ -1,4 +1,4 @@
-"""Selected-field analytics routes for EOS-parity Phase 5."""
+"""Selected-field native analytics routes."""
 from __future__ import annotations
 
 import asyncio
@@ -12,17 +12,11 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from pydantic import Field
 
 from . import plots_repo
+from .api_models import ApiModel, CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
 from .auth import get_current_team
+from .cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
 from .config import settings
 from .product import _enforce_index_rate_limit
-from .providers.cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
-from .providers.eos.analytics_provider import EosAnalyticsProvider
-from .providers.models import (
-    CloudMaskOptions,
-    FieldTrendPoint,
-    FieldTrendResponse,
-    ProviderModel,
-)
 from .raster import catalog_resolver as catalog
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from .raster.indices import DEFAULT_INDEX, get_index
@@ -37,21 +31,19 @@ router = APIRouter(
     dependencies=[Depends(get_current_team)],
 )
 
-ProviderChoice = Literal["auto", "eos", "native"]
 MAX_TREND_DAYS = 365
-PROVIDER_INDEX_TYPES = {"NDVI", "NDRE", "NDMI", "MSAVI", "RECI"}
 
 
-class FieldStatisticsRequest(ProviderModel):
+class FieldStatisticsRequest(ApiModel):
     source_id: str = "sentinel-2-l2a"
     acquisition_date: str | None = None
     index_type: str = DEFAULT_INDEX
     cloud_mask: CloudMaskOptions = Field(default_factory=CloudMaskOptions)
 
 
-class FieldStatisticsResponse(ProviderModel):
+class FieldStatisticsResponse(ApiModel):
     plot_id: str
-    provider: str = "native"
+    provider: Literal["native"] = "native"
     scope: Literal["field"] = "field"
     index_type: str
     source_id: str
@@ -80,11 +72,6 @@ async def _get_plot_or_404(plot_id: str) -> dict[str, Any]:
     if plot is None:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", plotId=plot_id)
     return plot
-
-
-def _is_eos_ready() -> bool:
-    mode = (settings.provider_mode or "disabled").strip().lower()
-    return bool(settings.eos_api_key.strip()) and settings.eos_enabled and mode in {"eos", "hybrid"}
 
 
 def _default_range() -> tuple[date, date]:
@@ -212,8 +199,6 @@ def _native_trend_response(
     index_def = get_index(index_type)
     return FieldTrendResponse(
         plot_id=plot_id,
-        provider="native",
-        scope="native_fallback",
         source_id=source_id,
         index_type=index_type,
         start_date=date_start,
@@ -226,64 +211,6 @@ def _native_trend_response(
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
             "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
             "rangeLimitDays": MAX_TREND_DAYS,
-        },
-    )
-
-
-def _eos_trend_response(
-    *,
-    plot_id: str,
-    external_field_id: str,
-    index_type: str,
-    date_start: date,
-    date_end: date,
-    cloud_mask: CloudMaskOptions,
-) -> FieldTrendResponse:
-    provider = EosAnalyticsProvider()
-    request = provider.create_trend_request(
-        external_field_id,
-        date_start,
-        date_end,
-        index=index_type,
-        data_source="S2",
-        cloud_mask=cloud_mask,
-    )
-    raw_points = (
-        provider.get_trend_result(external_field_id, request.request_id, index=index_type)
-        if request.request_id
-        else []
-    )
-    points = [
-        FieldTrendPoint(
-            acquisition_date=point.acquisition_date,
-            scene_id=point.scene_id,
-            view_id=point.view_id,
-            mean=point.mean,
-            min=point.minimum,
-            max=point.maximum,
-            stddev=point.stddev,
-            cloud_percent=point.cloud_percent,
-            cloud_masked_percent=point.cloud_percent,
-            metrics_provisional=False,
-        )
-        for point in raw_points
-    ]
-    index_def = get_index(index_type)
-    return FieldTrendResponse(
-        plot_id=plot_id,
-        provider="eos",
-        scope="field",
-        source_id="sentinel-2-l2a",
-        index_type=index_type,
-        start_date=date_start,
-        end_date=date_end,
-        points=points,
-        metadata={
-            "formula": index_def.formula,
-            "bands": list(index_def.required_bands),
-            "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
-            "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
-            "requestStatus": request.status,
         },
     )
 
@@ -336,7 +263,6 @@ async def get_field_analytics_trend(
     indexType: str = Query(default=DEFAULT_INDEX),
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
-    provider: ProviderChoice = "auto",
     sourceId: str = Query(default="sentinel-2-l2a"),
     clouds: bool = True,
     cloudShadows: bool = True,
@@ -354,61 +280,14 @@ async def get_field_analytics_trend(
         cloud_shadows=cloudShadows,
         cirrus=cirrus,
     )
-    external_field_id = plot.get("externalFieldId")
-
-    if provider == "native":
-        return await _run_blocking(
-            _native_trend_response,
-            plot_id=plot_id,
-            plot=plot,
-            source_id=sourceId,
-            index_type=index_type,
-            date_start=date_start,
-            date_end=date_end,
-            cloud_mask=cloud_mask,
-            reason="Native Akasha masked-raster trend fallback is in use.",
-        )
-
-    if provider == "eos" and not external_field_id:
-        raise AkashaError(
-            "FIELD_PROVIDER_NOT_SYNCED",
-            "Sync the selected field before loading provider analytics.",
-            409,
-            {"provider": "eos", "plotId": plot_id},
-        )
-
-    if provider == "eos" and not _is_eos_ready():
-        raise AkashaError(
-            "PROVIDER_UNAVAILABLE",
-            "EOS provider is not available.",
-            503,
-            {"provider": "eos"},
-        )
-
-    can_use_eos = bool(external_field_id) and _is_eos_ready() and index_type in PROVIDER_INDEX_TYPES
-    if provider == "auto" and not can_use_eos:
-        return await _run_blocking(
-            _native_trend_response,
-            plot_id=plot_id,
-            plot=plot,
-            source_id=sourceId,
-            index_type=index_type,
-            date_start=date_start,
-            date_end=date_end,
-            cloud_mask=cloud_mask,
-            reason=(
-                "Selected field is not synced to the configured provider."
-                if not external_field_id
-                else "EOS provider is not available for this trend request."
-            ),
-        )
-
     return await _run_blocking(
-        _eos_trend_response,
+        _native_trend_response,
         plot_id=plot_id,
-        external_field_id=str(external_field_id),
+        plot=plot,
+        source_id=sourceId,
         index_type=index_type,
         date_start=date_start,
         date_end=date_end,
         cloud_mask=cloud_mask,
+        reason="Native Akasha masked-raster trend is in use.",
     )

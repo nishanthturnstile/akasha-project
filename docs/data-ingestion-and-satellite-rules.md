@@ -14,8 +14,8 @@ Wave 1 uses Sentinel-2 L2A over the Bangalore AOI. Other sources are intentional
 | Sentinel-1 | ESA | Wave 2 | SAR fallback/product layer for cloudy periods; not an optical index source. |
 | ResourceSat-2A | ISRO/NRSC | Wave 2 | Optical agriculture source after access and data terms are confirmed. |
 | Cartosat-3 | ISRO/NRSC | Wave 2+ | High-resolution visual context after licensing; not primary for NDVI. |
-| EOS-04 / NISAR | ISRO / NASA-ISRO | Wave 2+ | SAR product layers; not optical vegetation-index sources. |
-| EOS-06 / IRS-1C | ISRO | Not planned for field MVP | Too coarse or archival/decommissioned for this product goal. |
+| ISRO SAR / NISAR | ISRO / NASA-ISRO | Wave 2+ | SAR product layers; not optical vegetation-index sources. |
+| ISRO OCM / IRS-1C | ISRO | Not planned for field MVP | Too coarse or archival/decommissioned for this product goal. |
 
 ## Data access rules
 

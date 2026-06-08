@@ -72,6 +72,18 @@ uvicorn app.main:app --reload --port 8000
 # GET http://localhost:8000/health
 ```
 
+## Run tests
+
+Test tooling lives in `requirements-dev.txt` (runtime deps plus `pytest` and
+`httpx`, which `fastapi.testclient.TestClient` needs). It is kept separate from
+`requirements.txt` so the Railway runtime image stays lean.
+
+```bash
+cd apps/api
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
 ## Build (Docker)
 
 ```bash

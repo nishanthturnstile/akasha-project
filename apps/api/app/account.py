@@ -18,7 +18,7 @@ from .auth import (
     hash_secret,
     new_api_key,
 )
-from .providers.models import ProviderModel
+from .api_models import ApiModel
 from .raster.errors import AkashaError, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.account")
@@ -28,18 +28,18 @@ _api_keys: list[dict[str, Any]] = []
 _notifications: list[dict[str, Any]] = []
 
 
-class AccountMe(ProviderModel):
+class AccountMe(ApiModel):
     user: dict[str, Any]
     current_team: dict[str, Any]
     memberships: list[dict[str, Any]]
     auth_mode: str = "dev"
 
 
-class ApiKeyCreate(ProviderModel):
+class ApiKeyCreate(ApiModel):
     name: str
 
 
-class ApiKeyPublic(ProviderModel):
+class ApiKeyPublic(ApiModel):
     id: str
     name: str
     prefix: str
@@ -49,14 +49,13 @@ class ApiKeyPublic(ProviderModel):
     raw_key: str | None = None
 
 
-class Notification(ProviderModel):
+class Notification(ApiModel):
     id: str
     type: Literal[
         "field_change",
         "risk_alert",
         "task_assignment",
         "report_available",
-        "provider_sync_failure",
     ]
     title: str
     body: str | None = None
@@ -67,7 +66,7 @@ class Notification(ProviderModel):
     created_at: str
 
 
-class AssistantStatus(ProviderModel):
+class AssistantStatus(ApiModel):
     status: Literal["disabled"] = "disabled"
     message: str
     evidence_sources: list[str]

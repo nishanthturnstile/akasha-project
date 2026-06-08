@@ -1,4 +1,4 @@
-"""Phase 11 field-watch risk summary tests."""
+"""Field-watch risk summary tests."""
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
@@ -8,7 +8,6 @@ from typing import Any
 from app import risk
 from app.config import settings
 from app.main import app
-from app.providers.models import WeatherRecord, WeatherResponse
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -24,7 +23,6 @@ def _plot(**overrides: Any) -> dict[str, Any]:
         "seasonLabel": "Kharif",
         "sowingDate": start,
         "plantingDate": None,
-        "externalFieldId": None,
     }
     plot.update(overrides)
     return plot
@@ -105,41 +103,18 @@ def test_risk_summary_high_scouting_priority_not_diagnosis(monkeypatch):
     assert "spray" not in r.text.lower()
 
 
-def test_risk_summary_weather_flags_and_unavailable(monkeypatch):
+def test_risk_summary_weather_stress_is_native_unavailable(monkeypatch):
     today = datetime.now(UTC).date()
-    _install_common(monkeypatch, _plot(externalFieldId="provider-field"), {today.isoformat(): 0.5})
+    _install_common(monkeypatch, _plot(), {today.isoformat(): 0.5})
 
-    class FakeWeatherProvider:
-        def get_forecast(self, external_field_id, *_args):
-            return WeatherResponse(
-                external_field_id=external_field_id,
-                kind="forecast",
-                records=[
-                    WeatherRecord(
-                        record_date=today,
-                        temperature_max_c=38,
-                        precipitation_mm=0,
-                    )
-                ],
-            )
-
-    monkeypatch.setattr(risk, "EosWeatherProvider", lambda: FakeWeatherProvider())
     r = client.get("/api/fields/plot-1/risk/summary")
-    weather = next(item for item in r.json()["components"] if item["id"] == "weatherStress")
-    assert weather["available"] is True
-    assert weather["flags"]["heat"] is True
-    assert weather["flags"]["dryness"] is True
 
-    monkeypatch.setattr(
-        risk,
-        "EosWeatherProvider",
-        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-    r2 = client.get("/api/fields/plot-1/risk/summary")
-    weather2 = next(item for item in r2.json()["components"] if item["id"] == "weatherStress")
-    assert weather2["available"] is False
-    assert weather2["flags"]["heat"] is None
-    assert "boom" not in r2.text
+    assert r.status_code == 200
+    weather = next(item for item in r.json()["components"] if item["id"] == "weatherStress")
+    assert weather["available"] is False
+    assert weather["source"] == "unavailable"
+    assert weather["flags"]["heat"] is None
+    assert "native weather source" in " ".join(weather["limitations"])
 
 
 def test_risk_summary_unknown_without_usable_imagery(monkeypatch):
@@ -166,26 +141,6 @@ def test_crop_stage_future_date_is_not_active(monkeypatch):
     assert stage["stageLabel"] == "not started"
     assert stage["daysAfterStart"] is None
     assert "future" in " ".join(stage["limitations"])
-
-
-def test_empty_weather_records_are_unavailable(monkeypatch):
-    today = datetime.now(UTC).date()
-    _install_common(monkeypatch, _plot(externalFieldId="provider-field"), {today.isoformat(): 0.5})
-
-    class FakeWeatherProvider:
-        def get_forecast(self, *_args):
-            return WeatherResponse(
-                external_field_id="provider-field",
-                kind="forecast",
-                records=[],
-            )
-
-    monkeypatch.setattr(risk, "EosWeatherProvider", lambda: FakeWeatherProvider())
-    r = client.get("/api/fields/plot-1/risk/summary")
-
-    weather = next(item for item in r.json()["components"] if item["id"] == "weatherStress")
-    assert weather["available"] is False
-    assert weather["flags"]["dryness"] is None
 
 
 def test_risk_summary_field_not_found_and_invalid_index(monkeypatch):

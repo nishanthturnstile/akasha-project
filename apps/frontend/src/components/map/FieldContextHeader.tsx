@@ -17,7 +17,7 @@ interface FieldContextHeaderProps {
     onEditGeometry: () => void;
     /** Open the command palette. */
     onOpenCommand: () => void;
-    /** Future Crop Monitoring "Get Overview" entry-point (placeholder for now). */
+    /** Future field overview entry-point (placeholder for now). */
     onGetOverview?: () => void;
 }
 
@@ -27,13 +27,9 @@ function formatAreaHa(value: number | null | undefined): string {
 }
 
 /**
- * Top-of-canvas chrome that mirrors the EOSDA Crop Monitoring field header
- * (back · field name + boundary glyph · server-validated area · edit · "Get
- * Overview" placeholder · "All fields (N)" trigger).
- *
- * Replicates the EOS *structure* only — the visual identity stays Akasha
- * (Solar Amber + glass tokens). Area is read from `plot.areaHa` (server),
- * never recomputed from polygon coordinates client-side (REQ-008).
+ * Top-of-canvas field chrome: back, field identity, validated area, edit,
+ * overview placeholder, and all-fields trigger. Area is read from `plot.areaHa`
+ * (server), never recomputed from polygon coordinates client-side (REQ-008).
  */
 export function FieldContextHeader({
     selectedPlot,

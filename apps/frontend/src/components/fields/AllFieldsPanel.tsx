@@ -45,13 +45,6 @@ const STATUS_COPY: Record<NonNullable<Plot['status']>, BadgeCopy> = {
   archived: { label: 'Archived', variant: 'outline' },
 };
 
-const SYNC_COPY: Record<NonNullable<Plot['providerSyncStatus']>, BadgeCopy> = {
-  not_synced: { label: 'Not synced', variant: 'neutral' },
-  pending: { label: 'Sync pending', variant: 'warning' },
-  synced: { label: 'Synced', variant: 'success' },
-  failed: { label: 'Sync failed', variant: 'destructive' },
-};
-
 const AREA_FORMATTER = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 2,
   minimumFractionDigits: 0,
@@ -75,7 +68,6 @@ function searchableText(plot: Plot): string {
     plot.variety,
     plot.seasonLabel,
     plot.status,
-    plot.providerSyncStatus,
   ]
     .filter(Boolean)
     .join(' ')
@@ -169,7 +161,6 @@ function FieldCard({
   onFocus?: (plot: Plot) => void;
 }) {
   const status = plot.status ? STATUS_COPY[plot.status] : null;
-  const sync = plot.providerSyncStatus ? SYNC_COPY[plot.providerSyncStatus] : null;
 
   return (
     <article
@@ -233,10 +224,9 @@ function FieldCard({
         </div>
       </div>
 
-      { (status || sync) && (
+      { status && (
         <div className="flex flex-wrap gap-1.5 border-t border-border/60 px-3 py-2">
-          { status && <Badge variant={ status.variant }>{ status.label }</Badge> }
-          { sync && <Badge variant={ sync.variant }>{ sync.label }</Badge> }
+          <Badge variant={ status.variant }>{ status.label }</Badge>
         </div>
       ) }
     </article>

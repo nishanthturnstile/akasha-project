@@ -1,28 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   ApiError,
   composeTileTemplate,
   exportAllPlotsGeoJson,
   exportPlotGeoJson,
-  getDates,
-  withCloudMaskParams,
   type PlotGeoJsonImportPayload,
 } from '@/lib/api';
 import {
-  queryKeys,
   useConfig,
   useCreatePlot,
   useDates,
   useDefaultLayer,
   useDeletePlot,
-  useFieldScenes,
   useImportPlotsGeoJson,
   usePlots,
   useSources,
-  useSyncFieldProvider,
   useUpdatePlot,
 } from '@/lib/queries';
 import { basemapAttribution, resolveBasemapStyle } from '@/map/basemap';
@@ -33,12 +27,8 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
-import { CloudMaskControl } from '@/components/monitoring/CloudMaskControl';
-import { DownloadMenu } from '@/components/monitoring/DownloadMenu';
-import { FieldSceneStatusPanel } from '@/components/monitoring/FieldSceneStatusPanel';
 import { MeasureTool } from '@/components/map/MeasureTool';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
-import { CompareControl } from '@/components/map/CompareControl';
 import { CommandPalette } from '@/components/map/CommandPalette';
 import { CoordinateReadout } from '@/components/map/CoordinateReadout';
 import { Legend } from '@/components/map/Legend';
@@ -51,7 +41,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/mapViewContext';
 import { useMapUrlState } from '@/hooks/useMapUrlState';
-import type { FieldScene, Plot, PlotGeometry, SceneDate, Source } from '@/types/api';
+import type { Plot, PlotGeometry, Source } from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -147,23 +137,7 @@ function geoJsonFilename(plot: Plot | null): string {
   return `${safeName || 'field'}.geojson`;
 }
 
-function sceneDateFromFieldScene(scene: FieldScene, latest: boolean): SceneDate {
-  return {
-    acquisitionDate: scene.acquisitionDate,
-    datetime: scene.datetime ?? `${scene.acquisitionDate}T00:00:00Z`,
-    usablePixelPercent: scene.usablePixelPercent,
-    cloudMaskedPercent: scene.cloudMaskedPercent ?? scene.cloudPercent ?? null,
-    coveragePercent: scene.coveragePercent ?? null,
-    isLatestUsable: latest,
-    metricsProvisional: scene.metricsProvisional,
-    tileAvailable: scene.tileAvailable,
-    sceneCount: scene.sceneCount ?? undefined,
-    bounds: scene.bounds,
-    sensor: scene.sensor ?? null,
-  };
-}
-
-/** Map an Akasha {@link Source} → EOS-style 2-letter sensor badge (e.g. `S2`, `S1`). */
+/** Map an Akasha {@link Source} to a short sensor badge (for example `S2`, `S1`). */
 function sensorBadgeForSource(source: Source | null | undefined): string | null {
   if (!source) return null;
   const haystack = `${source.id} ${source.label}`.toLowerCase();
@@ -172,22 +146,11 @@ function sensorBadgeForSource(source: Source | null | undefined): string | null 
   return null;
 }
 
-function fieldLayerFor(scene: FieldScene | null | undefined, displayMode: string) {
-  if (!scene) return null;
-  return (
-    scene.layers.find((layer) => layer.displayMode === displayMode && layer.available) ??
-    scene.layers.find((layer) => layer.displayMode === 'RGB' && layer.available) ??
-    null
-  );
-}
-
 export default function MapPage() {
   useMapUrlState();
   const configQ = useConfig();
   const sourcesQ = useSources();
   const defaultLayerQ = useDefaultLayer();
-  const queryClient = useQueryClient();
-
   const view = useMapView();
   const {
     activeSourceId,
@@ -222,7 +185,6 @@ export default function MapPage() {
   const createPlotMutation = useCreatePlot();
   const updatePlotMutation = useUpdatePlot();
   const importPlotsMutation = useImportPlotsGeoJson();
-  const syncFieldMutation = useSyncFieldProvider();
   const deletePlotMutation = useDeletePlot({
     onDeleted: (plotId) => {
       if (plotId === selectedPlotId) view.clearSelectedPlot();
@@ -233,7 +195,6 @@ export default function MapPage() {
     if (!selectedPlotId) return null;
     return plotsQ.data?.find((plot) => plot.id === selectedPlotId) ?? null;
   }, [plotsQ.data, selectedPlotId]);
-  const fieldScenesQ = useFieldScenes(selectedPlot?.id);
 
   useEffect(() => {
     if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
@@ -254,21 +215,8 @@ export default function MapPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const fieldSceneMode =
-    Boolean(selectedPlot) &&
-    fieldScenesQ.data?.scope === 'field' &&
-    fieldScenesQ.data.scenes.length > 0;
-
-  const fieldTimelineDates = useMemo<SceneDate[]>(() => {
-    if (!fieldSceneMode || !fieldScenesQ.data) return [];
-    const ordered = [...fieldScenesQ.data.scenes].sort((a, b) =>
-      b.acquisitionDate.localeCompare(a.acquisitionDate),
-    );
-    return ordered.map((fieldScene, index) => sceneDateFromFieldScene(fieldScene, index === 0));
-  }, [fieldSceneMode, fieldScenesQ.data]);
-
-  const activeTimelineDates = fieldSceneMode ? fieldTimelineDates : datesQ.data;
-  const activeSourceKind = fieldSceneMode ? 'optical' : selectedSource?.kind;
+  const activeTimelineDates = datesQ.data;
+  const activeSourceKind = selectedSource?.kind;
 
   // Effective acquisition date: keep a still-valid user choice, otherwise the
   // computed default (latest usable -> threshold -> newest). Derived, not stored,
@@ -291,40 +239,18 @@ export default function MapPage() {
     [activeTimelineDates, selectedDate],
   );
 
-  const selectedFieldScene = useMemo(
-    () =>
-      fieldSceneMode
-        ? fieldScenesQ.data?.scenes.find((s) => s.acquisitionDate === selectedDate) ?? null
-        : null,
-    [fieldSceneMode, fieldScenesQ.data, selectedDate],
-  );
-
-  const fieldDisplayModes = fieldScenesQ.data?.displayModes ?? ['RGB'];
-  const selectedDisplayMode = fieldSceneMode
-    ? fieldDisplayModes.includes(displayModeOverride ?? '')
-      ? (displayModeOverride as string)
-      : 'RGB'
-    : displayModeOverride ??
+  const sourceDisplayModes = selectedSource?.displayModes ?? ['RGB'];
+  const selectedDisplayMode =
+    displayModeOverride ??
     selectedSource?.displayMode ??
     selectedSource?.defaultDisplayMode ??
-    selectedSource?.displayModes?.[0] ??
+    sourceDisplayModes[0] ??
     (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
       ? defaultLayerQ.data.displayMode
       : undefined) ??
     'RGB';
 
   const scene = useMemo<SatelliteScene | null>(() => {
-    if (fieldSceneMode) {
-      const layer = fieldLayerFor(selectedFieldScene, selectedDisplayMode);
-      if (!layer) return null;
-      return {
-        tileUrlTemplate: withCloudMaskParams(layer.tileUrlTemplate, cloudMask),
-        bounds: selectedFieldScene?.bounds,
-        minzoom: defaultLayerQ.data?.minzoom,
-        maxzoom: defaultLayerQ.data?.maxzoom,
-        attribution: layer.attribution,
-      };
-    }
     if (!selectedDate || !effectiveSourceId) return null;
     const dl = defaultLayerQ.data;
     const isDefault =
@@ -354,9 +280,6 @@ export default function MapPage() {
   }, [
     selectedDate,
     effectiveSourceId,
-    fieldSceneMode,
-    selectedFieldScene,
-    cloudMask,
     defaultLayerQ.data,
     selectedDateMetadata,
     selectedDisplayMode,
@@ -368,18 +291,6 @@ export default function MapPage() {
   const sceneB = useMemo<SatelliteScene | null>(() => {
     if (!visible || !compareEnabled || !compareDate) return null;
     if (compareDate === selectedDate) return null;
-    if (fieldSceneMode) {
-      const fieldScene = fieldScenesQ.data?.scenes.find((s) => s.acquisitionDate === compareDate);
-      const layer = fieldLayerFor(fieldScene, selectedDisplayMode);
-      if (!fieldScene?.tileAvailable || !layer) return null;
-      return {
-        tileUrlTemplate: withCloudMaskParams(layer.tileUrlTemplate, cloudMask),
-        bounds: fieldScene.bounds,
-        minzoom: defaultLayerQ.data?.minzoom,
-        maxzoom: defaultLayerQ.data?.maxzoom,
-        attribution: layer.attribution,
-      };
-    }
     if (!effectiveSourceId) return null;
     const meta = datesQ.data?.find((d) => d.acquisitionDate === compareDate);
     if (!meta?.tileAvailable) return null;
@@ -394,9 +305,6 @@ export default function MapPage() {
     compareEnabled,
     compareDate,
     visible,
-    fieldSceneMode,
-    fieldScenesQ.data,
-    cloudMask,
     effectiveSourceId,
     selectedDate,
     selectedDisplayMode,
@@ -431,19 +339,11 @@ export default function MapPage() {
 
   // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
   const nearestPassNote = useMemo<string | null>(() => {
-    if (fieldSceneMode) return null;
     if (selectedSource?.kind !== 'sar') return null;
     if (effectiveSourceId !== 'sentinel-1-grd') return null;
     if (!selectedDate || selectedDate === '2026-04-27') return null;
     return `Nearest radar pass: ${selectedDate}.`;
-  }, [fieldSceneMode, selectedSource?.kind, effectiveSourceId, selectedDate]);
-
-  const prefetchDates = (sourceId: string) => {
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.dates(sourceId),
-      queryFn: () => getDates(sourceId),
-    });
-  };
+  }, [selectedSource?.kind, effectiveSourceId, selectedDate]);
 
   const requestMapTool = (owner: MapToolOwner): boolean => {
     setActiveMapTool(owner);
@@ -484,11 +384,6 @@ export default function MapPage() {
     await deletePlotMutation.mutateAsync(selectedPlot.id);
   };
 
-  const syncSelectedField = async () => {
-    if (!selectedPlot) return;
-    await syncFieldMutation.mutateAsync(selectedPlot.id);
-  };
-
   if (configQ.isLoading) return <FullScreenLoading />;
   if (configQ.isError || !configQ.data) {
     return <FullScreenError message={ messageFor(configQ.error) } onRetry={ () => configQ.refetch() } />;
@@ -499,14 +394,12 @@ export default function MapPage() {
   const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
   const basemapCredit = basemapAttribution(configQ.data);
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
-  const analyticsSupportedIndices = fieldSceneMode
-    ? fieldDisplayModes.filter((mode) => !['RGB', 'FALSE_COLOR'].includes(mode))
-    : sourceSupportedIndices;
+  const analyticsSupportedIndices = sourceSupportedIndices;
   const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
     ? selectedDisplayMode
     : analyticsSupportedIndices[0] ?? config.defaultIndex ?? 'NDVI';
   const showIndexPanel =
-    fieldSceneMode || (selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0);
+    selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0;
 
   return (
     <div className="relative h-full min-h-[640px] w-full overflow-hidden bg-background" data-testid="map-page">
@@ -637,29 +530,16 @@ export default function MapPage() {
         ) }
       </div>
 
-      {/* Right: field scene status + index panel (Phase 5 placeholder) */ }
+      {/* Right: native selected-field analytics panel. */ }
       <div className="absolute right-4 top-[68px] z-toolbar hidden max-w-[320px] flex-col gap-2 xl:flex">
-        <FieldSceneStatusPanel
-          selectedPlot={ selectedPlot }
-          response={ fieldScenesQ.data }
-          loading={ Boolean(selectedPlot) && fieldScenesQ.isLoading }
-          error={ fieldScenesQ.isError ? messageFor(fieldScenesQ.error) : null }
-          onRetry={ () => void fieldScenesQ.refetch() }
-          onSync={ () => void syncSelectedField() }
-          syncing={ syncFieldMutation.isPending }
-          displayModes={ fieldDisplayModes }
-          displayMode={ selectedDisplayMode }
-          onDisplayModeChange={ view.setDisplayMode }
-        />
         { showIndexPanel && (
           <IndexPanel
             selectedPlot={ selectedPlot }
             selectedDate={ selectedDate }
-            sourceId={ fieldSceneMode ? fieldScenesQ.data?.sourceId : effectiveSourceId }
+            sourceId={ effectiveSourceId }
             displayMode={ selectedDisplayMode }
             supportedIndices={ analyticsSupportedIndices }
             cloudMask={ cloudMask }
-            selectedScene={ selectedFieldScene }
             periodFrom={ periodFrom }
             periodTo={ periodTo }
           />
@@ -679,12 +559,12 @@ export default function MapPage() {
           sources={ sourcesQ.data }
           activeSourceId={ effectiveSourceId }
           onSelectSource={ view.setSource }
-          displayModes={ fieldSceneMode ? fieldDisplayModes : ['RGB'] }
+          displayModes={ sourceDisplayModes }
           displayMode={ selectedDisplayMode }
           onDisplayModeChange={ view.setDisplayMode }
           cloudMask={ cloudMask }
           onCloudMaskChange={ view.setCloudMask }
-          cloudMaskDisabled={ !fieldSceneMode }
+          cloudMaskDisabled={ selectedSource?.kind === 'sar' }
           compareEnabled={ compareEnabled }
           onCompareEnabledChange={ view.setCompareEnabled }
           comparableDates={ comparableDates }
@@ -695,9 +575,8 @@ export default function MapPage() {
           onBlendChange={ view.setOpacity }
           selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
-          exportSourceId={ fieldSceneMode ? fieldScenesQ.data?.sourceId : effectiveSourceId }
+          exportSourceId={ effectiveSourceId }
           exportIndexType={ exportIndexType }
-          selectedScene={ selectedFieldScene }
           collapsed={ view.layerBarCollapsed }
           onCollapsedChange={ view.setLayerBarCollapsed }
         />
@@ -738,13 +617,11 @@ export default function MapPage() {
           onSelect={ view.setDate }
           sourceKind={ activeSourceKind }
           sensorBadge={ sensorBadgeForSource(selectedSource) }
-          loading={ fieldSceneMode ? fieldScenesQ.isLoading : datesQ.isLoading }
+          loading={ datesQ.isLoading }
           error={
-            fieldSceneMode
-              ? fieldScenesQ.isError ? messageFor(fieldScenesQ.error) : null
-              : datesQ.isError ? messageFor(datesQ.error) : null
+            datesQ.isError ? messageFor(datesQ.error) : null
           }
-          onRetry={ () => (fieldSceneMode ? fieldScenesQ.refetch() : datesQ.refetch()) }
+          onRetry={ () => void datesQ.refetch() }
           marginalNote={ marginalNote }
           nearestPassNote={ nearestPassNote }
           onPrefetchDate={ undefined }

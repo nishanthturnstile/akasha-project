@@ -27,10 +27,6 @@ _METADATA_COLUMN_BY_FIELD = {
     "sowingDate": "sowing_date",
     "plantingDate": "planting_date",
     "status": "status",
-    "externalProvider": "external_provider",
-    "externalFieldId": "external_field_id",
-    "providerSyncStatus": "provider_sync_status",
-    "providerSyncedAt": "provider_synced_at",
 }
 _METADATA_FIELDS = tuple(_METADATA_COLUMN_BY_FIELD)
 _METADATA_COLUMNS = tuple(_METADATA_COLUMN_BY_FIELD.values())
@@ -86,10 +82,6 @@ def _row_to_plot(row: tuple) -> dict[str, Any]:
         sowing_date,
         planting_date,
         status,
-        external_provider,
-        external_field_id,
-        provider_sync_status,
-        provider_synced_at,
     ) = row
     geom = json.loads(geometry) if isinstance(geometry, str) else geometry
     return {
@@ -106,10 +98,6 @@ def _row_to_plot(row: tuple) -> dict[str, Any]:
         "sowingDate": _date_iso(sowing_date),
         "plantingDate": _date_iso(planting_date),
         "status": status,
-        "externalProvider": external_provider,
-        "externalFieldId": external_field_id,
-        "providerSyncStatus": provider_sync_status,
-        "providerSyncedAt": _iso(provider_synced_at),
     }
 
 
@@ -181,42 +169,6 @@ def delete_plot(plot_id: str) -> bool:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM akasha.plots WHERE id = %s", (plot_id,))
         return cur.rowcount > 0
-
-
-def update_provider_link(
-    plot_id: str,
-    *,
-    external_provider: str,
-    external_field_id: str | None,
-    provider_sync_status: str,
-    provider_metadata: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    """Update adapter-owned provider-link fields for one plot."""
-    set_clauses = [
-        "external_provider = %s",
-        "external_field_id = %s",
-        "provider_sync_status = %s",
-        "provider_synced_at = CASE WHEN %s = 'synced' THEN NOW() ELSE provider_synced_at END",
-    ]
-    params: list[Any] = [
-        external_provider,
-        external_field_id,
-        provider_sync_status,
-        provider_sync_status,
-    ]
-    if provider_metadata is not None:
-        set_clauses.append("provider_metadata = %s::jsonb")
-        params.append(json.dumps(provider_metadata))
-    params.append(plot_id)
-    sql = (
-        "UPDATE akasha.plots SET "
-        + ", ".join(set_clauses)
-        + f" WHERE id = %s RETURNING {_COLUMNS}"
-    )
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
-        row = cur.fetchone()
-        return _row_to_plot(row) if row else None
 
 
 def create_plots_bulk(items: list[dict[str, Any]]) -> list[dict[str, Any]]:

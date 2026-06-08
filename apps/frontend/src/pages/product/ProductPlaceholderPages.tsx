@@ -8,7 +8,7 @@ export function MonitoringGlobalView() {
   return (
     <Placeholder
       moduleName="Global view"
-      summary="All-field monitoring will summarize portfolio status once field scene and leaderboard APIs exist."
+      summary="All-field monitoring will summarize portfolio status once native scene and leaderboard APIs exist."
       dependency="Planned for Phase 4 and Phase 9."
     />
   );
@@ -48,8 +48,8 @@ export function WeatherAnalyticsPage() {
   return (
     <Placeholder
       moduleName="Weather Analytics"
-      summary="Historical weather charts will use normalized Akasha weather provider contracts for selected fields."
-      dependency="Planned for Phase 7."
+      summary="Historical weather charts will require a native weather data source for selected fields."
+      dependency="Deferred until a native weather integration is selected."
     />
   );
 }
@@ -58,8 +58,8 @@ export function WeatherForecastPage() {
   return (
     <Placeholder
       moduleName="Weather Forecast"
-      summary="Forecast cards and timelines will require a selected field and server-side weather provider routes."
-      dependency="Planned for Phase 7."
+      summary="Forecast cards and timelines will require a selected field and native server-side weather routes."
+      dependency="Deferred until a native weather integration is selected."
     />
   );
 }
@@ -178,7 +178,7 @@ export function NotificationsPage() {
   return (
     <Placeholder
       moduleName="Notifications"
-      summary="Notifications will surface field changes, task assignment, report availability, and provider sync failures."
+      summary="Notifications will surface field changes, task assignment, report availability, and risk alerts."
       dependency="Planned for Phase 12."
     />
   );
@@ -199,7 +199,7 @@ export function MarketplacePage() {
     <Placeholder
       moduleName="Marketplace"
       summary="Marketplace add-ons remain a navigation shell until commercial add-on scope is confirmed."
-      dependency="Deferred beyond first EOS-like workflow parity."
+      dependency="Deferred beyond the first native workflow."
     />
   );
 }
@@ -218,7 +218,7 @@ export function ApiSettingsPage() {
   return (
     <Placeholder
       moduleName="API settings"
-      summary="API settings will never expose provider secrets and will be implemented after Akasha auth is in place."
+      summary="API settings will never expose service secrets and will be implemented after Akasha auth is in place."
       dependency="Planned for Phase 12."
     />
   );

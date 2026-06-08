@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS akasha.notifications (
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT notifications_type_chk CHECK (
-        type IN ('field_change', 'risk_alert', 'task_assignment', 'report_available', 'provider_sync_failure')
+        type IN ('field_change', 'risk_alert', 'task_assignment', 'report_available')
     ),
     CONSTRAINT notifications_metadata_object_chk CHECK (jsonb_typeof(metadata) = 'object')
 )

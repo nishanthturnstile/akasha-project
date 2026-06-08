@@ -1,0 +1,15 @@
+# Akasha BFF (api) — test/dev dependencies.
+#
+# Installs the runtime deps plus test-only tooling so `python -m pytest` works
+# from a clean environment. Kept OUT of requirements.txt so the Railway runtime
+# image stays lean (no test tooling shipped to production).
+#
+#   pip install -r requirements-dev.txt
+-r requirements.txt
+
+# Test runner.
+pytest>=8,<10
+# Required by fastapi.testclient.TestClient (Starlette drives it via httpx).
+# Previously pulled in transitively by the removed EOS provider HTTP client;
+# declared explicitly here now that the provider integration is gone.
+httpx>=0.28,<0.29

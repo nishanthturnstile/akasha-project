@@ -1,4 +1,4 @@
-"""Field leaderboard and reporting routes for EOS-parity Phase 9."""
+"""Field leaderboard and reporting routes."""
 from __future__ import annotations
 
 import asyncio
@@ -20,7 +20,7 @@ from .auth import get_current_team
 from .config import settings
 from .field_analytics import _field_statistics
 from .field_exports import _disposition, _safe_filename
-from .providers.models import CloudMaskOptions, ProviderModel
+from .api_models import ApiModel, CloudMaskOptions
 from .raster import catalog_resolver as catalog
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from .raster.indices import DEFAULT_INDEX
@@ -100,14 +100,14 @@ DEFAULT_SCENE_SCAN_LIMIT = 8
 MAX_SCENE_SCAN_LIMIT = 12
 
 
-class LeaderboardScoreComponents(ProviderModel):
+class LeaderboardScoreComponents(ApiModel):
     vigor: float | None = None
     trend: float | None = None
     recency: float | None = None
     weather: float | None = None
 
 
-class FieldLeaderboardRow(ProviderModel):
+class FieldLeaderboardRow(ApiModel):
     plot_id: str
     rank: int | None = None
     name: str
@@ -137,14 +137,14 @@ class FieldLeaderboardRow(ProviderModel):
     open: str | None = None
 
 
-class FieldLeaderboardResponse(ProviderModel):
+class FieldLeaderboardResponse(ApiModel):
     index_type: str
     generated_at: str
     rows: list[FieldLeaderboardRow]
     metadata: dict[str, Any]
 
 
-class ReportTemplatePayload(ProviderModel):
+class ReportTemplatePayload(ApiModel):
     model_config = ConfigDict(alias_generator=None, populate_by_name=True)
 
     name: str
@@ -153,7 +153,7 @@ class ReportTemplatePayload(ProviderModel):
     sort: dict[str, Any] = Field(default_factory=dict)
 
 
-class ReportTemplateUpdate(ProviderModel):
+class ReportTemplateUpdate(ApiModel):
     model_config = ConfigDict(alias_generator=None, populate_by_name=True)
 
     name: str | None = None
@@ -162,7 +162,7 @@ class ReportTemplateUpdate(ProviderModel):
     sort: dict[str, Any] | None = None
 
 
-class ReportTemplate(ProviderModel):
+class ReportTemplate(ApiModel):
     id: str
     name: str
     columns: list[str]

@@ -11,7 +11,7 @@ from pydantic import Field
 
 from . import phase10_repo
 from .auth import get_current_team
-from .providers.models import ProviderModel
+from .api_models import ApiModel
 from .raster.errors import AkashaError, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.field_groups")
@@ -22,13 +22,13 @@ router = APIRouter(
 )
 
 
-class FieldGroupPayload(ProviderModel):
+class FieldGroupPayload(ApiModel):
     name: str | None = None
     description: str | None = None
     color: str | None = None
 
 
-class FieldGroup(ProviderModel):
+class FieldGroup(ApiModel):
     id: str
     name: str
     description: str | None = None
@@ -38,7 +38,7 @@ class FieldGroup(ProviderModel):
     updated_at: str | None = None
 
 
-class FieldAssignmentPayload(ProviderModel):
+class FieldAssignmentPayload(ApiModel):
     plot_ids: list[str] = Field(default_factory=list)
 
 

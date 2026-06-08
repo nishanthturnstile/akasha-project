@@ -15,7 +15,7 @@ from pydantic import Field
 from . import phase10_repo
 from .auth import get_current_team
 from .field_exports import _disposition
-from .providers.models import ProviderModel
+from .api_models import ApiModel
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.operations")
@@ -28,7 +28,7 @@ router = APIRouter(
 ActivityStatus = Literal["planned", "in_progress", "done", "cancelled"]
 
 
-class AttachmentPublic(ProviderModel):
+class AttachmentPublic(ApiModel):
     id: str
     parent_type: str | None = None
     parent_id: str | None = None
@@ -40,14 +40,14 @@ class AttachmentPublic(ProviderModel):
     updated_at: str | None = None
 
 
-class AttachmentCreate(ProviderModel):
+class AttachmentCreate(ApiModel):
     filename: str
     content_type: str | None = None
     size_bytes: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class FieldActivityPayload(ProviderModel):
+class FieldActivityPayload(ApiModel):
     activity_type: str
     activity_date: str
     plot_id: str | None = None
@@ -60,7 +60,7 @@ class FieldActivityPayload(ProviderModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class FieldActivityUpdate(ProviderModel):
+class FieldActivityUpdate(ApiModel):
     activity_type: str | None = None
     activity_date: str | None = None
     plot_id: str | None = None
@@ -73,7 +73,7 @@ class FieldActivityUpdate(ProviderModel):
     metadata: dict[str, Any] | None = None
 
 
-class FieldActivity(ProviderModel):
+class FieldActivity(ApiModel):
     id: str
     plot_id: str | None = None
     field_name: str | None = None

@@ -47,7 +47,7 @@ export default function FieldLeaderboardPage() {
             value={ filters.indexType ?? 'NDVI' }
             onChange={ (event) => setFilters((current) => ({ ...current, indexType: event.target.value })) }
           >
-            { ['NDVI', 'NDRE', 'NDMI', 'MSAVI', 'RECI'].map((index) => <option key={ index }>{ index }</option>) }
+            { ['NDVI', 'NDRE', 'NDMI'].map((index) => <option key={ index }>{ index }</option>) }
           </select>
         </label>
         { ['groupName', 'cropType', 'variety', 'seasonLabel'].map((key) => (

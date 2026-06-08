@@ -17,7 +17,7 @@ RUN apt-get update \
 
 # Install dependencies first for better layer caching.
 COPY services/ingestion/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # Worker code + ingestion package + committed seed assets (no large rasters).
 COPY services/ingestion/worker.py ./

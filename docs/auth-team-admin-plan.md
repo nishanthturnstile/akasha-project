@@ -14,11 +14,11 @@ Phase 12 implements the BFF-side foundations: users, teams, memberships, API key
 
 ## Local development mode
 
-`AUTH_MODE=disabled` injects a deterministic dev user and team only for local/dev/test environments. Runtime ownership checks must still use `team_id = current_team.id`; no protected route should rely on `team_id IS NULL`.
+`AUTH_MODE=disabled` injects a deterministic dev user and team only when local/dev/test environments explicitly set `AUTH_ALLOW_DISABLED=true`. Runtime ownership checks must still use `team_id = current_team.id`; no protected route should rely on `team_id IS NULL`.
 
 ## Railway / deployment mode
 
-Customer or Railway deployments must set `AUTH_MODE=enabled`. Disabled auth is forbidden when Railway deployment environment variables are present. Protected routes fail closed with `AUTH_NOT_CONFIGURED` if auth is disabled in deployment.
+Customer or Railway deployments must set `AUTH_MODE=enabled`, `AUTH_ALLOW_DISABLED=false`, and a strong `AUTH_PASSWORD_PEPPER`. Disabled auth is forbidden when Railway deployment environment variables are present. Protected routes fail closed with `AUTH_NOT_CONFIGURED` if auth is disabled in deployment.
 
 ## Session and identity boundary
 
@@ -39,7 +39,7 @@ Direct `team_id`: plots, field activities, scout tasks, uploaded datasets, field
 
 Indirect: field group members are scoped through field groups and plots; index requests are scoped through `plot_id`.
 
-Global/system: app settings, STAC/pgSTAC catalog, seed data, public product configuration.
+Global/system: app settings, STAC/pgSTAC catalog, and seed data. Product configuration, sources, layers, tiles, and statistics are portal-authenticated BFF APIs.
 
 ## API key policy
 

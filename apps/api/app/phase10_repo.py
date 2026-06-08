@@ -202,17 +202,20 @@ def create_attachment(
     content_type: str | None,
     size_bytes: int | None,
     metadata: dict[str, Any] | None = None,
+    owner_id: str | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             INSERT INTO akasha.attachments (
-                filename, content_type, size_bytes, internal_storage_key, metadata
+                filename, content_type, size_bytes, internal_storage_key, metadata,
+                owner_id, team_id
             )
-            VALUES (%s, %s, %s, gen_random_uuid()::text, %s::jsonb)
+            VALUES (%s, %s, %s, gen_random_uuid()::text, %s::jsonb, %s, %s)
             RETURNING {ATTACHMENT_COLUMNS}
             """,
-            (filename, content_type, size_bytes, json.dumps(metadata or {})),
+            (filename, content_type, size_bytes, json.dumps(metadata or {}), owner_id, team_id),
         )
         return _attachment(cur.fetchone())
 
@@ -221,9 +224,13 @@ def list_attachments(
     *,
     parent_type: str | None = None,
     parent_id: str | None = None,
+    team_id: str | None = None,
 ) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: list[Any] = []
+    if team_id:
+        clauses.append("team_id = %s")
+        params.append(team_id)
     if parent_type:
         clauses.append("parent_type = %s")
         params.append(parent_type)
@@ -239,16 +246,34 @@ def list_attachments(
         return [_attachment(row) for row in cur.fetchall()]
 
 
-def _link_attachments(cur, attachment_ids: list[str], parent_type: str, parent_id: str) -> None:
+def _link_attachments(
+    cur,
+    attachment_ids: list[str],
+    parent_type: str,
+    parent_id: str,
+    team_id: str | None = None,
+) -> None:
+    params: list[Any] = [parent_type, parent_id, attachment_ids]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     cur.execute(
         "UPDATE akasha.attachments SET parent_type = NULL, parent_id = NULL "
-        "WHERE parent_type = %s AND parent_id = %s AND NOT (id = ANY(%s::uuid[]))",
-        (parent_type, parent_id, attachment_ids),
+        "WHERE parent_type = %s AND parent_id = %s AND NOT (id = ANY(%s::uuid[]))"
+        + team_filter,
+        params,
     )
     for attachment_id in attachment_ids:
+        params = [attachment_id]
+        team_filter = ""
+        if team_id is not None:
+            team_filter = " AND team_id = %s"
+            params.append(team_id)
         cur.execute(
-            "SELECT parent_type, parent_id::text FROM akasha.attachments WHERE id = %s",
-            (attachment_id,),
+            "SELECT parent_type, parent_id::text FROM akasha.attachments "
+            "WHERE id = %s" + team_filter,
+            params,
         )
         row = cur.fetchone()
         if row is None:
@@ -262,39 +287,58 @@ def _link_attachments(cur, attachment_ids: list[str], parent_type: str, parent_i
         )
 
 
-def _activity_by_id(cur, activity_id: str) -> dict[str, Any] | None:
+def _plot_belongs_to_team(cur, plot_id: str | None, team_id: str | None) -> bool:
+    if plot_id is None or team_id is None:
+        return True
+    cur.execute(
+        "SELECT 1 FROM akasha.plots WHERE id = %s AND team_id = %s",
+        (plot_id, team_id),
+    )
+    return cur.fetchone() is not None
+
+
+def _activity_by_id(cur, activity_id: str, team_id: str | None = None) -> dict[str, Any] | None:
+    params: list[Any] = [activity_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND a.team_id = %s"
+        params.append(team_id)
     cur.execute(
         f"""
         SELECT {ACTIVITY_COLUMNS}
         FROM akasha.field_activities a
         LEFT JOIN akasha.plots p ON a.plot_id = p.id
-        LEFT JOIN akasha.field_group_members fgm ON p.id = fgm.plot_id
-        LEFT JOIN akasha.field_groups fg ON fgm.group_id = fg.id
-        WHERE a.id = %s
+        LEFT JOIN akasha.field_group_members fgm
+            ON p.id = fgm.plot_id AND fgm.team_id = a.team_id
+        LEFT JOIN akasha.field_groups fg ON fgm.group_id = fg.id AND fg.team_id = a.team_id
+        WHERE a.id = %s{team_filter}
         GROUP BY a.id, p.id
         """,
-        (activity_id,),
+        params,
     )
     row = cur.fetchone()
     if not row:
         return None
     cur.execute(
         f"SELECT {ATTACHMENT_COLUMNS} FROM akasha.attachments "
-        "WHERE parent_type = 'activity' AND parent_id = %s",
-        (activity_id,),
+        "WHERE parent_type = 'activity' AND parent_id = %s"
+        + (" AND team_id = %s" if team_id is not None else ""),
+        [activity_id, team_id] if team_id is not None else [activity_id],
     )
     return _activity(row, [_attachment(item) for item in cur.fetchall()])
 
 
 def create_activity(payload: dict[str, Any], attachment_ids: list[str]) -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
+        if not _plot_belongs_to_team(cur, payload.get("plotId"), payload.get("teamId")):
+            raise ValueError("PLOT_NOT_FOUND")
         cur.execute(
             """
             INSERT INTO akasha.field_activities (
                 plot_id, activity_type, activity_date, assignee, status,
-                input_product, cost, notes, metadata
+                input_product, cost, notes, metadata, owner_id, team_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
             RETURNING id::text
             """,
             (
@@ -307,17 +351,20 @@ def create_activity(payload: dict[str, Any], attachment_ids: list[str]) -> dict[
                 payload.get("cost"),
                 payload.get("notes"),
                 json.dumps(payload.get("metadata") or {}),
+                payload.get("ownerId"),
+                payload.get("teamId"),
             ),
         )
         activity_id = cur.fetchone()[0]
-        _link_attachments(cur, attachment_ids, "activity", activity_id)
-        return _activity_by_id(cur, activity_id)
+        _link_attachments(cur, attachment_ids, "activity", activity_id, payload.get("teamId"))
+        return _activity_by_id(cur, activity_id, payload.get("teamId"))
 
 
 def update_activity(
     activity_id: str,
     payload: dict[str, Any],
     attachment_ids: list[str] | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any] | None:
     column_by_field = {
         "plotId": "plot_id",
@@ -339,35 +386,51 @@ def update_activity(
         set_clauses.append("metadata = %s::jsonb")
         params.append(json.dumps(payload.get("metadata") or {}))
     with get_connection() as conn, conn.cursor() as cur:
+        if "plotId" in payload and not _plot_belongs_to_team(cur, payload["plotId"], team_id):
+            raise ValueError("PLOT_NOT_FOUND")
         if set_clauses:
             params.append(activity_id)
+            team_filter = ""
+            if team_id is not None:
+                team_filter = " AND team_id = %s"
+                params.append(team_id)
             cur.execute(
                 "UPDATE akasha.field_activities SET "
                 + ", ".join(set_clauses)
-                + " WHERE id = %s RETURNING id::text",
+                + " WHERE id = %s"
+                + team_filter
+                + " RETURNING id::text",
                 params,
             )
             if cur.fetchone() is None:
                 return None
-        elif _activity_by_id(cur, activity_id) is None:
+        elif _activity_by_id(cur, activity_id, team_id) is None:
             return None
         if attachment_ids is not None:
-            _link_attachments(cur, attachment_ids, "activity", activity_id)
-        return _activity_by_id(cur, activity_id)
+            _link_attachments(cur, attachment_ids, "activity", activity_id, team_id)
+        return _activity_by_id(cur, activity_id, team_id)
 
 
-def list_activities(filters: dict[str, Any]) -> list[dict[str, Any]]:
+def list_activities(filters: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    if team_id is not None:
+        where = "WHERE a.team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             SELECT {ACTIVITY_COLUMNS}
             FROM akasha.field_activities a
             LEFT JOIN akasha.plots p ON a.plot_id = p.id
-            LEFT JOIN akasha.field_group_members fgm ON p.id = fgm.plot_id
-            LEFT JOIN akasha.field_groups fg ON fgm.group_id = fg.id
+            LEFT JOIN akasha.field_group_members fgm
+                ON p.id = fgm.plot_id AND fgm.team_id = a.team_id
+            LEFT JOIN akasha.field_groups fg ON fgm.group_id = fg.id AND fg.team_id = a.team_id
+            {where}
             GROUP BY a.id, p.id
             ORDER BY a.activity_date DESC, a.created_at DESC
-            """
+            """,
+            params,
         )
         rows = [_activity(row) for row in cur.fetchall()]
     return _filter_activities(rows, filters)
@@ -399,30 +462,38 @@ def _filter_activities(rows: list[dict[str, Any]], filters: dict[str, Any]) -> l
     return [row for row in rows if ok(row)]
 
 
-def get_activity(activity_id: str) -> dict[str, Any] | None:
+def get_activity(activity_id: str, team_id: str | None = None) -> dict[str, Any] | None:
     with get_connection() as conn, conn.cursor() as cur:
-        return _activity_by_id(cur, activity_id)
+        return _activity_by_id(cur, activity_id, team_id)
 
 
-def delete_activity(activity_id: str) -> bool:
+def delete_activity(activity_id: str, team_id: str | None = None) -> bool:
+    params: list[Any] = [activity_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE akasha.attachments SET parent_type = NULL, parent_id = NULL "
-            "WHERE parent_type = 'activity' AND parent_id = %s",
-            (activity_id,),
+            "WHERE parent_type = 'activity' AND parent_id = %s" + team_filter,
+            params,
         )
-        cur.execute("DELETE FROM akasha.field_activities WHERE id = %s", (activity_id,))
+        cur.execute("DELETE FROM akasha.field_activities WHERE id = %s" + team_filter, params)
         return cur.rowcount > 0
 
 
 def create_scout_task(payload: dict[str, Any], attachment_ids: list[str]) -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
+        if not _plot_belongs_to_team(cur, payload.get("plotId"), payload.get("teamId")):
+            raise ValueError("PLOT_NOT_FOUND")
         cur.execute(
             """
             INSERT INTO akasha.scout_tasks (
-                plot_id, longitude, latitude, status, assignee, priority, notes, metadata
+                plot_id, longitude, latitude, status, assignee, priority, notes, metadata,
+                owner_id, team_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
             RETURNING id::text
             """,
             (
@@ -434,17 +505,20 @@ def create_scout_task(payload: dict[str, Any], attachment_ids: list[str]) -> dic
                 payload.get("priority", "medium"),
                 payload.get("notes"),
                 json.dumps(payload.get("metadata") or {}),
+                payload.get("ownerId"),
+                payload.get("teamId"),
             ),
         )
         task_id = cur.fetchone()[0]
-        _link_attachments(cur, attachment_ids, "scout_task", task_id)
-        return _task_by_id(cur, task_id)
+        _link_attachments(cur, attachment_ids, "scout_task", task_id, payload.get("teamId"))
+        return _task_by_id(cur, task_id, payload.get("teamId"))
 
 
 def update_scout_task(
     task_id: str,
     payload: dict[str, Any],
     attachment_ids: list[str] | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any] | None:
     column_by_field = {
         "plotId": "plot_id",
@@ -465,53 +539,74 @@ def update_scout_task(
         set_clauses.append("metadata = %s::jsonb")
         params.append(json.dumps(payload.get("metadata") or {}))
     with get_connection() as conn, conn.cursor() as cur:
+        if "plotId" in payload and not _plot_belongs_to_team(cur, payload["plotId"], team_id):
+            raise ValueError("PLOT_NOT_FOUND")
         if set_clauses:
             params.append(task_id)
+            team_filter = ""
+            if team_id is not None:
+                team_filter = " AND team_id = %s"
+                params.append(team_id)
             cur.execute(
                 "UPDATE akasha.scout_tasks SET "
                 + ", ".join(set_clauses)
-                + " WHERE id = %s RETURNING id::text",
+                + " WHERE id = %s"
+                + team_filter
+                + " RETURNING id::text",
                 params,
             )
             if cur.fetchone() is None:
                 return None
-        elif _task_by_id(cur, task_id) is None:
+        elif _task_by_id(cur, task_id, team_id) is None:
             return None
         if attachment_ids is not None:
-            _link_attachments(cur, attachment_ids, "scout_task", task_id)
-        return _task_by_id(cur, task_id)
+            _link_attachments(cur, attachment_ids, "scout_task", task_id, team_id)
+        return _task_by_id(cur, task_id, team_id)
 
 
-def _task_by_id(cur, task_id: str) -> dict[str, Any] | None:
+def _task_by_id(cur, task_id: str, team_id: str | None = None) -> dict[str, Any] | None:
+    params: list[Any] = [task_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND t.team_id = %s"
+        params.append(team_id)
     cur.execute(
         f"""
         SELECT {TASK_COLUMNS}
         FROM akasha.scout_tasks t
         LEFT JOIN akasha.plots p ON t.plot_id = p.id
-        WHERE t.id = %s
+        WHERE t.id = %s{team_filter}
         """,
-        (task_id,),
+        params,
     )
     row = cur.fetchone()
     if not row:
         return None
     cur.execute(
         f"SELECT {ATTACHMENT_COLUMNS} FROM akasha.attachments "
-        "WHERE parent_type = 'scout_task' AND parent_id = %s",
-        (task_id,),
+        "WHERE parent_type = 'scout_task' AND parent_id = %s"
+        + (" AND team_id = %s" if team_id is not None else ""),
+        [task_id, team_id] if team_id is not None else [task_id],
     )
     return _task(row, [_attachment(item) for item in cur.fetchall()])
 
 
-def list_scout_tasks(filters: dict[str, Any]) -> list[dict[str, Any]]:
+def list_scout_tasks(filters: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    if team_id is not None:
+        where = "WHERE t.team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
             SELECT {TASK_COLUMNS}
             FROM akasha.scout_tasks t
             LEFT JOIN akasha.plots p ON t.plot_id = p.id
+            {where}
             ORDER BY t.created_at DESC
-            """
+            """,
+            params,
         )
         rows = [_task(row) for row in cur.fetchall()]
     return [
@@ -528,19 +623,24 @@ def list_scout_tasks(filters: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def get_scout_task(task_id: str) -> dict[str, Any] | None:
+def get_scout_task(task_id: str, team_id: str | None = None) -> dict[str, Any] | None:
     with get_connection() as conn, conn.cursor() as cur:
-        return _task_by_id(cur, task_id)
+        return _task_by_id(cur, task_id, team_id)
 
 
-def delete_scout_task(task_id: str) -> bool:
+def delete_scout_task(task_id: str, team_id: str | None = None) -> bool:
+    params: list[Any] = [task_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE akasha.attachments SET parent_type = NULL, parent_id = NULL "
-            "WHERE parent_type = 'scout_task' AND parent_id = %s",
-            (task_id,),
+            "WHERE parent_type = 'scout_task' AND parent_id = %s" + team_filter,
+            params,
         )
-        cur.execute("DELETE FROM akasha.scout_tasks WHERE id = %s", (task_id,))
+        cur.execute("DELETE FROM akasha.scout_tasks WHERE id = %s" + team_filter, params)
         return cur.rowcount > 0
 
 
@@ -551,9 +651,9 @@ def create_dataset(payload: dict[str, Any]) -> dict[str, Any]:
             INSERT INTO akasha.uploaded_datasets (
                 name, dataset_type, upload_status, original_filename, content_type,
                 file_size_bytes, feature_count, validation_message,
-                internal_storage_key, metadata
+                internal_storage_key, metadata, owner_id, team_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, gen_random_uuid()::text, %s::jsonb)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, gen_random_uuid()::text, %s::jsonb, %s, %s)
             RETURNING {DATASET_COLUMNS}
             """,
             (
@@ -566,15 +666,27 @@ def create_dataset(payload: dict[str, Any]) -> dict[str, Any]:
                 payload.get("featureCount"),
                 payload.get("validationMessage"),
                 json.dumps(payload.get("metadata") or {}),
+                payload.get("ownerId"),
+                payload.get("teamId"),
             ),
         )
         return _dataset(cur.fetchone())
 
 
-def list_datasets() -> list[dict[str, Any]]:
+def list_datasets(team_id: str | None = None) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    if team_id is not None:
+        where = " WHERE team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            f"SELECT {DATASET_COLUMNS} FROM akasha.uploaded_datasets ORDER BY created_at DESC"
+            f"""
+            SELECT {DATASET_COLUMNS}
+            FROM akasha.uploaded_datasets{where}
+            ORDER BY created_at DESC
+            """,
+            params,
         )
         return [_dataset(row) for row in cur.fetchall()]
 
@@ -583,25 +695,40 @@ def create_field_group(payload: dict[str, Any]) -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-            INSERT INTO akasha.field_groups (name, description, color)
-            VALUES (%s, %s, %s)
+            INSERT INTO akasha.field_groups (name, description, color, owner_id, team_id)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING {GROUP_COLUMNS}
             """,
-            (payload["name"], payload.get("description"), payload.get("color")),
+            (
+                payload["name"],
+                payload.get("description"),
+                payload.get("color"),
+                payload.get("ownerId"),
+                payload.get("teamId"),
+            ),
         )
         return _group(cur.fetchone())
 
 
-def list_field_groups() -> list[dict[str, Any]]:
+def list_field_groups(team_id: str | None = None) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    if team_id is not None:
+        where = " WHERE team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups ORDER BY name")
+        cur.execute(f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups{where} ORDER BY name", params)
         groups = [_group(row) for row in cur.fetchall()]
         for group in groups:
-            group["plotIds"] = group_plot_ids(cur, group["id"])
+            group["plotIds"] = group_plot_ids(cur, group["id"], team_id)
         return groups
 
 
-def update_field_group(group_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+def update_field_group(
+    group_id: str,
+    payload: dict[str, Any],
+    team_id: str | None = None,
+) -> dict[str, Any] | None:
     clauses: list[str] = []
     params: list[Any] = []
     for key, column in (("name", "name"), ("description", "description"), ("color", "color")):
@@ -609,54 +736,93 @@ def update_field_group(group_id: str, payload: dict[str, Any]) -> dict[str, Any]
             clauses.append(f"{column} = %s")
             params.append(payload[key])
     if not clauses:
-        return get_field_group(group_id)
+        return get_field_group(group_id, team_id)
     params.append(group_id)
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE akasha.field_groups SET "
             + ", ".join(clauses)
-            + f" WHERE id = %s RETURNING {GROUP_COLUMNS}",
+            + f" WHERE id = %s{team_filter} RETURNING {GROUP_COLUMNS}",
             params,
         )
         row = cur.fetchone()
-        return _group(row, group_plot_ids(cur, group_id)) if row else None
+        return _group(row, group_plot_ids(cur, group_id, team_id)) if row else None
 
 
-def get_field_group(group_id: str) -> dict[str, Any] | None:
+def get_field_group(group_id: str, team_id: str | None = None) -> dict[str, Any] | None:
+    params: list[Any] = [group_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups WHERE id = %s", (group_id,))
+        cur.execute(
+            f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups WHERE id = %s{team_filter}",
+            params,
+        )
         row = cur.fetchone()
-        return _group(row, group_plot_ids(cur, group_id)) if row else None
+        return _group(row, group_plot_ids(cur, group_id, team_id)) if row else None
 
 
-def delete_field_group(group_id: str) -> bool:
+def delete_field_group(group_id: str, team_id: str | None = None) -> bool:
+    params: list[Any] = [group_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM akasha.field_groups WHERE id = %s", (group_id,))
+        cur.execute("DELETE FROM akasha.field_groups WHERE id = %s" + team_filter, params)
         return cur.rowcount > 0
 
 
-def assign_group_fields(group_id: str, plot_ids: list[str]) -> dict[str, Any] | None:
+def assign_group_fields(
+    group_id: str,
+    plot_ids: list[str],
+    team_id: str | None = None,
+) -> dict[str, Any] | None:
+    params: list[Any] = [group_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups WHERE id = %s", (group_id,))
+        cur.execute(
+            f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups WHERE id = %s{team_filter}",
+            params,
+        )
         row = cur.fetchone()
         if not row:
             return None
-        cur.execute("DELETE FROM akasha.field_group_members WHERE group_id = %s", (group_id,))
+        cur.execute(
+            "DELETE FROM akasha.field_group_members WHERE group_id = %s" + team_filter,
+            params,
+        )
         for plot_id in plot_ids:
             cur.execute(
-                "INSERT INTO akasha.field_group_members (group_id, plot_id) "
-                "VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                (group_id, plot_id),
+                "INSERT INTO akasha.field_group_members (group_id, plot_id, team_id) "
+                "SELECT %s, p.id, %s FROM akasha.plots p "
+                "WHERE p.id = %s AND (%s::uuid IS NULL OR p.team_id = %s) "
+                "ON CONFLICT DO NOTHING",
+                (group_id, team_id, plot_id, team_id, team_id),
             )
-        return _group(row, group_plot_ids(cur, group_id))
+        return _group(row, group_plot_ids(cur, group_id, team_id))
 
 
-def group_plot_ids(cur, group_id: str) -> list[str]:
+def group_plot_ids(cur, group_id: str, team_id: str | None = None) -> list[str]:
+    params: list[Any] = [group_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     cur.execute(
         (
             "SELECT plot_id::text FROM akasha.field_group_members "
-            "WHERE group_id = %s ORDER BY created_at"
+            "WHERE group_id = %s" + team_filter + " ORDER BY created_at"
         ),
-        (group_id,),
+        params,
     )
     return [row[0] for row in cur.fetchall()]

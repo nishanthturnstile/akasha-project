@@ -6,10 +6,18 @@ service is forward-compatible, but we do NOT use them for business logic yet
 
 All values come from the environment. Never hard-code secrets or internal URLs.
 """
+
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+
+_LOCAL_CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
 
 
 def _get(name: str, default: str = "") -> str:
@@ -44,9 +52,7 @@ class Settings:
     database_url: str = field(default_factory=lambda: _get("DATABASE_URL", ""))
     stac_api_url: str = field(default_factory=lambda: _get("STAC_API_URL", ""))
     titiler_url: str = field(default_factory=lambda: _get("TITILER_URL", ""))
-    sentinel1_vv_rescale: str = field(
-        default_factory=lambda: _get("AKASHA_S1_VV_RESCALE", "-25,5")
-    )
+    sentinel1_vv_rescale: str = field(default_factory=lambda: _get("AKASHA_S1_VV_RESCALE", "-25,5"))
 
     # AOI / source defaults
     default_source_id: str = field(
@@ -72,23 +78,60 @@ class Settings:
         default_factory=lambda: _get_int("MAX_REQUEST_BODY_BYTES", 1_048_576)
     )
 
-    # Phase 12 auth/team foundations. AUTH_MODE=disabled is local/dev only.
+    # Phase 12 auth/team foundations. AUTH_MODE=disabled requires explicit local opt-in.
     auth_mode: str = field(default_factory=lambda: _get("AUTH_MODE", "disabled"))
+    auth_allow_disabled: bool = field(
+        default_factory=lambda: _get_bool("AUTH_ALLOW_DISABLED", False)
+    )
     auth_dev_user_email: str = field(
         default_factory=lambda: _get("AUTH_DEV_USER_EMAIL", "dev@akasha.local")
     )
     auth_dev_team_name: str = field(
         default_factory=lambda: _get("AUTH_DEV_TEAM_NAME", "Akasha Dev Team")
     )
+    auth_session_cookie_name: str = field(
+        default_factory=lambda: _get("AUTH_SESSION_COOKIE_NAME", "akasha_session")
+    )
+    auth_session_ttl_minutes: int = field(
+        default_factory=lambda: _get_int("AUTH_SESSION_TTL_MINUTES", 480)
+    )
+    auth_remember_ttl_days: int = field(
+        default_factory=lambda: _get_int("AUTH_REMEMBER_TTL_DAYS", 30)
+    )
+    auth_password_pepper: str = field(default_factory=lambda: _get("AUTH_PASSWORD_PEPPER", ""))
+    auth_allow_bootstrap: bool = field(
+        default_factory=lambda: _get_bool("AUTH_ALLOW_BOOTSTRAP", False)
+    )
+    auth_bootstrap_token: str = field(default_factory=lambda: _get("AUTH_BOOTSTRAP_TOKEN", ""))
+    auth_cookie_secure: bool = field(default_factory=lambda: _get_bool("AUTH_COOKIE_SECURE", True))
+    auth_login_rate_limit_per_minute: int = field(
+        default_factory=lambda: _get_int("AUTH_LOGIN_RATE_LIMIT_PER_MINUTE", 10)
+    )
+    auth_bootstrap_rate_limit_per_hour: int = field(
+        default_factory=lambda: _get_int("AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR", 5)
+    )
 
     @property
     def cors_allowed_origins(self) -> list[str]:
         """Comma-separated origins. Supports CORS_ALLOWED_ORIGINS (doc name)
-        and CORS_ORIGINS (Emergent template name). Defaults to '*' for the
-        local skeleton preview only.
+        and CORS_ORIGINS (Emergent template name).
+
+        Credentialed auth cookies must never be paired with wildcard CORS.
         """
-        raw = _get("CORS_ALLOWED_ORIGINS") or _get("CORS_ORIGINS", "*")
-        return [o.strip() for o in raw.split(",") if o.strip()] or ["*"]
+        raw = _get("CORS_ALLOWED_ORIGINS") or _get("CORS_ORIGINS", "")
+        if not raw:
+            if self.app_env.lower() in {"development", "local", "test"}:
+                return list(_LOCAL_CORS_ALLOWED_ORIGINS)
+            return []
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        if "*" in origins:
+            if self.app_env.lower() in {"development", "local", "test"}:
+                return list(_LOCAL_CORS_ALLOWED_ORIGINS)
+            raise RuntimeError(
+                "CORS wildcard is not allowed for credentialed auth; "
+                "set CORS_ALLOWED_ORIGINS to exact public origins."
+            )
+        return origins
 
 
 settings = Settings()

@@ -1,4 +1,5 @@
 """Field leaderboard and reporting routes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,11 +17,11 @@ from fastapi.responses import Response
 from pydantic import ConfigDict, Field
 
 from . import plots_repo, reports_repo
-from .auth import get_current_team
+from .api_models import ApiModel, CloudMaskOptions
+from .auth import CurrentTeam, CurrentUser, get_current_team, get_current_user, require_role
 from .config import settings
 from .field_analytics import _field_statistics
 from .field_exports import _disposition, _safe_filename
-from .api_models import ApiModel, CloudMaskOptions
 from .raster import catalog_resolver as catalog
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from .raster.indices import DEFAULT_INDEX
@@ -524,8 +525,9 @@ async def _leaderboard(
     offset: int,
     evaluation_limit: int,
     scene_scan_limit: int,
+    team_id: str | None,
 ) -> FieldLeaderboardResponse:
-    plots = await _run_blocking(plots_repo.list_plots)
+    plots = await _run_blocking(plots_repo.list_plots, team_id)
     filtered = _filter_plots(
         plots,
         group_name=group_name,
@@ -568,8 +570,7 @@ async def _leaderboard(
             "weatherRiskAvailable": False,
             "weatherRiskSource": "pending",
             "scoreFormula": (
-                "0.5*vigor + 0.3*trend + 0.2*recency; "
-                "weights renormalize when trend is missing"
+                "0.5*vigor + 0.3*trend + 0.2*recency; " "weights renormalize when trend is missing"
             ),
             "missingValuePolicy": "Rows without usable scenes are sorted last with rank null.",
         },
@@ -644,6 +645,7 @@ async def get_field_leaderboard(
     offset: int = Query(default=0),
     evaluationLimit: int = Query(default=DEFAULT_EVALUATION_LIMIT),
     sceneScanLimit: int = Query(default=DEFAULT_SCENE_SCAN_LIMIT),
+    team: CurrentTeam = Depends(get_current_team),
 ) -> FieldLeaderboardResponse:
     if sortBy not in SORT_KEYS:
         raise bad_request(
@@ -669,12 +671,17 @@ async def get_field_leaderboard(
         offset=offset,
         evaluation_limit=evaluationLimit,
         scene_scan_limit=sceneScanLimit,
+        team_id=team.id,
     )
 
 
-async def _columns_from_request(columns: list[str] | None, template_id: str | None) -> list[str]:
+async def _columns_from_request(
+    columns: list[str] | None,
+    template_id: str | None,
+    team_id: str | None,
+) -> list[str]:
     if template_id:
-        template = await _run_blocking(reports_repo.get_report_template, template_id)
+        template = await _run_blocking(reports_repo.get_report_template, template_id, team_id)
         if template is None:
             raise not_found(
                 "Report template not found.",
@@ -703,6 +710,7 @@ async def export_field_leaderboard_csv(
     templateId: str | None = Query(default=None),
     evaluationLimit: int = Query(default=DEFAULT_EVALUATION_LIMIT),
     sceneScanLimit: int = Query(default=DEFAULT_SCENE_SCAN_LIMIT),
+    team: CurrentTeam = Depends(get_current_team),
 ) -> Response:
     if sortBy not in SORT_KEYS:
         raise bad_request(
@@ -711,7 +719,7 @@ async def export_field_leaderboard_csv(
             supported=sorted(SORT_KEYS),
         )
     _validate_paging(MAX_PAGE_LIMIT, 0, evaluationLimit)
-    selected_columns = await _columns_from_request(columns, templateId)
+    selected_columns = await _columns_from_request(columns, templateId, team.id)
     start, end = _date_range(startDate, endDate, lookbackDays)
     response = await _leaderboard(
         index_type=_normalize_index(indexType),
@@ -729,6 +737,7 @@ async def export_field_leaderboard_csv(
         offset=0,
         evaluation_limit=evaluationLimit,
         scene_scan_limit=sceneScanLimit,
+        team_id=team.id,
     )
     filename = f"field-leaderboard_{_safe_filename(response.index_type)}.csv"
     return Response(
@@ -743,8 +752,10 @@ async def export_field_leaderboard_csv(
     response_model=list[ReportTemplate],
     response_model_by_alias=True,
 )
-async def list_report_templates() -> list[ReportTemplate]:
-    rows = await _run_blocking(reports_repo.list_report_templates)
+async def list_report_templates(
+    team: CurrentTeam = Depends(get_current_team),
+) -> list[ReportTemplate]:
+    rows = await _run_blocking(reports_repo.list_report_templates, team.id)
     return [_template_from_row(row) for row in rows]
 
 
@@ -753,8 +764,11 @@ async def list_report_templates() -> list[ReportTemplate]:
     response_model=ReportTemplate,
     response_model_by_alias=True,
 )
-async def get_report_template(template_id: str) -> ReportTemplate:
-    row = await _run_blocking(reports_repo.get_report_template, template_id)
+async def get_report_template(
+    template_id: str,
+    team: CurrentTeam = Depends(get_current_team),
+) -> ReportTemplate:
+    row = await _run_blocking(reports_repo.get_report_template, template_id, team.id)
     if row is None:
         raise not_found(
             "Report template not found.",
@@ -770,7 +784,11 @@ async def get_report_template(template_id: str) -> ReportTemplate:
     response_model_by_alias=True,
     status_code=201,
 )
-async def create_report_template(payload: ReportTemplatePayload) -> ReportTemplate:
+async def create_report_template(
+    payload: ReportTemplatePayload,
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> ReportTemplate:
     if not payload.name.strip():
         raise bad_request("Report template name is required.", code="REPORT_TEMPLATE_NAME_REQUIRED")
     _validate_columns(payload.columns)
@@ -782,6 +800,8 @@ async def create_report_template(payload: ReportTemplatePayload) -> ReportTempla
         columns=payload.columns,
         filters=payload.filters,
         sort=payload.sort,
+        owner_id=user.id,
+        team_id=team.id,
     )
     return _template_from_row(row)
 
@@ -791,7 +811,11 @@ async def create_report_template(payload: ReportTemplatePayload) -> ReportTempla
     response_model=ReportTemplate,
     response_model_by_alias=True,
 )
-async def update_report_template(template_id: str, payload: ReportTemplateUpdate) -> ReportTemplate:
+async def update_report_template(
+    template_id: str,
+    payload: ReportTemplateUpdate,
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> ReportTemplate:
     if payload.name is not None and not payload.name.strip():
         raise bad_request("Report template name is required.", code="REPORT_TEMPLATE_NAME_REQUIRED")
     if payload.columns is not None:
@@ -807,6 +831,7 @@ async def update_report_template(template_id: str, payload: ReportTemplateUpdate
         columns=payload.columns,
         filters=payload.filters,
         sort=payload.sort,
+        team_id=team.id,
     )
     if row is None:
         raise not_found(

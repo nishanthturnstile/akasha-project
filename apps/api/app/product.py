@@ -10,6 +10,7 @@ Minimal product surface needed to verify the raster proof path end-to-end:
   * GET  /api/tiles/{sourceId}/{acquisitionDate}/{displayMode}/{z}/{x}/{y}.png
   * POST /api/indices/statistics                                       (BFF masked NDVI)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,9 +19,10 @@ import time
 from typing import Any
 
 import anyio
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import Response
 
+from .auth import get_current_team
 from .config import settings
 from .raster import catalog_resolver as catalog
 from .raster import tiles
@@ -35,7 +37,7 @@ from .raster.indices import DEFAULT_INDEX, SUPPORTED_INDICES, rgb_band_positions
 from .raster.models import StatisticsRequest
 from .raster.service import compute_statistics
 
-router = APIRouter(prefix="/api", tags=["product"])
+router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
 
 _AOI = {
     "id": "bangalore",
@@ -208,9 +210,7 @@ async def _render_sentinel1_vv_tile(
 
 
 @router.get("/tiles/{source_id}/{acquisition_date}/rgb/{z}/{x}/{y}.png")
-async def get_rgb_tile(
-    source_id: str, acquisition_date: str, z: int, x: int, y: int
-) -> Response:
+async def get_rgb_tile(source_id: str, acquisition_date: str, z: int, x: int, y: int) -> Response:
     """Legacy same-origin RGB tile route preserved for Sentinel-2 compatibility."""
     return await _render_rgb_tile(source_id, acquisition_date, z, x, y)
 

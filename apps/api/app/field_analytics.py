@@ -13,7 +13,7 @@ from pydantic import Field
 
 from . import plots_repo
 from .api_models import ApiModel, CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
-from .auth import get_current_team
+from .auth import CurrentTeam, get_current_team
 from .cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
 from .config import settings
 from .product import _enforce_index_rate_limit
@@ -67,8 +67,8 @@ async def _run_blocking(func, *args, **kwargs):
         ) from exc
 
 
-async def _get_plot_or_404(plot_id: str) -> dict[str, Any]:
-    plot = await _run_blocking(plots_repo.get_plot, plot_id)
+async def _get_plot_or_404(plot_id: str, team_id: str | None = None) -> dict[str, Any]:
+    plot = await _run_blocking(plots_repo.get_plot, plot_id, team_id)
     if plot is None:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", plotId=plot_id)
     return plot
@@ -224,9 +224,10 @@ async def post_field_index_statistics(
     plot_id: str,
     request: Request,
     payload: FieldStatisticsRequest = Body(...),
+    team: CurrentTeam = Depends(get_current_team),
 ) -> FieldStatisticsResponse:
     _enforce_index_rate_limit(request)
-    plot = await _get_plot_or_404(plot_id)
+    plot = await _get_plot_or_404(plot_id, team.id)
     index_type = _normalize_index(payload.index_type)
 
     def _compute() -> FieldStatisticsResponse:
@@ -267,6 +268,7 @@ async def get_field_analytics_trend(
     clouds: bool = True,
     cloudShadows: bool = True,
     cirrus: bool = True,
+    team: CurrentTeam = Depends(get_current_team),
 ) -> FieldTrendResponse:
     default_start, default_end = _default_range()
     date_start = startDate or default_start
@@ -274,7 +276,7 @@ async def get_field_analytics_trend(
     _validate_range(date_start, date_end)
 
     index_type = _normalize_index(indexType)
-    plot = await _get_plot_or_404(plot_id)
+    plot = await _get_plot_or_404(plot_id, team.id)
     cloud_mask = CloudMaskOptions(
         clouds=clouds,
         cloud_shadows=cloudShadows,

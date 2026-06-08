@@ -14,7 +14,7 @@ from pydantic import Field
 
 from . import phase10_repo, plots_repo
 from .api_models import ApiModel, CloudMaskOptions
-from .auth import get_current_team
+from .auth import CurrentTeam, get_current_team
 from .config import settings
 from .field_analytics import _field_statistics
 from .raster import catalog_resolver as catalog
@@ -311,11 +311,12 @@ async def _weather_component(_plot: dict[str, Any]) -> RiskComponent:
     )
 
 
-async def _scout_component(plot_id: str) -> RiskComponent:
+async def _scout_component(plot_id: str, team_id: str | None) -> RiskComponent:
     try:
         tasks = await _run_blocking(
             phase10_repo.list_scout_tasks,
             {"plotId": plot_id, "status": "new"},
+            team_id,
         )
     except AkashaError:
         tasks = []
@@ -436,8 +437,9 @@ async def get_field_risk_summary(
     endDate: date | None = Query(default=None),
     lookbackDays: int = Query(default=DEFAULT_LOOKBACK_DAYS),
     sceneScanLimit: int = Query(default=DEFAULT_SCENE_SCAN_LIMIT),
+    team: CurrentTeam = Depends(get_current_team),
 ) -> FieldRiskSummaryResponse:
-    plot = await _run_blocking(plots_repo.get_plot, plot_id)
+    plot = await _run_blocking(plots_repo.get_plot, plot_id, team.id)
     if plot is None:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", plotId=plot_id)
     index_type = _validate_index(sourceId, indexType)
@@ -453,7 +455,7 @@ async def get_field_risk_summary(
         points = []
     components = _components_from_points(index_type, points)
     components.append(await _weather_component(plot))
-    components.append(await _scout_component(plot_id))
+    components.append(await _scout_component(plot_id, team.id))
     level, score, aggregate_meta = _aggregate(components)
     limitations = [
         "This is decision-support field-watch context only.",

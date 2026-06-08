@@ -560,7 +560,7 @@ export interface FieldRiskSummaryResponse {
 }
 
 export interface AccountMe {
-  user: { id: string; email: string; displayName: string };
+  user: { id: string; username?: string | null; email: string; displayName: string };
   currentTeam: { id: string; name: string; role: string };
   memberships: Array<{ teamId: string; teamName: string; role: string }>;
   authMode: string;

@@ -35,6 +35,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import skeleton
 from .account import router as account_router
+from .auth_routes import router as auth_router
 from .config import settings
 from .data_manager import router as data_manager_router
 from .field_analytics import router as field_analytics_router
@@ -243,6 +244,7 @@ app.include_router(reports_router)
 app.include_router(risk_router)
 
 # --- Auth/Team/Admin/Notifications API ------------------------------------
+app.include_router(auth_router)
 app.include_router(account_router)
 
 # --- Operations/Data APIs --------------------------------------------------

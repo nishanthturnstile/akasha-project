@@ -10,6 +10,7 @@ It is intentionally pure data + tiny helpers so it can be imported by the
 live Emergent preview backend AND shipped inside the `api` container image
 identically (no filesystem dependency).
 """
+
 # ruff: noqa: E501
 from __future__ import annotations
 
@@ -177,6 +178,17 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "RATE_LIMIT_INDEX_PER_MINUTE": "30",
         "MAX_REQUEST_BODY_BYTES": "1048576",
         "CORS_ALLOWED_ORIGINS": "https://<web-public-domain>",
+        "AUTH_MODE": "enabled",
+        "AUTH_ALLOW_DISABLED": "false",
+        "AUTH_SESSION_COOKIE_NAME": "akasha_session",
+        "AUTH_SESSION_TTL_MINUTES": "480",
+        "AUTH_REMEMBER_TTL_DAYS": "30",
+        "AUTH_PASSWORD_PEPPER": "<generated-secret>",
+        "AUTH_ALLOW_BOOTSTRAP": "false",
+        "AUTH_BOOTSTRAP_TOKEN": "<one-time-setup-secret>",
+        "AUTH_COOKIE_SECURE": "true",
+        "AUTH_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+        "AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR": "5",
     },
     "titiler": {
         "PORT": "8000",
@@ -223,12 +235,27 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
 # --------------------------------------------------------------------------
 ROADMAP: list[dict[str, str]] = [
     {"id": "slice0", "phase": "Phase 0", "name": "Repository & service skeleton", "status": "done"},
-    {"id": "slice1", "phase": "Phase 1", "name": "Database, catalog & object storage", "status": "done"},
-    {"id": "slice2", "phase": "Phase 2", "name": "Raster de-risk (tile + masked NDVI stat)", "status": "active"},
+    {
+        "id": "slice1",
+        "phase": "Phase 1",
+        "name": "Database, catalog & object storage",
+        "status": "done",
+    },
+    {
+        "id": "slice2",
+        "phase": "Phase 2",
+        "name": "Raster de-risk (tile + masked NDVI stat)",
+        "status": "active",
+    },
     {"id": "slice3", "phase": "Phase 3", "name": "BFF API implementation", "status": "planned"},
     {"id": "slice4", "phase": "Phase 4", "name": "Frontend map & layer UX", "status": "planned"},
     {"id": "slice5", "phase": "Phase 5", "name": "Plot & index UX", "status": "planned"},
-    {"id": "slice6", "phase": "Phase 6", "name": "Railway deployment hardening", "status": "planned"},
+    {
+        "id": "slice6",
+        "phase": "Phase 6",
+        "name": "Railway deployment hardening",
+        "status": "planned",
+    },
     {"id": "slice7", "phase": "Phase 7", "name": "Acceptance & QA", "status": "planned"},
 ]
 

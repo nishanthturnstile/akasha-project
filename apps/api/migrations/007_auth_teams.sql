@@ -50,15 +50,24 @@ CREATE TABLE IF NOT EXISTS akasha.api_keys (
     created_at   timestamptz NOT NULL DEFAULT now()
 )
 --;;
-INSERT INTO akasha.users (email, display_name)
-VALUES ('dev@akasha.local', 'Akasha Dev User')
-ON CONFLICT (email) DO NOTHING
+INSERT INTO akasha.users (id, email, display_name)
+SELECT
+    '00000000-0000-4000-8000-000000000001'::uuid,
+    'dev@akasha.local',
+    'Akasha Dev User'
+WHERE NOT EXISTS (SELECT 1 FROM akasha.users WHERE email = 'dev@akasha.local')
+  AND NOT EXISTS (
+      SELECT 1 FROM akasha.users WHERE id = '00000000-0000-4000-8000-000000000001'::uuid
+  )
 --;;
-INSERT INTO akasha.teams (name, created_by)
-SELECT 'Akasha Dev Team', u.id
+INSERT INTO akasha.teams (id, name, created_by)
+SELECT '00000000-0000-4000-8000-000000000010'::uuid, 'Akasha Dev Team', u.id
 FROM akasha.users u
 WHERE u.email = 'dev@akasha.local'
   AND NOT EXISTS (SELECT 1 FROM akasha.teams WHERE name = 'Akasha Dev Team')
+  AND NOT EXISTS (
+      SELECT 1 FROM akasha.teams WHERE id = '00000000-0000-4000-8000-000000000010'::uuid
+  )
 --;;
 INSERT INTO akasha.memberships (team_id, user_id, role)
 SELECT t.id, u.id, 'owner'

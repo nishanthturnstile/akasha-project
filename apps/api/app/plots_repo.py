@@ -10,6 +10,7 @@ Rules (engineering-dos-donts.md / phase-3 prompt):
   * These functions are synchronous/blocking; callers MUST run them off the
     event loop (anyio.to_thread.run_sync).
 """
+
 from __future__ import annotations
 
 import json
@@ -30,17 +31,8 @@ _METADATA_COLUMN_BY_FIELD = {
 }
 _METADATA_FIELDS = tuple(_METADATA_COLUMN_BY_FIELD)
 _METADATA_COLUMNS = tuple(_METADATA_COLUMN_BY_FIELD.values())
-_COLUMNS = (
-    "id::text, name, ST_AsGeoJSON(geometry), area_ha, created_at, updated_at, "
-    + ", ".join(_METADATA_COLUMNS)
-)
-_INSERT_RETURNING = (
-    "INSERT INTO akasha.plots "
-    f"(name, geometry, area_ha, {', '.join(_METADATA_COLUMNS)}) "
-    "VALUES (%s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326), %s"
-    + (", %s" * len(_METADATA_COLUMNS))
-    + ") "
-    f"RETURNING {_COLUMNS}"
+_COLUMNS = "id::text, name, ST_AsGeoJSON(geometry), area_ha, created_at, updated_at, " + ", ".join(
+    _METADATA_COLUMNS
 )
 
 
@@ -101,15 +93,31 @@ def _row_to_plot(row: tuple) -> dict[str, Any]:
     }
 
 
-def list_plots() -> list[dict[str, Any]]:
+def _team_clause(team_id: str | None, params: list[Any]) -> str:
+    if team_id is None:
+        return ""
+    params.append(team_id)
+    return " WHERE team_id = %s"
+
+
+def list_plots(team_id: str | None = None) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = _team_clause(team_id, params)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {_COLUMNS} FROM akasha.plots ORDER BY created_at DESC, id")
+        cur.execute(
+            f"SELECT {_COLUMNS} FROM akasha.plots{where} ORDER BY created_at DESC, id", params
+        )
         return [_row_to_plot(r) for r in cur.fetchall()]
 
 
-def get_plot(plot_id: str) -> dict[str, Any] | None:
+def get_plot(plot_id: str, team_id: str | None = None) -> dict[str, Any] | None:
+    params: list[Any] = [plot_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {_COLUMNS} FROM akasha.plots WHERE id = %s", (plot_id,))
+        cur.execute(f"SELECT {_COLUMNS} FROM akasha.plots WHERE id = %s{team_filter}", params)
         row = cur.fetchone()
         return _row_to_plot(row) if row else None
 
@@ -119,13 +127,51 @@ def create_plot(
     geometry: dict[str, Any],
     area_ha: float | None,
     metadata: dict[str, Any] | None = None,
+    *,
+    owner_id: str | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            _INSERT_RETURNING,
-            (name, json.dumps(geometry), area_ha, *_metadata_values(metadata)),
+        return _insert_plot(
+            cur,
+            name,
+            geometry,
+            area_ha,
+            metadata,
+            owner_id=owner_id,
+            team_id=team_id,
         )
-        return _row_to_plot(cur.fetchone())
+
+
+def _insert_plot(
+    cur: Any,
+    name: str,
+    geometry: dict[str, Any],
+    area_ha: float | None,
+    metadata: dict[str, Any] | None = None,
+    *,
+    owner_id: str | None = None,
+    team_id: str | None = None,
+) -> dict[str, Any]:
+    columns = ["name", "geometry", "area_ha", *_METADATA_COLUMNS]
+    values_sql = ["%s", "ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)", "%s"]
+    params: list[Any] = [name, json.dumps(geometry), area_ha, *_metadata_values(metadata)]
+    values_sql.extend(["%s"] * len(_METADATA_COLUMNS))
+    if owner_id is not None:
+        columns.append("owner_id")
+        values_sql.append("%s")
+        params.append(owner_id)
+    if team_id is not None:
+        columns.append("team_id")
+        values_sql.append("%s")
+        params.append(team_id)
+    sql = (
+        f"INSERT INTO akasha.plots ({', '.join(columns)}) "
+        f"VALUES ({', '.join(values_sql)}) "
+        f"RETURNING {_COLUMNS}"
+    )
+    cur.execute(sql, params)
+    return _row_to_plot(cur.fetchone())
 
 
 def update_plot(
@@ -134,6 +180,7 @@ def update_plot(
     geometry: dict[str, Any] | None = None,
     area_ha: float | None = None,
     metadata: dict[str, Any] | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any] | None:
     # Column names are fixed literals; only values are parameter-bound.
     set_clauses: list[str] = []
@@ -152,12 +199,16 @@ def update_plot(
             params.append(metadata[field])
     if not set_clauses:
         # Caller guards NO_UPDATE_FIELDS; nothing to change -> return current row.
-        return get_plot(plot_id)
+        return get_plot(plot_id, team_id)
     params.append(plot_id)
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     sql = (
         "UPDATE akasha.plots SET "
         + ", ".join(set_clauses)
-        + f" WHERE id = %s RETURNING {_COLUMNS}"
+        + f" WHERE id = %s{team_filter} RETURNING {_COLUMNS}"
     )
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(sql, params)
@@ -165,13 +216,23 @@ def update_plot(
         return _row_to_plot(row) if row else None
 
 
-def delete_plot(plot_id: str) -> bool:
+def delete_plot(plot_id: str, team_id: str | None = None) -> bool:
+    params: list[Any] = [plot_id]
+    team_filter = ""
+    if team_id is not None:
+        team_filter = " AND team_id = %s"
+        params.append(team_id)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM akasha.plots WHERE id = %s", (plot_id,))
+        cur.execute(f"DELETE FROM akasha.plots WHERE id = %s{team_filter}", params)
         return cur.rowcount > 0
 
 
-def create_plots_bulk(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def create_plots_bulk(
+    items: list[dict[str, Any]],
+    *,
+    owner_id: str | None = None,
+    team_id: str | None = None,
+) -> list[dict[str, Any]]:
     """Insert many plots in one transaction.
 
     Each item: {name, geometry, areaHa, metadata?}.
@@ -179,14 +240,15 @@ def create_plots_bulk(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     created: list[dict[str, Any]] = []
     with get_connection() as conn, conn.cursor() as cur:
         for item in items:
-            cur.execute(
-                _INSERT_RETURNING,
-                (
+            created.append(
+                _insert_plot(
+                    cur,
                     item["name"],
-                    json.dumps(item["geometry"]),
+                    item["geometry"],
                     item.get("areaHa"),
-                    *_metadata_values(item.get("metadata")),
-                ),
+                    item.get("metadata"),
+                    owner_id=owner_id,
+                    team_id=team_id,
+                )
             )
-            created.append(_row_to_plot(cur.fetchone()))
     return created

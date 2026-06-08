@@ -63,6 +63,12 @@ interface RequestOptions {
   headers?: HeadersInit;
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
 interface GeoJsonFeature {
   [key: string]: unknown;
   type: 'Feature';
@@ -112,6 +118,7 @@ function buildRequestInit(options: RequestOptions = {}): RequestInit {
     method: options.method ?? 'GET',
     headers,
     body,
+    credentials: 'same-origin',
   };
 }
 
@@ -142,7 +149,11 @@ async function fetchApi(path: string, options: RequestOptions = {}): Promise<Res
   }
 
   if (!res.ok) {
-    throw await toApiError(res);
+    const error = await toApiError(res);
+    if (error.status === 401) {
+      unauthorizedHandler?.();
+    }
+    throw error;
   }
 
   return res;
@@ -408,6 +419,25 @@ export const getFieldRiskSummary = (
 };
 
 export const getAccountMe = (): Promise<AccountMe> => request<AccountMe>('/api/account/me');
+
+export const login = (payload: {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}): Promise<AccountMe> =>
+  request<AccountMe>('/api/auth/login', { method: 'POST', body: payload });
+
+export const logout = (): Promise<void> =>
+  request<void>('/api/auth/logout', { method: 'POST' });
+
+export const refreshSession = (): Promise<AccountMe> =>
+  request<AccountMe>('/api/auth/refresh', { method: 'POST' });
+
+export const changePassword = (payload: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ changed: boolean }> =>
+  request<{ changed: boolean }>('/api/account/password', { method: 'PATCH', body: payload });
 
 export const getAccountSettings = (): Promise<Record<string, unknown>> =>
   request<Record<string, unknown>>('/api/account/settings');

@@ -104,6 +104,17 @@ api:
   RATE_LIMIT_INDEX_PER_MINUTE=30
   MAX_REQUEST_BODY_BYTES=1048576
   CORS_ALLOWED_ORIGINS=https://<web-public-domain>
+  AUTH_MODE=enabled
+  AUTH_ALLOW_DISABLED=false
+  AUTH_SESSION_COOKIE_NAME=akasha_session
+  AUTH_SESSION_TTL_MINUTES=480
+  AUTH_REMEMBER_TTL_DAYS=30
+  AUTH_PASSWORD_PEPPER=<generated-secret>
+  AUTH_ALLOW_BOOTSTRAP=false
+  AUTH_BOOTSTRAP_TOKEN=<one-time-setup-secret>
+  AUTH_COOKIE_SECURE=true
+  AUTH_LOGIN_RATE_LIMIT_PER_MINUTE=10
+  AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR=5
 
 titiler:
   AWS_ACCESS_KEY_ID=<minio-access-key>
@@ -196,8 +207,10 @@ Local development should support:
 - Keep MinIO console disabled or private.
 - Rotate generated database and MinIO credentials.
 - Do not use default credentials in Railway templates.
-- Wave 1 has no in-app login. `GATEWAY_BASIC_AUTH` is the shared-secret gate: empty means off; set `user:pass` to require HTTP Basic auth at the gateway for the whole site.
-- Default public demos are allowed only with non-sensitive seed data. Real/customer data must not be deployed publicly unless `GATEWAY_BASIC_AUTH` or an equivalent edge access gate is enabled.
+- In-app username/password login is required for user-owned fields, activities, datasets, reports, notifications, and product/raster APIs. API deployments must use `AUTH_MODE=enabled`; disabled auth requires `AUTH_ALLOW_DISABLED=true`, is local/dev/test only, and fails closed on Railway/customer deployments.
+- First-run `/api/auth/bootstrap` is off unless `AUTH_ALLOW_BOOTSTRAP=true`; production bootstrap also requires the caller to provide `AUTH_BOOTSTRAP_TOKEN`.
+- Never use `CORS_ALLOWED_ORIGINS=*` with application auth. Set exact web origins because the BFF uses credentialed session cookies.
+- `GATEWAY_BASIC_AUTH` remains an optional outer shared-secret gate for demos; it does not replace application authentication or per-team authorization.
 
 ## Appendix (not for MVP prompts)
 

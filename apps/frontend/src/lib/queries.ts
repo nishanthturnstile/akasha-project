@@ -17,6 +17,7 @@ import {
   getJohnDeereConnection,
   getFieldRiskSummary,
   createApiKey,
+  changePassword,
   getAccountMe,
   getAccountSettings,
   getAssistantStatus,
@@ -44,6 +45,9 @@ import {
   getPlots,
   getSources,
   importPlotsGeoJson,
+  login,
+  logout,
+  refreshSession,
   updatePlot,
 } from '@/lib/api';
 import type {
@@ -125,6 +129,12 @@ export const queryKeys = {
   notificationUnreadCount: ['notifications', 'unread-count'] as const,
   assistantStatus: ['assistant', 'status'] as const,
 };
+
+interface LoginVariables {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}
 
 interface UpdatePlotVariables {
   plotId: string;
@@ -436,6 +446,37 @@ export function useFieldRiskSummary(
 
 export function useAccountMe() {
   return useQuery({ queryKey: queryKeys.accountMe, queryFn: getAccountMe });
+}
+
+export function useLogin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: LoginVariables) => login(payload),
+    onSuccess: (account) => queryClient.setQueryData(queryKeys.accountMe, account),
+  });
+}
+
+export function useLogout() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: logout,
+    onSuccess: () => queryClient.clear(),
+  });
+}
+
+export function useRefreshSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: refreshSession,
+    onSuccess: (account) => queryClient.setQueryData(queryKeys.accountMe, account),
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (payload: { currentPassword: string; newPassword: string }) =>
+      changePassword(payload),
+  });
 }
 
 export function useAccountSettings() {

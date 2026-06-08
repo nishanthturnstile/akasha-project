@@ -4,6 +4,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-dotenv==1.0.1
 python-multipart==0.0.20
+argon2-cffi==23.1.0
 # Slice 1: app-schema migration CLI only (no product DB endpoints yet).
 # Imported lazily so `app.main` (runtime/preview) never requires a DB driver.
 psycopg[binary]>=3.2,<4

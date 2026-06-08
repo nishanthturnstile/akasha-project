@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { LayerControlBar } from '@/components/layers/LayerControlBar';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { CloudMaskOptions, Plot, Source } from '@/types/api';
+import type { CloudMaskOptions, Plot, SceneDate, Source } from '@/types/api';
 
 const sources: Source[] = [
     {
@@ -71,7 +71,28 @@ function baseProps(overrides: Partial<Parameters<typeof LayerControlBar>[0]> = {
         onCloudMaskChange: vi.fn(),
         compareEnabled: false,
         onCompareEnabledChange: vi.fn(),
-        comparableDates: ['2026-04-27', '2026-04-20'],
+        comparableDates: [
+            {
+                acquisitionDate: '2026-04-27',
+                datetime: '2026-04-27T00:00:00Z',
+                usablePixelPercent: 100,
+                cloudMaskedPercent: 0,
+                coveragePercent: 100,
+                isLatestUsable: true,
+                metricsProvisional: false,
+                tileAvailable: true,
+            },
+            {
+                acquisitionDate: '2026-04-20',
+                datetime: '2026-04-20T00:00:00Z',
+                usablePixelPercent: 90,
+                cloudMaskedPercent: 10,
+                coveragePercent: 90,
+                isLatestUsable: false,
+                metricsProvisional: false,
+                tileAvailable: true,
+            },
+        ] as SceneDate[],
         activeDate: '2026-04-27',
         compareDate: null,
         onCompareDateChange: vi.fn(),

@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldScene, Plot } from '@/types/api';
+import type { CloudMaskOptions, FieldScene, FieldTrendPoint, Plot } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
@@ -171,7 +171,7 @@ export function IndexPanel({
                       : 'Unable to load statistics.'
                     : null
                 }
-                trendPoints={ trendQ.data?.points ?? [] }
+                trendPoints={ (trendQ.data?.points ?? []) as FieldTrendPoint[] }
                 trendLoading={ trendQ.isLoading }
                 trendError={
                   trendQ.isError
@@ -348,7 +348,7 @@ interface ChartTabProps {
   } | undefined;
   loading: boolean;
   error: string | null;
-  trendPoints: { acquisitionDate: string; mean: number | null }[];
+  trendPoints: FieldTrendPoint[];
   trendLoading: boolean;
   trendError: string | null;
   selectedDate: string | null;

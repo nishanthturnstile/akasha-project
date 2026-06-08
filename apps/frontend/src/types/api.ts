@@ -273,14 +273,14 @@ export interface FieldTrendPoint {
   sceneId?: string | null;
   viewId?: string | null;
   mean: number | null;
-  min: number | null;
-  max: number | null;
-  stddev: number | null;
+  min?: number | null;
+  max?: number | null;
+  stddev?: number | null;
   validPixelPercent?: number | null;
   cloudMaskedPercent?: number | null;
   coveragePercent?: number | null;
   cloudPercent?: number | null;
-  metricsProvisional: boolean;
+  metricsProvisional?: boolean;
   unavailableReason?: string | null;
 }
 

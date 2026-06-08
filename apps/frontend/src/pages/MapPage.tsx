@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   ApiError,
   composeTileTemplate,
   exportAllPlotsGeoJson,
   exportPlotGeoJson,
-  getDates,
   withCloudMaskParams,
   type PlotGeoJsonImportPayload,
 } from '@/lib/api';
 import {
-  queryKeys,
   useConfig,
   useCreatePlot,
   useDates,
@@ -33,12 +30,9 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
-import { CloudMaskControl } from '@/components/monitoring/CloudMaskControl';
-import { DownloadMenu } from '@/components/monitoring/DownloadMenu';
 import { FieldSceneStatusPanel } from '@/components/monitoring/FieldSceneStatusPanel';
 import { MeasureTool } from '@/components/map/MeasureTool';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
-import { CompareControl } from '@/components/map/CompareControl';
 import { CommandPalette } from '@/components/map/CommandPalette';
 import { CoordinateReadout } from '@/components/map/CoordinateReadout';
 import { Legend } from '@/components/map/Legend';
@@ -186,7 +180,6 @@ export default function MapPage() {
   const configQ = useConfig();
   const sourcesQ = useSources();
   const defaultLayerQ = useDefaultLayer();
-  const queryClient = useQueryClient();
 
   const view = useMapView();
   const {
@@ -437,13 +430,6 @@ export default function MapPage() {
     if (!selectedDate || selectedDate === '2026-04-27') return null;
     return `Nearest radar pass: ${selectedDate}.`;
   }, [fieldSceneMode, selectedSource?.kind, effectiveSourceId, selectedDate]);
-
-  const prefetchDates = (sourceId: string) => {
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.dates(sourceId),
-      queryFn: () => getDates(sourceId),
-    });
-  };
 
   const requestMapTool = (owner: MapToolOwner): boolean => {
     setActiveMapTool(owner);

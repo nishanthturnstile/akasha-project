@@ -17,6 +17,7 @@ import type {
     CloudMaskOptions,
     FieldScene,
     Plot,
+    SceneDate,
     Source,
 } from '@/types/api';
 
@@ -32,7 +33,7 @@ interface LayerControlBarProps {
     cloudMaskDisabled?: boolean;
     compareEnabled: boolean;
     onCompareEnabledChange: (next: boolean) => void;
-    comparableDates: string[];
+    comparableDates: SceneDate[] | string[];
     activeDate: string | null;
     compareDate: string | null;
     onCompareDateChange: (date: string | null) => void;
@@ -349,7 +350,7 @@ export function LayerControlBar({
                 <CompareControl
                     enabled={ compareEnabled }
                     onEnabledChange={ onCompareEnabledChange }
-                    dates={ comparableDates }
+                    dates={ comparableDates as SceneDate[] }
                     activeDate={ activeDate }
                     compareDate={ compareDate }
                     onCompareDateChange={ onCompareDateChange }

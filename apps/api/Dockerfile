@@ -8,9 +8,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Runtime libraries required by rasterio/GDAL wheels (Slice 2 BFF statistics).
+# Runtime libraries and build dependencies required by rasterio/GDAL wheels (Slice 2 BFF statistics).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libexpat1 \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        gdal-bin \
+        libgdal-dev \
+        python3-dev \
+        libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first for better layer caching.

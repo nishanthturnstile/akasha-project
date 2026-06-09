@@ -43,9 +43,9 @@ clean `503 RASTER_BACKEND_UNAVAILABLE`. Validate with
 
 Plot CRUD + GeoJSON import/export over PostGIS. Geometry is validated
 server-side (Polygon/MultiPolygon, validity, max area/vertices) and the area is
-always recomputed (never trusted from the client). Blocking psycopg calls run
-off the event loop. Migration `002_plots_polygon_multipolygon.sql` relaxes the
-`plots.geometry` column to accept both Polygon and MultiPolygon.
+always recomputed (never trusted from the client). Blocking SQLAlchemy/PostGIS
+calls run off the event loop. The API-owned `akasha` schema is created from the
+SQLAlchemy ORM baseline via Alembic.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -62,6 +62,20 @@ When PostGIS is unreachable (e.g. the Emergent preview has no DB) plot routes
 return a sanitized `503 PLOTS_BACKEND_UNAVAILABLE` — no DSN, credentials, SQL,
 or stack traces are exposed. Validate with `python -m pytest -q tests`
 (`tests/test_slice3.py` monkeypatches the persistence layer, so no DB needed).
+
+## App schema
+
+API-owned tables are modeled in `app.models` and managed by Alembic. pgSTAC and
+catalog objects remain owned by the ingestion worker.
+
+```bash
+cd apps/api
+python -m app.cli db upgrade   # create/upgrade akasha app schema
+python -m app.cli check        # PostGIS + app schema + MinIO liveness
+```
+
+`python -m app.cli migrate` remains as a compatibility alias for
+`python -m app.cli db upgrade`.
 
 ## Run locally (standalone)
 

@@ -14,7 +14,7 @@ Guardrails:
   * Geometry validated server-side via app.raster.geo_validate.validate_polygon
     (Polygon/MultiPolygon, validity, max area, max vertices). Client-provided
     area is never trusted — area is recomputed.
-  * Blocking psycopg work runs off the event loop via anyio.to_thread.run_sync.
+  * Blocking SQLAlchemy/PostGIS work runs off the event loop via anyio.to_thread.run_sync.
   * When PostGIS is unreachable (e.g. the Emergent preview has no DB) the routes
     return a sanitized 503 PLOTS_BACKEND_UNAVAILABLE — no DSN/credentials/SQL/
     stack traces are ever exposed to the client.

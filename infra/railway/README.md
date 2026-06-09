@@ -42,8 +42,8 @@ canonical name per concept; do not add aliases.
 2. Create a Railway project.
 3. Add `postgis` (persistent volume).
 4. Add `minio` (persistent volume, private only; `MINIO_BROWSER=off`).
-5. Add `api` and run the app-schema migration once PostGIS is up:
-   `python -m app.cli migrate` (creates the PostGIS extension + `akasha.plots`).
+5. Add `api` and run the app-schema upgrade once PostGIS is up:
+   `python -m app.cli db upgrade` (creates PostGIS/pgcrypto extensions and API-owned `akasha` tables).
 6. Add `stac-api`.
 7. Add `titiler` (GDAL S3/MinIO vars).
 8. Add `web` as the only public service.
@@ -59,7 +59,7 @@ canonical name per concept; do not add aliases.
 
 ```bash
 # (1) PostGIS
-python -m app.cli check                       # prints postgis_version()
+python -m app.cli check                       # prints postgis_version() + app schema status
 # (2) STAC collection + (3) MinIO bucket
 python worker.py verify                        # all three checks in one command
 ```

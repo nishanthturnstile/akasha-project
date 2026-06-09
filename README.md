@@ -117,8 +117,8 @@ commands are safe to re-run. Run them *inside* the running containers:
 ```bash
 # from infra/docker
 
-# 4a) app schema: PostGIS extension + akasha.plots (api service)
-docker compose exec api python -m app.cli migrate
+# 4a) app schema: Alembic ORM baseline for API-owned akasha tables (api service)
+docker compose exec api python -m app.cli db upgrade
 docker compose exec api python -m app.cli check        # postgis_version() + API->MinIO liveness
 
 # 4b) catalog + storage: pgSTAC migrate -> load collection/item -> MinIO bucket/keys (ingestion)
@@ -131,7 +131,31 @@ docker compose exec ingestion-worker python worker.py verify
 `worker.py verify` passing (3/3 checks) means the storage/catalog foundation is
 correctly set up locally. Real COGs are operator-provided and not committed.
 
-### 5. (Optional) Static validation — no Docker required
+### 5. Local login credentials
+
+For the local Docker stack only, create the first password user after a clean
+database reset with the bootstrap API. The current local reset uses:
+
+```text
+URL:      http://localhost:18080/login   # this workspace; use 8080 if WEB_PORT is unchanged
+Username: admin
+Password: AkashaLocal2026!
+```
+
+If the database has been wiped and no password user exists yet, recreate that
+local account from `infra/docker`:
+
+```bash
+curl -X POST http://localhost:18080/api/auth/bootstrap \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"AkashaLocal2026!","email":"admin@akasha.local","displayName":"Akasha Local Admin","teamName":"Akasha Local Team"}'
+```
+
+Bootstrap only works while `AUTH_ALLOW_BOOTSTRAP=true` and no active password
+user exists. Do not use this local password in Railway, customer, or production
+deployments.
+
+### 6. (Optional) Static validation — no Docker required
 
 ```bash
 # from repo root

@@ -19,12 +19,18 @@ export default function LoginPage() {
     return <Navigate to={ returnTo } replace />;
   }
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const result = await login.mutateAsync({ username, password, rememberMe });
-    if (result.user.id) {
-      navigate(returnTo, { replace: true });
-    }
+    login.mutate(
+      { username, password, rememberMe },
+      {
+        onSuccess: (result) => {
+          if (result.user.id) {
+            navigate(returnTo, { replace: true });
+          }
+        },
+      },
+    );
   };
 
   const message =

@@ -60,6 +60,23 @@ class Settings:
     )
     default_aoi_id: str = field(default_factory=lambda: _get("DEFAULT_AOI_ID", "bangalore"))
 
+    # Public basemap metadata surfaced to the frontend. Credentials are configured
+    # on the web build as a referrer-restricted VITE_ESRI_API_KEY, not exposed here.
+    basemap_provider: str = field(default_factory=lambda: _get("BASEMAP_PROVIDER", "esri"))
+    esri_basemap_style: str = field(
+        default_factory=lambda: _get("ESRI_BASEMAP_STYLE", "arcgis/imagery")
+    )
+    esri_basemap_style_family: str = field(
+        default_factory=lambda: _get("ESRI_BASEMAP_STYLE_FAMILY", "arcgis")
+    )
+    esri_basemap_usage_model: str = field(
+        default_factory=lambda: _get("ESRI_BASEMAP_USAGE_MODEL", "session")
+    )
+    esri_basemap_places: str = field(default_factory=lambda: _get("ESRI_BASEMAP_PLACES", "none"))
+    esri_basemap_session_seconds: int = field(
+        default_factory=lambda: _get_int("ESRI_BASEMAP_SESSION_SECONDS", 43_200)
+    )
+
     # Guardrail limits (enforced in Slice 3+, surfaced here for readiness)
     usable_pixel_threshold_percent: int = field(
         default_factory=lambda: _get_int("USABLE_PIXEL_THRESHOLD_PERCENT", 70)

@@ -457,10 +457,12 @@ export function useLogin() {
 }
 
 export function useLogout() {
-  const queryClient = useQueryClient();
+  // The cached account/session state is intentionally cleared by the caller
+  // AFTER it navigates away from protected routes. Clearing here (on success)
+  // refetches `account/me` while the app shell is still mounted, which races
+  // with logout teardown and aborts the in-flight logout request.
   return useMutation({
     mutationFn: logout,
-    onSuccess: () => queryClient.clear(),
   });
 }
 

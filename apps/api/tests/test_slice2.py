@@ -179,6 +179,17 @@ def test_config_endpoint_contract():
     assert body["indexFieldsKind"] == "global-optical-defaults"
     assert body["maxPolygonAreaHa"] == 50
     assert body["aoi"]["id"] == "bangalore"
+    assert body["basemapStyleUrl"] == ""
+    assert body["basemap"] == {
+        "provider": "esri",
+        "style": "arcgis/imagery",
+        "styleFamily": "arcgis",
+        "usageModel": "session",
+        "places": "none",
+        "sessionDurationSeconds": 43200,
+    }
+    assert "openstreetmap" not in r.text.lower()
+    assert "tile.openstreetmap.org" not in r.text.lower()
 
 
 def test_sources_endpoint_contract():

@@ -87,7 +87,11 @@ web (gateway):
   PUBLIC_DEFAULT_AOI_NAME=Bangalore
   API_UPSTREAM_URL=http://api.railway.internal:8000
   TITILER_UPSTREAM_URL=http://titiler.railway.internal:8000
-  VITE_BASEMAP_STYLE_URL=<operator-provided MapLibre style URL>
+  VITE_ESRI_API_KEY=<referrer-restricted ArcGIS Location Platform key with Basemaps privilege>
+  VITE_ESRI_BASEMAP_STYLE=arcgis/imagery
+  VITE_ESRI_BASEMAP_STYLE_FAMILY=arcgis
+  VITE_ESRI_BASEMAP_PLACES=none
+  VITE_ESRI_BASEMAP_SESSION_SECONDS=43200
   GATEWAY_BASIC_AUTH=            # empty=off; set "user:pass" to gate the demo
 
 api:
@@ -97,6 +101,12 @@ api:
   TITILER_URL=http://titiler.railway.internal:8000
   DEFAULT_SOURCE_ID=sentinel-2-l2a
   DEFAULT_AOI_ID=bangalore
+  BASEMAP_PROVIDER=esri
+  ESRI_BASEMAP_STYLE=arcgis/imagery
+  ESRI_BASEMAP_STYLE_FAMILY=arcgis
+  ESRI_BASEMAP_USAGE_MODEL=session
+  ESRI_BASEMAP_PLACES=none
+  ESRI_BASEMAP_SESSION_SECONDS=43200
   USABLE_PIXEL_THRESHOLD_PERCENT=70
   MAX_POLYGON_AREA_HA=50
   MAX_POLYGON_VERTICES=5000

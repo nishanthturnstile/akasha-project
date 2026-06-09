@@ -1,61 +1,102 @@
-import type { StyleSpecification } from 'maplibre-gl';
-import type { AppConfig } from '@/types/api';
+import type {
+  AppConfig,
+  BasemapPlacesPreference,
+  BasemapProvider,
+  BasemapUsageModel,
+} from '@/types/api';
 
-/**
- * Default basemap: OpenStreetMap raster tiles, full world coverage (zooms 0–19).
- * This is the development default so the whole world is visible out of the box and
- * zooming in reveals street-level detail. For production, set `VITE_BASEMAP_STYLE_URL`
- * (or `config.basemapStyleUrl`) to a self-hosted style — see `resolveBasemapStyle`.
- */
-export const OSM_RASTER_STYLE: StyleSpecification = {
-  version: 8,
-  name: 'OpenStreetMap',
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      minzoom: 0,
-      maxzoom: 19,
-      attribution: '© OpenStreetMap contributors',
-    },
-  },
-  layers: [
-    {
-      id: 'osm',
-      type: 'raster',
-      source: 'osm',
-    },
-  ],
+const DEFAULT_BASEMAP = {
+  provider: 'esri' as BasemapProvider,
+  style: 'arcgis/imagery',
+  styleFamily: 'arcgis',
+  usageModel: 'session' as BasemapUsageModel,
+  places: 'none' as BasemapPlacesPreference,
+  sessionDurationSeconds: 43_200,
 };
 
-export type BasemapStyle = string | StyleSpecification;
+const PLACE_VALUES = new Set<BasemapPlacesPreference>(['all', 'attributed', 'none']);
+const MAX_SESSION_SECONDS = 43_200;
+const DEFAULT_REFRESH_SAFETY_MARGIN_SECONDS = 300;
 
-/**
- * Resolve the basemap style by precedence:
- *   1) config.basemapStyleUrl (operator-provided, if non-empty)
- *   2) VITE_BASEMAP_STYLE_URL (build-time override, if set)
- *   3) OpenStreetMap raster world basemap (default; self-host in production)
- */
-export function resolveBasemapStyle(config: AppConfig | undefined): BasemapStyle {
-  const fromConfig = config?.basemapStyleUrl?.trim();
-  if (fromConfig) return fromConfig;
+export class BasemapConfigurationError extends Error {
+  readonly code = 'BASEMAP_CONFIGURATION_ERROR';
 
-  const fromEnv = import.meta.env.VITE_BASEMAP_STYLE_URL?.trim();
-  if (fromEnv && !fromEnv.startsWith('<')) return fromEnv;
-
-  return OSM_RASTER_STYLE;
+  constructor(message: string) {
+    super(message);
+    this.name = 'BasemapConfigurationError';
+  }
 }
 
-/**
- * Human-readable credit for the basemap that `resolveBasemapStyle` would select,
- * so the on-map attribution always matches what is actually rendered.
- */
-export function basemapAttribution(config: AppConfig | undefined): string {
-  if (config?.basemapStyleUrl?.trim()) return 'Operator basemap';
+export interface EsriBasemapResolvedConfig {
+  provider: 'esri';
+  apiKey: string;
+  style: string;
+  styleFamily: 'arcgis';
+  places: BasemapPlacesPreference;
+  sessionDurationSeconds: number;
+  refreshSafetyMarginSeconds: number;
+}
 
-  const fromEnv = import.meta.env.VITE_BASEMAP_STYLE_URL?.trim();
-  if (fromEnv && !fromEnv.startsWith('<')) return 'Operator basemap';
+function envValue(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed.startsWith('<')) return null;
+  return trimmed;
+}
 
-  return '© OpenStreetMap contributors';
+function resolvePlaces(value: string | undefined): BasemapPlacesPreference {
+  if (value && PLACE_VALUES.has(value as BasemapPlacesPreference)) {
+    return value as BasemapPlacesPreference;
+  }
+  return DEFAULT_BASEMAP.places;
+}
+
+function resolveSessionSeconds(value: string | number | undefined): number {
+  const raw = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_BASEMAP.sessionDurationSeconds;
+  return Math.min(Math.floor(raw), MAX_SESSION_SECONDS);
+}
+
+export function resolveBasemapConfig(config: AppConfig | undefined): EsriBasemapResolvedConfig {
+  const serverConfig = config?.basemap ?? DEFAULT_BASEMAP;
+  if (serverConfig.provider !== 'esri') {
+    throw new BasemapConfigurationError(
+      `Unsupported basemap provider "${serverConfig.provider}". Akasha is configured for Esri basemaps.`,
+    );
+  }
+  if (serverConfig.usageModel !== 'session') {
+    throw new BasemapConfigurationError(
+      `Unsupported Esri basemap usage model "${serverConfig.usageModel}". Use basemap sessions.`,
+    );
+  }
+
+  const apiKey = envValue(import.meta.env.VITE_ESRI_API_KEY);
+  if (!apiKey) {
+    throw new BasemapConfigurationError(
+      'Esri basemap is not configured. Set VITE_ESRI_API_KEY to a referrer-restricted ArcGIS Location Platform key with Basemaps privilege.',
+    );
+  }
+
+  const style = envValue(import.meta.env.VITE_ESRI_BASEMAP_STYLE) ?? serverConfig.style;
+  const styleFamily =
+    envValue(import.meta.env.VITE_ESRI_BASEMAP_STYLE_FAMILY) ?? serverConfig.styleFamily;
+  if (styleFamily !== 'arcgis') {
+    throw new BasemapConfigurationError(
+      `Unsupported Esri basemap style family "${styleFamily}". Use "arcgis" with arcgis/imagery.`,
+    );
+  }
+
+  return {
+    provider: 'esri',
+    apiKey,
+    style: style || DEFAULT_BASEMAP.style,
+    styleFamily,
+    places: resolvePlaces(
+      envValue(import.meta.env.VITE_ESRI_BASEMAP_PLACES) ?? serverConfig.places,
+    ),
+    sessionDurationSeconds: resolveSessionSeconds(
+      envValue(import.meta.env.VITE_ESRI_BASEMAP_SESSION_SECONDS) ??
+        serverConfig.sessionDurationSeconds,
+    ),
+    refreshSafetyMarginSeconds: DEFAULT_REFRESH_SAFETY_MARGIN_SECONDS,
+  };
 }

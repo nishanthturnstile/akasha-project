@@ -11,11 +11,25 @@ export interface AoiConfig {
   bounds: [number, number, number, number];
 }
 
+export type BasemapProvider = 'esri';
+export type BasemapUsageModel = 'session';
+export type BasemapPlacesPreference = 'all' | 'attributed' | 'none';
+
+export interface BasemapConfig {
+  provider: BasemapProvider;
+  style: string;
+  styleFamily: string;
+  usageModel: BasemapUsageModel;
+  places: BasemapPlacesPreference;
+  sessionDurationSeconds: number;
+}
+
 export interface AppConfig {
   appName: string;
   aoi: AoiConfig;
-  /** May be empty; resolve via basemap precedence rule. */
+  /** Backward-compatible field. Esri basemaps are configured through `basemap`. */
   basemapStyleUrl: string;
+  basemap: BasemapConfig;
   maxPolygonAreaHa: number;
   maxPolygonVertices: number;
   usablePixelThresholdPercent: number;

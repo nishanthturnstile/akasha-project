@@ -133,7 +133,15 @@ The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative sa
   "appName": "Akasha",
   "aoi": { "id": "bangalore", "name": "Bangalore", "center": [77.59, 12.97], "zoom": 11,
            "bounds": [77.4, 12.8, 77.8, 13.2] },
-  "basemapStyleUrl": "<from VITE_BASEMAP_STYLE_URL>",
+  "basemapStyleUrl": "",
+  "basemap": {
+    "provider": "esri",
+    "style": "arcgis/imagery",
+    "styleFamily": "arcgis",
+    "usageModel": "session",
+    "places": "none",
+    "sessionDurationSeconds": 43200
+  },
   "maxPolygonAreaHa": 50,
   "maxPolygonVertices": 5000,
   "usablePixelThresholdPercent": 70,

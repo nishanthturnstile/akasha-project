@@ -49,8 +49,15 @@ _AOI = {
 _RATE_BUCKETS: dict[str, list[float]] = {}
 
 
-def _basemap_style_url() -> str:
-    return os.environ.get("VITE_BASEMAP_STYLE_URL") or os.environ.get("BASEMAP_STYLE_URL", "")
+def _basemap_config() -> dict[str, Any]:
+    return {
+        "provider": settings.basemap_provider,
+        "style": settings.esri_basemap_style,
+        "styleFamily": settings.esri_basemap_style_family,
+        "usageModel": settings.esri_basemap_usage_model,
+        "places": settings.esri_basemap_places,
+        "sessionDurationSeconds": settings.esri_basemap_session_seconds,
+    }
 
 
 def _client_id(request: Request) -> str:
@@ -83,7 +90,8 @@ async def get_config() -> dict[str, Any]:
     return {
         "appName": os.environ.get("PUBLIC_APP_NAME", "Akasha"),
         "aoi": _AOI,
-        "basemapStyleUrl": _basemap_style_url(),
+        "basemapStyleUrl": "",
+        "basemap": _basemap_config(),
         "maxPolygonAreaHa": settings.max_polygon_area_ha,
         "maxPolygonVertices": settings.max_polygon_vertices,
         "usablePixelThresholdPercent": settings.usable_pixel_threshold_percent,

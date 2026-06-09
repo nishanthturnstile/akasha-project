@@ -8,10 +8,12 @@ import type { FieldStatisticsResponse, FieldTrendResponse, Plot, SceneDate } fro
 
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: ({
+    basemap,
     scene,
     sceneB,
     visible,
   }: {
+    basemap: { style?: string; places?: string };
     scene: { tileUrlTemplate?: string; attribution?: string } | null;
     sceneB?: { tileUrlTemplate?: string } | null;
     visible: boolean;
@@ -21,6 +23,8 @@ vi.mock('@/components/map/MapLayerManager', () => ({
       data-tile-template={ scene?.tileUrlTemplate ?? '' }
       data-compare-tile-template={ sceneB?.tileUrlTemplate ?? '' }
       data-attribution={ scene?.attribution ?? '' }
+      data-basemap-style={ basemap.style ?? '' }
+      data-basemap-places={ basemap.places ?? '' }
       data-visible={ String(visible) }
     />
   ),
@@ -159,6 +163,7 @@ class ResizeObserverMock {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 function stubAkashaFetch({
@@ -182,6 +187,7 @@ function stubAkashaFetch({
   fieldTrend?: FieldTrendResponse;
 } = {}) {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+  vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -199,6 +205,14 @@ function stubAkashaFetch({
               bounds: [74, 8, 81, 14],
             },
             basemapStyleUrl: '',
+            basemap: {
+              provider: 'esri',
+              style: 'arcgis/imagery',
+              styleFamily: 'arcgis',
+              usageModel: 'session',
+              places: 'none',
+              sessionDurationSeconds: 43200,
+            },
             maxPolygonAreaHa: 100,
             maxPolygonVertices: 40,
             usablePixelThresholdPercent: 70,
@@ -290,6 +304,14 @@ describe('MapPage native source behavior', () => {
     renderMapPage();
 
     await screen.findByTestId('index-panel');
+    expect(screen.getByTestId('map-layer-manager').getAttribute('data-basemap-style')).toBe(
+      'arcgis/imagery',
+    );
+    expect(screen.getByTestId('map-layer-manager').getAttribute('data-basemap-places')).toBe(
+      'none',
+    );
+    expect(screen.getByTestId('attribution').textContent).toBe('Copernicus Sentinel-2');
+    expect(screen.getByTestId('attribution').textContent).not.toContain('OpenStreetMap');
     expect(
       screen.getByText('Select a field to view cloud-masked statistics and trend analytics.'),
     ).toBeTruthy();

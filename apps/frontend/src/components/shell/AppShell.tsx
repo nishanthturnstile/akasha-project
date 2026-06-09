@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { queryClient } from '@/lib/queryClient';
 import { useAccountMe, useLogout } from '@/lib/queries';
 import { MAIN_MONITORING_ROUTE, productNavigation } from '@/routes/productNavigation';
 
@@ -411,11 +412,20 @@ export function AppShell() {
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={ () =>
-                        logout.mutate(undefined, {
-                          onSettled: () => navigate('/login', { replace: true }),
-                        })
-                      }
+                      onClick={ async () => {
+                        // Fully await the server logout so the request completes
+                        // before we tear down the page. Navigating/clearing while
+                        // the POST is in flight aborts it. Logout is best-effort:
+                        // clear local session state and leave even if it fails.
+                        try {
+                          await logout.mutateAsync();
+                        } catch {
+                          // Ignore: the session cookie is cleared server-side and
+                          // local state is dropped below regardless.
+                        }
+                        queryClient.clear();
+                        navigate('/login', { replace: true });
+                      } }
                       data-testid="account-popover-trigger"
                       aria-label="Sign out"
                       className={ cn(

@@ -180,10 +180,17 @@ Phase 3 operational notes:
 | TASK-062 | Create `infra/selfhosted/coolify-compose.yml` from `infra/docker/docker-compose.yml`, adapted for Coolify-managed self-hosted deployment. | | |
 | TASK-063 | Create `infra/selfhosted/env.example` documenting all required staging and production variables without real secrets. | | |
 | TASK-064 | Create `infra/selfhosted/README.md` documenting Coolify setup, first deploy, one-shot jobs, and rollback. | | |
-| TASK-065 | Create `.github/workflows/ci.yml` with Python lint, API tests, frontend lint/test/build, slice validators, gitleaks, and Trivy checks. | | |
+| TASK-065 | Create `.github/workflows/ci.yml` with Python lint, API tests, frontend lint/test/build, slice validators, gitleaks, and Trivy checks. | Partially — created base CI with API tests, frontend lint/test/build, and Slice 0/1/2 validators on branch `dev-akasha-core`; gitleaks and Trivy still to add before production readiness. | 2026-06-10 |
 | TASK-066 | Create `.github/workflows/deploy-staging.yml` to build `web`, `api`, `ingestion-worker`, and `ingestion-sar`, tag them with the Git SHA, push to GHCR, and trigger Coolify staging deploy with `IMAGE_TAG=<git-sha>`. | | |
 | TASK-067 | Create `.github/workflows/deploy-production.yml` to deploy only an already validated image SHA after manual GitHub Environment approval. | | |
 | TASK-068 | Extend `scripts/smoke-test.py` with optional `--login` mode that reads credentials from environment variables and reuses the session cookie for authenticated product checks. | | |
+
+Repository ownership and sync notes:
+
+- Client repository created at `Akasha-TechCatalyst/akasha-project` and configured locally as remote `client` via SSH alias `github-akasha`.
+- Client `main` is aligned to source `origin/main` at commit `2df880f98bc422cddec0ca8f76eb97ff9aeb1825`; the earlier feature-branch snapshot was corrected.
+- Added `.github/workflows/sync-client-main.yml` on source branch `dev-akasha-core`; after PR merge to source `main`, pushes to source `main` will sync to client `main` using secret `CLIENT_REPO_SYNC_SSH_KEY`.
+- The sync workflow is guarded to run only in source repository `nishanthturnstile/akasha-project`, so the copied workflow should not recursively run in the client repository.
 
 ### Implementation Phase 8
 

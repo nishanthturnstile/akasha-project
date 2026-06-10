@@ -311,7 +311,6 @@ describe('MapPage native source behavior', () => {
       'none',
     );
     expect(screen.getByTestId('attribution').textContent).toBe('Copernicus Sentinel-2');
-    expect(screen.getByTestId('attribution').textContent).not.toContain('OpenStreetMap');
     expect(
       screen.getByText('Select a field to view cloud-masked statistics and trend analytics.'),
     ).toBeTruthy();

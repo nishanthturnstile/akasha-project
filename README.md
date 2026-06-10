@@ -183,6 +183,105 @@ reflectance `scale 0.0001` / `offset -0.1`. See
 [`infra/railway/README.md`](infra/railway/README.md) for the seed layout and the
 Railway equivalents of these commands.
 
+## Local frontend against Docker backend
+
+Use this workflow when you want the backend/API stack running in Docker, but the
+React/Vite frontend running locally with hot reload.
+
+### 1. Start the Docker backend/gateway stack
+
+```bash
+# from repo root
+cd infra/docker
+cp .env.example .env
+```
+
+Edit `infra/docker/.env` and set the required local secrets. Also set
+`VITE_ESRI_API_KEY` if you want the Docker-built `web` service to render Esri
+basemaps. Then start the stack:
+
+```bash
+# from infra/docker
+docker compose up --build -d
+docker compose ps
+curl http://localhost:8080/health
+curl http://localhost:8080/api/health
+```
+
+If you changed `WEB_PORT` in `infra/docker/.env`, replace `8080` with that port.
+
+### 2. Configure the local Vite frontend
+
+The local Vite app reads its own env file, so add the Esri key here too:
+
+```bash
+# from repo root
+cd apps/frontend
+cp .env.example .env
+```
+
+Edit `apps/frontend/.env`:
+
+```env
+VITE_ESRI_API_KEY=<your referrer-restricted Esri key>
+VITE_ESRI_BASEMAP_STYLE=arcgis/imagery
+VITE_ESRI_BASEMAP_STYLE_FAMILY=arcgis
+VITE_ESRI_BASEMAP_PLACES=none
+VITE_ESRI_BASEMAP_SESSION_SECONDS=43200
+```
+
+Install frontend dependencies if needed:
+
+```bash
+# from apps/frontend
+corepack yarn install --frozen-lockfile
+```
+
+### 3. Run the local frontend
+
+Bash / Git Bash / WSL:
+
+```bash
+# from apps/frontend
+AKASHA_DEV_PROXY_TARGET=http://localhost:8080 corepack yarn dev --host 127.0.0.1 --port 5173
+```
+
+PowerShell:
+
+```powershell
+# from apps/frontend
+$env:AKASHA_DEV_PROXY_TARGET = "http://localhost:8080"
+corepack yarn dev --host 127.0.0.1 --port 5173
+```
+
+Open:
+
+```text
+http://localhost:5173/monitoring/field-analytics
+```
+
+The Vite app serves the UI on port `5173` and proxies `/api/*` and `/tiles/*`
+to the Docker gateway on port `8080`. If the UI shows “Akasha is unavailable”,
+check the backend first:
+
+```bash
+curl http://localhost:8080/api/account/me
+docker compose -f infra/docker/docker-compose.yml logs api --tail=100
+```
+
+For local auth, sign in at `http://localhost:5173/login`. If the database was
+reset and no password user exists, use the bootstrap command in the local login
+section above, targeting the Docker gateway port.
+
+### 4. Stop the local services
+
+Stop only the Vite frontend with `Ctrl+C`. Stop the Docker backend stack with:
+
+```bash
+# from infra/docker
+docker compose down
+```
+
 ## Deploy to Railway
 
 Each service is a **separate** Railway service. See

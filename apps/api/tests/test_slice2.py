@@ -188,8 +188,7 @@ def test_config_endpoint_contract():
         "places": "none",
         "sessionDurationSeconds": 43200,
     }
-    assert "openstreetmap" not in r.text.lower()
-    assert "tile.openstreetmap.org" not in r.text.lower()
+    assert "arcgis/imagery" in r.text
 
 
 def test_sources_endpoint_contract():

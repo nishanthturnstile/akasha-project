@@ -49,7 +49,9 @@ describe('resolveBasemapConfig', () => {
     });
   });
 
-  it('rejects missing Esri API keys instead of falling back to OSM', () => {
+  it('rejects missing Esri API keys instead of using a fallback basemap', () => {
+    vi.stubEnv('VITE_ESRI_API_KEY', '');
+
     expect(() => resolveBasemapConfig(CONFIG)).toThrow(BasemapConfigurationError);
     expect(() => resolveBasemapConfig(CONFIG)).toThrow('VITE_ESRI_API_KEY');
   });

@@ -19,7 +19,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code + Alembic app-schema baseline/revisions.
 COPY app ./app
-COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 

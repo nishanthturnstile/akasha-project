@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from app import account, auth_routes
-from app.auth import DEV_TEAM_ID, DEV_USER_ID, CurrentUser, TeamMembership, get_current_user
+from app.auth import CurrentUser, TeamMembership, get_current_user
 from app.config import settings
 from app.main import app
 from fastapi.testclient import TestClient
@@ -460,12 +460,12 @@ def test_cors_wildcard_is_not_used_with_credentials(monkeypatch):
         _ = settings.cors_allowed_origins
 
 
-def test_dev_seed_migrations_use_deterministic_auth_ids():
-    migrations_dir = Path(__file__).resolve().parents[1] / "migrations"
-    seed_sql = (migrations_dir / "007_auth_teams.sql").read_text()
-    hardening_sql = (migrations_dir / "011_auth_security_hardening.sql").read_text()
+def test_dev_seed_alembic_baseline_uses_deterministic_auth_ids():
+    baseline = (
+        Path(__file__).resolve().parents[1]
+        / "alembic/versions/20260609_0001_fresh_orm_baseline.py"
+    ).read_text()
 
-    assert DEV_USER_ID in seed_sql
-    assert DEV_TEAM_ID in seed_sql
-    assert DEV_USER_ID in hardening_sql
-    assert DEV_TEAM_ID in hardening_sql
+    assert "DEV_USER_ID" in baseline
+    assert "DEV_TEAM_ID" in baseline
+    assert 'from app.auth import DEV_TEAM_ID, DEV_USER_ID' in baseline

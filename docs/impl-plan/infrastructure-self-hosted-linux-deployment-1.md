@@ -116,7 +116,7 @@ The plan does not replace Railway. Railway remains the fastest production/demo p
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-030 | Run API migrations inside the `api` container using `python -m app.cli migrate`. | | |
+| TASK-030 | Run the API Alembic ORM baseline inside the `api` container using `python -m app.cli db upgrade`. | | |
 | TASK-031 | Run API infrastructure check inside the `api` container using `python -m app.cli check`. | | |
 | TASK-032 | Run ingestion seed command using the `ingestion-worker` service: `python worker.py seed`. | | |
 | TASK-033 | Run ingestion verification using the `ingestion-worker` service: `python worker.py verify`. | | |
@@ -254,7 +254,7 @@ The plan does not replace Railway. Railway remains the fastest production/demo p
 - **TEST-004**: Private service validation: confirm `api`, `titiler`, `stac-api`, `postgis`, `minio`, `ingestion-worker`, and `ingestion-sar` do not publish public host ports.
 - **TEST-005**: Data persistence validation: create data in PostGIS and MinIO, restart containers, and confirm data remains.
 - **TEST-006**: Reboot validation: reboot the Azure VM and confirm `akasha.service` starts the stack automatically.
-- **TEST-007**: API migration validation: run `python -m app.cli migrate` inside the `api` container and require success.
+- **TEST-007**: API migration validation: run `python -m app.cli db upgrade` inside the `api` container and require success.
 - **TEST-008**: API infrastructure validation: run `python -m app.cli check` inside the `api` container and require success.
 - **TEST-009**: Ingestion seed validation: run `python worker.py seed` inside the `ingestion-worker` container and require success.
 - **TEST-010**: Ingestion verification validation: run `python worker.py verify` inside the `ingestion-worker` container and require success.

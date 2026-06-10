@@ -66,7 +66,7 @@ def _stats_response(
 
 def test_field_statistics_loads_geometry_server_side(monkeypatch):
     plot = _plot()
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda plot_id: plot)
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: plot)
     calls: list[dict[str, Any]] = []
 
     def fake_compute_statistics(**kwargs):
@@ -98,7 +98,7 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
 
 
 def test_field_statistics_missing_field(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda _: None)
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: None)
     r = client.post("/api/fields/missing/indices/statistics", json={"indexType": "NDVI"})
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "FIELD_NOT_FOUND"
@@ -106,7 +106,7 @@ def test_field_statistics_missing_field(monkeypatch):
 
 
 def test_trend_rejects_invalid_date_range(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda _: _plot())
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
     r = client.get(
         "/api/fields/plot-1/analytics/trend?startDate=2026-06-30&endDate=2026-01-01"
     )
@@ -115,7 +115,7 @@ def test_trend_rejects_invalid_date_range(monkeypatch):
 
 
 def test_native_trend_normalizes_points(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda _: _plot())
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog,
         "list_dates",
@@ -149,7 +149,7 @@ def test_native_trend_normalizes_points(monkeypatch):
 
 
 def test_native_trend_rejects_unsupported_index(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda _: _plot())
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
     r = client.get(
         "/api/fields/plot-1/analytics/trend"
         "?indexType=BAD&startDate=2026-01-01&endDate=2026-03-01"
@@ -159,7 +159,7 @@ def test_native_trend_rejects_unsupported_index(monkeypatch):
 
 
 def test_trend_without_dates_uses_catalog_defaults_without_internal_leaks(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda _: _plot())
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "list_dates", lambda _: [])
     r = client.get("/api/fields/plot-1/analytics/trend?indexType=NDVI")
     assert r.status_code == 200

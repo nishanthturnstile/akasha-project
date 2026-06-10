@@ -26,15 +26,17 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from starlette.types import ExceptionHandler
 
 from . import skeleton
 from .account import router as account_router
+from .auth_routes import router as auth_router
 from .config import settings
 from .data_manager import router as data_manager_router
 from .field_analytics import router as field_analytics_router
@@ -65,7 +67,7 @@ LIVE_SERVICE_ID = "api"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     logger.info(
-        "Akasha BFF skeleton started (slice=%s, env=%s, version=%s)",
+        "Akasha BFF started (slice=%s, env=%s, version=%s)",
         skeleton.SLICE,
         settings.app_env,
         APP_VERSION,
@@ -76,7 +78,10 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Akasha BFF",
     version=APP_VERSION,
-    description="Akasha Railway MVP — Slice 0 (skeleton). Thin BFF; no product contracts yet.",
+    description=(
+        "Akasha Railway MVP BFF. Serves health, skeleton visibility, product, "
+        "plot, auth, operations, reporting, and raster-statistics APIs."
+    ),
     lifespan=lifespan,
 )
 
@@ -243,6 +248,7 @@ app.include_router(reports_router)
 app.include_router(risk_router)
 
 # --- Auth/Team/Admin/Notifications API ------------------------------------
+app.include_router(auth_router)
 app.include_router(account_router)
 
 # --- Operations/Data APIs --------------------------------------------------
@@ -258,5 +264,8 @@ app.include_router(product_router)
 app.include_router(plots_router)
 
 # Standard Akasha error shape: { "error": { code, message, details } }.
-app.add_exception_handler(AkashaError, akasha_error_handler)
-app.add_exception_handler(RequestValidationError, request_validation_error_handler)
+app.add_exception_handler(AkashaError, cast(ExceptionHandler, akasha_error_handler))
+app.add_exception_handler(
+    RequestValidationError,
+    cast(ExceptionHandler, request_validation_error_handler),
+)

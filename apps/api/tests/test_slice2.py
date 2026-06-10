@@ -179,6 +179,16 @@ def test_config_endpoint_contract():
     assert body["indexFieldsKind"] == "global-optical-defaults"
     assert body["maxPolygonAreaHa"] == 50
     assert body["aoi"]["id"] == "bangalore"
+    assert body["basemapStyleUrl"] == ""
+    assert body["basemap"] == {
+        "provider": "esri",
+        "style": "arcgis/imagery",
+        "styleFamily": "arcgis",
+        "usageModel": "session",
+        "places": "none",
+        "sessionDurationSeconds": 43200,
+    }
+    assert "arcgis/imagery" in r.text
 
 
 def test_sources_endpoint_contract():

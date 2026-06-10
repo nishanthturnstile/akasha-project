@@ -14,17 +14,18 @@ Guardrails:
   * Geometry validated server-side via app.raster.geo_validate.validate_polygon
     (Polygon/MultiPolygon, validity, max area, max vertices). Client-provided
     area is never trusted — area is recomputed.
-  * Blocking psycopg work runs off the event loop via anyio.to_thread.run_sync.
+  * Blocking SQLAlchemy/PostGIS work runs off the event loop via anyio.to_thread.run_sync.
   * When PostGIS is unreachable (e.g. the Emergent preview has no DB) the routes
     return a sanitized 503 PLOTS_BACKEND_UNAVAILABLE — no DSN/credentials/SQL/
     stack traces are ever exposed to the client.
 """
+
 from __future__ import annotations
 
 import functools
 import logging
-from datetime import UTC, date, datetime
 import uuid
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 import anyio
@@ -33,7 +34,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ValidationError, field_validator
 
 from . import plots_repo
-from .auth import get_current_team
+from .auth import CurrentTeam, CurrentUser, get_current_team, get_current_user, require_role
 from .config import settings
 from .raster.errors import (
     AkashaError,
@@ -232,9 +233,7 @@ def _extract_features(payload: Any) -> list[dict[str, Any]]:
     if geo_type == "FeatureCollection":
         features = payload.get("features")
         if not isinstance(features, list):
-            raise bad_request(
-                "FeatureCollection.features must be a list.", code="INVALID_GEOJSON"
-            )
+            raise bad_request("FeatureCollection.features must be a list.", code="INVALID_GEOJSON")
     elif geo_type == "Feature":
         features = [payload]
     elif geo_type in ("Polygon", "MultiPolygon"):
@@ -312,13 +311,13 @@ def _extract_import_metadata(feature: dict[str, Any]) -> dict[str, Any]:
 # Routes — specific paths BEFORE parameterized ones
 # --------------------------------------------------------------------------
 @router.get("/plots", response_model=list[PlotResponse], response_model_exclude_none=True)
-async def list_plots() -> list[dict[str, Any]]:
-    return await _run_repo(plots_repo.list_plots)
+async def list_plots(team: CurrentTeam = Depends(get_current_team)) -> list[dict[str, Any]]:
+    return await _run_repo(plots_repo.list_plots, team.id)
 
 
 @router.get("/plots/export.geojson")
-async def export_all_plots() -> JSONResponse:
-    plots = await _run_repo(plots_repo.list_plots)
+async def export_all_plots(team: CurrentTeam = Depends(get_current_team)) -> JSONResponse:
+    plots = await _run_repo(plots_repo.list_plots, team.id)
     feature_collection = {
         "type": "FeatureCollection",
         "features": [_to_feature(p) for p in plots],
@@ -332,7 +331,11 @@ async def export_all_plots() -> JSONResponse:
     response_model_exclude_none=True,
     status_code=201,
 )
-async def create_plot(payload: PlotCreate) -> dict[str, Any]:
+async def create_plot(
+    payload: PlotCreate,
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> dict[str, Any]:
     name = _clean_name(payload.name, required=True)
     area_ha = _validate_geometry(payload.geometry)
     metadata = _metadata_from_model(payload, include_nulls=False)
@@ -343,9 +346,18 @@ async def create_plot(payload: PlotCreate) -> dict[str, Any]:
             payload.geometry,
             area_ha,
             metadata,
+            owner_id=user.id,
+            team_id=team.id,
         )
     else:
-        created = await _run_repo(plots_repo.create_plot, name, payload.geometry, area_ha)
+        created = await _run_repo(
+            plots_repo.create_plot,
+            name,
+            payload.geometry,
+            area_ha,
+            owner_id=user.id,
+            team_id=team.id,
+        )
     return created
 
 
@@ -354,7 +366,11 @@ async def create_plot(payload: PlotCreate) -> dict[str, Any]:
     response_model=ImportResponse,
     response_model_exclude_none=True,
 )
-async def import_geojson(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+async def import_geojson(
+    payload: dict[str, Any] = Body(...),
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> dict[str, Any]:
     features = _extract_features(payload)
     valid: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -374,7 +390,11 @@ async def import_geojson(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             )
         except AkashaError as exc:
             rejected.append({"index": index, "code": exc.code, "message": exc.message})
-    imported = await _run_repo(plots_repo.create_plots_bulk, valid) if valid else []
+    imported = (
+        await _run_repo(plots_repo.create_plots_bulk, valid, owner_id=user.id, team_id=team.id)
+        if valid
+        else []
+    )
     return {
         "imported": imported,
         "rejected": rejected,
@@ -388,18 +408,18 @@ async def import_geojson(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     response_model=PlotResponse,
     response_model_exclude_none=True,
 )
-async def get_plot(plot_id: str) -> dict[str, Any]:
+async def get_plot(plot_id: str, team: CurrentTeam = Depends(get_current_team)) -> dict[str, Any]:
     pid = _valid_uuid(plot_id)
-    plot = await _run_repo(plots_repo.get_plot, pid)
+    plot = await _run_repo(plots_repo.get_plot, pid, team.id)
     if plot is None:
         raise not_found("Plot not found.", plotId=plot_id)
     return plot
 
 
 @router.get("/plots/{plot_id}/export.geojson")
-async def export_plot(plot_id: str) -> JSONResponse:
+async def export_plot(plot_id: str, team: CurrentTeam = Depends(get_current_team)) -> JSONResponse:
     pid = _valid_uuid(plot_id)
-    plot = await _run_repo(plots_repo.get_plot, pid)
+    plot = await _run_repo(plots_repo.get_plot, pid, team.id)
     if plot is None:
         raise not_found("Plot not found.", plotId=plot_id)
     return JSONResponse(content=_to_feature(plot), media_type=GEOJSON_MEDIA_TYPE)
@@ -410,7 +430,11 @@ async def export_plot(plot_id: str) -> JSONResponse:
     response_model=PlotResponse,
     response_model_exclude_none=True,
 )
-async def update_plot(plot_id: str, payload: PlotUpdate) -> dict[str, Any]:
+async def update_plot(
+    plot_id: str,
+    payload: PlotUpdate,
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> dict[str, Any]:
     pid = _valid_uuid(plot_id)
     metadata = _metadata_from_model(payload, include_nulls=True)
     if payload.name is None and payload.geometry is None and not metadata:
@@ -432,18 +456,29 @@ async def update_plot(plot_id: str, payload: PlotUpdate) -> dict[str, Any]:
             geometry,
             area_ha,
             metadata,
+            team.id,
         )
     else:
-        plot = await _run_repo(plots_repo.update_plot, pid, name, geometry, area_ha)
+        plot = await _run_repo(
+            plots_repo.update_plot,
+            pid,
+            name,
+            geometry,
+            area_ha,
+            team_id=team.id,
+        )
     if plot is None:
         raise not_found("Plot not found.", plotId=plot_id)
     return plot
 
 
 @router.delete("/plots/{plot_id}", status_code=204)
-async def delete_plot(plot_id: str) -> Response:
+async def delete_plot(
+    plot_id: str,
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> Response:
     pid = _valid_uuid(plot_id)
-    deleted = await _run_repo(plots_repo.delete_plot, pid)
+    deleted = await _run_repo(plots_repo.delete_plot, pid, team.id)
     if not deleted:
         raise not_found("Plot not found.", plotId=plot_id)
     return Response(status_code=204)

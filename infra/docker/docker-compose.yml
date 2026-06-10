@@ -22,6 +22,12 @@ services:
     build:
       context: ../..
       dockerfile: infra/gateway/Dockerfile
+      args:
+        VITE_ESRI_API_KEY: "${VITE_ESRI_API_KEY:-}"
+        VITE_ESRI_BASEMAP_STYLE: "${VITE_ESRI_BASEMAP_STYLE:-arcgis/imagery}"
+        VITE_ESRI_BASEMAP_STYLE_FAMILY: "${VITE_ESRI_BASEMAP_STYLE_FAMILY:-arcgis}"
+        VITE_ESRI_BASEMAP_PLACES: "${VITE_ESRI_BASEMAP_PLACES:-none}"
+        VITE_ESRI_BASEMAP_SESSION_SECONDS: "${VITE_ESRI_BASEMAP_SESSION_SECONDS:-43200}"
     image: akasha-web:slice0
     environment:
       PORT: "80"
@@ -78,6 +84,15 @@ services:
       RATE_LIMIT_INDEX_PER_MINUTE: "30"
       MAX_REQUEST_BODY_BYTES: "1048576"
       CORS_ALLOWED_ORIGINS: "http://localhost:${WEB_PORT:-8080}"
+      # Enforced auth for the local stack. The browser must sign in via /login;
+      # AUTH_COOKIE_SECURE is false ONLY because local dev is plain http
+      # (Railway/customer deployments keep it true — see infra/railway/ENV_MATRIX.md).
+      AUTH_MODE: "enabled"
+      AUTH_ALLOW_DISABLED: "false"
+      AUTH_PASSWORD_PEPPER: "${AUTH_PASSWORD_PEPPER}"
+      AUTH_ALLOW_BOOTSTRAP: "${AUTH_ALLOW_BOOTSTRAP:-true}"
+      AUTH_BOOTSTRAP_TOKEN: "${AUTH_BOOTSTRAP_TOKEN}"
+      AUTH_COOKIE_SECURE: "false"
     expose:
       - "8000"
     depends_on:

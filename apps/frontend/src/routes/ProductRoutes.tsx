@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ComponentType } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { AuthGate } from '@/components/auth/AuthGate';
 import { AppShell } from '@/components/shell/AppShell';
 import { NotFoundPage } from '@/components/shell/ModulePlaceholder';
 import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
@@ -35,6 +36,7 @@ const HelpPage = lazyPlaceholderPage('HelpPage');
 const MarketplacePage = lazyPlaceholderPage('MarketplacePage');
 const AccountSettingsPage = lazy(() => import('@/pages/account/AccountSettingsPage'));
 const ApiSettingsPage = lazy(() => import('@/pages/account/ApiSettingsPage'));
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
 
 function RouteFallback() {
   return (
@@ -55,7 +57,8 @@ function withSuspense(Component: ComponentType) {
 export function ProductRoutes() {
   return (
     <Routes>
-      <Route element={ <AppShell /> }>
+      <Route path="login" element={ withSuspense(LoginPage) } />
+      <Route element={ <AuthGate><AppShell /></AuthGate> }>
         <Route index element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />
         <Route path="map" element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />
         <Route

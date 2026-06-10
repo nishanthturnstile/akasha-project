@@ -1,14 +1,14 @@
-"""Akasha BFF database CLI (Slice 1).
+"""Akasha BFF database CLI.
 
-Applies the app-schema SQL migrations (plots, index_requests, app_settings).
-This is operational tooling — NOT a product API endpoint. The api keeps owning
-its own data model; catalog migrations (pgSTAC) are handled by the ingestion
-worker.
+The API-owned app schema is managed by Alembic from SQLAlchemy ORM metadata.
+Catalog/pgSTAC migrations remain owned by the ingestion worker.
 
 Usage:
-    python -m app.cli migrate        # apply apps/api/migrations/*.sql (idempotent)
-    python -m app.cli check          # SELECT postgis_version() + plots table check
+    python -m app.cli db upgrade     # apply API ORM baseline/revisions
+    python -m app.cli migrate        # compatibility alias for db upgrade
+    python -m app.cli check          # SELECT postgis_version() + app table check
 """
+
 from __future__ import annotations
 
 import argparse
@@ -17,49 +17,61 @@ import sys
 import urllib.request
 from pathlib import Path
 
-STATEMENT_SEP = "\n--;;\n"
+
+def _api_root() -> Path:
+    return Path(__file__).resolve().parent.parent
 
 
-def _migrations_dir() -> Path:
-    return Path(__file__).resolve().parent.parent / "migrations"
+def _alembic_config():
+    from alembic.config import Config
+
+    return Config(str(_api_root() / "alembic.ini"))
 
 
-def _split_statements(sql: str) -> list[str]:
-    return [chunk.strip() for chunk in sql.split(STATEMENT_SEP) if chunk.strip()]
+def cmd_db_upgrade(_: argparse.Namespace) -> int:
+    from alembic import command
 
-
-def cmd_migrate(_: argparse.Namespace) -> int:
-    from .db import get_connection  # lazy (psycopg)
-
-    files = sorted(_migrations_dir().glob("*.sql"))
-    if not files:
-        print(f"No migration files in {_migrations_dir()}", file=sys.stderr)
-        return 1
-    with get_connection() as conn:
-        for f in files:
-            statements = _split_statements(f.read_text())
-            print(f"applying {f.name} ({len(statements)} statements)")
-            with conn.cursor() as cur:
-                for stmt in statements:
-                    cur.execute(stmt)
-            conn.commit()
-    print("app-schema migrations complete")
+    command.upgrade(_alembic_config(), "head")
+    print("app-schema Alembic upgrade complete")
     return 0
 
 
-def cmd_check(_: argparse.Namespace) -> int:
-    from .db import get_connection  # lazy
+def cmd_db_current(_: argparse.Namespace) -> int:
+    from alembic import command
 
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT postgis_version()")
-        postgis = cur.fetchone()[0]
-        cur.execute("SELECT to_regclass('akasha.plots') IS NOT NULL")
-        plots_ok = cur.fetchone()[0]
+    command.current(_alembic_config())
+    return 0
+
+
+def cmd_db_downgrade_base(_: argparse.Namespace) -> int:
+    from alembic import command
+
+    command.downgrade(_alembic_config(), "base")
+    print("app-schema Alembic downgrade to base complete")
+    return 0
+
+
+def cmd_migrate(args: argparse.Namespace) -> int:
+    return cmd_db_upgrade(args)
+
+
+def cmd_check(_: argparse.Namespace) -> int:
+    from sqlalchemy import text
+
+    from .db import get_engine
+
+    with get_engine().connect() as conn:
+        postgis = conn.execute(text("SELECT postgis_version()")).scalar_one()
+        plots_ok = conn.execute(text("SELECT to_regclass('akasha.plots') IS NOT NULL")).scalar_one()
+        alembic_ok = conn.execute(
+            text("SELECT to_regclass('alembic_version') IS NOT NULL")
+        ).scalar_one()
     minio_ok = _check_minio_liveness()
     print(f"PostGIS: {postgis}")
     print(f"akasha.plots present: {plots_ok}")
+    print(f"Alembic version table present: {alembic_ok}")
     print(f"MinIO reachable from api: {minio_ok}")
-    return 0 if plots_ok and minio_ok else 1
+    return 0 if plots_ok and alembic_ok and minio_ok else 1
 
 
 def _check_minio_liveness() -> bool:
@@ -79,12 +91,25 @@ def _check_minio_liveness() -> bool:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Akasha BFF database CLI (Slice 1).")
+    parser = argparse.ArgumentParser(description="Akasha BFF database CLI.")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("migrate", help="Apply app-schema SQL migrations.").set_defaults(
+    sub.add_parser("migrate", help="Compatibility alias for `db upgrade`.").set_defaults(
         func=cmd_migrate
     )
-    sub.add_parser("check", help="Verify PostGIS + plots table.").set_defaults(func=cmd_check)
+    sub.add_parser("check", help="Verify PostGIS + API app schema.").set_defaults(func=cmd_check)
+
+    db = sub.add_parser("db", help="Alembic-backed app-schema commands.")
+    db_sub = db.add_subparsers(dest="db_command")
+    db_sub.add_parser("upgrade", help="Apply API app-schema revisions.").set_defaults(
+        func=cmd_db_upgrade
+    )
+    db_sub.add_parser("current", help="Show current Alembic revision.").set_defaults(
+        func=cmd_db_current
+    )
+    db_sub.add_parser(
+        "downgrade-base",
+        help="Drop API app-schema objects managed by the Alembic baseline.",
+    ).set_defaults(func=cmd_db_downgrade_base)
     return parser
 
 

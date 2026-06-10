@@ -4,15 +4,11 @@ Geospatial MVP for browsing true-colour Sentinel-2 imagery over an Area of
 Interest (Bangalore) and computing cloud-masked vegetation-index statistics for
 user-drawn plots. Railway-first, but fully portable to Docker Compose / on-prem.
 
-> **Status: Slice 1 — Storage / Catalog.** The multi-service skeleton (Slice 0)
-> is complete, and the storage/catalog foundation is now in place: the
-> PostgreSQL/PostGIS **app schema** (plots), **pgSTAC + STAC API** setup, a
-> **Sentinel-2 L2A STAC collection seed** (frozen 9-band order; reflectance
-> `scale 0.0001` / `offset -0.1`), the **MinIO `akasha-cogs`** bucket/key layout,
-> and **idempotent seeding** keyed on
-> `{satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}`.
-> Raster/index math, BFF product contracts, and the map UX are delivered in later
-> slices (see the roadmap below).
+> **Status: Slice 4 implementation in progress.** Slice 0 (skeleton), Slice 1
+> (storage/catalog), Slice 2 (raster de-risk), and Slice 3 (BFF product + plot
+> contracts) are implemented. The canonical frontend map/product shell now lives
+> in `apps/frontend`. Railway/local Docker still run the same multi-service
+> topology described below.
 
 ## Architecture (one public service)
 
@@ -34,12 +30,13 @@ are never given a public domain.
 
 ```text
 apps/
-  frontend/          React + Vite + TypeScript SPA (skeleton; map UX in Slice 4)
-  api/               FastAPI BFF (skeleton; /health + /api/_skeleton/*)
+  frontend/          Canonical React + Vite + TypeScript SPA
+  api/               Canonical FastAPI BFF (/api product, plot, auth, ops APIs)
 services/
   titiler/           TiTiler image/config (RGB display tiles)
   stac-api/          stac-fastapi-pgstac wrapper/config
-  ingestion/         Python ingestion worker (no-op skeleton)
+  ingestion/         Python ingestion worker and STAC/MinIO seed loader
+  ingestion-sar/     Sentinel-1/SAR preprocessing runtime
 infra/
   gateway/           Caddy reverse proxy + multi-stage web Dockerfile
   railway/           Per-service Railway config + env matrix + deploy notes
@@ -47,6 +44,8 @@ infra/
 docs/                Source-of-truth product/architecture/deploy docs
 scripts/             validate_slice0.py + smoke-test.py
 ```
+
+When changing application behavior, edit `apps/api` and `apps/frontend`.
 
 ## Services & health endpoints
 
@@ -60,11 +59,11 @@ scripts/             validate_slice0.py + smoke-test.py
 | minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
 | ingestion-worker | no | — | CLI | `python:3.11.14-slim-bookworm` |
 
-## Complete local setup (clone → run → verify Slice 1)
+## Complete local setup (clone → run → verify)
 
 This is the end-to-end onboarding flow. Follow it top-to-bottom from a fresh
-clone to get the storage/catalog foundation (Slice 1) running and verified on
-your machine. No prior project state is assumed.
+clone to get the local multi-service stack running and verify the storage,
+catalog, API, and raster de-risk foundations. No prior project state is assumed.
 
 ### 0. Prerequisites
 
@@ -110,7 +109,7 @@ curl http://localhost:8080/api/health        # proxied api  -> {"status":"ok"}
 python ../../scripts/smoke-test.py http://localhost:8080
 ```
 
-### 4. Bootstrap the data foundation (Slice 1)
+### 4. Bootstrap the data foundation
 
 The data foundation is seeded **deterministically and idempotently** — these
 commands are safe to re-run. Run them *inside* the running containers:
@@ -118,28 +117,51 @@ commands are safe to re-run. Run them *inside* the running containers:
 ```bash
 # from infra/docker
 
-# 4a) app schema: PostGIS extension + akasha.plots (api service)
-docker compose exec api python -m app.cli migrate
+# 4a) app schema: Alembic ORM baseline for API-owned akasha tables (api service)
+docker compose exec api python -m app.cli db upgrade
 docker compose exec api python -m app.cli check        # postgis_version() + API->MinIO liveness
 
 # 4b) catalog + storage: pgSTAC migrate -> load collection/item -> MinIO bucket/keys (ingestion)
 docker compose exec ingestion-worker python worker.py seed
 
-# 4c) Slice 1 exit criteria: PostGIS, STAC collection, MinIO bucket + deterministic keys
+# 4c) storage/catalog exit criteria: PostGIS, STAC collection, MinIO bucket + deterministic keys
 docker compose exec ingestion-worker python worker.py verify
 ```
 
-`worker.py verify` passing (3/3 checks) means Slice 1 is correctly set up
-locally. Real COGs are operator-provided (not committed); absent rasters get
-empty placeholder objects at the deterministic keys so the layout is
-established (Slice 2 replaces them with validated COGs).
+`worker.py verify` passing (3/3 checks) means the storage/catalog foundation is
+correctly set up locally. Real COGs are operator-provided and not committed.
 
-### 5. (Optional) Static validation — no Docker required
+### 5. Local login credentials
+
+For the local Docker stack only, create the first password user after a clean
+database reset with the bootstrap API. The current local reset uses:
+
+```text
+URL:      http://localhost:18080/login   # this workspace; use 8080 if WEB_PORT is unchanged
+Username: admin
+Password: AkashaLocal2026!
+```
+
+If the database has been wiped and no password user exists yet, recreate that
+local account from `infra/docker`:
+
+```bash
+curl -X POST http://localhost:18080/api/auth/bootstrap \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"AkashaLocal2026!","email":"admin@akasha.local","displayName":"Akasha Local Admin","teamName":"Akasha Local Team"}'
+```
+
+Bootstrap only works while `AUTH_ALLOW_BOOTSTRAP=true` and no active password
+user exists. Do not use this local password in Railway, customer, or production
+deployments.
+
+### 6. (Optional) Static validation — no Docker required
 
 ```bash
 # from repo root
 python scripts/validate_slice0.py     # skeleton artifacts (Slice 0)
 python scripts/validate_slice1.py     # storage/catalog artifacts (Slice 1)
+python scripts/validate_slice2.py     # raster de-risk artifacts + synthetic NDVI path
 ```
 
 ### Reset / teardown
@@ -161,6 +183,105 @@ reflectance `scale 0.0001` / `offset -0.1`. See
 [`infra/railway/README.md`](infra/railway/README.md) for the seed layout and the
 Railway equivalents of these commands.
 
+## Local frontend against Docker backend
+
+Use this workflow when you want the backend/API stack running in Docker, but the
+React/Vite frontend running locally with hot reload.
+
+### 1. Start the Docker backend/gateway stack
+
+```bash
+# from repo root
+cd infra/docker
+cp .env.example .env
+```
+
+Edit `infra/docker/.env` and set the required local secrets. Also set
+`VITE_ESRI_API_KEY` if you want the Docker-built `web` service to render Esri
+basemaps. Then start the stack:
+
+```bash
+# from infra/docker
+docker compose up --build -d
+docker compose ps
+curl http://localhost:8080/health
+curl http://localhost:8080/api/health
+```
+
+If you changed `WEB_PORT` in `infra/docker/.env`, replace `8080` with that port.
+
+### 2. Configure the local Vite frontend
+
+The local Vite app reads its own env file, so add the Esri key here too:
+
+```bash
+# from repo root
+cd apps/frontend
+cp .env.example .env
+```
+
+Edit `apps/frontend/.env`:
+
+```env
+VITE_ESRI_API_KEY=<your referrer-restricted Esri key>
+VITE_ESRI_BASEMAP_STYLE=arcgis/imagery
+VITE_ESRI_BASEMAP_STYLE_FAMILY=arcgis
+VITE_ESRI_BASEMAP_PLACES=none
+VITE_ESRI_BASEMAP_SESSION_SECONDS=43200
+```
+
+Install frontend dependencies if needed:
+
+```bash
+# from apps/frontend
+corepack yarn install --frozen-lockfile
+```
+
+### 3. Run the local frontend
+
+Bash / Git Bash / WSL:
+
+```bash
+# from apps/frontend
+AKASHA_DEV_PROXY_TARGET=http://localhost:8080 corepack yarn dev --host 127.0.0.1 --port 5173
+```
+
+PowerShell:
+
+```powershell
+# from apps/frontend
+$env:AKASHA_DEV_PROXY_TARGET = "http://localhost:8080"
+corepack yarn dev --host 127.0.0.1 --port 5173
+```
+
+Open:
+
+```text
+http://localhost:5173/monitoring/field-analytics
+```
+
+The Vite app serves the UI on port `5173` and proxies `/api/*` and `/tiles/*`
+to the Docker gateway on port `8080`. If the UI shows “Akasha is unavailable”,
+check the backend first:
+
+```bash
+curl http://localhost:8080/api/account/me
+docker compose -f infra/docker/docker-compose.yml logs api --tail=100
+```
+
+For local auth, sign in at `http://localhost:5173/login`. If the database was
+reset and no password user exists, use the bootstrap command in the local login
+section above, targeting the Docker gateway port.
+
+### 4. Stop the local services
+
+Stop only the Vite frontend with `Ctrl+C`. Stop the Docker backend stack with:
+
+```bash
+# from infra/docker
+docker compose down
+```
+
 ## Deploy to Railway
 
 Each service is a **separate** Railway service. See
@@ -173,10 +294,10 @@ and the deployment sequence.
 | Slice | Focus | Status |
 |---|---|---|
 | 0 | Repository & service skeleton | **done** |
-| 1 | Database, catalog & object storage foundation | **done (this slice)** |
-| 2 | Raster de-risk (tile + masked NDVI statistic) | planned |
-| 3 | BFF API implementation | planned |
-| 4 | Frontend map & layer UX | planned |
+| 1 | Database, catalog & object storage foundation | **done** |
+| 2 | Raster de-risk (tile + masked NDVI statistic) | **done** |
+| 3 | BFF API implementation | **done** |
+| 4 | Frontend map & layer UX | **implemented; active hardening** |
 | 5 | Plot & index UX | planned |
 | 6 | Railway deployment hardening | planned |
 | 7 | Acceptance & QA | planned |
@@ -185,9 +306,9 @@ Engineering guardrails: [`docs/engineering-dos-donts.md`](docs/engineering-dos-d
 
 ---
 
-### Emergent preview note
+### Preview note
 
-The Emergent sandbox has no Docker engine, so it runs a single FastAPI process
-(mounting `apps/api`) plus a React **Service Skeleton Dashboard** that visualises
-this topology live. The Dockerized multi-service stack above is the artifact that
-builds and runs on local Docker / Railway.
+This repository now keeps only the canonical multi-service tree. The old
+root-level Emergent preview shims (`backend/` and `frontend/`) were removed so
+there is one backend and one frontend source of truth: `apps/api` and
+`apps/frontend`.

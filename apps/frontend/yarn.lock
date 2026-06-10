@@ -577,6 +577,65 @@
     "@eslint/core" "^0.17.0"
     levn "^0.4.1"
 
+"@esri/arcgis-rest-basemap-sessions@^4.10.1":
+  version "4.10.2"
+  resolved "https://registry.yarnpkg.com/@esri/arcgis-rest-basemap-sessions/-/arcgis-rest-basemap-sessions-4.10.2.tgz#8b876bfdcb855f3a5a3f701350b18c6d1e3136d2"
+  integrity sha512-5Tfxq4Akk8c8YkNccTW+NJXI5ZVcdl3U4xw+paC1KxW4ePpHUFUVnvgYMy5FL8EKGP8+tGIBw+EkxLnUHzYbxQ==
+  dependencies:
+    mitt "^3.0.1"
+    tslib "^2.3.0"
+
+"@esri/arcgis-rest-feature-service@^4.10.1":
+  version "4.10.2"
+  resolved "https://registry.yarnpkg.com/@esri/arcgis-rest-feature-service/-/arcgis-rest-feature-service-4.10.2.tgz#943d372fadf57b8469aa256e80a49c7d3b5162d3"
+  integrity sha512-Lsgqi19hRi5TGvQs2AGCP8eOdylfKvNCL5Z3pM/qjHKQfFmmyiP1y4NngmuNy7l+hdqV/DAHtNWEVnQ+kcs3og==
+  dependencies:
+    pbf "^4.0.1"
+    tslib "^2.3.0"
+
+"@esri/arcgis-rest-fetch@^4.10.2":
+  version "4.10.2"
+  resolved "https://registry.yarnpkg.com/@esri/arcgis-rest-fetch/-/arcgis-rest-fetch-4.10.2.tgz#7a66927ade84970d35d317966839dae83075845b"
+  integrity sha512-v0+PxY5wkMulH27GxxM28KCMU73aHT9rNiIK9dBJq1PwmIzEZc+dKZkKJsLvY839oWydUwgsoOClqAlKzqZkig==
+  dependencies:
+    node-fetch "^3.2.10"
+
+"@esri/arcgis-rest-form-data@^4.10.2":
+  version "4.10.2"
+  resolved "https://registry.yarnpkg.com/@esri/arcgis-rest-form-data/-/arcgis-rest-form-data-4.10.2.tgz#6aada0c725eed7d565dff0c97913515740cd3e12"
+  integrity sha512-lyYDZP2vNOu6ueoEEebjOTz0JS9HLnWwqX4J/27O0OfIloEAyIXTZjUn2jyCpe+Mu1Q814tI9pULhaXvC2iMLw==
+  dependencies:
+    formdata-node "^4.1.0"
+
+"@esri/arcgis-rest-portal@^4.10.1":
+  version "4.10.2"
+  resolved "https://registry.yarnpkg.com/@esri/arcgis-rest-portal/-/arcgis-rest-portal-4.10.2.tgz#e6f37fa2debfce5c2bf5d016ba34f48a59b5486b"
+  integrity sha512-GtSSjo0wnpmtp0l9P5b/3NT0sODg8f/7+rFQSNYLpuqZqH/oV9W5plC4kv0jHRBZzGwk+D3kwOPd7X0J5poPsQ==
+  dependencies:
+    tslib "^2.3.0"
+
+"@esri/arcgis-rest-request@^4.10.1":
+  version "4.10.2"
+  resolved "https://registry.yarnpkg.com/@esri/arcgis-rest-request/-/arcgis-rest-request-4.10.2.tgz#e991559a4dd5619fb757da22dfeab90bfa161083"
+  integrity sha512-EKJDKiXI5m1fcaFGx7NGOraiBjVHEBxaQ4PPa07OWhp8s8/xJCiJcYw7CAX9jTZgWPiXqh45zkIQ8e+EoMCwrw==
+  dependencies:
+    "@esri/arcgis-rest-fetch" "^4.10.2"
+    "@esri/arcgis-rest-form-data" "^4.10.2"
+    mitt "^3.0.0"
+    tslib "^2.3.1"
+
+"@esri/maplibre-arcgis@^1.3.0":
+  version "1.3.0"
+  resolved "https://registry.yarnpkg.com/@esri/maplibre-arcgis/-/maplibre-arcgis-1.3.0.tgz#7e3739937c3eb5c89f0f42df1847fdba6c38d234"
+  integrity sha512-VNtGNy+d/IExGcFvYJWzlcWvCim36m/voHeH7dPmlo74Jg5lN6GsjZ/cuyXFewuAeM0K6EskdGAQU/j90gNiwg==
+  dependencies:
+    "@esri/arcgis-rest-basemap-sessions" "^4.10.1"
+    "@esri/arcgis-rest-feature-service" "^4.10.1"
+    "@esri/arcgis-rest-portal" "^4.10.1"
+    "@esri/arcgis-rest-request" "^4.10.1"
+    "@mapbox/tilebelt" "^2.0.3"
+    mitt "3.0.1"
+
 "@exodus/bytes@^1.11.0", "@exodus/bytes@^1.15.0", "@exodus/bytes@^1.6.0":
   version "1.15.1"
   resolved "https://registry.yarnpkg.com/@exodus/bytes/-/bytes-1.15.1.tgz#b13bc464ca162c17abf0837fb3a11aeab79e45d1"
@@ -698,6 +757,11 @@
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/@mapbox/point-geometry/-/point-geometry-1.1.0.tgz#3328fb54b3a1273bc619bf0a6baad8de37181749"
   integrity sha512-YGcBz1cg4ATXDCM/71L9xveh4dynfGmcLDqufR+nQQy3fKwsAZsWd/x4621/6uJaeB9mwOHE6hPeDgXz9uViUQ==
+
+"@mapbox/tilebelt@^2.0.3":
+  version "2.0.3"
+  resolved "https://registry.yarnpkg.com/@mapbox/tilebelt/-/tilebelt-2.0.3.tgz#08cab26d5a77e923f193fafee14cdc7c3d76fa84"
+  integrity sha512-HSscGw2yBlcm0GdLI3S5i8Xw/ffP2fTT2qmRbR1/AkJ02PnNN52yY+zzfw705LKKjesy8jJ/H1dieuioqN0Slw==
 
 "@mapbox/tiny-sdf@^2.1.0":
   version "2.2.0"
@@ -1901,6 +1965,11 @@ csstype@^3.0.2, csstype@^3.2.2:
   resolved "https://registry.yarnpkg.com/csstype/-/csstype-3.2.3.tgz#ec48c0f3e993e50648c86da559e2610995cf989a"
   integrity sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==
 
+data-uri-to-buffer@^4.0.0:
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/data-uri-to-buffer/-/data-uri-to-buffer-4.0.1.tgz#d8feb2b2881e6a4f58c2e08acfd0e2834e26222e"
+  integrity sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==
+
 data-urls@^7.0.0:
   version "7.0.0"
   resolved "https://registry.yarnpkg.com/data-urls/-/data-urls-7.0.0.tgz#6dce8b63226a1ecfdd907ce18a8ccfb1eee506d3"
@@ -2194,6 +2263,14 @@ fdir@^6.5.0:
   resolved "https://registry.yarnpkg.com/fdir/-/fdir-6.5.0.tgz#ed2ab967a331ade62f18d077dae192684d50d350"
   integrity sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==
 
+fetch-blob@^3.1.2, fetch-blob@^3.1.4:
+  version "3.2.0"
+  resolved "https://registry.yarnpkg.com/fetch-blob/-/fetch-blob-3.2.0.tgz#f09b8d4bbd45adc6f0c20b7e787e793e309dcce9"
+  integrity sha512-7yAQpD2UMJzLi1Dqv7qFYnPbaPx7ZfFK6PiIxQ4PfkGPyNyl2Ugx+a/umUonmKqjhM4DnfbMvdX6otXq83soQQ==
+  dependencies:
+    node-domexception "^1.0.0"
+    web-streams-polyfill "^3.0.3"
+
 file-entry-cache@^8.0.0:
   version "8.0.0"
   resolved "https://registry.yarnpkg.com/file-entry-cache/-/file-entry-cache-8.0.0.tgz#7787bddcf1131bffb92636c69457bbc0edd6d81f"
@@ -2221,6 +2298,21 @@ flatted@^3.2.9:
   version "3.4.2"
   resolved "https://registry.yarnpkg.com/flatted/-/flatted-3.4.2.tgz#f5c23c107f0f37de8dbdf24f13722b3b98d52726"
   integrity sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==
+
+formdata-node@^4.1.0:
+  version "4.4.1"
+  resolved "https://registry.yarnpkg.com/formdata-node/-/formdata-node-4.4.1.tgz#23f6a5cb9cb55315912cbec4ff7b0f59bbd191e2"
+  integrity sha512-0iirZp3uVDjVGt9p49aTaqjk84TrglENEDuqfdlZQ1roC9CWlPk6Avf8EEnZNcAqPonwkG35x4n3ww/1THYAeQ==
+  dependencies:
+    node-domexception "1.0.0"
+    web-streams-polyfill "4.0.0-beta.3"
+
+formdata-polyfill@^4.0.10:
+  version "4.0.10"
+  resolved "https://registry.yarnpkg.com/formdata-polyfill/-/formdata-polyfill-4.0.10.tgz#24807c31c9d402e002ab3d8c720144ceb8848423"
+  integrity sha512-buewHzMvYL29jdeQTVILecSaZKnt/RJWjoZCF5OW60Z67/GmSLBkOFM7qh1PI3zFNtJbaZL5eQu1vLfazOwj4g==
+  dependencies:
+    fetch-blob "^3.1.2"
 
 fsevents@~2.3.2, fsevents@~2.3.3:
   version "2.3.3"
@@ -2623,6 +2715,11 @@ minimist@^1.2.8:
   resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.8.tgz#c1a464e7693302e082a075cee0c057741ac4772c"
   integrity sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==
 
+mitt@3.0.1, mitt@^3.0.0, mitt@^3.0.1:
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/mitt/-/mitt-3.0.1.tgz#ea36cf0cc30403601ae074c8f77b7092cdab36d1"
+  integrity sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw==
+
 ms@^2.1.3:
   version "2.1.3"
   resolved "https://registry.yarnpkg.com/ms/-/ms-2.1.3.tgz#574c8138ce1d2b5861f0b44579dbadd60c6615b2"
@@ -2642,6 +2739,20 @@ natural-compare@^1.4.0:
   version "1.4.0"
   resolved "https://registry.yarnpkg.com/natural-compare/-/natural-compare-1.4.0.tgz#4abebfeed7541f2c27acfb29bdbbd15c8d5ba4f7"
   integrity sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==
+
+node-domexception@1.0.0, node-domexception@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/node-domexception/-/node-domexception-1.0.0.tgz#6888db46a1f71c0b76b3f7555016b63fe64766e5"
+  integrity sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==
+
+node-fetch@^3.2.10:
+  version "3.3.2"
+  resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-3.3.2.tgz#d1e889bacdf733b4ff3b2b243eb7a12866a0b78b"
+  integrity sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==
+  dependencies:
+    data-uri-to-buffer "^4.0.0"
+    fetch-blob "^3.1.4"
+    formdata-polyfill "^4.0.10"
 
 node-releases@^2.0.36:
   version "2.0.46"
@@ -3087,7 +3198,7 @@ ts-api-utils@^2.1.0:
   resolved "https://registry.yarnpkg.com/ts-api-utils/-/ts-api-utils-2.5.0.tgz#4acd4a155e22734990a5ed1fe9e97f113bcb37c1"
   integrity sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==
 
-tslib@^2.0.0, tslib@^2.1.0, tslib@^2.4.0, tslib@^2.8.1:
+tslib@^2.0.0, tslib@^2.1.0, tslib@^2.3.0, tslib@^2.3.1, tslib@^2.4.0, tslib@^2.8.1:
   version "2.8.1"
   resolved "https://registry.yarnpkg.com/tslib/-/tslib-2.8.1.tgz#612efe4ed235d567e8aba5f2a5fab70280ade83f"
   integrity sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==
@@ -3225,6 +3336,16 @@ w3c-xmlserializer@^5.0.0:
   integrity sha512-o8qghlI8NZHU1lLPrpi2+Uq7abh4GGPpYANlalzWxyWteJOCsr/P+oPBA49TOLu5FTZO4d3F9MnWJfiMo4BkmA==
   dependencies:
     xml-name-validator "^5.0.0"
+
+web-streams-polyfill@4.0.0-beta.3:
+  version "4.0.0-beta.3"
+  resolved "https://registry.yarnpkg.com/web-streams-polyfill/-/web-streams-polyfill-4.0.0-beta.3.tgz#2898486b74f5156095e473efe989dcf185047a38"
+  integrity sha512-QW95TCTaHmsYfHDybGMwO5IJIM93I/6vTRk+daHTWFPhwh+C8Cg7j7XyKrwrj8Ib6vYXe0ocYNrmzY4xAAN6ug==
+
+web-streams-polyfill@^3.0.3:
+  version "3.3.3"
+  resolved "https://registry.yarnpkg.com/web-streams-polyfill/-/web-streams-polyfill-3.3.3.tgz#2073b91a2fdb1fbfbd401e7de0ac9f8214cecb4b"
+  integrity sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==
 
 webidl-conversions@^8.0.1:
   version "8.0.1"

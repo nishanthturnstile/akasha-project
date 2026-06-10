@@ -42,14 +42,14 @@ def _stats(mean: float, acquisition_date: str, valid: float = 90, cloud: float =
 
 def _install_common(monkeypatch, plot: dict[str, Any], means: dict[str, float | None]) -> None:
     monkeypatch.setattr(settings, "usable_pixel_threshold_percent", 70)
-    monkeypatch.setattr(risk.plots_repo, "get_plot", lambda _: plot)
+    monkeypatch.setattr(risk.plots_repo, "get_plot", lambda *_: plot)
     monkeypatch.setattr(risk.catalog, "supported_indices", lambda _source: ["NDVI", "NDRE", "NDMI"])
     monkeypatch.setattr(
         risk.catalog,
         "list_dates",
         lambda _source: [{"acquisitionDate": item} for item in sorted(means, reverse=True)],
     )
-    monkeypatch.setattr(risk.phase10_repo, "list_scout_tasks", lambda _filters: [])
+    monkeypatch.setattr(risk.phase10_repo, "list_scout_tasks", lambda *_: [])
 
     def fake_stats(*, acquisition_date, **_kwargs):
         value = means[acquisition_date]
@@ -91,7 +91,7 @@ def test_risk_summary_high_scouting_priority_not_diagnosis(monkeypatch):
             (today - timedelta(days=3)).isoformat(): 0.8,
         },
     )
-    monkeypatch.setattr(risk.phase10_repo, "list_scout_tasks", lambda _filters: [{}, {}, {}])
+    monkeypatch.setattr(risk.phase10_repo, "list_scout_tasks", lambda *_: [{}, {}, {}])
 
     r = client.get("/api/fields/plot-1/risk/summary?indexType=NDVI")
 
@@ -144,7 +144,7 @@ def test_crop_stage_future_date_is_not_active(monkeypatch):
 
 
 def test_risk_summary_field_not_found_and_invalid_index(monkeypatch):
-    monkeypatch.setattr(risk.plots_repo, "get_plot", lambda _: None)
+    monkeypatch.setattr(risk.plots_repo, "get_plot", lambda *_: None)
     missing = client.get("/api/fields/missing/risk/summary")
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "FIELD_NOT_FOUND"

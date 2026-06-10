@@ -1,4 +1,5 @@
 """Data manager metadata/upload routes for Phase 10."""
+
 from __future__ import annotations
 
 import functools
@@ -11,8 +12,8 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import Field
 
 from . import phase10_repo
-from .auth import get_current_team
 from .api_models import ApiModel
+from .auth import CurrentTeam, CurrentUser, get_current_team, get_current_user, require_role
 from .raster.errors import AkashaError, bad_request, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.data_manager")
@@ -110,8 +111,8 @@ def _feature_count(payload: bytes, dataset_type: str) -> int | None:
 
 
 @router.get("/datasets", response_model=list[UploadedDataset], response_model_by_alias=True)
-async def list_datasets() -> list[UploadedDataset]:
-    rows = await _run_blocking(phase10_repo.list_datasets)
+async def list_datasets(team: CurrentTeam = Depends(get_current_team)) -> list[UploadedDataset]:
+    rows = await _run_blocking(phase10_repo.list_datasets, team.id)
     return [UploadedDataset(**row) for row in rows]
 
 
@@ -121,13 +122,19 @@ async def list_datasets() -> list[UploadedDataset]:
     response_model_by_alias=True,
     status_code=201,
 )
-async def create_dataset_metadata(payload: DatasetPayload) -> UploadedDataset:
+async def create_dataset_metadata(
+    payload: DatasetPayload,
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> UploadedDataset:
     row = await _run_blocking(
         phase10_repo.create_dataset,
         {
             "name": payload.name,
             "datasetType": payload.dataset_type,
             "metadata": payload.metadata,
+            "ownerId": user.id,
+            "teamId": team.id,
         },
     )
     return UploadedDataset(**row)
@@ -142,6 +149,8 @@ async def create_dataset_metadata(payload: DatasetPayload) -> UploadedDataset:
 async def upload_dataset(
     file: UploadFile = File(...),
     datasetType: str | None = Form(default=None),
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
 ) -> UploadedDataset:
     dataset_type = _dataset_type(file.filename or "dataset", datasetType)
     payload = await _read_limited(file)
@@ -156,10 +165,10 @@ async def upload_dataset(
             "featureCount": _feature_count(payload, dataset_type),
             "uploadStatus": "parsed" if dataset_type == "geojson" else "uploaded",
             "validationMessage": (
-                "ISO-XML parsing is deferred; metadata only."
-                if dataset_type == "iso_xml"
-                else None
+                "ISO-XML parsing is deferred; metadata only." if dataset_type == "iso_xml" else None
             ),
+            "ownerId": user.id,
+            "teamId": team.id,
         },
     )
     return UploadedDataset(**row)

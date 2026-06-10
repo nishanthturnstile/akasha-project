@@ -19,7 +19,7 @@ import {
   useSources,
   useUpdatePlot,
 } from '@/lib/queries';
-import { basemapAttribution, resolveBasemapStyle } from '@/map/basemap';
+import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 import { AllFieldsPanel } from '@/components/fields/AllFieldsPanel';
@@ -179,6 +179,7 @@ export default function MapPage() {
   const [allFieldsOpen, setAllFieldsOpen] = useState(false);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
+  const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const plotsQ = usePlots();
@@ -232,7 +233,14 @@ export default function MapPage() {
     return def ? def.acquisitionDate : null;
   }, [activeTimelineDates, configQ.data, dateOverride, activeSourceKind]);
 
-  const basemapStyle = useMemo(() => resolveBasemapStyle(configQ.data), [configQ.data]);
+  const basemapResolution = useMemo(() => {
+    if (!configQ.data) return { basemapConfig: null, basemapError: null };
+    try {
+      return { basemapConfig: resolveBasemapConfig(configQ.data), basemapError: null };
+    } catch (error) {
+      return { basemapConfig: null, basemapError: error };
+    }
+  }, [configQ.data]);
 
   const selectedDateMetadata = useMemo(
     () => activeTimelineDates?.find((d) => d.acquisitionDate === selectedDate) ?? null,
@@ -388,11 +396,45 @@ export default function MapPage() {
   if (configQ.isError || !configQ.data) {
     return <FullScreenError message={ messageFor(configQ.error) } onRetry={ () => configQ.refetch() } />;
   }
+  if (basemapResolution.basemapError instanceof BasemapConfigurationError) {
+    return (
+      <FullScreenError
+        message={ basemapResolution.basemapError.message }
+        onRetry={ () => configQ.refetch() }
+      />
+    );
+  }
+  if (basemapResolution.basemapError) {
+    return (
+      <FullScreenError
+        message={ messageFor(basemapResolution.basemapError) }
+        onRetry={ () => configQ.refetch() }
+      />
+    );
+  }
+  if (!basemapResolution.basemapConfig) {
+    return (
+      <FullScreenError
+        message="Esri basemap configuration is missing."
+        onRetry={ () => configQ.refetch() }
+      />
+    );
+  }
+  if (basemapRuntimeError) {
+    return (
+      <FullScreenError
+        message={ `Unable to load Esri basemap: ${basemapRuntimeError.message}` }
+        onRetry={ () => {
+          setBasemapRuntimeError(null);
+          void configQ.refetch();
+        } }
+      />
+    );
+  }
 
   const config = configQ.data;
   const sourceAttribution = selectedSource?.attribution ?? selectedSource?.provider;
   const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
-  const basemapCredit = basemapAttribution(configQ.data);
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
   const analyticsSupportedIndices = sourceSupportedIndices;
   const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
@@ -412,13 +454,14 @@ export default function MapPage() {
       </a>
 
       <MapLayerManager
-        basemapStyle={ basemapStyle }
+        basemap={ basemapResolution.basemapConfig }
         center={ config.aoi.center }
         zoom={ config.aoi.zoom }
         scene={ scene }
         sceneB={ sceneB }
         opacity={ opacity / 100 }
         visible={ visible }
+        onBasemapError={ setBasemapRuntimeError }
         onMapReady={ setMap }
       />
       <FieldBoundaryLayer map={ map } plot={ selectedPlot } />
@@ -606,7 +649,7 @@ export default function MapPage() {
         className="pointer-events-none absolute bottom-[calc(var(--timeline-height)+0.5rem)] left-4 z-toolbar max-w-[calc(100vw-2rem)] truncate rounded-sm bg-[hsl(var(--panel)/0.55)] px-1.5 py-0.5 text-[11px] text-foreground/80 backdrop-blur-sm"
         data-testid="attribution"
       >
-        { attribution } · { basemapCredit }
+        { attribution }
       </div>
 
       {/* Bottom: temporal filmstrip */ }

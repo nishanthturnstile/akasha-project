@@ -43,7 +43,7 @@ Phase 1/Slice 1 storage/catalog work has been reviewed and validated locally:
 - `ruff check apps/api services/ingestion scripts/validate_slice1.py scripts/validate_slice0.py` passes.
 - `apps/frontend` lint/build still passes with `yarn@1.22.22`.
 - Local Docker clean-stack verification passed:
-  - `api python -m app.cli migrate` applies the app schema.
+  - `api python -m app.cli db upgrade` applies the app schema.
   - `api python -m app.cli check` verifies PostGIS and API-to-MinIO liveness.
   - `ingestion-worker python worker.py seed` runs pgSTAC migration, loads the Sentinel-2 collection/item, and creates the MinIO bucket/keys.
   - `ingestion-worker python worker.py verify` verifies PostGIS, STAC collection availability, and deterministic MinIO keys.

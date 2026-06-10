@@ -23,7 +23,7 @@ selection, cloud usability, visibility, and opacity.
 ### What Phase 4 must deliver (from `docs/mvp-execution-plan.md`)
 
 - MapLibre map centered on Bangalore.
-- Basemap source configured (no public OSM raster; operator-provided style URL).
+- Basemap source configured without public unauthenticated raster tile servers.
 - Satellite tile overlay from API-provided tile metadata.
 - Layer panel with source/date selector, cloud indicator, visibility toggle, and opacity.
 - Loading, empty, and error states.
@@ -119,11 +119,8 @@ The error shape for any failed call is `{ "error": { "code", "message", "details
 - The tile raster source URL is **always** the `tileUrlTemplate` from `/api/layers/default` (default
   scene) or composed as `/api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png` when the user
   picks a different date. Never construct COG/MinIO/STAC URLs.
-- `basemapStyleUrl` in `/api/config` may be empty. Resolve the basemap style in this precedence:
-  1. `config.basemapStyleUrl` if non-empty, else
-  2. build-time `VITE_BASEMAP_STYLE_URL`, else
-  3. a bundled **fallback style** (a plain ink/“no-basemap” background style defined locally) so the
-     satellite overlay is still usable and the app never tries to reach a public CDN.
+- `/api/config` includes a `basemap` object for the Esri provider. Resolve Esri settings from that
+  object plus the build-time `VITE_ESRI_*` variables. Do not use a public raster fallback style.
 - `isLatestUsable: true` marks the default-selected date. If no date has it, fall back to the newest
   date whose `usablePixelPercent >= config.usablePixelThresholdPercent`; if none qualify, select the
   newest date and surface the marginal/empty state.
@@ -162,13 +159,11 @@ Source-of-truth docs (read before coding):
   `/api/_skeleton/services`. There is no map, Tailwind, or shadcn yet.
 - `apps/frontend/vite.config.ts` already proxies `/api` and `/tiles` to `http://localhost:8000` in
   dev — keep this so local dev mirrors the same-origin gateway contract.
-- `apps/frontend/.env.example` already declares `VITE_BASEMAP_STYLE_URL`.
+- `apps/frontend/.env.example` declares the `VITE_ESRI_*` basemap settings.
 - The production SPA is built by `infra/gateway/Dockerfile` (`yarn build` → Caddy serves `/srv`).
   Your build must keep `yarn build` working with no new required env beyond `VITE_*` placeholders.
-- shadcn/ui components from an earlier scaffold live under `frontend/src/components/ui/` (note: the
-  legacy `frontend/`, not `apps/frontend/`). You may copy the primitives you need (button, card,
-  slider, switch, tooltip, badge, scroll-area, skeleton, separator) into `apps/frontend` and restyle
-  them to the design tokens. Do not add a dependency on the legacy `frontend/` folder.
+- shadcn-style UI primitives now live directly under `apps/frontend/src/components/ui/`.
+  Extend those local primitives when needed and keep them aligned with the design tokens.
 
 ### Required dependencies to add
 
@@ -207,9 +202,9 @@ Build a single map screen (`MapPage`) that fills the viewport with floating orbi
 1. **Map (`MapPage` + `MapLayerManager`)**
    - Initialize MapLibre centered on `config.aoi.center` / `config.aoi.zoom` (Bangalore), constrained
      loosely to `config.aoi.bounds`.
-   - Resolve the basemap style via the precedence rule: `config.basemapStyleUrl` →
-     `VITE_BASEMAP_STYLE_URL` → bundled local fallback ink style (no public CDN, no public OSM
-     raster).
+   - Resolve the basemap through the Esri `basemap` object from `/api/config` and the build-time
+     `VITE_ESRI_*` variables. Missing Esri credentials should surface a setup error, not a public
+     raster fallback.
    - Add the Sentinel-2 true-colour overlay as a raster source/layer using the active scene's tile
      URL template (default from `/api/layers/default`; recomposed when the user changes date). Apply
      `bounds`, `minzoom`, `maxzoom`, and `attribution` from the layer metadata.
@@ -281,7 +276,9 @@ apps/frontend/
 
 ### Environment variables
 
-- `VITE_BASEMAP_STYLE_URL` (already in `.env.example`) — optional build-time basemap style override.
+- `VITE_ESRI_API_KEY` (already in `.env.example`) — referrer-restricted Esri key with Basemaps privilege.
+- `VITE_ESRI_BASEMAP_STYLE`, `VITE_ESRI_BASEMAP_STYLE_FAMILY`, `VITE_ESRI_BASEMAP_PLACES`, and
+  `VITE_ESRI_BASEMAP_SESSION_SECONDS` — optional Esri basemap build-time overrides.
 - Do not introduce any other required runtime env. No API base URL var — calls are same-origin
   `/api/*`. Update `apps/frontend/.env.example` if you add any new `VITE_*` placeholder.
 

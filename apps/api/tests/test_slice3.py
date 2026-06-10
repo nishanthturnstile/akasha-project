@@ -4,13 +4,14 @@ No live PostGIS is required: `app.plots_repo` is monkeypatched with an in-memory
 store, so these tests exercise the full router/validation/serialization path and
 the standard error shapes without a database.
 """
+
 import logging
 import math
 import uuid
 from datetime import UTC, datetime
 
 import pytest
-from app import plots, plots_repo
+from app import plots_repo
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -78,7 +79,7 @@ class FakeStore:
     def _metadata_defaults(self) -> dict:
         return {field: None for field in USER_METADATA_FIELDS}
 
-    def create(self, name, geometry, area_ha, metadata=None):
+    def create(self, name, geometry, area_ha, metadata=None, **_kwargs):
         self._seq += 1
         pid = str(uuid.uuid4())
         row = {
@@ -96,15 +97,15 @@ class FakeStore:
         self.rows[pid] = row
         return self._public(row)
 
-    def list(self):
+    def list(self, *_args, **_kwargs):
         ordered = sorted(self.rows.values(), key=lambda r: r["_seq"], reverse=True)
         return [self._public(r) for r in ordered]
 
-    def get(self, pid):
+    def get(self, pid, *_args, **_kwargs):
         row = self.rows.get(pid)
         return self._public(row) if row else None
 
-    def update(self, pid, name=None, geometry=None, area_ha=None, metadata=None):
+    def update(self, pid, name=None, geometry=None, area_ha=None, metadata=None, *_args, **_kwargs):
         row = self.rows.get(pid)
         if row is None:
             return None
@@ -118,10 +119,10 @@ class FakeStore:
         row["updatedAt"] = self._now()
         return self._public(row)
 
-    def delete(self, pid):
+    def delete(self, pid, *_args, **_kwargs):
         return self.rows.pop(pid, None) is not None
 
-    def bulk(self, items):
+    def bulk(self, items, **_kwargs):
         return [
             self.create(it["name"], it["geometry"], it.get("areaHa"), it.get("metadata"))
             for it in items
@@ -395,7 +396,7 @@ def test_import_geojson_partial_success(store):
         "type": "FeatureCollection",
         "features": [
             {"type": "Feature", "properties": {"name": "Good A"}, "geometry": VALID_POLY},
-            {"type": "Feature", "properties": {}, "geometry": POINT_GEOM},        # invalid
+            {"type": "Feature", "properties": {}, "geometry": POINT_GEOM},  # invalid
             {"type": "Feature", "properties": {"title": "Good B"}, "geometry": VALID_MULTIPOLY},
         ],
     }
@@ -526,7 +527,7 @@ def test_no_secret_or_internal_leakage_in_503(monkeypatch, caplog):
     # Simulate a DB driver failure whose message embeds a DSN-like secret.
     secret_dsn = "postgresql://akasha:s3cr3t@postgis.railway.internal:5432/akasha"
 
-    def boom():
+    def boom(*_args, **_kwargs):
         raise RuntimeError(f"connection failed: {secret_dsn}")
 
     monkeypatch.setattr(plots_repo, "list_plots", boom)
@@ -551,7 +552,14 @@ def test_no_internal_leakage_in_success_paths(store, monkeypatch):
     export = client.get(f"/api/plots/{created.json()['id']}/export.geojson")
     blob = created.text + listing.text + export.text
     for leak in [
-        "s3cr3t", "minio-secret-XYZ", "http://minio:9000", "DATABASE_URL",
-        "AWS_SECRET_ACCESS_KEY", "Traceback", "psycopg", "INSERT INTO", "SELECT ",
+        "s3cr3t",
+        "minio-secret-XYZ",
+        "http://minio:9000",
+        "DATABASE_URL",
+        "AWS_SECRET_ACCESS_KEY",
+        "Traceback",
+        "psycopg",
+        "INSERT INTO",
+        "SELECT ",
     ]:
         assert leak not in blob, f"leaked '{leak}' in response body"

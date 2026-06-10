@@ -50,7 +50,7 @@ def _install_leaderboard_fakes(
     values: dict[str, list[float | None]],
 ):
     monkeypatch.setattr(settings, "usable_pixel_threshold_percent", 70)
-    monkeypatch.setattr(reports.plots_repo, "list_plots", lambda: plots)
+    monkeypatch.setattr(reports.plots_repo, "list_plots", lambda *_: plots)
     monkeypatch.setattr(
         reports.catalog,
         "list_dates",
@@ -151,8 +151,8 @@ def test_report_template_crud_and_invalid_column(monkeypatch):
         "updatedAt": "2026-06-03T00:00:00Z",
     }
     monkeypatch.setattr(reports.reports_repo, "create_report_template", lambda **_: stored)
-    monkeypatch.setattr(reports.reports_repo, "list_report_templates", lambda: [stored])
-    monkeypatch.setattr(reports.reports_repo, "get_report_template", lambda _: stored)
+    monkeypatch.setattr(reports.reports_repo, "list_report_templates", lambda *_: [stored])
+    monkeypatch.setattr(reports.reports_repo, "get_report_template", lambda *_: stored)
     monkeypatch.setattr(
         reports.reports_repo,
         "update_report_template",
@@ -196,7 +196,7 @@ def test_field_leaderboard_csv_export_escapes_cells_and_uses_template(monkeypatc
     monkeypatch.setattr(
         reports.reports_repo,
         "get_report_template",
-        lambda _: {
+        lambda *_: {
             "id": "template-1",
             "name": "CSV",
             "columns": ["field", "group", "latestIndexValue"],

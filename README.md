@@ -243,6 +243,16 @@ Engineering guardrails: [`docs/engineering-dos-donts.md`](docs/engineering-dos-d
 
 ---
 
+### Azure akasha-control login
+
+```bash
+ssh -i ~/.ssh/id_ed25519_thaarei akashaadmin@20.204.163.166
+
+or
+
+ssh akasha-control
+```
+
 ### Preview note
 
 This repository now keeps only the canonical multi-service tree. The old

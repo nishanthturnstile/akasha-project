@@ -162,14 +162,14 @@ Phase 3 operational notes:
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-054 | Create a dedicated Linux user on `akasha-control` for the GitHub Actions runner. | | |
-| TASK-055 | Install the GitHub Actions self-hosted runner under the dedicated runner user. | | |
-| TASK-056 | Register the runner to repository `nishanthturnstile/akasha-project` or the owning GitHub organization. | | |
-| TASK-057 | Apply runner labels `self-hosted`, `linux`, `x64`, and `akasha-control`. | | |
-| TASK-058 | Grant the runner Docker access required for image builds. | | |
-| TASK-059 | Verify the runner can make outbound HTTPS connections to `github.com`, `api.github.com`, `*.actions.githubusercontent.com`, `ghcr.io`, and GitHub package domains. | | |
+| TASK-054 | Create a dedicated Linux user on `akasha-control` for the GitHub Actions runner. | Yes — created `github-runner` on `akasha-control`. | 2026-06-10 |
+| TASK-055 | Install the GitHub Actions self-hosted runner under the dedicated runner user. | Yes — installed runner `2.335.1` under `/data/actions-runner/akasha-control` and installed it as a systemd service. | 2026-06-10 |
+| TASK-056 | Register the runner to repository `nishanthturnstile/akasha-project` or the owning GitHub organization. | Yes — registered to client repository `Akasha-TechCatalyst/akasha-project`. | 2026-06-10 |
+| TASK-057 | Apply runner labels `self-hosted`, `linux`, `x64`, and `akasha-control`. | Yes — runner registered with labels `self-hosted`, `linux`, `x64`, and `akasha-control`. | 2026-06-10 |
+| TASK-058 | Grant the runner Docker access required for image builds. | Yes — `github-runner` is a member of the `docker` group and can access Docker with data-root `/data/docker`. | 2026-06-10 |
+| TASK-059 | Verify the runner can make outbound HTTPS connections to `github.com`, `api.github.com`, `*.actions.githubusercontent.com`, `ghcr.io`, and GitHub package domains. | Yes — runner connected to GitHub, downloaded actions, built images, and pushed all four Akasha images to GHCR from client workflow run `27290559364`. | 2026-06-10 |
 | TASK-060 | Configure GitHub repository or organization policy so untrusted fork pull request code does not run on the self-hosted runner. | | |
-| TASK-061 | Run a minimal GitHub Actions workflow on the self-hosted runner to verify job pickup and completion. | | |
+| TASK-061 | Run a minimal GitHub Actions workflow on the self-hosted runner to verify job pickup and completion. | Yes — client `Build client images` workflow completed successfully on `akasha-control`; jobs `akasha-api`, `akasha-ingestion-sar`, `akasha-ingestion-worker`, and `akasha-web` all succeeded. | 2026-06-10 |
 
 ### Implementation Phase 7
 
@@ -191,6 +191,7 @@ Repository ownership and sync notes:
 - Client `main` is aligned to source `origin/main` at commit `2df880f98bc422cddec0ca8f76eb97ff9aeb1825`; the earlier feature-branch snapshot was corrected.
 - Added `.github/workflows/sync-client-main.yml` on source branch `dev-akasha-core`; after PR merge to source `main`, pushes to source `main` will sync to client `main` using secret `CLIENT_REPO_SYNC_SSH_KEY`.
 - The sync workflow is guarded to run only in source repository `nishanthturnstile/akasha-project`, so the copied workflow should not recursively run in the client repository.
+- Added client-only `.github/workflows/build-client-images.yml`; after sync to `Akasha-TechCatalyst/akasha-project`, client workflow run `27290559364` successfully built and pushed `akasha-api`, `akasha-ingestion-sar`, `akasha-ingestion-worker`, and `akasha-web` to `ghcr.io/akasha-techcatalyst/*` with Git SHA tag `a7f67f47f3b801e5a62dcd053a7d1a54296b144e` and `main` tags.
 
 ### Implementation Phase 8
 

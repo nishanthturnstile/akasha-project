@@ -59,122 +59,158 @@ When changing application behavior, edit `apps/api` and `apps/frontend`.
 | minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
 | ingestion-worker | no | — | CLI | `python:3.11.14-slim-bookworm` |
 
-## Complete local setup (clone → run → verify)
+## Local development: one command with frontend hot reload
 
-This is the end-to-end onboarding flow. Follow it top-to-bottom from a fresh
-clone to get the local multi-service stack running and verify the storage,
-catalog, API, and raster de-risk foundations. No prior project state is assumed.
+This is the recommended workflow for day-to-day development. It runs the
+backend/API/data services in Docker, runs the React/Vite frontend locally for
+hot reload, and keeps the browser contract exactly like production:
+same-origin `/api/*` and `/tiles/*` through the gateway.
 
-### 0. Prerequisites
+### Prerequisites
 
-- **Docker Desktop** (or Docker Engine) with the Compose plugin — `docker compose version` must work.
-- **Git**, and ~4 GB free disk for images + named volumes.
-- Optional, only for the no-Docker static validators below: **Python 3.11+** (`pip install pyyaml`).
+- **Docker Desktop** (or Docker Engine) with Compose: `docker compose version`
+- **Node.js 20+** with `npx` available
+- **Git Bash**, WSL, macOS/Linux shell, or another shell that can run `bash`
+- Optional: `make`. If `make` is not installed, use the `bash` command below.
 
-> Windows users: run the commands below in **Git Bash**, WSL, or PowerShell.
-> All `docker compose` commands are run from the `infra/docker` directory.
+### Start everything
 
-### 1. Clone the repository
-
-```bash
-git clone <your-repo-url> akasha
-cd akasha
-```
-
-### 2. Configure local secrets
+From the repository root:
 
 ```bash
-cd infra/docker
-cp .env.example .env
+make dev
 ```
 
-Edit `infra/docker/.env` and replace every `CHANGE_ME_*` value with a strong
-local secret (PostgreSQL user/password, MinIO root user/password). There are no
-defaults — the stack will not start with placeholder values. `WEB_PORT=8080` is
-the only public host port; change it if 8080 is taken.
-
-### 3. Start the full stack
+If `make` is unavailable:
 
 ```bash
-# from infra/docker
-docker compose up --build -d
+bash scripts/dev-local.sh
 ```
 
-Wait until containers are healthy, then confirm the public gateway and the
-proxied API respond:
+The command does the boring-but-important setup automatically:
 
-```bash
-curl http://localhost:8080/health           # web gateway  -> ok
-curl http://localhost:8080/api/health        # proxied api  -> {"status":"ok"}
-python ../../scripts/smoke-test.py http://localhost:8080
-```
+1. Verifies required local tools are available and Docker Desktop/Engine is running
+2. Creates ignored local env files if missing:
+   - `infra/docker/.env` with generated local-only Docker secrets
+   - `apps/frontend/.env` for Vite basemap settings
+3. Checks whether the configured Docker gateway port is already occupied
+4. Starts the Docker stack: `web`, `api`, `titiler`, `stac-api`, `postgis`, `minio`
+5. Waits for gateway/API health checks
+6. Applies API migrations with `python -m app.cli db upgrade`
+7. Runs API storage checks with `python -m app.cli check`
+8. Seeds catalog/storage with `worker.py seed`
+9. Bootstraps a local admin user if no password user exists
+10. Starts Vite with hot reload, using the next free frontend port if `5173` is busy
 
-### 4. Bootstrap the data foundation
+The same command is safe for both **first run** and **repeat runs**. Migrations,
+API checks, and seed loading are intentionally idempotent, so the team does not
+need a separate “first-time setup” command.
 
-The data foundation is seeded **deterministically and idempotently** — these
-commands are safe to re-run. Run them *inside* the running containers:
-
-```bash
-# from infra/docker
-
-# 4a) app schema: Alembic ORM baseline for API-owned akasha tables (api service)
-docker compose exec api python -m app.cli db upgrade
-docker compose exec api python -m app.cli check        # postgis_version() + API->MinIO liveness
-
-# 4b) catalog + storage: pgSTAC migrate -> load collection/item -> MinIO bucket/keys (ingestion)
-docker compose exec ingestion-worker python worker.py seed
-
-# 4c) storage/catalog exit criteria: PostGIS, STAC collection, MinIO bucket + deterministic keys
-docker compose exec ingestion-worker python worker.py verify
-```
-
-`worker.py verify` passing (3/3 checks) means the storage/catalog foundation is
-correctly set up locally. Real COGs are operator-provided and not committed.
-
-### 5. Local login credentials
-
-For the local Docker stack only, create the first password user after a clean
-database reset with the bootstrap API. The current local reset uses:
+Open:
 
 ```text
-URL:      http://localhost:18080/login   # this workspace; use 8080 if WEB_PORT is unchanged
+http://localhost:5173/   # default; use the URL printed by the script if 5173 is busy
+```
+
+Local login:
+
+```text
+URL:      http://localhost:5173/login   # default; use the printed frontend port if changed
 Username: admin
 Password: AkashaLocal2026!
 ```
 
-If the database has been wiped and no password user exists yet, recreate that
-local account from `infra/docker`:
+You can override the local bootstrap credentials before first run:
 
 ```bash
-curl -X POST http://localhost:18080/api/auth/bootstrap \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"AkashaLocal2026!","email":"admin@akasha.local","displayName":"Akasha Local Admin","teamName":"Akasha Local Team"}'
+AKASHA_LOCAL_ADMIN_USER=myadmin AKASHA_LOCAL_ADMIN_PASSWORD='change-me-local-only' make dev
 ```
 
-Bootstrap only works while `AUTH_ALLOW_BOOTSTRAP=true` and no active password
-user exists. Do not use this local password in Railway, customer, or production
-deployments.
+### Esri basemap key
 
-### 6. (Optional) Static validation — no Docker required
+The app can start without an Esri key, but the map view needs one to render the
+configured Esri imagery basemap. Add your referrer-restricted ArcGIS Location
+Platform key to `apps/frontend/.env`:
+
+```env
+VITE_ESRI_API_KEY=<your referrer-restricted key with Basemaps privilege>
+```
+
+If you set `VITE_ESRI_API_KEY` before the first `make dev`, the script copies it
+into both generated local env files.
+
+### Backend/gateway only
+
+If you want the Docker stack prepared without starting Vite:
 
 ```bash
-# from repo root
-python scripts/validate_slice0.py     # skeleton artifacts (Slice 0)
-python scripts/validate_slice1.py     # storage/catalog artifacts (Slice 1)
-python scripts/validate_slice2.py     # raster de-risk artifacts + synthetic NDVI path
+make up
 ```
 
-### Reset / teardown
+or:
 
 ```bash
-# from infra/docker
-docker compose down        # stop containers, keep data volumes
-docker compose down -v     # also delete postgis_data + minio_data (clean slate)
+bash scripts/dev-local.sh --backend-only
 ```
 
-> If you previously started the stack and changed PostgreSQL/MinIO credentials,
-> run `docker compose down -v` once before `up` to clear stale credentials
-> baked into the named volumes.
+The gateway URL is based on `WEB_PORT` in `infra/docker/.env`. The default is
+`http://localhost:8080`. If that port is already occupied by the Akasha gateway,
+the script reuses it. If another process owns the port, the script updates
+`WEB_PORT` to the next free port and prints the actual backend URL. Vite reads
+that value automatically, so you do not need to manually set
+`AKASHA_DEV_PROXY_TARGET` for normal local development.
+
+The frontend prefers `FRONTEND_PORT=5173`. If that port is already in use, the
+script starts Vite on the next free port and prints the actual frontend/login
+URL. Set `FRONTEND_PORT` only when you intentionally want a different preferred
+port.
+
+### Stop, restart, reset
+
+Stop only the hot-reload frontend with `Ctrl+C`. Docker services keep running.
+
+```bash
+make down      # stop Docker services, keep local data volumes
+make reset     # stop Docker services and delete PostGIS/MinIO volumes
+make dev       # start again from a clean or existing state
+```
+
+If PostgreSQL or MinIO credentials were changed after volumes already existed,
+run `make reset` once so Docker recreates the volumes with the new credentials.
+
+### Troubleshooting quick checks
+
+```bash
+docker compose -f infra/docker/docker-compose.yml ps
+curl http://localhost:5173/api/health
+docker compose -f infra/docker/docker-compose.yml logs api --tail=100
+```
+
+Common causes:
+
+- `Docker engine is not reachable`: Docker Desktop is installed but not running;
+  start it and rerun `make dev`.
+- `Frontend startup needs yarn, corepack, or npx`: install Node.js 20+ and rerun
+  `make dev`.
+- `curl http://localhost:5173/api/health` fails: Vite is not running, or the
+  Docker gateway is unhealthy. If the script selected a different frontend
+  port, use that printed port instead of `5173`.
+- `http://localhost:8080` fails but containers are healthy: check the printed
+  backend URL or `WEB_PORT` in `infra/docker/.env`; this workspace may use
+  `18080` or another free port.
+- Map says the basemap is not configured: set `VITE_ESRI_API_KEY` in
+  `apps/frontend/.env` and restart Vite.
+- Auth bootstrap is skipped: a local password user already exists; use the
+  existing local account or run `make reset` if you intentionally want a clean
+  database.
+
+### Optional static validation — no Docker required
+
+```bash
+python scripts/validate_slice0.py
+python scripts/validate_slice1.py
+python scripts/validate_slice2.py
+```
 
 Domain invariants seeded by this flow: frozen analytic band order
 `[B04,B08,B05,B06,B07,B11,B12,B03,B02]`; true-colour RGB = bands `[1,8,9]`;
@@ -182,105 +218,6 @@ reflectance `scale 0.0001` / `offset -0.1`. See
 [`data/seed/README.md`](data/seed/README.md) and
 [`infra/railway/README.md`](infra/railway/README.md) for the seed layout and the
 Railway equivalents of these commands.
-
-## Local frontend against Docker backend
-
-Use this workflow when you want the backend/API stack running in Docker, but the
-React/Vite frontend running locally with hot reload.
-
-### 1. Start the Docker backend/gateway stack
-
-```bash
-# from repo root
-cd infra/docker
-cp .env.example .env
-```
-
-Edit `infra/docker/.env` and set the required local secrets. Also set
-`VITE_ESRI_API_KEY` if you want the Docker-built `web` service to render Esri
-basemaps. Then start the stack:
-
-```bash
-# from infra/docker
-docker compose up --build -d
-docker compose ps
-curl http://localhost:8080/health
-curl http://localhost:8080/api/health
-```
-
-If you changed `WEB_PORT` in `infra/docker/.env`, replace `8080` with that port.
-
-### 2. Configure the local Vite frontend
-
-The local Vite app reads its own env file, so add the Esri key here too:
-
-```bash
-# from repo root
-cd apps/frontend
-cp .env.example .env
-```
-
-Edit `apps/frontend/.env`:
-
-```env
-VITE_ESRI_API_KEY=<your referrer-restricted Esri key>
-VITE_ESRI_BASEMAP_STYLE=arcgis/imagery
-VITE_ESRI_BASEMAP_STYLE_FAMILY=arcgis
-VITE_ESRI_BASEMAP_PLACES=none
-VITE_ESRI_BASEMAP_SESSION_SECONDS=43200
-```
-
-Install frontend dependencies if needed:
-
-```bash
-# from apps/frontend
-corepack yarn install --frozen-lockfile
-```
-
-### 3. Run the local frontend
-
-Bash / Git Bash / WSL:
-
-```bash
-# from apps/frontend
-AKASHA_DEV_PROXY_TARGET=http://localhost:8080 corepack yarn dev --host 127.0.0.1 --port 5173
-```
-
-PowerShell:
-
-```powershell
-# from apps/frontend
-$env:AKASHA_DEV_PROXY_TARGET = "http://localhost:8080"
-corepack yarn dev --host 127.0.0.1 --port 5173
-```
-
-Open:
-
-```text
-http://localhost:5173/monitoring/field-analytics
-```
-
-The Vite app serves the UI on port `5173` and proxies `/api/*` and `/tiles/*`
-to the Docker gateway on port `8080`. If the UI shows “Akasha is unavailable”,
-check the backend first:
-
-```bash
-curl http://localhost:8080/api/account/me
-docker compose -f infra/docker/docker-compose.yml logs api --tail=100
-```
-
-For local auth, sign in at `http://localhost:5173/login`. If the database was
-reset and no password user exists, use the bootstrap command in the local login
-section above, targeting the Docker gateway port.
-
-### 4. Stop the local services
-
-Stop only the Vite frontend with `Ctrl+C`. Stop the Docker backend stack with:
-
-```bash
-# from infra/docker
-docker compose down
-```
 
 ## Deploy to Railway
 

@@ -26,8 +26,8 @@ def seed_all(
 ) -> list[str]:
     """Full idempotent seed: pgSTAC migrate -> load collection/item -> MinIO.
 
-    Assumes the app schema (api `python -m app.cli migrate`) has already created
-    the PostGIS extension. Safe to run repeatedly.
+    Assumes the app schema (api `python -m app.cli db upgrade`) has already
+    created the PostGIS extension. Safe to run repeatedly.
     """
     out = [catalog.migrate_catalog()]
     out.extend(seed_stac(method=method, collection_id=collection_id))

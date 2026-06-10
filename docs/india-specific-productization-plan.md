@@ -6,7 +6,7 @@ last_updated: 2026-06-04
 
 # India-Specific Productization Plan
 
-This plan defines India-specific product direction after EOS-like parity. It is decision-support only: Akasha risk outputs, vegetation indices, weather context, and scout records are not crop disease diagnosis, treatment advice, insurance determination, or government certification.
+This plan defines India-specific product direction for Akasha's native crop-intelligence roadmap. It is decision-support only: Akasha risk outputs, vegetation indices, weather context, and scout records are not crop disease diagnosis, treatment advice, insurance determination, or government certification.
 
 ## Crop seasons
 
@@ -22,7 +22,7 @@ Initial catalog candidates include paddy/rice, wheat, maize, millets, cotton, su
 
 ## Weather and warnings
 
-IMD forecasts and warnings are the preferred native path for heavy rainfall, heatwave, cold-wave, cyclone, thunderstorm, monsoon onset/withdrawal, rainfall anomaly, drought, and waterlogging context. Weather providers must stay behind the BFF/provider adapter boundary.
+IMD forecasts and warnings are the preferred native path for heavy rainfall, heatwave, cold-wave, cyclone, thunderstorm, monsoon onset/withdrawal, rainfall anomaly, drought, and waterlogging context. Weather data integrations must stay behind the BFF boundary.
 
 ## Smallholder workflows
 
@@ -47,7 +47,7 @@ Potential workflows include PMFBY-style crop-loss support, administrative aggreg
 
 Satellite indices alone must never be presented as definitive crop-loss assessment or official determination.
 
-## Data and provider strategy
+## Data source strategy
 
 Native sources should prioritize Sentinel-2, Sentinel-1, Landsat, public DEM/soil/weather datasets, and IMD warnings. ISRO/Bhoonidhi and paid high-resolution imagery should be optional adapters only after access, licensing, and cost are confirmed.
 

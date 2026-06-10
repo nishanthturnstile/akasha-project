@@ -4,11 +4,12 @@
 
 COMPOSE := docker compose -f infra/docker/docker-compose.yml
 
-.PHONY: help up down logs build validate smoke fmt lint test reset
+.PHONY: help dev up down logs build validate smoke fmt lint test reset
 
 help:
 	@echo "Akasha monorepo — make targets"
-	@echo "  make up       - build & start the local stack (Docker Compose)"
+	@echo "  make dev      - start Docker backend + hot-reload Vite frontend"
+	@echo "  make up       - start/prepare Docker backend + gateway only"
 	@echo "  make down     - stop the local stack"
 	@echo "  make reset    - stop the stack and delete local volumes"
 	@echo "  make logs     - tail logs for all services"
@@ -19,9 +20,11 @@ help:
 	@echo "  make lint     - lint Python (ruff)"
 	@echo "  make test     - run api unit tests"
 
+dev:
+	bash scripts/dev-local.sh
+
 up:
-	cd infra/docker && cp -n .env.example .env || true
-	$(COMPOSE) up --build -d
+	bash scripts/dev-local.sh --backend-only
 
 down:
 	$(COMPOSE) down

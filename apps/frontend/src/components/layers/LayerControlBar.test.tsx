@@ -48,6 +48,29 @@ const plot: Plot = {
 
 const cloudMask: CloudMaskOptions = { clouds: true, cloudShadows: true, cirrus: true };
 
+const comparableDates: SceneDate[] = [
+    {
+        acquisitionDate: '2026-04-20',
+        datetime: '2026-04-20T00:00:00Z',
+        usablePixelPercent: 85,
+        cloudMaskedPercent: 10,
+        coveragePercent: 100,
+        isLatestUsable: false,
+        metricsProvisional: false,
+        tileAvailable: true,
+    },
+    {
+        acquisitionDate: '2026-04-27',
+        datetime: '2026-04-27T00:00:00Z',
+        usablePixelPercent: 90,
+        cloudMaskedPercent: 5,
+        coveragePercent: 100,
+        isLatestUsable: true,
+        metricsProvisional: false,
+        tileAvailable: true,
+    },
+];
+
 function renderBar(ui: ReactElement) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } },
@@ -71,28 +94,7 @@ function baseProps(overrides: Partial<Parameters<typeof LayerControlBar>[0]> = {
         onCloudMaskChange: vi.fn(),
         compareEnabled: false,
         onCompareEnabledChange: vi.fn(),
-        comparableDates: [
-            {
-                acquisitionDate: '2026-04-27',
-                datetime: '2026-04-27T00:00:00Z',
-                usablePixelPercent: 100,
-                cloudMaskedPercent: 0,
-                coveragePercent: 100,
-                isLatestUsable: true,
-                metricsProvisional: false,
-                tileAvailable: true,
-            },
-            {
-                acquisitionDate: '2026-04-20',
-                datetime: '2026-04-20T00:00:00Z',
-                usablePixelPercent: 90,
-                cloudMaskedPercent: 10,
-                coveragePercent: 90,
-                isLatestUsable: false,
-                metricsProvisional: false,
-                tileAvailable: true,
-            },
-        ] as SceneDate[],
+        comparableDates,
         activeDate: '2026-04-27',
         compareDate: null,
         onCompareDateChange: vi.fn(),
@@ -102,7 +104,6 @@ function baseProps(overrides: Partial<Parameters<typeof LayerControlBar>[0]> = {
         selectedDate: '2026-04-27',
         exportSourceId: 'sentinel-2-l2a',
         exportIndexType: 'NDVI',
-        selectedScene: null,
         collapsed: false,
         onCollapsedChange: vi.fn(),
         ...overrides,

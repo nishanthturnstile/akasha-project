@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   CalendarRange,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  LogOut,
   Satellite,
   UserCircle2,
 } from 'lucide-react';
@@ -12,6 +13,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { queryClient } from '@/lib/queryClient';
+import { useAccountMe, useLogout } from '@/lib/queries';
 import { MAIN_MONITORING_ROUTE, productNavigation } from '@/routes/productNavigation';
 
 function testIdFor(label: string): string {
@@ -48,6 +51,9 @@ function loadRailCollapsed(): boolean {
 
 export function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const account = useAccountMe();
+  const logout = useLogout();
   const activeGroupLabel = useMemo(
     () => groupLabelForPath(location.pathname),
     [location.pathname],
@@ -194,7 +200,7 @@ export function AppShell() {
             </Tooltip>
           </div>
 
-          {/* Season selector placeholder (top of rail in EOS parity) */ }
+          {/* Season selector placeholder for the product rail. */ }
           <div className={ cn('px-3 py-2', railCollapsed && 'px-2') }>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -401,37 +407,56 @@ export function AppShell() {
                     </NavLink>
                   );
                 }) }
-                {/* Account / team popover trigger (placeholder) */ }
+                {/* Account / team controls */ }
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      disabled
+                      onClick={ async () => {
+                        // Fully await the server logout so the request completes
+                        // before we tear down the page. Navigating/clearing while
+                        // the POST is in flight aborts it. Logout is best-effort:
+                        // clear local session state and leave even if it fails.
+                        try {
+                          await logout.mutateAsync();
+                        } catch {
+                          // Ignore: the session cookie is cleared server-side and
+                          // local state is dropped below regardless.
+                        }
+                        queryClient.clear();
+                        navigate('/login', { replace: true });
+                      } }
                       data-testid="account-popover-trigger"
-                      aria-label="Account and team (coming soon)"
+                      aria-label="Sign out"
                       className={ cn(
-                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-[12px] text-muted-foreground transition-colors duration-fast hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-70',
+                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-[12px] text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70',
                         railCollapsed ? 'size-9 justify-center px-0 py-0' : 'w-full',
                       ) }
+                      disabled={ logout.isPending }
                     >
-                      <UserCircle2
-                        className="size-5 shrink-0 text-primary"
-                        strokeWidth={ 1.5 }
-                        aria-hidden="true"
-                      />
+                      { railCollapsed ? (
+                        <LogOut className="size-4 shrink-0 text-primary" strokeWidth={ 1.75 } />
+                      ) : (
+                        <UserCircle2
+                          className="size-5 shrink-0 text-primary"
+                          strokeWidth={ 1.5 }
+                          aria-hidden="true"
+                        />
+                      ) }
                       { !railCollapsed && (
                         <span className="min-w-0 flex-1 truncate text-left">
                           <span className="block truncate text-[12px] text-foreground/90">
-                            Guest workspace
+                            { account.data?.user?.displayName ?? 'Akasha user' }
                           </span>
                           <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
-                            Switch · team
+                            { account.data?.currentTeam?.name ?? 'Workspace' }
                           </span>
                         </span>
                       ) }
+                      { !railCollapsed && <LogOut className="size-4 shrink-0" strokeWidth={ 1.75 } /> }
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="left">Account &amp; team (coming soon)</TooltipContent>
+                  <TooltipContent side="left">Sign out</TooltipContent>
                 </Tooltip>
               </nav>
             </>

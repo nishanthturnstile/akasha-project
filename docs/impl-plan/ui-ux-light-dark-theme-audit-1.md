@@ -17,7 +17,7 @@ approved.
 
 Audit method: MapLibre map screen rendered live; element bounding boxes, computed colors, and grid
 tracks were read with scripted `getBoundingClientRect` / `getComputedStyle` probes; screenshots were
-captured per theme and per viewport; the EOSDA Crop Monitoring reference was used to sanity-check the
+captured per theme and per viewport; retained Akasha product workflows were used to sanity-check the
 intended chrome placement.
 
 ## Summary of findings (by severity)
@@ -37,7 +37,7 @@ intended chrome placement.
 
 - **REQ-001**: The app shell must render a single full-width content column below the `lg` (1024px) breakpoint; the right product rail only occupies a track at `lg+`.
 - **REQ-002**: No two floating map-chrome elements (controls, legend, attribution, layer bar, panels, timeline) may overlap at any tested width (390/768/1024/1280/1440) in either theme.
-- **REQ-003**: Text on glass overlays must meet WCAG AA (≥ 4.5:1 for body/caption, ≥ 3:1 for large text) in **both** themes, regardless of basemap luminance (the default basemap is the light OSM raster).
+- **REQ-003**: Text on glass overlays must meet WCAG AA (≥ 4.5:1 for body/caption, ≥ 3:1 for large text) in **both** themes, regardless of basemap luminance.
 - **REQ-004**: The legend visibility toggle and all map-control buttons must be reachable (not occluded) in both themes and at all widths.
 - **REQ-005**: User theme choice must persist across reloads and must apply before first paint (no light→dark flash).
 - **REQ-006**: Preserve the Akasha design-system identity (Solar Amber primary, glass tokens, Space Grotesk/Inter) and the CLAUDE.md rule that true-colour is the default layer; do not restyle into a generic look.
@@ -61,11 +61,11 @@ intended chrome placement.
 ### C2 — Bottom-left legend overlaps map controls (Critical)
 - **Evidence (measured):** `[data-testid="map-controls"]` = 36×258 at (16,568..826); `[data-testid="map-legend"]` = 176×88 at (16,714..802). Overlap = **36×88px** at 1440 (and 36×87 at 1092). The legend paints over the bottom ~3 control buttons — *Find selected field*, *Hide legend*, *Enter full screen* — so only 4 of 7 buttons are clickable; the "Hide legend" button is fully occluded. The attribution row likewise overlaps the controls by 36×16px. Reproduces identically in Light and Dark.
 - **Root cause:** In `MapPage.tsx` two absolutely-positioned containers share the **same anchor** `absolute bottom-[calc(var(--timeline-height)+1.125rem)] left-4 z-toolbar` — one wraps `<MapControls>`, the other wraps `<Legend>` + attribution. Equal `z-toolbar` + later DOM order makes the legend paint over the controls.
-- **Proposed fix:** Merge the two bottom-left containers into **one** `flex flex-col items-start gap-2` anchored bottom-left, ordered `[Legend, MapControls, attribution]` so they stack with real layout (no overlap) at every width. (Matches the EOS pattern where controls and legend never share pixels.) Add a short-viewport guard so the legend hides under ~560px height if needed.
+- **Proposed fix:** Merge the two bottom-left containers into **one** `flex flex-col items-start gap-2` anchored bottom-left, ordered `[Legend, MapControls, attribution]` so they stack with real layout (no overlap) at every width. Add a short-viewport guard so the legend hides under ~560px height if needed.
 
-### H1 — Dark-mode overlays fail contrast on the light basemap (High)
-- **Evidence (measured):** Glass panels compute `background: rgba(21,27,40,0.62)` with `blur(18px)`. The default basemap is the **light** OSM raster, so the composited panel background ≈ `rgb(105,108,114)`. Resulting contrast: legend caption (`--muted-foreground` `rgb(143,156,174)`) ≈ **1.8:1**; body text (`rgb(229,235,240)`) ≈ **4.0:1** — both below AA 4.5:1. Affects legend, timeline, layer bar, field header, command palette, cloud-mask popover (all use `.glass`).
-- **Root cause:** Dark `--panel-alpha: 0.62` was tuned for *dark satellite imagery*; over the light OSM default basemap the bright map bleeds through and washes out foreground/muted text. `--on-map-ring-alpha: 0.1` also gives panels almost no edge against a light map.
+### H1 — Dark-mode overlays fail contrast on light basemap imagery (High)
+- **Evidence (measured):** Glass panels compute `background: rgba(21,27,40,0.62)` with `blur(18px)`. Over light basemap imagery, the composited panel background is approximately `rgb(105,108,114)`. Resulting contrast: legend caption (`--muted-foreground` `rgb(143,156,174)`) is approximately **1.8:1**; body text (`rgb(229,235,240)`) is approximately **4.0:1** — both below AA 4.5:1. Affects legend, timeline, layer bar, field header, command palette, cloud-mask popover (all use `.glass`).
+- **Root cause:** Dark `--panel-alpha: 0.62` was tuned for *dark satellite imagery*; over bright basemap imagery the map bleeds through and washes out foreground/muted text. `--on-map-ring-alpha: 0.1` also gives panels almost no edge against a light map.
 - **Proposed fix (token-level, one place in `globals.css` `.dark`):**
   - `--panel-alpha`: `0.62 → ~0.86` (legible over any basemap, still subtly translucent).
   - `--muted-foreground`: lighten ~`215 16% 62% → 215 18% 70%`.
@@ -73,7 +73,7 @@ intended chrome placement.
   - Re-measure caption + body contrast to confirm ≥ 4.5:1; spot-check Light theme stays ≥ 4.5:1 (nudge light `--panel-alpha` `0.72 → ~0.8` only if needed for dark imagery robustness).
 
 ### M1 — On-map attribution unreadable on light basemap (Medium)
-- **Evidence:** Attribution computes `color: oklab(... /0.7)` (`text-foreground/70`) with **no** background (`rgba(0,0,0,0)`), rendered directly on the map with only an `on-map-text` shadow. In dark theme that is light text on the light OSM basemap → very low contrast; it also visually collides with OSM place labels.
+- **Evidence:** Attribution computes `color: oklab(... /0.7)` (`text-foreground/70`) with **no** background (`rgba(0,0,0,0)`), rendered directly on the map with only an `on-map-text` shadow. In dark theme that can put light text over light basemap imagery, causing very low contrast and visual collision with basemap labels.
 - **Root cause:** Credit line relies on a text-shadow halo that assumes dark imagery underneath.
 - **Proposed fix:** Give the attribution a minimal glass backing chip (`rounded-sm`, `bg-[hsl(var(--panel)/0.55)]`, `px-1.5 py-0.5`, `backdrop-blur-sm`) that reads in both themes; keep it `pointer-events-none`. Overlap with controls is independently resolved by C2.
 
@@ -117,4 +117,4 @@ intended chrome placement.
 
 ## 5. Out of scope
 
-- Backend/data tile availability (L1), new features, EOS pixel-parity, and any change to the satellite/index/mask domain rules.
+- Backend/data tile availability (L1), new features, pixel-parity audits, and any change to the satellite/index/mask domain rules.

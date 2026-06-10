@@ -21,19 +21,12 @@ import {
   getAssistantStatus,
   getFieldLeaderboard,
   getFieldRiskSummary,
-  getFieldWeatherForecast,
-  getFieldWeatherHistory,
-  getFieldWeatherSoilMoisture,
-  createVegetationZoning,
-  exportZoningMap,
   getJohnDeereConnection,
-  getZoningMap,
   listApiKeys,
   listActivities,
   listDatasets,
   listFieldGroups,
   listScoutTasks,
-  listZoningMaps,
   listReportTemplates,
   listNotifications,
   getPlots,
@@ -199,7 +192,7 @@ describe('api client error mapping', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/plots/plot-1', expect.objectContaining({ method: 'DELETE' }));
     });
 
-    it('returns GeoJSON blobs for exports without exposing provider URLs', async () => {
+    it('returns GeoJSON blobs for exports without exposing storage URLs', async () => {
       const blob = new Blob(['{"type":"FeatureCollection","features":[]}'], {
         type: 'application/geo+json',
       });
@@ -243,7 +236,6 @@ describe('api client error mapping', () => {
         sourceId: 'sentinel-2-l2a',
         acquisitionDate: '2026-06-01',
         indexType: 'NDVI',
-        provider: 'native',
         cloudMask: { clouds: true, cloudShadows: false, cirrus: true },
       });
       await exportFieldReportCsv('plot-1', {
@@ -257,95 +249,11 @@ describe('api client error mapping', () => {
       expect(file.filename).toBe('North_NDVI.csv');
       expect(fetchMock).toHaveBeenNthCalledWith(
         1,
-        '/api/fields/plot-1/exports/index?format=csv&sourceId=sentinel-2-l2a&acquisitionDate=2026-06-01&indexType=NDVI&provider=native&clouds=true&cloudShadows=false&cirrus=true',
+        '/api/fields/plot-1/exports/index?format=csv&sourceId=sentinel-2-l2a&acquisitionDate=2026-06-01&indexType=NDVI&clouds=true&cloudShadows=false&cirrus=true',
         expect.objectContaining({ method: 'GET' }),
       );
       expect(String(fetchMock.mock.calls[1][0])).toContain('/api/fields/plot-1/exports/report.csv?');
       expect(String(fetchMock.mock.calls[1][0])).toContain('cloudShadows=false');
-    });
-
-    it('fetches selected-field weather from same-origin routes with encoded query params', async () => {
-      const fetchMock = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ plotId: 'plot 1', provider: 'eos', metadata: {} }),
-      });
-      vi.stubGlobal('fetch', fetchMock);
-
-      await getFieldWeatherForecast('plot 1', { provider: 'auto', days: 5 });
-      await getFieldWeatherHistory('plot 1', {
-        startDate: '2026-06-01',
-        endDate: '2026-06-10',
-        parameters: ['dailyPrecipitation', 'globalRadiation'],
-      });
-      await getFieldWeatherSoilMoisture('plot 1', {
-        startDate: '2026-06-01',
-        endDate: '2026-06-10',
-      });
-
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        1,
-        '/api/fields/plot%201/weather/forecast?provider=auto&days=5',
-        expect.objectContaining({ method: 'GET' }),
-      );
-      expect(String(fetchMock.mock.calls[1][0])).toBe(
-        '/api/fields/plot%201/weather/history?startDate=2026-06-01&endDate=2026-06-10&parameters=dailyPrecipitation&parameters=globalRadiation',
-      );
-      expect(String(fetchMock.mock.calls[2][0])).toBe(
-        '/api/fields/plot%201/weather/soil-moisture?startDate=2026-06-01&endDate=2026-06-10',
-      );
-    });
-
-    it('uses same-origin VRA zoning routes and encoded map ids', async () => {
-      const blob = new Blob(['zip'], { type: 'application/zip' });
-      const fetchMock = vi.fn((input: RequestInfo | URL) => {
-        if (String(input).endsWith('/export.shp')) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            headers: new Headers({ 'Content-Disposition': 'attachment; filename="zones.zip"' }),
-            blob: async () => blob,
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ mapId: 'map 1', maps: [] }),
-        });
-      });
-      vi.stubGlobal('fetch', fetchMock);
-
-      await createVegetationZoning('plot 1', {
-        indexType: 'NDVI',
-        imageDate: '2026-06-01',
-        zoneCount: 3,
-        minZoneArea: 0.25,
-      });
-      await listZoningMaps('plot 1');
-      await getZoningMap('plot 1', 'map 1');
-      const file = await exportZoningMap('plot 1', 'map 1', 'shp');
-
-      expect(file.filename).toBe('zones.zip');
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        1,
-        '/api/fields/plot%201/zoning/vegetation',
-        expect.objectContaining({ method: 'POST' }),
-      );
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        2,
-        '/api/fields/plot%201/zoning/maps',
-        expect.objectContaining({ method: 'GET' }),
-      );
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        3,
-        '/api/fields/plot%201/zoning/maps/map%201',
-        expect.objectContaining({ method: 'GET' }),
-      );
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        4,
-        '/api/fields/plot%201/zoning/maps/map%201/export.shp',
-        expect.objectContaining({ method: 'GET' }),
-      );
     });
 
     it('uses same-origin report routes and handles CSV downloads', async () => {

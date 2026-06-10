@@ -47,23 +47,17 @@ class IndexDef:
 
     id: str
     label: str
-    formula_kind: Literal["normalized_difference", "msavi", "reci"]
+    formula_kind: Literal["normalized_difference"]
     band_a: str
-    band_b: str | None = None
+    band_b: str
 
     @property
     def formula(self) -> str:
-        if self.formula_kind == "msavi":
-            return "(2 * B08 + 1 - sqrt((2 * B08 + 1)^2 - 8 * (B08 - B04))) / 2"
-        if self.formula_kind == "reci":
-            return "(B08 / B05) - 1"
-        if self.band_b is None:  # pragma: no cover - registry guard
-            raise ValueError(f"{self.id} requires band_b")
         return f"({self.band_a} - {self.band_b}) / ({self.band_a} + {self.band_b})"
 
     @property
     def required_bands(self) -> tuple[str, ...]:
-        return (self.band_a,) if self.band_b is None else (self.band_a, self.band_b)
+        return (self.band_a, self.band_b)
 
 
 # Supported indices (data-ingestion-and-satellite-rules.md § Supported index formulas).
@@ -78,8 +72,6 @@ INDEX_REGISTRY: dict[str, IndexDef] = {
         "B03",
         "B08",
     ),
-    "MSAVI": IndexDef("MSAVI", "MSAVI", "msavi", "B08", "B04"),
-    "RECI": IndexDef("RECI", "RECI", "reci", "B08", "B05"),
 }
 
 SUPPORTED_INDICES: list[str] = list(INDEX_REGISTRY.keys())

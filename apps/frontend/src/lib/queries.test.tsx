@@ -5,17 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   queryKeys,
   useCreateReportTemplate,
-  useCreateVegetationZoning,
   useCreatePlot,
   useDeletePlot,
   useImportPlotsGeoJson,
   usePlots,
-  useFieldWeatherForecast,
-  useFieldWeatherHistory,
   useFieldLeaderboard,
   useUpdateReportTemplate,
   useUpdatePlot,
-  useZoningMaps,
 } from '@/lib/queries';
 import type { Plot, PlotGeometry } from '@/types/api';
 
@@ -108,86 +104,6 @@ describe('plot query hooks', () => {
     expect(deletedIds).toEqual(['plot-1']);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.plots });
     expect(invalidateSpy).toHaveBeenCalledTimes(4);
-  });
-});
-
-describe('weather query hooks', () => {
-  it('keeps weather queries disabled without a selected field', () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
-    vi.stubGlobal('fetch', fetchMock);
-    const { Provider } = wrapper();
-
-    const forecast = renderHook(() => useFieldWeatherForecast(null), { wrapper: Provider });
-    const history = renderHook(
-      () => useFieldWeatherHistory(null, { startDate: '2026-06-01', endDate: '2026-06-02' }),
-      { wrapper: Provider },
-    );
-
-    expect(forecast.result.current.fetchStatus).toBe('idle');
-    expect(history.result.current.fetchStatus).toBe('idle');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  describe('zoning query hooks', () => {
-    it('keeps zoning maps disabled without a selected field', () => {
-      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ maps: [] }));
-      vi.stubGlobal('fetch', fetchMock);
-      const { Provider } = wrapper();
-
-      const maps = renderHook(() => useZoningMaps(null), { wrapper: Provider });
-
-      expect(maps.result.current.fetchStatus).toBe('idle');
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    it('invalidates zoning maps after vegetation create', async () => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-          if (String(input) === '/api/fields/plot-1/zoning/vegetation' && init?.method === 'POST') {
-            return Promise.resolve(jsonResponse({ mapId: 'map-1', status: 'processing' }));
-          }
-          return Promise.resolve(jsonResponse({ maps: [] }));
-        }),
-      );
-      const { Provider, invalidateSpy } = wrapper();
-      const create = renderHook(() => useCreateVegetationZoning(), { wrapper: Provider });
-
-      await create.result.current.mutateAsync({
-        plotId: 'plot-1',
-        payload: {
-          indexType: 'NDVI',
-          imageDate: '2026-06-01',
-          zoneCount: 3,
-          minZoneArea: 0.25,
-        },
-      });
-
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.zoningMaps('plot-1') });
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.zoningMap('plot-1', 'map-1') });
-    });
-  });
-
-  it('fetches weather history with date-scoped query keys', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ series: [] }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { Provider } = wrapper();
-
-    const { result } = renderHook(
-      () =>
-        useFieldWeatherHistory('plot-1', {
-          startDate: '2026-06-01',
-          endDate: '2026-06-02',
-          parameters: ['dailyTemperature'],
-        }),
-      { wrapper: Provider },
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/fields/plot-1/weather/history?provider=auto&startDate=2026-06-01&endDate=2026-06-02&parameters=dailyTemperature',
-      expect.objectContaining({ method: 'GET' }),
-    );
   });
 });
 

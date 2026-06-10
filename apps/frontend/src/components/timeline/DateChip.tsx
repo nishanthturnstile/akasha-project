@@ -4,7 +4,7 @@ import type { SceneDate, SourceKind } from '@/types/api';
 import { CloudUsabilityChip } from '@/components/layers/CloudUsabilityChip';
 import { cn } from '@/lib/utils';
 
-/** Above this share of cloud-masked pixels we draw a Cloud overlay icon (EOS parity). */
+/** Above this share of cloud-masked pixels we draw a Cloud overlay icon. */
 const CLOUDY_THRESHOLD_PERCENT = 30;
 
 interface DateChipProps {

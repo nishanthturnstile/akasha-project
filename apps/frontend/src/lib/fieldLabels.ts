@@ -1,6 +1,6 @@
 /**
  * Human-friendly labels for field metadata keys used across filter and form UI.
- * Keeps EOS-style terminology ("Crop", "Season") instead of raw camelCase keys.
+ * Keeps product terminology ("Crop", "Season") instead of raw camelCase keys.
  */
 const FIELD_LABELS: Record<string, string> = {
   groupName: 'Group',

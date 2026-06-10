@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DownloadMenu } from '@/components/monitoring/DownloadMenu';
-import type { FieldScene, Plot } from '@/types/api';
+import type { Plot } from '@/types/api';
 
 const plot: Plot = {
   id: 'plot-1',
@@ -15,19 +15,6 @@ const plot: Plot = {
   areaHa: 1,
   createdAt: null,
   updatedAt: null,
-  externalFieldId: 'eos-field-1',
-  externalProvider: 'eos',
-  providerSyncStatus: 'synced',
-};
-
-const scene: FieldScene = {
-  sceneToken: 'field-scene-a',
-  acquisitionDate: '2026-06-01',
-  usablePixelPercent: 95,
-  cloudMaskedPercent: 5,
-  tileAvailable: true,
-  metricsProvisional: false,
-  layers: [],
 };
 
 function renderMenu(overrides: Partial<ComponentProps<typeof DownloadMenu>> = {}) {
@@ -43,7 +30,6 @@ function renderMenu(overrides: Partial<ComponentProps<typeof DownloadMenu>> = {}
         sourceId="sentinel-2-l2a"
         indexType="NDVI"
         cloudMask={ { clouds: true, cloudShadows: false, cirrus: true } }
-        selectedScene={ scene }
         { ...overrides }
       />
     </QueryClientProvider>,
@@ -64,7 +50,7 @@ describe('DownloadMenu', () => {
     vi.restoreAllMocks();
   });
 
-  it('enables selected-field downloads and keeps SHP outputs unavailable', async () => {
+  it('enables native selected-field downloads and keeps unavailable formats disabled', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -79,7 +65,7 @@ describe('DownloadMenu', () => {
     renderMenu();
     fireEvent.click(screen.getByTestId('download-menu-toggle'));
 
-    expect((screen.getByTestId('download-index-tiff') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId('download-index-tiff') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('download-analytics-csv') as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByTestId('download-field-geojson') as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByTestId('download-index-shp') as HTMLButtonElement).disabled).toBe(true);
@@ -93,7 +79,7 @@ describe('DownloadMenu', () => {
   });
 
   it('disables GeoTIFF when the active layer is not an index scene', () => {
-    renderMenu({ displayMode: 'RGB', selectedScene: null });
+    renderMenu({ displayMode: 'RGB' });
     fireEvent.click(screen.getByTestId('download-menu-toggle'));
     expect((screen.getByTestId('download-index-tiff') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('download-field-geojson') as HTMLButtonElement).disabled).toBe(false);
@@ -108,7 +94,7 @@ describe('DownloadMenu', () => {
         json: async () => ({
           error: {
             code: 'EXPORT_FORMAT_UNAVAILABLE',
-            message: 'Native index GeoTIFF export is not available in Phase 6.',
+            message: 'Native export failed.',
           },
         }),
       }),
@@ -116,10 +102,8 @@ describe('DownloadMenu', () => {
 
     renderMenu();
     fireEvent.click(screen.getByTestId('download-menu-toggle'));
-    fireEvent.click(screen.getByTestId('download-index-tiff'));
+    fireEvent.click(screen.getByTestId('download-field-geojson'));
 
-    expect((await screen.findByTestId('download-error')).textContent).toContain(
-      'Native index GeoTIFF export is not available in Phase 6.',
-    );
+    expect((await screen.findByTestId('download-error')).textContent).toContain('Native export failed.');
   });
 });

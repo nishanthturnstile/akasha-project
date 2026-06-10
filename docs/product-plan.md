@@ -33,7 +33,8 @@ The first build is a Railway-hosted MVP for fast iteration and demonstration. Th
 ### Map and layer browsing
 
 - Show a basemap covering India/world, centered initially on Bangalore.
-- Use an operator-provided basemap via `VITE_BASEMAP_STYLE_URL`; production must not use public OSM raster tiles.
+- Use Esri `arcgis/imagery` through `@esri/maplibre-arcgis` basemap sessions with a
+  referrer-restricted `VITE_ESRI_API_KEY`.
 - Overlay Sentinel-2 true-colour imagery above the basemap.
 - Provide a layer panel with:
   - source list;

@@ -34,7 +34,7 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 - Don't use `@mapbox/mapbox-gl-draw`; it targets Mapbox GL rather than the selected MapLibre-native drawing path.
 - Don't hard-code MinIO object URLs or COG paths in frontend code.
 - Don't let the browser talk directly to MinIO, PostGIS, STAC, or TiTiler.
-- Don't use OpenStreetMap public tile servers for production-scale/commercial traffic.
+- Don't use unauthenticated public community tile servers for production-scale/commercial traffic.
 - Don't make opacity stacking the only comparison UX forever; prefer swipe/compare in Wave 2.
 
 ## Backend/API

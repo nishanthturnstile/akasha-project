@@ -130,18 +130,22 @@ check(SAMPLE_SCENE.scl_key == "sentinel-2-l2a/2025-09-14/scl.tif", "scl_key layo
 
 # --------------------------------------------------------------------------
 section("PostGIS app schema")
-sql_path = REPO / "apps/api/migrations/001_app_schema.sql"
-if sql_path.exists():
-    sql = sql_path.read_text()
-    check("CREATE EXTENSION IF NOT EXISTS postgis" in sql, "schema enables PostGIS extension")
-    check("akasha.plots" in sql, "schema defines akasha.plots")
-    check("geometry(Polygon, 4326)" in sql, "plots geometry is Polygon/4326")
-    check("USING GIST" in sql, "spatial GIST index present")
-    check("set_updated_at" in sql, "updated_at trigger present")
-    check("akasha.app_settings" in sql, "app_settings table present")
-    check("akasha.index_requests" in sql, "index_requests table present")
+models_path = REPO / "apps/api/app/models.py"
+baseline_path = REPO / "apps/api/alembic/versions/20260609_0001_fresh_orm_baseline.py"
+if models_path.exists() and baseline_path.exists():
+    models = models_path.read_text()
+    baseline = baseline_path.read_text()
+    check("CREATE EXTENSION IF NOT EXISTS postgis" in baseline, "schema enables PostGIS extension")
+    check("CREATE EXTENSION IF NOT EXISTS pgcrypto" in baseline, "schema enables pgcrypto extension")
+    check("Base.metadata.create_all" in baseline, "Alembic baseline creates ORM metadata")
+    check("set_updated_at" in baseline, "updated_at trigger present")
+    check("class Plot" in models and '__tablename__ = "plots"' in models, "ORM defines akasha.plots")
+    check("Geometry(" in models and "srid=4326" in models, "ORM geometry uses SRID 4326")
+    check("plots_geometry_gix" in models and 'postgresql_using="gist"' in models, "spatial GIST index present")
+    check("class AppSetting" in models and '__tablename__ = "app_settings"' in models, "ORM defines app_settings")
+    check("class IndexRequest" in models and '__tablename__ = "index_requests"' in models, "ORM defines index_requests")
 else:
-    check(False, "missing apps/api/migrations/001_app_schema.sql")
+    check(False, "missing ORM models or Alembic baseline")
 
 # --------------------------------------------------------------------------
 section("Tooling wiring")
@@ -159,9 +163,12 @@ for rel in [
     check((REPO / rel).exists(), f"exists: {rel}")
 
 api_req = (REPO / "apps/api/requirements.txt").read_text()
-check("psycopg" in api_req, "api requirements include psycopg (migration CLI)")
+check("psycopg" in api_req, "api requirements include psycopg")
+check("SQLAlchemy" in api_req, "api requirements include SQLAlchemy")
+check("alembic" in api_req, "api requirements include Alembic")
+check("GeoAlchemy2" in api_req, "api requirements include GeoAlchemy2")
 api_docker = (REPO / "apps/api/Dockerfile").read_text()
-check("COPY migrations" in api_docker, "api Dockerfile copies migrations/")
+check("COPY alembic.ini" in api_docker and "COPY alembic" in api_docker, "api Dockerfile copies Alembic baseline")
 api_cli = (REPO / "apps/api/app/cli.py").read_text()
 check("S3_ENDPOINT_URL" in api_cli and "minio/health/live" in api_cli, "api check verifies API -> MinIO liveness")
 

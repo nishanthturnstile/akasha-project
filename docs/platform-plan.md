@@ -11,9 +11,9 @@ Do not include every document in every Emergent prompt; use the prompt-slice tab
 | 0 Skeleton | Monorepo, Dockerfiles, health, compose, env examples | emergent-context; architecture: architecture goal/component responsibilities/tech choices/repo layout; railway: local dev + env names; execution Phase 0 | formulas, STAC depth, frontend UX, Wave 2 |
 | 1 Storage/catalog | PostGIS, MinIO, STAC collection seed, buckets | architecture: data model boundaries; data-ingestion: STAC metadata + seed layout; railway: PostGIS/MinIO env; execution Phase 1 | frontend, plot drawing, Wave 2 ingestion |
 | 2 Raster proof | 1 RGB tile + 1 masked offset-corrected NDVI stat vs reference | data-ingestion: COG layout/band order/RGB bands/formulas/reflectance correction/SCL masking/stats engine; architecture: raster flows/runtime decisions; execution Phase 2 | full frontend UX, auth, custom domains, future sources |
-| 3 BFF contracts | All Wave 1 endpoints | architecture: BFF API contracts; product: acceptance; dos-donts backend rules | full Railway deploy, Wave 2 |
-| 4 Frontend map | Map + layer/date panel | product: map browsing + journeys; architecture: frontend + tile URL contract; dos-donts frontend | ingestion automation, Wave 2 |
-| 5 Plot/index UX | Draw/import, named plots, index panel | product: plot/index sections; architecture API contracts; dos-donts frontend+backend | Wave 2 analytics |
+| 3 BFF contracts | All Wave 1 endpoints | architecture: BFF API contracts; product: acceptance; backend engineering guardrails | full Railway deploy, Wave 2 |
+| 4 Frontend map | Map + layer/date panel | product: map browsing + journeys; architecture: frontend + tile URL contract; frontend engineering guardrails | ingestion automation, Wave 2 |
+| 5 Plot/index UX | Draw/import, named plots, index panel | product: plot/index sections; architecture API contracts; frontend and backend engineering guardrails | Wave 2 analytics |
 | 6 Railway deploy | Services, exposure, env, volumes, health, smoke | railway full; architecture topology; execution Phase 6 | product roadmap |
 | 7 QA/demo | Acceptance + reference check | product acceptance; execution Phase 7; data-ingestion validation checklist | future roadmap |
 

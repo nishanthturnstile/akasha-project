@@ -1,11 +1,40 @@
 """Persistence helpers for Phase 10 first-party operations modules."""
+
 from __future__ import annotations
 
-import json
+import uuid
 from datetime import date, datetime
 from typing import Any
 
-from .db import get_connection
+from sqlalchemy import delete, select, update
+from sqlalchemy.orm import Session
+
+from .db import session_scope
+from .models import (
+    Attachment,
+    FieldActivity,
+    FieldGroup,
+    FieldGroupMember,
+    Plot,
+    ScoutTask,
+    UploadedDataset,
+)
+
+
+def _uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
+    if value is None or isinstance(value, uuid.UUID):
+        return value
+    return uuid.UUID(str(value))
+
+
+def _parse_date(value: date | datetime | str | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(value)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -20,180 +49,102 @@ def _date(value: date | datetime | str | None) -> str | None:
     return value
 
 
-def _json(value: Any, fallback: Any) -> Any:
-    if isinstance(value, str):
-        return json.loads(value)
-    return value if value is not None else fallback
-
-
-def _attachment(row: tuple) -> dict[str, Any]:
-    (
-        attachment_id,
-        parent_type,
-        parent_id,
-        filename,
-        content_type,
-        size_bytes,
-        metadata,
-        created_at,
-        updated_at,
-    ) = row
+def _attachment(row: Attachment) -> dict[str, Any]:
     return {
-        "id": str(attachment_id),
-        "parentType": parent_type,
-        "parentId": str(parent_id) if parent_id else None,
-        "filename": filename,
-        "contentType": content_type,
-        "sizeBytes": int(size_bytes) if size_bytes is not None else None,
-        "metadata": _json(metadata, {}),
-        "createdAt": _iso(created_at),
-        "updatedAt": _iso(updated_at),
+        "id": str(row.id),
+        "parentType": row.parent_type,
+        "parentId": str(row.parent_id) if row.parent_id else None,
+        "filename": row.filename,
+        "contentType": row.content_type,
+        "sizeBytes": int(row.size_bytes) if row.size_bytes is not None else None,
+        "metadata": row.metadata_json or {},
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
     }
 
 
-def _activity(row: tuple, attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    (
-        activity_id,
-        plot_id,
-        field_name,
-        legacy_group_name,
-        crop_type,
-        variety,
-        season_label,
-        activity_type,
-        activity_date,
-        assignee,
-        status,
-        input_product,
-        cost,
-        notes,
-        group_names,
-        metadata,
-        created_at,
-        updated_at,
-    ) = row
-    groups = [item for item in (group_names or []) if item]
+def _activity(
+    row: FieldActivity,
+    plot: Plot | None,
+    group_names: list[str],
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    groups = [item for item in group_names if item]
+    legacy_group_name = plot.group_name if plot else None
     if not groups and legacy_group_name:
         groups = [legacy_group_name]
     return {
-        "id": str(activity_id),
-        "plotId": str(plot_id) if plot_id else None,
-        "fieldName": field_name,
+        "id": str(row.id),
+        "plotId": str(row.plot_id) if row.plot_id else None,
+        "fieldName": plot.name if plot else None,
         "groupName": legacy_group_name,
         "groupNames": groups,
-        "cropType": crop_type,
-        "variety": variety,
-        "seasonLabel": season_label,
-        "activityType": activity_type,
-        "activityDate": _date(activity_date),
-        "assignee": assignee,
-        "status": status,
-        "inputProduct": input_product,
-        "cost": float(cost) if cost is not None else None,
-        "notes": notes,
+        "cropType": plot.crop_type if plot else None,
+        "variety": plot.variety if plot else None,
+        "seasonLabel": plot.season_label if plot else None,
+        "activityType": row.activity_type,
+        "activityDate": _date(row.activity_date),
+        "assignee": row.assignee,
+        "status": row.status,
+        "inputProduct": row.input_product,
+        "cost": float(row.cost) if row.cost is not None else None,
+        "notes": row.notes,
         "attachments": attachments or [],
-        "metadata": _json(metadata, {}),
-        "createdAt": _iso(created_at),
-        "updatedAt": _iso(updated_at),
+        "metadata": row.metadata_json or {},
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
     }
 
 
-def _task(row: tuple, attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    (
-        task_id,
-        plot_id,
-        field_name,
-        longitude,
-        latitude,
-        status,
-        assignee,
-        priority,
-        notes,
-        metadata,
-        created_at,
-        updated_at,
-    ) = row
+def _task(
+    row: ScoutTask,
+    plot: Plot | None,
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return {
-        "id": str(task_id),
-        "plotId": str(plot_id) if plot_id else None,
-        "fieldName": field_name,
-        "longitude": longitude,
-        "latitude": latitude,
-        "status": status,
-        "assignee": assignee,
-        "priority": priority,
-        "notes": notes,
+        "id": str(row.id),
+        "plotId": str(row.plot_id) if row.plot_id else None,
+        "fieldName": plot.name if plot else None,
+        "longitude": row.longitude,
+        "latitude": row.latitude,
+        "status": row.status,
+        "assignee": row.assignee,
+        "priority": row.priority,
+        "notes": row.notes,
         "attachments": attachments or [],
-        "metadata": _json(metadata, {}),
-        "createdAt": _iso(created_at),
-        "updatedAt": _iso(updated_at),
+        "metadata": row.metadata_json or {},
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
     }
 
 
-def _dataset(row: tuple) -> dict[str, Any]:
-    (
-        dataset_id,
-        name,
-        dataset_type,
-        upload_status,
-        original_filename,
-        content_type,
-        file_size_bytes,
-        feature_count,
-        validation_message,
-        metadata,
-        created_at,
-        updated_at,
-    ) = row
+def _dataset(row: UploadedDataset) -> dict[str, Any]:
     return {
-        "id": str(dataset_id),
-        "name": name,
-        "datasetType": dataset_type,
-        "uploadStatus": upload_status,
-        "originalFilename": original_filename,
-        "contentType": content_type,
-        "fileSizeBytes": int(file_size_bytes) if file_size_bytes is not None else None,
-        "featureCount": feature_count,
-        "validationMessage": validation_message,
-        "metadata": _json(metadata, {}),
-        "createdAt": _iso(created_at),
-        "updatedAt": _iso(updated_at),
+        "id": str(row.id),
+        "name": row.name,
+        "datasetType": row.dataset_type,
+        "uploadStatus": row.upload_status,
+        "originalFilename": row.original_filename,
+        "contentType": row.content_type,
+        "fileSizeBytes": int(row.file_size_bytes) if row.file_size_bytes is not None else None,
+        "featureCount": row.feature_count,
+        "validationMessage": row.validation_message,
+        "metadata": row.metadata_json or {},
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
     }
 
 
-def _group(row: tuple, plot_ids: list[str] | None = None) -> dict[str, Any]:
-    group_id, name, description, color, created_at, updated_at = row
+def _group(row: FieldGroup, plot_ids: list[str] | None = None) -> dict[str, Any]:
     return {
-        "id": str(group_id),
-        "name": name,
-        "description": description,
-        "color": color,
+        "id": str(row.id),
+        "name": row.name,
+        "description": row.description,
+        "color": row.color,
         "plotIds": plot_ids or [],
-        "createdAt": _iso(created_at),
-        "updatedAt": _iso(updated_at),
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
     }
-
-
-ATTACHMENT_COLUMNS = (
-    "id::text, parent_type, parent_id::text, filename, content_type, size_bytes, "
-    "metadata, created_at, updated_at"
-)
-ACTIVITY_COLUMNS = (
-    "a.id::text, a.plot_id::text, p.name, p.group_name, p.crop_type, p.variety, "
-    "p.season_label, a.activity_type, a.activity_date, a.assignee, a.status, "
-    "a.input_product, a.cost, a.notes, "
-    "COALESCE(array_agg(DISTINCT fg.name) FILTER (WHERE fg.name IS NOT NULL), '{}'), "
-    "a.metadata, a.created_at, a.updated_at"
-)
-TASK_COLUMNS = (
-    "t.id::text, t.plot_id::text, p.name, t.longitude, t.latitude, t.status, "
-    "t.assignee, t.priority, t.notes, t.metadata, t.created_at, t.updated_at"
-)
-DATASET_COLUMNS = (
-    "id::text, name, dataset_type, upload_status, original_filename, content_type, "
-    "file_size_bytes, feature_count, validation_message, metadata, created_at, updated_at"
-)
-GROUP_COLUMNS = "id::text, name, description, color, created_at, updated_at"
 
 
 def create_attachment(
@@ -202,174 +153,223 @@ def create_attachment(
     content_type: str | None,
     size_bytes: int | None,
     metadata: dict[str, Any] | None = None,
+    owner_id: str | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            INSERT INTO akasha.attachments (
-                filename, content_type, size_bytes, internal_storage_key, metadata
-            )
-            VALUES (%s, %s, %s, gen_random_uuid()::text, %s::jsonb)
-            RETURNING {ATTACHMENT_COLUMNS}
-            """,
-            (filename, content_type, size_bytes, json.dumps(metadata or {})),
-        )
-        return _attachment(cur.fetchone())
+    row = Attachment(
+        filename=filename,
+        content_type=content_type,
+        size_bytes=size_bytes,
+        internal_storage_key=str(uuid.uuid4()),
+        metadata_json=metadata or {},
+        owner_id=_uuid(owner_id),
+        team_id=_uuid(team_id),
+    )
+    with session_scope() as session:
+        session.add(row)
+        session.flush()
+        session.refresh(row)
+        return _attachment(row)
 
 
 def list_attachments(
     *,
     parent_type: str | None = None,
     parent_id: str | None = None,
+    team_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: list[Any] = []
+    stmt = select(Attachment).order_by(Attachment.created_at.desc())
+    if team_id:
+        stmt = stmt.where(Attachment.team_id == _uuid(team_id))
     if parent_type:
-        clauses.append("parent_type = %s")
-        params.append(parent_type)
+        stmt = stmt.where(Attachment.parent_type == parent_type)
     if parent_id:
-        clauses.append("parent_id = %s")
-        params.append(parent_id)
-    where = " WHERE " + " AND ".join(clauses) if clauses else ""
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {ATTACHMENT_COLUMNS} FROM akasha.attachments{where} ORDER BY created_at DESC",
-            params,
-        )
-        return [_attachment(row) for row in cur.fetchall()]
+        stmt = stmt.where(Attachment.parent_id == _uuid(parent_id))
+    with session_scope() as session:
+        return [_attachment(row) for row in session.execute(stmt).scalars().all()]
 
 
-def _link_attachments(cur, attachment_ids: list[str], parent_type: str, parent_id: str) -> None:
-    cur.execute(
-        "UPDATE akasha.attachments SET parent_type = NULL, parent_id = NULL "
-        "WHERE parent_type = %s AND parent_id = %s AND NOT (id = ANY(%s::uuid[]))",
-        (parent_type, parent_id, attachment_ids),
+def _link_attachments(
+    session: Session,
+    attachment_ids: list[str],
+    parent_type: str,
+    parent_id: str,
+    team_id: str | None = None,
+) -> None:
+    target_parent_id = _uuid(parent_id)
+    unlink_stmt = update(Attachment).where(
+        Attachment.parent_type == parent_type,
+        Attachment.parent_id == target_parent_id,
+        Attachment.id.not_in([_uuid(item) for item in attachment_ids] or [uuid.uuid4()]),
     )
+    if team_id is not None:
+        unlink_stmt = unlink_stmt.where(Attachment.team_id == _uuid(team_id))
+    session.execute(unlink_stmt.values(parent_type=None, parent_id=None))
+
     for attachment_id in attachment_ids:
-        cur.execute(
-            "SELECT parent_type, parent_id::text FROM akasha.attachments WHERE id = %s",
-            (attachment_id,),
-        )
-        row = cur.fetchone()
-        if row is None:
+        stmt = select(Attachment).where(Attachment.id == _uuid(attachment_id))
+        if team_id is not None:
+            stmt = stmt.where(Attachment.team_id == _uuid(team_id))
+        attachment = session.execute(stmt).scalar_one_or_none()
+        if attachment is None:
             raise ValueError("ATTACHMENT_NOT_FOUND")
-        existing_type, existing_parent = row
-        if existing_type and (existing_type != parent_type or existing_parent != parent_id):
+        existing_parent = str(attachment.parent_id) if attachment.parent_id else None
+        if attachment.parent_type and (
+            attachment.parent_type != parent_type or existing_parent != str(target_parent_id)
+        ):
             raise ValueError("ATTACHMENT_ALREADY_LINKED")
-        cur.execute(
-            "UPDATE akasha.attachments SET parent_type = %s, parent_id = %s WHERE id = %s",
-            (parent_type, parent_id, attachment_id),
-        )
+        attachment.parent_type = parent_type
+        attachment.parent_id = target_parent_id
 
 
-def _activity_by_id(cur, activity_id: str) -> dict[str, Any] | None:
-    cur.execute(
-        f"""
-        SELECT {ACTIVITY_COLUMNS}
-        FROM akasha.field_activities a
-        LEFT JOIN akasha.plots p ON a.plot_id = p.id
-        LEFT JOIN akasha.field_group_members fgm ON p.id = fgm.plot_id
-        LEFT JOIN akasha.field_groups fg ON fgm.group_id = fg.id
-        WHERE a.id = %s
-        GROUP BY a.id, p.id
-        """,
-        (activity_id,),
+def _plot_belongs_to_team(session: Session, plot_id: str | None, team_id: str | None) -> bool:
+    if plot_id is None or team_id is None:
+        return True
+    stmt = select(Plot.id).where(Plot.id == _uuid(plot_id), Plot.team_id == _uuid(team_id))
+    return session.execute(stmt).first() is not None
+
+
+def _group_names_for_plot(
+    session: Session,
+    plot_id: uuid.UUID | None,
+    team_id: str | uuid.UUID | None,
+) -> list[str]:
+    if plot_id is None:
+        return []
+    stmt = (
+        select(FieldGroup.name)
+        .join(FieldGroupMember, FieldGroupMember.group_id == FieldGroup.id)
+        .where(FieldGroupMember.plot_id == plot_id)
+        .order_by(FieldGroup.name)
+        .distinct()
     )
-    row = cur.fetchone()
+    if team_id is not None:
+        stmt = stmt.where(FieldGroup.team_id == _uuid(team_id))
+    return [row[0] for row in session.execute(stmt).all()]
+
+
+def _attachments_for_parent(
+    session: Session,
+    parent_type: str,
+    parent_id: uuid.UUID,
+    team_id: str | None,
+) -> list[dict[str, Any]]:
+    stmt = select(Attachment).where(
+        Attachment.parent_type == parent_type,
+        Attachment.parent_id == parent_id,
+    )
+    if team_id is not None:
+        stmt = stmt.where(Attachment.team_id == _uuid(team_id))
+    stmt = stmt.order_by(Attachment.created_at.desc())
+    return [_attachment(row) for row in session.execute(stmt).scalars().all()]
+
+
+def _activity_row(
+    session: Session,
+    activity_id: str,
+    team_id: str | None = None,
+) -> tuple[FieldActivity, Plot | None] | None:
+    stmt = (
+        select(FieldActivity, Plot)
+        .outerjoin(Plot, FieldActivity.plot_id == Plot.id)
+        .where(FieldActivity.id == _uuid(activity_id))
+    )
+    if team_id is not None:
+        stmt = stmt.where(FieldActivity.team_id == _uuid(team_id))
+    return session.execute(stmt).first()
+
+
+def _activity_by_id(
+    session: Session,
+    activity_id: str,
+    team_id: str | None = None,
+) -> dict[str, Any] | None:
+    row = _activity_row(session, activity_id, team_id)
     if not row:
         return None
-    cur.execute(
-        f"SELECT {ATTACHMENT_COLUMNS} FROM akasha.attachments "
-        "WHERE parent_type = 'activity' AND parent_id = %s",
-        (activity_id,),
+    activity, plot = row
+    return _activity(
+        activity,
+        plot,
+        _group_names_for_plot(session, activity.plot_id, activity.team_id),
+        _attachments_for_parent(session, "activity", activity.id, team_id),
     )
-    return _activity(row, [_attachment(item) for item in cur.fetchall()])
 
 
 def create_activity(payload: dict[str, Any], attachment_ids: list[str]) -> dict[str, Any]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO akasha.field_activities (
-                plot_id, activity_type, activity_date, assignee, status,
-                input_product, cost, notes, metadata
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-            RETURNING id::text
-            """,
-            (
-                payload.get("plotId"),
-                payload["activityType"],
-                payload["activityDate"],
-                payload.get("assignee"),
-                payload.get("status", "planned"),
-                payload.get("inputProduct"),
-                payload.get("cost"),
-                payload.get("notes"),
-                json.dumps(payload.get("metadata") or {}),
-            ),
+    with session_scope() as session:
+        if not _plot_belongs_to_team(session, payload.get("plotId"), payload.get("teamId")):
+            raise ValueError("PLOT_NOT_FOUND")
+        row = FieldActivity(
+            plot_id=_uuid(payload.get("plotId")),
+            activity_type=payload["activityType"],
+            activity_date=_parse_date(payload["activityDate"]),
+            assignee=payload.get("assignee"),
+            status=payload.get("status", "planned"),
+            input_product=payload.get("inputProduct"),
+            cost=payload.get("cost"),
+            notes=payload.get("notes"),
+            metadata_json=payload.get("metadata") or {},
+            owner_id=_uuid(payload.get("ownerId")),
+            team_id=_uuid(payload.get("teamId")),
         )
-        activity_id = cur.fetchone()[0]
-        _link_attachments(cur, attachment_ids, "activity", activity_id)
-        return _activity_by_id(cur, activity_id)
+        session.add(row)
+        session.flush()
+        _link_attachments(session, attachment_ids, "activity", str(row.id), payload.get("teamId"))
+        session.flush()
+        session.refresh(row)
+        return _activity_by_id(session, str(row.id), payload.get("teamId"))
 
 
 def update_activity(
     activity_id: str,
     payload: dict[str, Any],
     attachment_ids: list[str] | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any] | None:
-    column_by_field = {
-        "plotId": "plot_id",
-        "activityType": "activity_type",
-        "activityDate": "activity_date",
-        "assignee": "assignee",
-        "status": "status",
-        "inputProduct": "input_product",
-        "cost": "cost",
-        "notes": "notes",
-    }
-    set_clauses: list[str] = []
-    params: list[Any] = []
-    for field, column in column_by_field.items():
-        if field in payload:
-            set_clauses.append(f"{column} = %s")
-            params.append(payload[field])
-    if "metadata" in payload:
-        set_clauses.append("metadata = %s::jsonb")
-        params.append(json.dumps(payload.get("metadata") or {}))
-    with get_connection() as conn, conn.cursor() as cur:
-        if set_clauses:
-            params.append(activity_id)
-            cur.execute(
-                "UPDATE akasha.field_activities SET "
-                + ", ".join(set_clauses)
-                + " WHERE id = %s RETURNING id::text",
-                params,
-            )
-            if cur.fetchone() is None:
-                return None
-        elif _activity_by_id(cur, activity_id) is None:
+    with session_scope() as session:
+        row = _activity_row(session, activity_id, team_id)
+        if row is None:
             return None
+        activity = row[0]
+        if "plotId" in payload and not _plot_belongs_to_team(session, payload["plotId"], team_id):
+            raise ValueError("PLOT_NOT_FOUND")
+        field_map = {
+            "plotId": "plot_id",
+            "activityType": "activity_type",
+            "activityDate": "activity_date",
+            "assignee": "assignee",
+            "status": "status",
+            "inputProduct": "input_product",
+            "cost": "cost",
+            "notes": "notes",
+        }
+        for field, attr in field_map.items():
+            if field in payload:
+                value = _parse_date(payload[field]) if field == "activityDate" else payload[field]
+                setattr(activity, attr, value)
+        if "metadata" in payload:
+            activity.metadata_json = payload.get("metadata") or {}
         if attachment_ids is not None:
-            _link_attachments(cur, attachment_ids, "activity", activity_id)
-        return _activity_by_id(cur, activity_id)
+            _link_attachments(session, attachment_ids, "activity", activity_id, team_id)
+        session.flush()
+        session.refresh(activity)
+        return _activity_by_id(session, activity_id, team_id)
 
 
-def list_activities(filters: dict[str, Any]) -> list[dict[str, Any]]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT {ACTIVITY_COLUMNS}
-            FROM akasha.field_activities a
-            LEFT JOIN akasha.plots p ON a.plot_id = p.id
-            LEFT JOIN akasha.field_group_members fgm ON p.id = fgm.plot_id
-            LEFT JOIN akasha.field_groups fg ON fgm.group_id = fg.id
-            GROUP BY a.id, p.id
-            ORDER BY a.activity_date DESC, a.created_at DESC
-            """
-        )
-        rows = [_activity(row) for row in cur.fetchall()]
+def list_activities(filters: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
+    stmt = (
+        select(FieldActivity, Plot)
+        .outerjoin(Plot, FieldActivity.plot_id == Plot.id)
+        .order_by(FieldActivity.activity_date.desc(), FieldActivity.created_at.desc())
+    )
+    if team_id is not None:
+        stmt = stmt.where(FieldActivity.team_id == _uuid(team_id))
+    with session_scope() as session:
+        rows = [
+            _activity(row, plot, _group_names_for_plot(session, row.plot_id, row.team_id))
+            for row, plot in session.execute(stmt).all()
+        ]
     return _filter_activities(rows, filters)
 
 
@@ -399,123 +399,123 @@ def _filter_activities(rows: list[dict[str, Any]], filters: dict[str, Any]) -> l
     return [row for row in rows if ok(row)]
 
 
-def get_activity(activity_id: str) -> dict[str, Any] | None:
-    with get_connection() as conn, conn.cursor() as cur:
-        return _activity_by_id(cur, activity_id)
+def get_activity(activity_id: str, team_id: str | None = None) -> dict[str, Any] | None:
+    with session_scope() as session:
+        return _activity_by_id(session, activity_id, team_id)
 
 
-def delete_activity(activity_id: str) -> bool:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "UPDATE akasha.attachments SET parent_type = NULL, parent_id = NULL "
-            "WHERE parent_type = 'activity' AND parent_id = %s",
-            (activity_id,),
+def delete_activity(activity_id: str, team_id: str | None = None) -> bool:
+    with session_scope() as session:
+        row = _activity_row(session, activity_id, team_id)
+        if row is None:
+            return False
+        activity = row[0]
+        unlink = update(Attachment).where(
+            Attachment.parent_type == "activity",
+            Attachment.parent_id == activity.id,
         )
-        cur.execute("DELETE FROM akasha.field_activities WHERE id = %s", (activity_id,))
-        return cur.rowcount > 0
+        if team_id is not None:
+            unlink = unlink.where(Attachment.team_id == _uuid(team_id))
+        session.execute(unlink.values(parent_type=None, parent_id=None))
+        session.delete(activity)
+        return True
 
 
 def create_scout_task(payload: dict[str, Any], attachment_ids: list[str]) -> dict[str, Any]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO akasha.scout_tasks (
-                plot_id, longitude, latitude, status, assignee, priority, notes, metadata
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-            RETURNING id::text
-            """,
-            (
-                payload.get("plotId"),
-                payload.get("longitude"),
-                payload.get("latitude"),
-                payload.get("status", "new"),
-                payload.get("assignee"),
-                payload.get("priority", "medium"),
-                payload.get("notes"),
-                json.dumps(payload.get("metadata") or {}),
-            ),
+    with session_scope() as session:
+        if not _plot_belongs_to_team(session, payload.get("plotId"), payload.get("teamId")):
+            raise ValueError("PLOT_NOT_FOUND")
+        row = ScoutTask(
+            plot_id=_uuid(payload.get("plotId")),
+            longitude=payload.get("longitude"),
+            latitude=payload.get("latitude"),
+            status=payload.get("status", "new"),
+            assignee=payload.get("assignee"),
+            priority=payload.get("priority", "medium"),
+            notes=payload.get("notes"),
+            metadata_json=payload.get("metadata") or {},
+            owner_id=_uuid(payload.get("ownerId")),
+            team_id=_uuid(payload.get("teamId")),
         )
-        task_id = cur.fetchone()[0]
-        _link_attachments(cur, attachment_ids, "scout_task", task_id)
-        return _task_by_id(cur, task_id)
+        session.add(row)
+        session.flush()
+        _link_attachments(session, attachment_ids, "scout_task", str(row.id), payload.get("teamId"))
+        session.flush()
+        session.refresh(row)
+        return _task_by_id(session, str(row.id), payload.get("teamId"))
 
 
 def update_scout_task(
     task_id: str,
     payload: dict[str, Any],
     attachment_ids: list[str] | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any] | None:
-    column_by_field = {
-        "plotId": "plot_id",
-        "longitude": "longitude",
-        "latitude": "latitude",
-        "status": "status",
-        "assignee": "assignee",
-        "priority": "priority",
-        "notes": "notes",
-    }
-    set_clauses: list[str] = []
-    params: list[Any] = []
-    for field, column in column_by_field.items():
-        if field in payload:
-            set_clauses.append(f"{column} = %s")
-            params.append(payload[field])
-    if "metadata" in payload:
-        set_clauses.append("metadata = %s::jsonb")
-        params.append(json.dumps(payload.get("metadata") or {}))
-    with get_connection() as conn, conn.cursor() as cur:
-        if set_clauses:
-            params.append(task_id)
-            cur.execute(
-                "UPDATE akasha.scout_tasks SET "
-                + ", ".join(set_clauses)
-                + " WHERE id = %s RETURNING id::text",
-                params,
-            )
-            if cur.fetchone() is None:
-                return None
-        elif _task_by_id(cur, task_id) is None:
+    with session_scope() as session:
+        row = _task_row(session, task_id, team_id)
+        if row is None:
             return None
+        task = row[0]
+        if "plotId" in payload and not _plot_belongs_to_team(session, payload["plotId"], team_id):
+            raise ValueError("PLOT_NOT_FOUND")
+        field_map = {
+            "plotId": "plot_id",
+            "longitude": "longitude",
+            "latitude": "latitude",
+            "status": "status",
+            "assignee": "assignee",
+            "priority": "priority",
+            "notes": "notes",
+        }
+        for field, attr in field_map.items():
+            if field in payload:
+                setattr(task, attr, _uuid(payload[field]) if field == "plotId" else payload[field])
+        if "metadata" in payload:
+            task.metadata_json = payload.get("metadata") or {}
         if attachment_ids is not None:
-            _link_attachments(cur, attachment_ids, "scout_task", task_id)
-        return _task_by_id(cur, task_id)
+            _link_attachments(session, attachment_ids, "scout_task", task_id, team_id)
+        session.flush()
+        session.refresh(task)
+        return _task_by_id(session, task_id, team_id)
 
 
-def _task_by_id(cur, task_id: str) -> dict[str, Any] | None:
-    cur.execute(
-        f"""
-        SELECT {TASK_COLUMNS}
-        FROM akasha.scout_tasks t
-        LEFT JOIN akasha.plots p ON t.plot_id = p.id
-        WHERE t.id = %s
-        """,
-        (task_id,),
+def _task_row(
+    session: Session,
+    task_id: str,
+    team_id: str | None = None,
+) -> tuple[ScoutTask, Plot | None] | None:
+    stmt = (
+        select(ScoutTask, Plot)
+        .outerjoin(Plot, ScoutTask.plot_id == Plot.id)
+        .where(ScoutTask.id == _uuid(task_id))
     )
-    row = cur.fetchone()
+    if team_id is not None:
+        stmt = stmt.where(ScoutTask.team_id == _uuid(team_id))
+    return session.execute(stmt).first()
+
+
+def _task_by_id(
+    session: Session,
+    task_id: str,
+    team_id: str | None = None,
+) -> dict[str, Any] | None:
+    row = _task_row(session, task_id, team_id)
     if not row:
         return None
-    cur.execute(
-        f"SELECT {ATTACHMENT_COLUMNS} FROM akasha.attachments "
-        "WHERE parent_type = 'scout_task' AND parent_id = %s",
-        (task_id,),
-    )
-    return _task(row, [_attachment(item) for item in cur.fetchall()])
+    task, plot = row
+    return _task(task, plot, _attachments_for_parent(session, "scout_task", task.id, team_id))
 
 
-def list_scout_tasks(filters: dict[str, Any]) -> list[dict[str, Any]]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT {TASK_COLUMNS}
-            FROM akasha.scout_tasks t
-            LEFT JOIN akasha.plots p ON t.plot_id = p.id
-            ORDER BY t.created_at DESC
-            """
-        )
-        rows = [_task(row) for row in cur.fetchall()]
+def list_scout_tasks(filters: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
+    stmt = select(ScoutTask, Plot).outerjoin(Plot, ScoutTask.plot_id == Plot.id)
+    if team_id is not None:
+        stmt = stmt.where(ScoutTask.team_id == _uuid(team_id))
+    stmt = stmt.order_by(ScoutTask.created_at.desc())
+    with session_scope() as session:
+        rows = [_task(task, plot) for task, plot in session.execute(stmt).all()]
     return [
-        row for row in rows
+        row
+        for row in rows
         if (not filters.get("status") or row["status"] == filters["status"])
         and (not filters.get("plotId") or row.get("plotId") == filters["plotId"])
         and (
@@ -528,135 +528,164 @@ def list_scout_tasks(filters: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def get_scout_task(task_id: str) -> dict[str, Any] | None:
-    with get_connection() as conn, conn.cursor() as cur:
-        return _task_by_id(cur, task_id)
+def get_scout_task(task_id: str, team_id: str | None = None) -> dict[str, Any] | None:
+    with session_scope() as session:
+        return _task_by_id(session, task_id, team_id)
 
 
-def delete_scout_task(task_id: str) -> bool:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "UPDATE akasha.attachments SET parent_type = NULL, parent_id = NULL "
-            "WHERE parent_type = 'scout_task' AND parent_id = %s",
-            (task_id,),
+def delete_scout_task(task_id: str, team_id: str | None = None) -> bool:
+    with session_scope() as session:
+        row = _task_row(session, task_id, team_id)
+        if row is None:
+            return False
+        task = row[0]
+        unlink = update(Attachment).where(
+            Attachment.parent_type == "scout_task",
+            Attachment.parent_id == task.id,
         )
-        cur.execute("DELETE FROM akasha.scout_tasks WHERE id = %s", (task_id,))
-        return cur.rowcount > 0
+        if team_id is not None:
+            unlink = unlink.where(Attachment.team_id == _uuid(team_id))
+        session.execute(unlink.values(parent_type=None, parent_id=None))
+        session.delete(task)
+        return True
 
 
 def create_dataset(payload: dict[str, Any]) -> dict[str, Any]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            INSERT INTO akasha.uploaded_datasets (
-                name, dataset_type, upload_status, original_filename, content_type,
-                file_size_bytes, feature_count, validation_message,
-                internal_storage_key, metadata
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, gen_random_uuid()::text, %s::jsonb)
-            RETURNING {DATASET_COLUMNS}
-            """,
-            (
-                payload["name"],
-                payload["datasetType"],
-                payload.get("uploadStatus", "uploaded"),
-                payload.get("originalFilename"),
-                payload.get("contentType"),
-                payload.get("fileSizeBytes"),
-                payload.get("featureCount"),
-                payload.get("validationMessage"),
-                json.dumps(payload.get("metadata") or {}),
-            ),
-        )
-        return _dataset(cur.fetchone())
+    row = UploadedDataset(
+        name=payload["name"],
+        dataset_type=payload["datasetType"],
+        upload_status=payload.get("uploadStatus", "uploaded"),
+        original_filename=payload.get("originalFilename"),
+        content_type=payload.get("contentType"),
+        file_size_bytes=payload.get("fileSizeBytes"),
+        feature_count=payload.get("featureCount"),
+        validation_message=payload.get("validationMessage"),
+        internal_storage_key=str(uuid.uuid4()),
+        metadata_json=payload.get("metadata") or {},
+        owner_id=_uuid(payload.get("ownerId")),
+        team_id=_uuid(payload.get("teamId")),
+    )
+    with session_scope() as session:
+        session.add(row)
+        session.flush()
+        session.refresh(row)
+        return _dataset(row)
 
 
-def list_datasets() -> list[dict[str, Any]]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT {DATASET_COLUMNS} FROM akasha.uploaded_datasets ORDER BY created_at DESC"
-        )
-        return [_dataset(row) for row in cur.fetchall()]
+def list_datasets(team_id: str | None = None) -> list[dict[str, Any]]:
+    stmt = select(UploadedDataset).order_by(UploadedDataset.created_at.desc())
+    if team_id is not None:
+        stmt = stmt.where(UploadedDataset.team_id == _uuid(team_id))
+    with session_scope() as session:
+        return [_dataset(row) for row in session.execute(stmt).scalars().all()]
 
 
 def create_field_group(payload: dict[str, Any]) -> dict[str, Any]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            INSERT INTO akasha.field_groups (name, description, color)
-            VALUES (%s, %s, %s)
-            RETURNING {GROUP_COLUMNS}
-            """,
-            (payload["name"], payload.get("description"), payload.get("color")),
-        )
-        return _group(cur.fetchone())
-
-
-def list_field_groups() -> list[dict[str, Any]]:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups ORDER BY name")
-        groups = [_group(row) for row in cur.fetchall()]
-        for group in groups:
-            group["plotIds"] = group_plot_ids(cur, group["id"])
-        return groups
-
-
-def update_field_group(group_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-    clauses: list[str] = []
-    params: list[Any] = []
-    for key, column in (("name", "name"), ("description", "description"), ("color", "color")):
-        if key in payload:
-            clauses.append(f"{column} = %s")
-            params.append(payload[key])
-    if not clauses:
-        return get_field_group(group_id)
-    params.append(group_id)
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "UPDATE akasha.field_groups SET "
-            + ", ".join(clauses)
-            + f" WHERE id = %s RETURNING {GROUP_COLUMNS}",
-            params,
-        )
-        row = cur.fetchone()
-        return _group(row, group_plot_ids(cur, group_id)) if row else None
-
-
-def get_field_group(group_id: str) -> dict[str, Any] | None:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups WHERE id = %s", (group_id,))
-        row = cur.fetchone()
-        return _group(row, group_plot_ids(cur, group_id)) if row else None
-
-
-def delete_field_group(group_id: str) -> bool:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM akasha.field_groups WHERE id = %s", (group_id,))
-        return cur.rowcount > 0
-
-
-def assign_group_fields(group_id: str, plot_ids: list[str]) -> dict[str, Any] | None:
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {GROUP_COLUMNS} FROM akasha.field_groups WHERE id = %s", (group_id,))
-        row = cur.fetchone()
-        if not row:
-            return None
-        cur.execute("DELETE FROM akasha.field_group_members WHERE group_id = %s", (group_id,))
-        for plot_id in plot_ids:
-            cur.execute(
-                "INSERT INTO akasha.field_group_members (group_id, plot_id) "
-                "VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                (group_id, plot_id),
-            )
-        return _group(row, group_plot_ids(cur, group_id))
-
-
-def group_plot_ids(cur, group_id: str) -> list[str]:
-    cur.execute(
-        (
-            "SELECT plot_id::text FROM akasha.field_group_members "
-            "WHERE group_id = %s ORDER BY created_at"
-        ),
-        (group_id,),
+    row = FieldGroup(
+        name=payload["name"],
+        description=payload.get("description"),
+        color=payload.get("color"),
+        owner_id=_uuid(payload.get("ownerId")),
+        team_id=_uuid(payload.get("teamId")),
     )
-    return [row[0] for row in cur.fetchall()]
+    with session_scope() as session:
+        session.add(row)
+        session.flush()
+        session.refresh(row)
+        return _group(row)
+
+
+def list_field_groups(team_id: str | None = None) -> list[dict[str, Any]]:
+    stmt = select(FieldGroup).order_by(FieldGroup.name)
+    if team_id is not None:
+        stmt = stmt.where(FieldGroup.team_id == _uuid(team_id))
+    with session_scope() as session:
+        return [
+            _group(row, _group_plot_ids(session, str(row.id), team_id))
+            for row in session.execute(stmt).scalars().all()
+        ]
+
+
+def update_field_group(
+    group_id: str,
+    payload: dict[str, Any],
+    team_id: str | None = None,
+) -> dict[str, Any] | None:
+    with session_scope() as session:
+        group = _field_group_obj(session, group_id, team_id)
+        if group is None:
+            return None
+        for key in ("name", "description", "color"):
+            if key in payload:
+                setattr(group, key, payload[key])
+        session.flush()
+        session.refresh(group)
+        return _group(group, _group_plot_ids(session, group_id, team_id))
+
+
+def _field_group_obj(
+    session: Session,
+    group_id: str,
+    team_id: str | None = None,
+) -> FieldGroup | None:
+    stmt = select(FieldGroup).where(FieldGroup.id == _uuid(group_id))
+    if team_id is not None:
+        stmt = stmt.where(FieldGroup.team_id == _uuid(team_id))
+    return session.execute(stmt).scalar_one_or_none()
+
+
+def get_field_group(group_id: str, team_id: str | None = None) -> dict[str, Any] | None:
+    with session_scope() as session:
+        group = _field_group_obj(session, group_id, team_id)
+        return _group(group, _group_plot_ids(session, group_id, team_id)) if group else None
+
+
+def delete_field_group(group_id: str, team_id: str | None = None) -> bool:
+    stmt = delete(FieldGroup).where(FieldGroup.id == _uuid(group_id))
+    if team_id is not None:
+        stmt = stmt.where(FieldGroup.team_id == _uuid(team_id))
+    with session_scope() as session:
+        return session.execute(stmt).rowcount > 0
+
+
+def assign_group_fields(
+    group_id: str,
+    plot_ids: list[str],
+    team_id: str | None = None,
+) -> dict[str, Any] | None:
+    with session_scope() as session:
+        group = _field_group_obj(session, group_id, team_id)
+        if group is None:
+            return None
+        delete_stmt = delete(FieldGroupMember).where(FieldGroupMember.group_id == group.id)
+        if team_id is not None:
+            delete_stmt = delete_stmt.where(FieldGroupMember.team_id == _uuid(team_id))
+        session.execute(delete_stmt)
+        seen_plot_ids: set[uuid.UUID] = set()
+        for plot_id in plot_ids:
+            plot_stmt = select(Plot.id).where(Plot.id == _uuid(plot_id))
+            if team_id is not None:
+                plot_stmt = plot_stmt.where(Plot.team_id == _uuid(team_id))
+            plot_row = session.execute(plot_stmt).first()
+            if plot_row and plot_row[0] not in seen_plot_ids:
+                seen_plot_ids.add(plot_row[0])
+                session.add(
+                    FieldGroupMember(
+                        group_id=group.id,
+                        plot_id=plot_row[0],
+                        team_id=_uuid(team_id),
+                    )
+                )
+        session.flush()
+        return _group(group, _group_plot_ids(session, group_id, team_id))
+
+
+def _group_plot_ids(session: Session, group_id: str, team_id: str | None = None) -> list[str]:
+    stmt = (
+        select(FieldGroupMember.plot_id)
+        .where(FieldGroupMember.group_id == _uuid(group_id))
+        .order_by(FieldGroupMember.created_at)
+    )
+    if team_id is not None:
+        stmt = stmt.where(FieldGroupMember.team_id == _uuid(team_id))
+    return [str(row[0]) for row in session.execute(stmt).all()]

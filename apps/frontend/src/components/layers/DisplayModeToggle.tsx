@@ -17,10 +17,6 @@ function modeLabel(mode: string): string {
             return 'NDRE';
         case 'NDMI':
             return 'NDMI';
-        case 'MSAVI':
-            return 'MSAVI';
-        case 'RECI':
-            return 'RECI';
         case 'FALSE_COLOR_URBAN':
             return 'False colour';
         case 'FALSE_COLOR':

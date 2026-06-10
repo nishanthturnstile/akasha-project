@@ -46,7 +46,7 @@ Relevant source-of-truth docs:
 - `docs/mvp-execution-plan.md` — Phase 3
 - `docs/architecture-tech-stack.md` — BFF API contracts and service boundaries
 - `docs/product-plan.md` — Wave 1 plot and index acceptance criteria
-- `docs/engineering-dos-donts.md` — backend/API guardrails
+- `docs/engineering-dos-donts.md` — backend/API engineering guardrails
 
 Current backend structure:
 

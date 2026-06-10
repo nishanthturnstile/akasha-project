@@ -4,7 +4,6 @@ import type {
   DefaultLayer,
   FieldIndexExportOptions,
   FieldReportExportOptions,
-  FieldSceneListResponse,
   FieldStatisticsRequest,
   FieldStatisticsResponse,
   FieldTrendResponse,
@@ -15,15 +14,6 @@ import type {
   FieldActivityPayload,
   FieldActivityUpdatePayload,
   ActivityFilters,
-  WeatherForecastResponse,
-  WeatherHistoryResponse,
-  WeatherProviderChoice,
-  WeatherSeriesId,
-  WeatherSoilMoistureResponse,
-  VegetationZoningRequest,
-  ZoningExportFormat,
-  ZoningMap,
-  ZoningMapListResponse,
   ReportTemplate,
   ReportTemplatePayload,
   ReportTemplateUpdatePayload,
@@ -45,7 +35,6 @@ import type {
   PlotGeometry,
   PlotImportResponse,
   PlotUpdatePayload,
-  ProviderSyncResponse,
   SceneDate,
   Source,
 } from '@/types/api';
@@ -72,6 +61,12 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   headers?: HeadersInit;
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
 }
 
 interface GeoJsonFeature {
@@ -123,6 +118,7 @@ function buildRequestInit(options: RequestOptions = {}): RequestInit {
     method: options.method ?? 'GET',
     headers,
     body,
+    credentials: 'same-origin',
   };
 }
 
@@ -153,7 +149,11 @@ async function fetchApi(path: string, options: RequestOptions = {}): Promise<Res
   }
 
   if (!res.ok) {
-    throw await toApiError(res);
+    const error = await toApiError(res);
+    if (error.status === 401) {
+      unauthorizedHandler?.();
+    }
+    throw error;
   }
 
   return res;
@@ -245,26 +245,6 @@ export const exportAllPlotsGeoJson = (): Promise<Blob> =>
 export const exportPlotGeoJson = (plotId: string): Promise<Blob> =>
   requestBlob(`/api/plots/${encodeURIComponent(plotId)}/export.geojson`);
 
-export const syncFieldProvider = (plotId: string): Promise<ProviderSyncResponse> =>
-  request<ProviderSyncResponse>(
-    `/api/fields/${encodeURIComponent(plotId)}/providers/eos/sync`,
-    { method: 'POST' },
-  );
-
-export const getFieldScenes = (
-  plotId: string,
-  options: { provider?: 'auto' | 'eos' | 'native'; startDate?: string; endDate?: string } = {},
-): Promise<FieldSceneListResponse> => {
-  const params = new URLSearchParams();
-  if (options.provider) params.set('provider', options.provider);
-  if (options.startDate) params.set('startDate', options.startDate);
-  if (options.endDate) params.set('endDate', options.endDate);
-  const query = params.toString();
-  return request<FieldSceneListResponse>(
-    `/api/fields/${encodeURIComponent(plotId)}/scenes${query ? `?${query}` : ''}`,
-  );
-};
-
 export const getFieldStatistics = (
   plotId: string,
   payload: FieldStatisticsRequest,
@@ -279,7 +259,6 @@ export const getFieldTrend = (
   options: {
     indexType: string;
     sourceId?: string;
-    provider?: 'auto' | 'eos' | 'native';
     startDate?: string;
     endDate?: string;
     cloudMask?: CloudMaskOptions;
@@ -288,7 +267,6 @@ export const getFieldTrend = (
   const params = new URLSearchParams({
     indexType: options.indexType,
   });
-  if (options.provider) params.set('provider', options.provider);
   if (options.sourceId) params.set('sourceId', options.sourceId);
   if (options.startDate) params.set('startDate', options.startDate);
   if (options.endDate) params.set('endDate', options.endDate);
@@ -301,84 +279,6 @@ export const getFieldTrend = (
     `/api/fields/${encodeURIComponent(plotId)}/analytics/trend?${params.toString()}`,
   );
 };
-
-export const getFieldWeatherForecast = (
-  plotId: string,
-  options: { provider?: WeatherProviderChoice; days?: number } = {},
-): Promise<WeatherForecastResponse> => {
-  const params = new URLSearchParams();
-  if (options.provider) params.set('provider', options.provider);
-  if (options.days) params.set('days', String(options.days));
-  const query = params.toString();
-  return request<WeatherForecastResponse>(
-    `/api/fields/${encodeURIComponent(plotId)}/weather/forecast${query ? `?${query}` : ''}`,
-  );
-};
-
-export const getFieldWeatherHistory = (
-  plotId: string,
-  options: {
-    provider?: WeatherProviderChoice;
-    startDate?: string;
-    endDate?: string;
-    parameters?: WeatherSeriesId[];
-  } = {},
-): Promise<WeatherHistoryResponse> => {
-  const params = new URLSearchParams();
-  if (options.provider) params.set('provider', options.provider);
-  if (options.startDate) params.set('startDate', options.startDate);
-  if (options.endDate) params.set('endDate', options.endDate);
-  options.parameters?.forEach((parameter) => params.append('parameters', parameter));
-  const query = params.toString();
-  return request<WeatherHistoryResponse>(
-    `/api/fields/${encodeURIComponent(plotId)}/weather/history${query ? `?${query}` : ''}`,
-  );
-};
-
-export const getFieldWeatherSoilMoisture = (
-  plotId: string,
-  options: {
-    provider?: WeatherProviderChoice;
-    startDate?: string;
-    endDate?: string;
-  } = {},
-): Promise<WeatherSoilMoistureResponse> => {
-  const params = new URLSearchParams();
-  if (options.provider) params.set('provider', options.provider);
-  if (options.startDate) params.set('startDate', options.startDate);
-  if (options.endDate) params.set('endDate', options.endDate);
-  const query = params.toString();
-  return request<WeatherSoilMoistureResponse>(
-    `/api/fields/${encodeURIComponent(plotId)}/weather/soil-moisture${query ? `?${query}` : ''}`,
-  );
-};
-
-export const createVegetationZoning = (
-  plotId: string,
-  payload: VegetationZoningRequest,
-): Promise<ZoningMap> =>
-  request<ZoningMap>(
-    `/api/fields/${encodeURIComponent(plotId)}/zoning/vegetation`,
-    { method: 'POST', body: payload },
-  );
-
-export const listZoningMaps = (plotId: string): Promise<ZoningMapListResponse> =>
-  request<ZoningMapListResponse>(`/api/fields/${encodeURIComponent(plotId)}/zoning/maps`);
-
-export const getZoningMap = (plotId: string, mapId: string): Promise<ZoningMap> =>
-  request<ZoningMap>(
-    `/api/fields/${encodeURIComponent(plotId)}/zoning/maps/${encodeURIComponent(mapId)}`,
-  );
-
-export const exportZoningMap = (
-  plotId: string,
-  mapId: string,
-  format: ZoningExportFormat,
-): Promise<FileDownload> =>
-  requestDownload(
-    `/api/fields/${encodeURIComponent(plotId)}/zoning/maps/${encodeURIComponent(mapId)}/export.${format}`,
-    `zoning_${mapId}.${format === 'shp' ? 'zip' : 'geojson'}`,
-  );
 
 function appendLeaderboardParams(params: URLSearchParams, filters: FieldLeaderboardFilters = {}) {
   Object.entries(filters).forEach(([key, value]) => {
@@ -520,6 +420,25 @@ export const getFieldRiskSummary = (
 
 export const getAccountMe = (): Promise<AccountMe> => request<AccountMe>('/api/account/me');
 
+export const login = (payload: {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}): Promise<AccountMe> =>
+  request<AccountMe>('/api/auth/login', { method: 'POST', body: payload });
+
+export const logout = (): Promise<void> =>
+  request<void>('/api/auth/logout', { method: 'POST' });
+
+export const refreshSession = (): Promise<AccountMe> =>
+  request<AccountMe>('/api/auth/refresh', { method: 'POST' });
+
+export const changePassword = (payload: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ changed: boolean }> =>
+  request<{ changed: boolean }>('/api/account/password', { method: 'PATCH', body: payload });
+
 export const getAccountSettings = (): Promise<Record<string, unknown>> =>
   request<Record<string, unknown>>('/api/account/settings');
 
@@ -580,8 +499,6 @@ export const exportFieldIndex = (
     acquisitionDate: options.acquisitionDate,
     indexType: options.indexType,
   });
-  if (options.provider) params.set('provider', options.provider);
-  if (options.sceneToken) params.set('sceneToken', options.sceneToken);
   if (options.cloudMask) {
     params.set('clouds', String(options.cloudMask.clouds));
     params.set('cloudShadows', String(options.cloudMask.cloudShadows));
@@ -602,7 +519,6 @@ export const exportFieldReportCsv = (
     sourceId: options.sourceId,
     indexType: options.indexType,
   });
-  if (options.provider) params.set('provider', options.provider);
   if (options.startDate) params.set('startDate', options.startDate);
   if (options.endDate) params.set('endDate', options.endDate);
   if (options.cloudMask) {
@@ -627,15 +543,3 @@ export function composeTileTemplate(
   )}/${encodeURIComponent(displayMode)}/{z}/{x}/{y}.png`;
 }
 
-export function withCloudMaskParams(
-  tileUrlTemplate: string,
-  mask: { clouds: boolean; cloudShadows: boolean; cirrus: boolean },
-): string {
-  const [path] = tileUrlTemplate.split('?', 1);
-  const params = new URLSearchParams({
-    clouds: String(mask.clouds),
-    cloudShadows: String(mask.cloudShadows),
-    cirrus: String(mask.cirrus),
-  });
-  return `${path}?${params.toString()}`;
-}

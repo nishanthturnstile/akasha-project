@@ -248,7 +248,7 @@ MapPage
 Deprecated after migration: [LayerPanel.tsx](../apps/frontend/src/components/layers/LayerPanel.tsx),
 [SourceSelector.tsx](../apps/frontend/src/components/layers/SourceSelector.tsx),
 [DateList.tsx](../apps/frontend/src/components/layers/DateList.tsx) (logic absorbed into `SourceCard` /
-`TimelineBar`; delete once parity is verified).
+`TimelineBar`; delete once the replacement is verified).
 
 ---
 
@@ -366,7 +366,7 @@ Each phase is independently shippable and preserves earlier contracts. Run after
 - Drive from `useSources()`/`useDates()`; map "active source" to `MapViewProvider`. Render future
   sources (e.g., Landsat) as disabled "soon" rows from a config flag.
 - Replace `LayerPanel` usage in `MapPage`. Keep `SourceSelector`/`DateList` until Phase 2 verifies
-  date parity, then delete.
+  date behavior, then delete.
 - **Accept**: collapsed by default; expanding shows all `/api/sources`; switching source swaps the
   overlay; opacity/visibility still work; SAR shows the radar note.
 
@@ -377,7 +377,7 @@ Each phase is independently shippable and preserves earlier contracts. Run after
 - Wire keyboard (←/→ step, Home/End first/last), prefetch-on-hover, disabled chips for
   `tileAvailable=false`. Update `sceneFitPadding()` to reserve `--timeline-height` at the bottom.
 - Remove the vertical date list from the layer surface (date nav now lives in the timeline). Delete
-  `DateList`/`SourceSelector` after parity check.
+  `DateList`/`SourceSelector` after replacement checks.
 - **Accept**: dates render as a horizontal strip per source; selecting/scrubbing swaps imagery;
   jump-to-latest works; mobile shows a slim peek strip.
 

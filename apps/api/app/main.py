@@ -26,26 +26,25 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from starlette.types import ExceptionHandler
 
 from . import skeleton
 from .account import router as account_router
+from .auth_routes import router as auth_router
 from .config import settings
 from .data_manager import router as data_manager_router
 from .field_analytics import router as field_analytics_router
 from .field_exports import router as field_exports_router
 from .field_groups import router as field_groups_router
-from .field_monitoring import router as field_monitoring_router
-from .field_zoning import router as field_zoning_router
 from .operations import router as operations_router
 from .plots import router as plots_router
 from .product import router as product_router
-from .providers.router import router as providers_router
 from .raster.errors import (
     AkashaError,
     akasha_error_handler,
@@ -54,7 +53,6 @@ from .raster.errors import (
 from .reports import router as reports_router
 from .risk import router as risk_router
 from .scout_tasks import router as scout_tasks_router
-from .weather import router as weather_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +67,7 @@ LIVE_SERVICE_ID = "api"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     logger.info(
-        "Akasha BFF skeleton started (slice=%s, env=%s, version=%s)",
+        "Akasha BFF started (slice=%s, env=%s, version=%s)",
         skeleton.SLICE,
         settings.app_env,
         APP_VERSION,
@@ -80,7 +78,10 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Akasha BFF",
     version=APP_VERSION,
-    description="Akasha Railway MVP — Slice 0 (skeleton). Thin BFF; no product contracts yet.",
+    description=(
+        "Akasha Railway MVP BFF. Serves health, skeleton visibility, product, "
+        "plot, auth, operations, reporting, and raster-statistics APIs."
+    ),
     lifespan=lifespan,
 )
 
@@ -234,31 +235,23 @@ async def get_manifest() -> dict[str, Any]:
 app.include_router(api_router)
 app.include_router(skeleton_router)
 
-# --- Field Monitoring API (EOS parity Phase 4) -----------------------------
-app.include_router(field_monitoring_router)
-
-# --- Field Analytics API (EOS parity Phase 5) ------------------------------
+# --- Field Analytics API ---------------------------------------------------
 app.include_router(field_analytics_router)
 
-# --- Field Exports API (EOS parity Phase 6) --------------------------------
+# --- Field Exports API -----------------------------------------------------
 app.include_router(field_exports_router)
 
-# --- Field Weather API (EOS parity Phase 7) --------------------------------
-app.include_router(weather_router)
-
-# --- Field Zoning API (EOS parity Phase 8) ---------------------------------
-app.include_router(field_zoning_router)
-
-# --- Reports API (EOS parity Phase 9) --------------------------------------
+# --- Reports API -----------------------------------------------------------
 app.include_router(reports_router)
 
-# --- Risk/Crop Intelligence API (EOS parity Phase 11) ----------------------
+# --- Risk/Crop Intelligence API -------------------------------------------
 app.include_router(risk_router)
 
-# --- Auth/Team/Admin/Notifications API (EOS parity Phase 12) ---------------
+# --- Auth/Team/Admin/Notifications API ------------------------------------
+app.include_router(auth_router)
 app.include_router(account_router)
 
-# --- Operations/Data APIs (EOS parity Phase 10) ----------------------------
+# --- Operations/Data APIs --------------------------------------------------
 app.include_router(operations_router)
 app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
@@ -270,9 +263,9 @@ app.include_router(product_router)
 # --- Plot API (Slice 3: plot CRUD + GeoJSON import/export) -----------------
 app.include_router(plots_router)
 
-# --- Provider API (EOS adapter foundation) ---------------------------------
-app.include_router(providers_router)
-
 # Standard Akasha error shape: { "error": { code, message, details } }.
-app.add_exception_handler(AkashaError, akasha_error_handler)
-app.add_exception_handler(RequestValidationError, request_validation_error_handler)
+app.add_exception_handler(AkashaError, cast(ExceptionHandler, akasha_error_handler))
+app.add_exception_handler(
+    RequestValidationError,
+    cast(ExceptionHandler, request_validation_error_handler),
+)

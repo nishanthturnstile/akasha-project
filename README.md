@@ -4,15 +4,11 @@ Geospatial MVP for browsing true-colour Sentinel-2 imagery over an Area of
 Interest (Bangalore) and computing cloud-masked vegetation-index statistics for
 user-drawn plots. Railway-first, but fully portable to Docker Compose / on-prem.
 
-> **Status: Slice 1 — Storage / Catalog.** The multi-service skeleton (Slice 0)
-> is complete, and the storage/catalog foundation is now in place: the
-> PostgreSQL/PostGIS **app schema** (plots), **pgSTAC + STAC API** setup, a
-> **Sentinel-2 L2A STAC collection seed** (frozen 9-band order; reflectance
-> `scale 0.0001` / `offset -0.1`), the **MinIO `akasha-cogs`** bucket/key layout,
-> and **idempotent seeding** keyed on
-> `{satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}`.
-> Raster/index math, BFF product contracts, and the map UX are delivered in later
-> slices (see the roadmap below).
+> **Status: Slice 4 implementation in progress.** Slice 0 (skeleton), Slice 1
+> (storage/catalog), Slice 2 (raster de-risk), and Slice 3 (BFF product + plot
+> contracts) are implemented. The canonical frontend map/product shell now lives
+> in `apps/frontend`. Railway/local Docker still run the same multi-service
+> topology described below.
 
 ## Architecture (one public service)
 
@@ -34,12 +30,13 @@ are never given a public domain.
 
 ```text
 apps/
-  frontend/          React + Vite + TypeScript SPA (skeleton; map UX in Slice 4)
-  api/               FastAPI BFF (skeleton; /health + /api/_skeleton/*)
+  frontend/          Canonical React + Vite + TypeScript SPA
+  api/               Canonical FastAPI BFF (/api product, plot, auth, ops APIs)
 services/
   titiler/           TiTiler image/config (RGB display tiles)
   stac-api/          stac-fastapi-pgstac wrapper/config
-  ingestion/         Python ingestion worker (no-op skeleton)
+  ingestion/         Python ingestion worker and STAC/MinIO seed loader
+  ingestion-sar/     Sentinel-1/SAR preprocessing runtime
 infra/
   gateway/           Caddy reverse proxy + multi-stage web Dockerfile
   railway/           Per-service Railway config + env matrix + deploy notes
@@ -47,6 +44,8 @@ infra/
 docs/                Source-of-truth product/architecture/deploy docs
 scripts/             validate_slice0.py + smoke-test.py
 ```
+
+When changing application behavior, edit `apps/api` and `apps/frontend`.
 
 ## Services & health endpoints
 
@@ -60,99 +59,158 @@ scripts/             validate_slice0.py + smoke-test.py
 | minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
 | ingestion-worker | no | — | CLI | `python:3.11.14-slim-bookworm` |
 
-## Complete local setup (clone → run → verify Slice 1)
+## Local development: one command with frontend hot reload
 
-This is the end-to-end onboarding flow. Follow it top-to-bottom from a fresh
-clone to get the storage/catalog foundation (Slice 1) running and verified on
-your machine. No prior project state is assumed.
+This is the recommended workflow for day-to-day development. It runs the
+backend/API/data services in Docker, runs the React/Vite frontend locally for
+hot reload, and keeps the browser contract exactly like production:
+same-origin `/api/*` and `/tiles/*` through the gateway.
 
-### 0. Prerequisites
+### Prerequisites
 
-- **Docker Desktop** (or Docker Engine) with the Compose plugin — `docker compose version` must work.
-- **Git**, and ~4 GB free disk for images + named volumes.
-- Optional, only for the no-Docker static validators below: **Python 3.11+** (`pip install pyyaml`).
+- **Docker Desktop** (or Docker Engine) with Compose: `docker compose version`
+- **Node.js 20+** with `npx` available
+- **Git Bash**, WSL, macOS/Linux shell, or another shell that can run `bash`
+- Optional: `make`. If `make` is not installed, use the `bash` command below.
 
-> Windows users: run the commands below in **Git Bash**, WSL, or PowerShell.
-> All `docker compose` commands are run from the `infra/docker` directory.
+### Start everything
 
-### 1. Clone the repository
-
-```bash
-git clone <your-repo-url> akasha
-cd akasha
-```
-
-### 2. Configure local secrets
+From the repository root:
 
 ```bash
-cd infra/docker
-cp .env.example .env
+make dev
 ```
 
-Edit `infra/docker/.env` and replace every `CHANGE_ME_*` value with a strong
-local secret (PostgreSQL user/password, MinIO root user/password). There are no
-defaults — the stack will not start with placeholder values. `WEB_PORT=8080` is
-the only public host port; change it if 8080 is taken.
-
-### 3. Start the full stack
+If `make` is unavailable:
 
 ```bash
-# from infra/docker
-docker compose up --build -d
+bash scripts/dev-local.sh
 ```
 
-Wait until containers are healthy, then confirm the public gateway and the
-proxied API respond:
+The command does the boring-but-important setup automatically:
+
+1. Verifies required local tools are available and Docker Desktop/Engine is running
+2. Creates ignored local env files if missing:
+   - `infra/docker/.env` with generated local-only Docker secrets
+   - `apps/frontend/.env` for Vite basemap settings
+3. Checks whether the configured Docker gateway port is already occupied
+4. Starts the Docker stack: `web`, `api`, `titiler`, `stac-api`, `postgis`, `minio`
+5. Waits for gateway/API health checks
+6. Applies API migrations with `python -m app.cli db upgrade`
+7. Runs API storage checks with `python -m app.cli check`
+8. Seeds catalog/storage with `worker.py seed`
+9. Bootstraps a local admin user if no password user exists
+10. Starts Vite with hot reload, using the next free frontend port if `5173` is busy
+
+The same command is safe for both **first run** and **repeat runs**. Migrations,
+API checks, and seed loading are intentionally idempotent, so the team does not
+need a separate “first-time setup” command.
+
+Open:
+
+```text
+http://localhost:5173/   # default; use the URL printed by the script if 5173 is busy
+```
+
+Local login:
+
+```text
+URL:      http://localhost:5173/login   # default; use the printed frontend port if changed
+Username: admin
+Password: AkashaLocal2026!
+```
+
+You can override the local bootstrap credentials before first run:
 
 ```bash
-curl http://localhost:8080/health           # web gateway  -> ok
-curl http://localhost:8080/api/health        # proxied api  -> {"status":"ok"}
-python ../../scripts/smoke-test.py http://localhost:8080
+AKASHA_LOCAL_ADMIN_USER=myadmin AKASHA_LOCAL_ADMIN_PASSWORD='change-me-local-only' make dev
 ```
 
-### 4. Bootstrap the data foundation (Slice 1)
+### Esri basemap key
 
-The data foundation is seeded **deterministically and idempotently** — these
-commands are safe to re-run. Run them *inside* the running containers:
+The app can start without an Esri key, but the map view needs one to render the
+configured Esri imagery basemap. Add your referrer-restricted ArcGIS Location
+Platform key to `apps/frontend/.env`:
+
+```env
+VITE_ESRI_API_KEY=<your referrer-restricted key with Basemaps privilege>
+```
+
+If you set `VITE_ESRI_API_KEY` before the first `make dev`, the script copies it
+into both generated local env files.
+
+### Backend/gateway only
+
+If you want the Docker stack prepared without starting Vite:
 
 ```bash
-# from infra/docker
-
-# 4a) app schema: PostGIS extension + akasha.plots (api service)
-docker compose exec api python -m app.cli migrate
-docker compose exec api python -m app.cli check        # postgis_version() + API->MinIO liveness
-
-# 4b) catalog + storage: pgSTAC migrate -> load collection/item -> MinIO bucket/keys (ingestion)
-docker compose exec ingestion-worker python worker.py seed
-
-# 4c) Slice 1 exit criteria: PostGIS, STAC collection, MinIO bucket + deterministic keys
-docker compose exec ingestion-worker python worker.py verify
+make up
 ```
 
-`worker.py verify` passing (3/3 checks) means Slice 1 is correctly set up
-locally. Real COGs are operator-provided (not committed); absent rasters get
-empty placeholder objects at the deterministic keys so the layout is
-established (Slice 2 replaces them with validated COGs).
-
-### 5. (Optional) Static validation — no Docker required
+or:
 
 ```bash
-# from repo root
-python scripts/validate_slice0.py     # skeleton artifacts (Slice 0)
-python scripts/validate_slice1.py     # storage/catalog artifacts (Slice 1)
+bash scripts/dev-local.sh --backend-only
 ```
 
-### Reset / teardown
+The gateway URL is based on `WEB_PORT` in `infra/docker/.env`. The default is
+`http://localhost:8080`. If that port is already occupied by the Akasha gateway,
+the script reuses it. If another process owns the port, the script updates
+`WEB_PORT` to the next free port and prints the actual backend URL. Vite reads
+that value automatically, so you do not need to manually set
+`AKASHA_DEV_PROXY_TARGET` for normal local development.
+
+The frontend prefers `FRONTEND_PORT=5173`. If that port is already in use, the
+script starts Vite on the next free port and prints the actual frontend/login
+URL. Set `FRONTEND_PORT` only when you intentionally want a different preferred
+port.
+
+### Stop, restart, reset
+
+Stop only the hot-reload frontend with `Ctrl+C`. Docker services keep running.
 
 ```bash
-# from infra/docker
-docker compose down        # stop containers, keep data volumes
-docker compose down -v     # also delete postgis_data + minio_data (clean slate)
+make down      # stop Docker services, keep local data volumes
+make reset     # stop Docker services and delete PostGIS/MinIO volumes
+make dev       # start again from a clean or existing state
 ```
 
-> If you previously started the stack and changed PostgreSQL/MinIO credentials,
-> run `docker compose down -v` once before `up` to clear stale credentials
-> baked into the named volumes.
+If PostgreSQL or MinIO credentials were changed after volumes already existed,
+run `make reset` once so Docker recreates the volumes with the new credentials.
+
+### Troubleshooting quick checks
+
+```bash
+docker compose -f infra/docker/docker-compose.yml ps
+curl http://localhost:5173/api/health
+docker compose -f infra/docker/docker-compose.yml logs api --tail=100
+```
+
+Common causes:
+
+- `Docker engine is not reachable`: Docker Desktop is installed but not running;
+  start it and rerun `make dev`.
+- `Frontend startup needs yarn, corepack, or npx`: install Node.js 20+ and rerun
+  `make dev`.
+- `curl http://localhost:5173/api/health` fails: Vite is not running, or the
+  Docker gateway is unhealthy. If the script selected a different frontend
+  port, use that printed port instead of `5173`.
+- `http://localhost:8080` fails but containers are healthy: check the printed
+  backend URL or `WEB_PORT` in `infra/docker/.env`; this workspace may use
+  `18080` or another free port.
+- Map says the basemap is not configured: set `VITE_ESRI_API_KEY` in
+  `apps/frontend/.env` and restart Vite.
+- Auth bootstrap is skipped: a local password user already exists; use the
+  existing local account or run `make reset` if you intentionally want a clean
+  database.
+
+### Optional static validation — no Docker required
+
+```bash
+python scripts/validate_slice0.py
+python scripts/validate_slice1.py
+python scripts/validate_slice2.py
+```
 
 Domain invariants seeded by this flow: frozen analytic band order
 `[B04,B08,B05,B06,B07,B11,B12,B03,B02]`; true-colour RGB = bands `[1,8,9]`;
@@ -173,10 +231,10 @@ and the deployment sequence.
 | Slice | Focus | Status |
 |---|---|---|
 | 0 | Repository & service skeleton | **done** |
-| 1 | Database, catalog & object storage foundation | **done (this slice)** |
-| 2 | Raster de-risk (tile + masked NDVI statistic) | planned |
-| 3 | BFF API implementation | planned |
-| 4 | Frontend map & layer UX | planned |
+| 1 | Database, catalog & object storage foundation | **done** |
+| 2 | Raster de-risk (tile + masked NDVI statistic) | **done** |
+| 3 | BFF API implementation | **done** |
+| 4 | Frontend map & layer UX | **implemented; active hardening** |
 | 5 | Plot & index UX | planned |
 | 6 | Railway deployment hardening | planned |
 | 7 | Acceptance & QA | planned |
@@ -185,9 +243,19 @@ Engineering guardrails: [`docs/engineering-dos-donts.md`](docs/engineering-dos-d
 
 ---
 
-### Emergent preview note
+### Azure akasha-control login
 
-The Emergent sandbox has no Docker engine, so it runs a single FastAPI process
-(mounting `apps/api`) plus a React **Service Skeleton Dashboard** that visualises
-this topology live. The Dockerized multi-service stack above is the artifact that
-builds and runs on local Docker / Railway.
+```bash
+ssh -i ~/.ssh/id_ed25519_thaarei akashaadmin@20.204.163.166
+
+or
+
+ssh akasha-control
+```
+
+### Preview note
+
+This repository now keeps only the canonical multi-service tree. The old
+root-level Emergent preview shims (`backend/` and `frontend/`) were removed so
+there is one backend and one frontend source of truth: `apps/api` and
+`apps/frontend`.

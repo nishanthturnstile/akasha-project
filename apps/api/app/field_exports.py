@@ -1,4 +1,4 @@
-"""Selected-field export routes for EOS-parity Phase 6."""
+"""Selected-field native export routes."""
 from __future__ import annotations
 
 import csv
@@ -14,19 +14,15 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 
 from . import plots_repo
-from .auth import get_current_team
-from .config import settings
+from .api_models import CloudMaskOptions
+from .auth import CurrentTeam, get_current_team
+from .cloud_mask import cloud_mask_mapping
 from .field_analytics import (
-    PROVIDER_INDEX_TYPES,
-    _eos_trend_response,
     _field_statistics,
     _native_trend_response,
     _normalize_index,
     _validate_range,
 )
-from .providers.cloud_mask import cloud_mask_mapping
-from .providers.eos.imagery_provider import EosImageryProvider
-from .providers.models import CloudMaskOptions, ExportFile
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from .raster.indices import DEFAULT_INDEX
 
@@ -38,8 +34,7 @@ router = APIRouter(
     dependencies=[Depends(get_current_team)],
 )
 
-ExportFormat = Literal["geotiff", "geojson", "csv", "shp"]
-ProviderChoice = Literal["auto", "eos", "native"]
+ExportFormat = Literal["geojson", "csv", "shp", "geotiff"]
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -55,16 +50,11 @@ async def _run_blocking(func, *args, **kwargs):
         ) from exc
 
 
-async def _get_plot_or_404(plot_id: str) -> dict[str, Any]:
-    plot = await _run_blocking(plots_repo.get_plot, plot_id)
+async def _get_plot_or_404(plot_id: str, team_id: str | None = None) -> dict[str, Any]:
+    plot = await _run_blocking(plots_repo.get_plot, plot_id, team_id)
     if plot is None:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", plotId=plot_id)
     return plot
-
-
-def _is_eos_ready() -> bool:
-    mode = (settings.provider_mode or "disabled").strip().lower()
-    return bool(settings.eos_api_key.strip()) and settings.eos_enabled and mode in {"eos", "hybrid"}
 
 
 def _safe_filename(value: str) -> str:
@@ -180,64 +170,6 @@ def _unsupported_format(message: str, **details: Any) -> AkashaError:
     return AkashaError("EXPORT_FORMAT_UNAVAILABLE", message, 501, details or None)
 
 
-def _provider_export_file(
-    *,
-    plot_id: str,
-    plot: dict[str, Any],
-    acquisition_date: date,
-    index_type: str,
-    scene_token: str | None,
-    provider: ProviderChoice,
-    cloud_mask: CloudMaskOptions,
-) -> ExportFile:
-    if provider == "native":
-        raise _unsupported_format(
-            "Native index GeoTIFF export is not available in Phase 6.",
-            provider="native",
-            format="geotiff",
-        )
-    external_field_id = plot.get("externalFieldId")
-    if not external_field_id:
-        raise AkashaError(
-            "FIELD_PROVIDER_NOT_SYNCED",
-            "Sync the selected field before exporting provider index imagery.",
-            409,
-            {"provider": "eos", "plotId": plot_id},
-        )
-    if not _is_eos_ready():
-        raise AkashaError(
-            "PROVIDER_UNAVAILABLE",
-            "EOS provider is not available for index imagery export.",
-            503,
-            {"provider": "eos"},
-        )
-    if index_type not in PROVIDER_INDEX_TYPES:
-        raise bad_request(
-            f"Unsupported provider export index '{index_type}'.",
-            code="UNSUPPORTED_INDEX",
-            indexType=index_type,
-            supported=sorted(PROVIDER_INDEX_TYPES),
-        )
-    exported = EosImageryProvider().export_index_geotiff(
-        str(external_field_id),
-        scene_token=scene_token,
-        acquisition_date=acquisition_date,
-        index=index_type,
-        cloud_mask=cloud_mask,
-        filename=_filename(plot, acquisition_date, index_type, "tiff"),
-    )
-    metadata = exported.metadata.model_copy(
-        update={
-            "plot_id": plot_id,
-            "acquisition_date": acquisition_date,
-            "index_type": index_type,
-            "cloud_mask": cloud_mask,
-            "cloud_mask_mapping": cloud_mask_mapping(cloud_mask),
-        }
-    )
-    return exported.model_copy(update={"metadata": metadata})
-
-
 def _default_range() -> tuple[date, date]:
     today = datetime.now(UTC).date()
     return today - timedelta(days=180), today
@@ -294,38 +226,25 @@ async def export_field_index(
     sourceId: str = Query(default="sentinel-2-l2a"),
     acquisitionDate: date | None = Query(default=None),
     indexType: str = Query(default=DEFAULT_INDEX),
-    sceneToken: str | None = Query(default=None),
-    provider: ProviderChoice = Query(default="auto"),
     clouds: bool = True,
     cloudShadows: bool = True,
     cirrus: bool = True,
+    team: CurrentTeam = Depends(get_current_team),
 ):
-    plot = await _get_plot_or_404(plot_id)
+    plot = await _get_plot_or_404(plot_id, team.id)
     acquisition_date = _required_acquisition_date(acquisitionDate)
     index_type = _normalize_index(indexType)
     cloud_mask = CloudMaskOptions(clouds=clouds, cloud_shadows=cloudShadows, cirrus=cirrus)
 
     if format == "shp":
         raise _unsupported_format(
-            "SHP export is available after zoning/vector exports are implemented.",
+            "SHP export is available after native vector exports are implemented.",
             format="shp",
         )
-
     if format == "geotiff":
-        exported = await _run_blocking(
-            _provider_export_file,
-            plot_id=plot_id,
-            plot=plot,
-            acquisition_date=acquisition_date,
-            index_type=index_type,
-            scene_token=sceneToken,
-            provider=provider,
-            cloud_mask=cloud_mask,
-        )
-        return Response(
-            content=exported.content,
-            media_type=exported.content_type,
-            headers=_disposition(exported.filename),
+        raise _unsupported_format(
+            "Native index GeoTIFF export is not available yet.",
+            format="geotiff",
         )
 
     stats = await _run_blocking(
@@ -360,69 +279,31 @@ async def export_field_report_csv(
     indexType: str = Query(default=DEFAULT_INDEX),
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
-    provider: ProviderChoice = Query(default="auto"),
     sourceId: str = Query(default="sentinel-2-l2a"),
     clouds: bool = True,
     cloudShadows: bool = True,
     cirrus: bool = True,
+    team: CurrentTeam = Depends(get_current_team),
 ):
     default_start, default_end = _default_range()
     date_start = startDate or default_start
     date_end = endDate or default_end
     _validate_range(date_start, date_end)
 
-    plot = await _get_plot_or_404(plot_id)
+    plot = await _get_plot_or_404(plot_id, team.id)
     index_type = _normalize_index(indexType)
     cloud_mask = CloudMaskOptions(clouds=clouds, cloud_shadows=cloudShadows, cirrus=cirrus)
-    external_field_id = plot.get("externalFieldId")
-
-    if provider == "eos" and not external_field_id:
-        raise AkashaError(
-            "FIELD_PROVIDER_NOT_SYNCED",
-            "Sync the selected field before exporting provider analytics.",
-            409,
-            {"provider": "eos", "plotId": plot_id},
-        )
-    if provider == "eos" and not _is_eos_ready():
-        raise AkashaError(
-            "PROVIDER_UNAVAILABLE",
-            "EOS provider is not available for analytics export.",
-            503,
-            {"provider": "eos"},
-        )
-    if provider == "eos" and index_type not in PROVIDER_INDEX_TYPES:
-        raise bad_request(
-            f"Unsupported provider export index '{index_type}'.",
-            code="UNSUPPORTED_INDEX",
-            indexType=index_type,
-            supported=sorted(PROVIDER_INDEX_TYPES),
-        )
-
-    use_native_export = provider == "native" or not (
-        external_field_id and _is_eos_ready() and index_type in PROVIDER_INDEX_TYPES
+    response = await _run_blocking(
+        _native_trend_response,
+        plot_id=plot_id,
+        plot=plot,
+        source_id=sourceId,
+        index_type=index_type,
+        date_start=date_start,
+        date_end=date_end,
+        cloud_mask=cloud_mask,
+        reason="Native Akasha masked-raster report export is in use.",
     )
-    if use_native_export:
-        response = await _run_blocking(
-            _native_trend_response,
-            plot_id=plot_id,
-            plot=plot,
-            source_id=sourceId,
-            index_type=index_type,
-            date_start=date_start,
-            date_end=date_end,
-            cloud_mask=cloud_mask,
-            reason="Native Akasha masked-raster report export is in use.",
-        )
-    else:
-        response = await _run_blocking(
-            _eos_trend_response,
-            plot_id=plot_id,
-            external_field_id=str(external_field_id),
-            index_type=index_type,
-            date_start=date_start,
-            date_end=date_end,
-            cloud_mask=cloud_mask,
-        )
 
     filename = f"{_safe_filename(str(plot.get('name') or plot_id))}_{index_type}_analytics.csv"
     return Response(

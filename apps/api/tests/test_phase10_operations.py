@@ -92,7 +92,7 @@ def test_attachment_metadata_and_activity_export_are_sanitized(monkeypatch):
         "update_activity",
         lambda *_: _activity(status="done", attachments=[]),
     )
-    monkeypatch.setattr(operations.phase10_repo, "list_activities", lambda _filters: [_activity()])
+    monkeypatch.setattr(operations.phase10_repo, "list_activities", lambda *_: [_activity()])
 
     created = client.post(
         "/api/attachments",
@@ -136,7 +136,7 @@ def test_scout_task_coordinates_and_attachment_listing(monkeypatch):
         "update_scout_task",
         lambda *_: _task(status="closed"),
     )
-    monkeypatch.setattr(scout_tasks.phase10_repo, "list_scout_tasks", lambda _filters: [_task()])
+    monkeypatch.setattr(scout_tasks.phase10_repo, "list_scout_tasks", lambda *_: [_task()])
     monkeypatch.setattr(operations.phase10_repo, "list_attachments", lambda **_: [_attachment()])
 
     bad = client.post("/api/scout-tasks", json={"longitude": 181, "latitude": 12})
@@ -225,9 +225,9 @@ def test_field_group_crud_and_assignment(monkeypatch):
         "updatedAt": "2026-06-04T00:00:00Z",
     }
     monkeypatch.setattr(field_groups.phase10_repo, "create_field_group", lambda _payload: group)
-    monkeypatch.setattr(field_groups.phase10_repo, "list_field_groups", lambda: [group])
+    monkeypatch.setattr(field_groups.phase10_repo, "list_field_groups", lambda *_: [group])
     monkeypatch.setattr(field_groups.phase10_repo, "update_field_group", lambda *_: group)
-    monkeypatch.setattr(field_groups.phase10_repo, "delete_field_group", lambda _group_id: True)
+    monkeypatch.setattr(field_groups.phase10_repo, "delete_field_group", lambda *_: True)
     monkeypatch.setattr(field_groups.phase10_repo, "assign_group_fields", lambda *_: group)
 
     created = client.post("/api/field-groups", json={"name": "North Block"})

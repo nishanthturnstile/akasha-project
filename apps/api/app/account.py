@@ -1,8 +1,10 @@
 """Account, team, API-key, notifications, and assistant shell routes."""
+
 from __future__ import annotations
 
 import functools
 import logging
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import anyio
@@ -10,6 +12,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import Field
 
+from . import account_repo
+from .api_models import ApiModel
 from .auth import (
     CurrentTeam,
     CurrentUser,
@@ -17,29 +21,30 @@ from .auth import (
     get_current_user,
     hash_secret,
     new_api_key,
+    require_role,
 )
-from .providers.models import ProviderModel
 from .raster.errors import AkashaError, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.account")
 router = APIRouter(prefix="/api", tags=["account"])
 
+# Local disabled-auth preview storage. Enabled auth uses Postgres.
 _api_keys: list[dict[str, Any]] = []
 _notifications: list[dict[str, Any]] = []
 
 
-class AccountMe(ProviderModel):
+class AccountMe(ApiModel):
     user: dict[str, Any]
     current_team: dict[str, Any]
     memberships: list[dict[str, Any]]
     auth_mode: str = "dev"
 
 
-class ApiKeyCreate(ProviderModel):
+class ApiKeyCreate(ApiModel):
     name: str
 
 
-class ApiKeyPublic(ProviderModel):
+class ApiKeyPublic(ApiModel):
     id: str
     name: str
     prefix: str
@@ -49,14 +54,13 @@ class ApiKeyPublic(ProviderModel):
     raw_key: str | None = None
 
 
-class Notification(ProviderModel):
+class Notification(ApiModel):
     id: str
     type: Literal[
         "field_change",
         "risk_alert",
         "task_assignment",
         "report_available",
-        "provider_sync_failure",
     ]
     title: str
     body: str | None = None
@@ -67,7 +71,7 @@ class Notification(ProviderModel):
     created_at: str
 
 
-class AssistantStatus(ProviderModel):
+class AssistantStatus(ApiModel):
     status: Literal["disabled"] = "disabled"
     message: str
     evidence_sources: list[str]
@@ -85,15 +89,31 @@ async def _run_blocking(func, *args, **kwargs):
         raise plots_backend_unavailable("Account storage is not available.") from exc
 
 
+def _use_preview_storage(team: CurrentTeam) -> bool:
+    return team.id.startswith("00000000")
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
 @router.get("/account/me", response_model=AccountMe, response_model_by_alias=True)
 async def account_me(
     user: CurrentUser = Depends(get_current_user),
     team: CurrentTeam = Depends(get_current_team),
 ) -> AccountMe:
     return AccountMe(
-        user={"id": user.id, "email": user.email, "displayName": user.display_name},
+        user={
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "displayName": user.display_name,
+        },
         current_team={"id": team.id, "name": team.name, "role": team.role},
-        memberships=[{"teamId": team.id, "teamName": team.name, "role": team.role}],
+        memberships=[
+            {"teamId": item.id, "teamName": item.name, "role": item.role}
+            for item in (user.memberships or ())
+        ],
         auth_mode="dev" if user.id.startswith("00000000") else "enabled",
     )
 
@@ -120,6 +140,9 @@ async def account_settings(team: CurrentTeam = Depends(get_current_team)) -> dic
     response_model_exclude_none=True,
 )
 async def list_api_keys(team: CurrentTeam = Depends(get_current_team)) -> list[ApiKeyPublic]:
+    if not _use_preview_storage(team):
+        rows = await _run_blocking(account_repo.list_api_keys, team.id)
+        return [ApiKeyPublic(**row) for row in rows]
     return [
         ApiKeyPublic(**{k: v for k, v in item.items() if k not in {"keyHash", "rawKey"}})
         for item in _api_keys
@@ -135,9 +158,21 @@ async def list_api_keys(team: CurrentTeam = Depends(get_current_team)) -> list[A
 )
 async def create_api_key(
     payload: ApiKeyCreate,
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin")),
 ) -> ApiKeyPublic:
     raw, prefix, last4 = new_api_key()
+    if not _use_preview_storage(team):
+        row = await _run_blocking(
+            account_repo.create_api_key,
+            team_id=team.id,
+            user_id=user.id,
+            name=payload.name,
+            key_hash=hash_secret(raw),
+            prefix=prefix,
+            last4=last4,
+        )
+        return ApiKeyPublic(**row, rawKey=raw)
     item = {
         "id": str(len(_api_keys) + 1),
         "teamId": team.id,
@@ -145,17 +180,29 @@ async def create_api_key(
         "prefix": prefix,
         "last4": last4,
         "keyHash": hash_secret(raw),
-        "createdAt": "2026-06-04T00:00:00Z",
+        "createdAt": _now_iso(),
     }
     _api_keys.append(item)
     return ApiKeyPublic(**{k: v for k, v in item.items() if k != "keyHash"}, rawKey=raw)
 
 
 @router.delete("/account/api-keys/{key_id}", status_code=204)
-async def revoke_api_key(key_id: str, team: CurrentTeam = Depends(get_current_team)) -> Response:
+async def revoke_api_key(
+    key_id: str,
+    team: CurrentTeam = Depends(require_role("owner", "admin")),
+) -> Response:
+    if not _use_preview_storage(team):
+        changed = await _run_blocking(
+            account_repo.revoke_api_key,
+            team_id=team.id,
+            key_id=key_id,
+        )
+        if changed:
+            return Response(status_code=204)
+        raise not_found("API key not found.", code="API_KEY_NOT_FOUND", keyId=key_id)
     for item in _api_keys:
         if item["id"] == key_id and item["teamId"] == team.id:
-            item["revokedAt"] = "2026-06-04T00:00:00Z"
+            item["revokedAt"] = _now_iso()
             return Response(status_code=204)
     raise not_found("API key not found.", code="API_KEY_NOT_FOUND", keyId=key_id)
 
@@ -165,6 +212,13 @@ async def list_notifications(
     unreadOnly: bool = False,
     team: CurrentTeam = Depends(get_current_team),
 ) -> list[Notification]:
+    if not _use_preview_storage(team):
+        rows = await _run_blocking(
+            account_repo.list_notifications,
+            team_id=team.id,
+            unread_only=unreadOnly,
+        )
+        return [Notification(**row) for row in rows]
     items = [item for item in _notifications if item["teamId"] == team.id]
     if unreadOnly:
         items = [item for item in items if not item.get("readAt")]
@@ -177,6 +231,9 @@ async def list_notifications(
     response_model_by_alias=True,
 )
 async def unread_count(team: CurrentTeam = Depends(get_current_team)) -> dict[str, int]:
+    if not _use_preview_storage(team):
+        count = await _run_blocking(account_repo.unread_notification_count, team.id)
+        return {"unreadCount": count}
     return {
         "unreadCount": sum(
             1 for item in _notifications if item["teamId"] == team.id and not item.get("readAt")
@@ -193,9 +250,22 @@ async def mark_notification_read(
     notification_id: str,
     team: CurrentTeam = Depends(get_current_team),
 ) -> Notification:
+    if not _use_preview_storage(team):
+        item = await _run_blocking(
+            account_repo.mark_notification_read,
+            team_id=team.id,
+            notification_id=notification_id,
+        )
+        if item:
+            return Notification(**item)
+        raise not_found(
+            "Notification not found.",
+            code="NOTIFICATION_NOT_FOUND",
+            notificationId=notification_id,
+        )
     for item in _notifications:
         if item["id"] == notification_id and item["teamId"] == team.id:
-            item["readAt"] = "2026-06-04T00:00:00Z"
+            item["readAt"] = _now_iso()
             return Notification(**{k: v for k, v in item.items() if k != "teamId"})
     raise not_found(
         "Notification not found.",
@@ -208,10 +278,13 @@ async def mark_notification_read(
 async def mark_all_notifications_read(
     team: CurrentTeam = Depends(get_current_team),
 ) -> dict[str, int]:
+    if not _use_preview_storage(team):
+        changed = await _run_blocking(account_repo.mark_all_notifications_read, team.id)
+        return {"updatedCount": changed}
     changed = 0
     for item in _notifications:
         if item["teamId"] == team.id and not item.get("readAt"):
-            item["readAt"] = "2026-06-04T00:00:00Z"
+            item["readAt"] = _now_iso()
             changed += 1
     return {"updatedCount": changed}
 

@@ -133,7 +133,15 @@ The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative sa
   "appName": "Akasha",
   "aoi": { "id": "bangalore", "name": "Bangalore", "center": [77.59, 12.97], "zoom": 11,
            "bounds": [77.4, 12.8, 77.8, 13.2] },
-  "basemapStyleUrl": "<from VITE_BASEMAP_STYLE_URL>",
+  "basemapStyleUrl": "",
+  "basemap": {
+    "provider": "esri",
+    "style": "arcgis/imagery",
+    "styleFamily": "arcgis",
+    "usageModel": "session",
+    "places": "none",
+    "sessionDurationSeconds": 43200
+  },
   "maxPolygonAreaHa": 50,
   "maxPolygonVertices": 5000,
   "usablePixelThresholdPercent": 70,
@@ -279,21 +287,22 @@ STAC/pgSTAC owns satellite collections, items, asset URLs, acquisition timestamp
 - Prefer explicit Dockerfiles for each deployable service.
 - Add `/health` endpoints before configuring Railway health checks.
 
-## Provider replacement map
+## Native capability roadmap
 
-EOSDA remains a trial provider behind BFF adapter interfaces. The browser must never call EOS directly; it only uses same-origin `/api/*` and `/tiles/*` routes.
+The browser only uses same-origin `/api/*` and `/tiles/*` routes. Capabilities that are not backed
+by Akasha-owned data sources remain disabled or placeholder-only until native services are added.
 
-| Trial/provider-backed capability | Current adapter seam | Akasha-native replacement direction |
+| Capability | Current implementation | Native extension direction |
 |---|---|---|
-| Field mirroring/sync | `FieldProvider` behind the FastAPI BFF | Native `akasha.plots` + field AOI metadata; no external mirror required. |
-| Field scene timeline | `SceneProvider` / STAC fallback | pgSTAC/STAC query filtered by field AOI, scene coverage, and cloud/valid-pixel metrics. |
-| True-colour and index display tiles | `TileProvider` for EOS field tiles; native `/api/tiles/*` for COGs | COG/TiTiler-backed same-origin tiles with true-colour `[1,8,9]` default and optional index overlays. |
-| Field analytics trend | `AnalyticsProvider` and native masked-statistics fallback | BFF rasterio/rio-tiler statistics over STAC/COG assets with cloud-mask rules. |
-| Imagery export | `ImageryExportProvider` for provider GeoTIFFs; BFF native CSV/GeoJSON | Server-side BFF/TiTiler export; never provider-signed URLs in the browser. |
-| Weather forecast/history | `WeatherProvider` | IMD/GFS/Open-Meteo/ECMWF weather adapter, normalized to current BFF weather DTOs. |
-| Soil moisture | optional provider response with `available=false` fallback | SMAP/native soil-moisture service behind the same weather/provider abstraction. |
-| Vegetation VRA zoning | `ZoningProvider` with Akasha public map IDs | Native BFF zoning using quantile/k-means over cloud-masked index rasters, exporting GeoJSON/SHP. |
+| Field management | Native `akasha.plots` + field AOI metadata | Add grouping, metadata, and import/export workflows without external mirrors. |
+| Scene timeline | pgSTAC/STAC query and seed fallback | Filter by field AOI, scene coverage, and cloud/valid-pixel metrics. |
+| True-colour and index display tiles | COG/TiTiler-backed same-origin `/api/tiles/*` routes | Keep true-colour `[1,8,9]` default and add optional native index overlays. |
+| Field analytics trend | BFF rasterio/rio-tiler statistics over STAC/COG assets | Broaden trend coverage as catalog density increases. |
+| Imagery export | BFF native CSV/GeoJSON selected-field exports | Add server-side GeoTIFF/vector exports without signed storage URLs in the browser. |
+| Weather forecast/history | Placeholder / unavailable in risk scoring | Add an Akasha-selected weather adapter normalized behind BFF routes. |
+| Soil moisture | Unavailable | Add a native soil-moisture source when validated. |
+| Vegetation VRA zoning | Placeholder | Implement native zoning using quantile/k-means over cloud-masked index rasters. |
 | Reports/leaderboard | Akasha-native BFF reports | Continue composing from fields, cloud-free index statistics, weather, operations, and risk evidence. |
 | Risk/disease/pest context | Akasha-native transparent rule model | Validated crop/stage/weather/scout models; no disease/pest diagnosis from NDVI alone. |
 
-Replacement work must preserve the same public DTOs, standard error shape, and secret-leak guardrails used by the EOS parity slice.
+Native extension work must preserve the same public DTOs, standard error shape, and secret-leak guardrails used by the retained Akasha APIs.

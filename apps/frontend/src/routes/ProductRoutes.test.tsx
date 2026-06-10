@@ -10,6 +10,21 @@ vi.mock('@/pages/monitoring/FieldAnalyticsPage', () => ({
 }));
 
 function renderRoutes(path: string) {
+  if (!vi.isMockFunction(globalThis.fetch)) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          user: { id: 'u1', username: 'dev', email: 'dev@example.test', displayName: 'Dev' },
+          currentTeam: { id: 't1', name: 'Team', role: 'owner' },
+          memberships: [{ teamId: 't1', teamName: 'Team', role: 'owner' }],
+          authMode: 'enabled',
+        }),
+      }),
+    );
+  }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -32,16 +47,33 @@ describe('ProductRoutes', () => {
   it('redirects the root URL to the monitoring map workspace', async () => {
     renderRoutes('/');
 
-    await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), { timeout: 8000 });
     expect(screen.getByTestId('nav-link-field-analytics').getAttribute('aria-current')).toBe(
       'page',
     );
   });
 
+  it('redirects unauthenticated product routes to login', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: { code: 'UNAUTHORIZED', message: 'Authentication required.', details: {} },
+        }),
+      }),
+    );
+
+    renderRoutes('/monitoring/field-analytics');
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Sign in' })).toBeTruthy());
+  });
+
   it('keeps the legacy map route compatible', async () => {
     renderRoutes('/map');
 
-    await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), { timeout: 8000 });
   });
 
   it('renders planned module placeholders without loading the map workspace', async () => {
@@ -55,18 +87,14 @@ describe('ProductRoutes', () => {
     expect(screen.queryByTestId('map-page')).toBeNull();
   });
 
-  it('renders real weather pages instead of placeholders', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
-    );
+  it('renders weather pages as planned native-module placeholders', async () => {
     renderRoutes('/weather/forecast');
 
     await waitFor(
       () => expect(screen.getByRole('heading', { name: 'Weather Forecast' })).toBeTruthy(),
       { timeout: 8000 },
     );
-    expect(screen.queryByTestId('module-placeholder')).toBeNull();
+    expect(screen.getByTestId('module-placeholder')).toBeTruthy();
   });
 
   it('renders real report pages instead of placeholders', async () => {
@@ -97,18 +125,14 @@ describe('ProductRoutes', () => {
     expect(screen.queryByTestId('module-placeholder')).toBeNull();
   });
 
-  it('renders the real VRA vegetation page instead of a placeholder', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] }),
-    );
+  it('renders VRA vegetation as a planned native-module placeholder', async () => {
     renderRoutes('/vra/vegetation');
 
     await waitFor(
       () => expect(screen.getByRole('heading', { name: 'VRA Vegetation' })).toBeTruthy(),
       { timeout: 8000 },
     );
-    expect(screen.queryByTestId('module-placeholder')).toBeNull();
+    expect(screen.getByTestId('module-placeholder')).toBeTruthy();
   });
 
   it('renders real Phase 10 operations pages instead of placeholders', async () => {
@@ -165,9 +189,11 @@ describe('ProductRoutes', () => {
     }
   });
 
-  it('renders a not-found page for unknown product routes', () => {
+  it('renders a not-found page for unknown product routes', async () => {
     renderRoutes('/missing/module');
 
-    expect(screen.getByRole('heading', { name: 'Route not found' })).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Route not found' })).toBeTruthy(),
+    );
   });
 });

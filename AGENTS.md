@@ -14,24 +14,18 @@ Slice 2 (raster de-risk) is implemented. Build only the requested slice; preserv
 contracts from earlier slices. The slice roadmap and per-slice doc scope live in
 [docs/platform-plan.md](docs/platform-plan.md).
 
-## Two parallel trees: canonical vs Emergent preview
+## Canonical application tree
 
 This is the most important thing to understand before editing.
 
-- **Canonical multi-service code** (what ships to Railway / runs in Docker Compose):
-  - [apps/api/](apps/api/) — FastAPI BFF (the real backend, package `app`)
-  - [apps/frontend/](apps/frontend/) — React 18 + Vite + TypeScript SPA (real frontend)
-  - [services/ingestion/](services/ingestion/), [services/ingestion-sar/](services/ingestion-sar/), [services/titiler/](services/titiler/), [services/stac-api/](services/stac-api/), [services/minio/](services/minio/)
-  - [infra/gateway/](infra/gateway/) (Caddy reverse proxy), [infra/docker/](infra/docker/), [infra/railway/](infra/railway/)
+- [apps/api/](apps/api/) — FastAPI BFF (the backend, package `app`)
+- [apps/frontend/](apps/frontend/) — React 18 + Vite + TypeScript SPA
+- [services/ingestion/](services/ingestion/), [services/ingestion-sar/](services/ingestion-sar/), [services/titiler/](services/titiler/), [services/stac-api/](services/stac-api/), [services/minio/](services/minio/)
+- [infra/gateway/](infra/gateway/) (Caddy reverse proxy), [infra/docker/](infra/docker/), [infra/railway/](infra/railway/)
 
-- **Emergent.sh sandbox shims** (the Emergent preview has no Docker engine, so it runs a single
-  FastAPI process + a CRA dashboard):
-  - [backend/server.py](backend/server.py) — re-exports the canonical `apps/api` app via `uvicorn server:app`. Do **not** put Akasha logic here.
-  - [backend/requirements.txt](backend/requirements.txt) — Emergent scaffold deps (mongo/motor/etc.); **not** the BFF's real deps. The real ones are in [apps/api/requirements.txt](apps/api/requirements.txt).
-  - [frontend/](frontend/) — CRA/craco "Service Skeleton Dashboard" preview (JS, not the real SPA).
-
-When asked to change backend or frontend behavior, edit `apps/api` / `apps/frontend`, not the
-root `backend/` / `frontend/` shims.
+The old root-level Emergent preview shims (`backend/` and `frontend/`) were
+removed. When asked to change backend or frontend behavior, edit
+`apps/api` / `apps/frontend`.
 
 ## Commands
 
@@ -42,6 +36,7 @@ Run from repo root unless noted. The `Makefile` wraps the common ones (`make hel
 ruff check apps/api services/ingestion scripts          # lint (line-length 100, py311)
 black apps/api services/ingestion && isort apps/api services/ingestion   # format
 
+pip install -r apps/api/requirements-dev.txt             # BFF runtime + test deps (pytest, httpx)
 cd apps/api && python -m pytest -q                       # BFF unit tests
 cd apps/api && python -m pytest tests/test_slice2.py -q  # one test file
 cd apps/api && python -m pytest tests/test_slice2.py::<name>   # one test

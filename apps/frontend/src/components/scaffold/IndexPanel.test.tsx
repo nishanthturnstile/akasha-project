@@ -58,7 +58,6 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                 displayMode="NDVI"
                 supportedIndices={ ['NDVI', 'NDRE', 'NDMI'] }
                 cloudMask={ cloudMask }
-                selectedScene={ null }
             />,
         );
 
@@ -76,7 +75,6 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                 displayMode="NDVI"
                 supportedIndices={ ['NDVI', 'NDRE', 'NDMI'] }
                 cloudMask={ cloudMask }
-                selectedScene={ null }
             />,
         );
 
@@ -109,7 +107,6 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                 displayMode="NDVI"
                 supportedIndices={ ['NDVI', 'NDRE', 'NDMI'] }
                 cloudMask={ cloudMask }
-                selectedScene={ null }
                 periodFrom="2026-03-01"
                 periodTo="2026-04-27"
             />,
@@ -141,7 +138,6 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                 displayMode="NDVI"
                 supportedIndices={ ['NDVI'] }
                 cloudMask={ cloudMask }
-                selectedScene={ null }
             />,
         );
 

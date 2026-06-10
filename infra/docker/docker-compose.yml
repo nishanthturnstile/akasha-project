@@ -21,22 +21,28 @@ services:
     build:
       context: ../..
       dockerfile: infra/gateway/Dockerfile
+      args:
+        VITE_ESRI_API_KEY: "${VITE_ESRI_API_KEY:-}"
+        VITE_ESRI_BASEMAP_STYLE: "${VITE_ESRI_BASEMAP_STYLE:-arcgis/imagery}"
+        VITE_ESRI_BASEMAP_STYLE_FAMILY: "${VITE_ESRI_BASEMAP_STYLE_FAMILY:-arcgis}"
+        VITE_ESRI_BASEMAP_PLACES: "${VITE_ESRI_BASEMAP_PLACES:-none}"
+        VITE_ESRI_BASEMAP_SESSION_SECONDS: "${VITE_ESRI_BASEMAP_SESSION_SECONDS:-43200}"
     image: akasha-web:slice0
     environment:
-      PORT: '80'
-      API_UPSTREAM_URL: 'http://api:8000'
-      TITILER_UPSTREAM_URL: 'http://titiler:8000'
-      PUBLIC_APP_NAME: '${PUBLIC_APP_NAME:-Akasha}'
-      PUBLIC_DEFAULT_AOI_NAME: '${PUBLIC_DEFAULT_AOI_NAME:-Bangalore}'
+      PORT: "80"
+      API_UPSTREAM_URL: "http://api:8000"
+      TITILER_UPSTREAM_URL: "http://titiler:8000"
+      PUBLIC_APP_NAME: "${PUBLIC_APP_NAME:-Akasha}"
+      PUBLIC_DEFAULT_AOI_NAME: "${PUBLIC_DEFAULT_AOI_NAME:-Bangalore}"
     ports:
-      - '${WEB_PORT:-8080}:80'
+      - "${WEB_PORT:-8080}:80"
     depends_on:
       api:
         condition: service_healthy
       titiler:
         condition: service_started
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:80/health']
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -49,52 +55,52 @@ services:
       dockerfile: Dockerfile
     image: akasha-api:slice0
     environment:
-      APP_ENV: 'development'
-      PORT: '8000'
-      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}'
-      STAC_API_URL: 'http://stac-api:8080'
-      TITILER_URL: 'http://titiler:8000'
-      S3_ENDPOINT_URL: 'http://minio:9000'
+      APP_ENV: "development"
+      PORT: "8000"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      STAC_API_URL: "http://stac-api:8080"
+      TITILER_URL: "http://titiler:8000"
+      S3_ENDPOINT_URL: "http://minio:9000"
       # Slice 2: server-side S3/GDAL config so the BFF (rasterio) can read MinIO
       # COG windows for masked statistics. Not exposed to the browser.
-      AWS_ACCESS_KEY_ID: '${MINIO_ROOT_USER}'
-      AWS_SECRET_ACCESS_KEY: '${MINIO_ROOT_PASSWORD}'
-      AWS_S3_ENDPOINT: 'minio:9000'
-      AWS_VIRTUAL_HOSTING: 'FALSE'
-      AWS_HTTPS: 'NO'
-      AWS_REGION: 'us-east-1'
-      GDAL_DISABLE_READDIR_ON_OPEN: 'EMPTY_DIR'
-      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: '.tif,.tiff'
-      AKASHA_RGB_RESCALE: '0,3000'
-      AKASHA_S1_VV_RESCALE: '-25,5'
-      DEFAULT_SOURCE_ID: 'sentinel-2-l2a'
-      DEFAULT_AOI_ID: 'bangalore'
-      USABLE_PIXEL_THRESHOLD_PERCENT: '70'
-      MAX_POLYGON_AREA_HA: '50'
-      MAX_POLYGON_VERTICES: '5000'
-      INDEX_REQUEST_TIMEOUT_SECONDS: '30'
-      RATE_LIMIT_INDEX_PER_MINUTE: '30'
-      MAX_REQUEST_BODY_BYTES: '1048576'
-      # EOSDA API Connect provider adapter. These stay server-side in the BFF;
-      # the browser only receives Akasha same-origin `/api/*` and tile routes.
-      EOS_API_KEY: '${EOS_API_KEY:-}'
-      EOS_BASE_URL: '${EOS_BASE_URL:-https://api-connect.eos.com}'
-      PROVIDER_MODE: '${PROVIDER_MODE:-disabled}'
-      EOS_ENABLED: '${EOS_ENABLED:-false}'
-      EOS_TIMEOUT_SECONDS: '${EOS_TIMEOUT_SECONDS:-30}'
-      EOS_CACHE_TTL_SECONDS: '${EOS_CACHE_TTL_SECONDS:-300}'
-      EOS_RATE_LIMIT_PER_MINUTE: '${EOS_RATE_LIMIT_PER_MINUTE:-10}'
-      CORS_ALLOWED_ORIGINS: 'http://localhost:${WEB_PORT:-8080}'
+      AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
+      AWS_S3_ENDPOINT: "minio:9000"
+      AWS_VIRTUAL_HOSTING: "FALSE"
+      AWS_HTTPS: "NO"
+      AWS_REGION: "us-east-1"
+      GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
+      AKASHA_RGB_RESCALE: "0,3000"
+      AKASHA_S1_VV_RESCALE: "-25,5"
+      DEFAULT_SOURCE_ID: "sentinel-2-l2a"
+      DEFAULT_AOI_ID: "bangalore"
+      USABLE_PIXEL_THRESHOLD_PERCENT: "70"
+      MAX_POLYGON_AREA_HA: "50"
+      MAX_POLYGON_VERTICES: "5000"
+      INDEX_REQUEST_TIMEOUT_SECONDS: "30"
+      RATE_LIMIT_INDEX_PER_MINUTE: "30"
+      MAX_REQUEST_BODY_BYTES: "1048576"
+      CORS_ALLOWED_ORIGINS: "http://localhost:${WEB_PORT:-8080}"
+      # Enforced auth for the local stack. The browser must sign in via /login;
+      # AUTH_COOKIE_SECURE is false ONLY because local dev is plain http
+      # (Railway/customer deployments keep it true — see infra/railway/ENV_MATRIX.md).
+      AUTH_MODE: "enabled"
+      AUTH_ALLOW_DISABLED: "false"
+      AUTH_PASSWORD_PEPPER: "${AUTH_PASSWORD_PEPPER}"
+      AUTH_ALLOW_BOOTSTRAP: "${AUTH_ALLOW_BOOTSTRAP:-true}"
+      AUTH_BOOTSTRAP_TOKEN: "${AUTH_BOOTSTRAP_TOKEN}"
+      AUTH_COOKIE_SECURE: "false"
     expose:
-      - '8000'
+      - "8000"
     depends_on:
       postgis:
         condition: service_healthy
     healthcheck:
       test:
-        - 'CMD'
-        - 'python'
-        - '-c'
+        - "CMD"
+        - "python"
+        - "-c"
         - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"
       interval: 30s
       timeout: 5s
@@ -108,25 +114,25 @@ services:
     # from services/titiler/Dockerfile.
     image: ghcr.io/developmentseed/titiler:1.0.0
     environment:
-      PORT: '8000'
-      AWS_ACCESS_KEY_ID: '${MINIO_ROOT_USER}'
-      AWS_SECRET_ACCESS_KEY: '${MINIO_ROOT_PASSWORD}'
-      AWS_S3_ENDPOINT: 'minio:9000'
-      AWS_VIRTUAL_HOSTING: 'FALSE'
-      AWS_HTTPS: 'NO'
-      AWS_REGION: 'us-east-1'
-      GDAL_DISABLE_READDIR_ON_OPEN: 'EMPTY_DIR'
-      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: '.tif,.tiff'
+      PORT: "8000"
+      AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
+      AWS_S3_ENDPOINT: "minio:9000"
+      AWS_VIRTUAL_HOSTING: "FALSE"
+      AWS_HTTPS: "NO"
+      AWS_REGION: "us-east-1"
+      GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
     expose:
-      - '8000'
+      - "8000"
     depends_on:
       minio:
         condition: service_started
     healthcheck:
       test:
-        - 'CMD'
-        - 'python'
-        - '-c'
+        - "CMD"
+        - "python"
+        - "-c"
         - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"
       interval: 30s
       timeout: 5s
@@ -140,24 +146,24 @@ services:
     # from services/stac-api/Dockerfile.
     image: ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2
     environment:
-      POSTGRES_HOST_READER: 'postgis'
-      POSTGRES_HOST_WRITER: 'postgis'
-      POSTGRES_PORT: '5432'
-      POSTGRES_USER: '${POSTGRES_USER}'
-      POSTGRES_PASS: '${POSTGRES_PASSWORD}'
-      POSTGRES_DBNAME: '${POSTGRES_DB}'
-      APP_HOST: '0.0.0.0'
-      APP_PORT: '8080'
+      POSTGRES_HOST_READER: "postgis"
+      POSTGRES_HOST_WRITER: "postgis"
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASS: "${POSTGRES_PASSWORD}"
+      POSTGRES_DBNAME: "${POSTGRES_DB}"
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
     expose:
-      - '8080'
+      - "8080"
     depends_on:
       postgis:
         condition: service_healthy
     healthcheck:
       test:
-        - 'CMD'
-        - 'python'
-        - '-c'
+        - "CMD"
+        - "python"
+        - "-c"
         - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/_mgmt/ping').status==200 else 1)"
       interval: 30s
       timeout: 5s
@@ -169,15 +175,15 @@ services:
     image: postgis/postgis:16-3.5
     platform: linux/amd64
     environment:
-      POSTGRES_USER: '${POSTGRES_USER}'
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD}'
-      POSTGRES_DB: '${POSTGRES_DB}'
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
     volumes:
       - postgis_data:/var/lib/postgresql/data
     expose:
-      - '5432'
+      - "5432"
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -188,18 +194,22 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: '${MINIO_ROOT_USER}'
-      MINIO_ROOT_PASSWORD: '${MINIO_ROOT_PASSWORD}'
-      MINIO_BROWSER: 'off'
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_BROWSER: "off"
     volumes:
       - minio_data:/data
     expose:
-      - '9000'
-      - '9001'
+      - "9000"
+      - "9001"
     healthcheck:
       # Liveness via the documented endpoint. If your MinIO image lacks curl,
       # switch to: ["CMD", "mc", "ready", "local"].
-      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1']
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -212,15 +222,15 @@ services:
       dockerfile: services/ingestion/Dockerfile
     image: akasha-ingestion:slice1
     environment:
-      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}'
-      STAC_API_URL: 'http://stac-api:8080'
-      S3_ENDPOINT_URL: 'http://minio:9000'
-      S3_ACCESS_KEY: '${MINIO_ROOT_USER}'
-      S3_SECRET_KEY: '${MINIO_ROOT_PASSWORD}'
-      S3_REGION: 'us-east-1'
-      AKASHA_COG_BUCKET: 'akasha-cogs'
-      SEED_DATA_DIR: '/app/data/seed'
-      AOI_CONFIG_PATH: '/app/data/seed/bangalore-aoi.geojson'
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      STAC_API_URL: "http://stac-api:8080"
+      S3_ENDPOINT_URL: "http://minio:9000"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
+      S3_REGION: "us-east-1"
+      AKASHA_COG_BUCKET: "akasha-cogs"
+      SEED_DATA_DIR: "/app/data/seed"
+      AOI_CONFIG_PATH: "/app/data/seed/bangalore-aoi.geojson"
     volumes:
       # Local Slice 2 raster prep needs ignored raw SAFE ZIPs and writes ignored COGs.
       - ../../data:/app/data
@@ -233,7 +243,7 @@ services:
     # One-shot: prints config and exits. Run seeding/verify on demand, e.g.:
     #   docker compose run --rm ingestion-worker python worker.py seed
     #   docker compose run --rm ingestion-worker python worker.py verify
-    restart: 'no'
+    restart: "no"
 
   ingestion-sar:
     build:
@@ -242,24 +252,24 @@ services:
     platform: linux/amd64
     image: akasha-ingestion-sar:s1
     environment:
-      PATH: '/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-      SNAP_USER_DIR: '/snap-cache'
-      SNAP_CACHE_SIZE: '${SNAP_CACHE_SIZE:-8G}'
-      SNAP_PARALLELISM: '${SNAP_PARALLELISM:-4}'
-      JAVA_TOOL_OPTIONS: '-Xmx${SNAP_JAVA_MAX_HEAP:-12g}'
-      AKASHA_S1_DEM_SOURCE: '${AKASHA_S1_DEM_SOURCE:-Copernicus 30m Global DEM}'
-      AKASHA_S1_FALLBACK_DEM_SOURCE: '${AKASHA_S1_FALLBACK_DEM_SOURCE:-SRTM 1Sec HGT}'
-      AKASHA_S1_TARGET_CRS: '${AKASHA_S1_TARGET_CRS:-EPSG:4326}'
-      AKASHA_S1_PIXEL_SPACING_METERS: '${AKASHA_S1_PIXEL_SPACING_METERS:-10}'
-      AKASHA_S1_VV_RESCALE: '${AKASHA_S1_VV_RESCALE:--25,5}'
-      AKASHA_S1_VH_RESCALE: '${AKASHA_S1_VH_RESCALE:--30,-5}'
+      PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      SNAP_USER_DIR: "/snap-cache"
+      SNAP_CACHE_SIZE: "${SNAP_CACHE_SIZE:-8G}"
+      SNAP_PARALLELISM: "${SNAP_PARALLELISM:-4}"
+      JAVA_TOOL_OPTIONS: "-Xmx${SNAP_JAVA_MAX_HEAP:-12g}"
+      AKASHA_S1_DEM_SOURCE: "${AKASHA_S1_DEM_SOURCE:-Copernicus 30m Global DEM}"
+      AKASHA_S1_FALLBACK_DEM_SOURCE: "${AKASHA_S1_FALLBACK_DEM_SOURCE:-SRTM 1Sec HGT}"
+      AKASHA_S1_TARGET_CRS: "${AKASHA_S1_TARGET_CRS:-EPSG:4326}"
+      AKASHA_S1_PIXEL_SPACING_METERS: "${AKASHA_S1_PIXEL_SPACING_METERS:-10}"
+      AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
+      AKASHA_S1_VH_RESCALE: "${AKASHA_S1_VH_RESCALE:--30,-5}"
     volumes:
       - ../../data:/app/data
       - ../../scripts:/app/scripts:ro
       - snap_cache:/snap-cache
     # One-shot SAR preprocessing runtime. Example:
     #   docker compose run --rm ingestion-sar python scripts/prepare_sentinel1_grd_cogs.py --selection-manifest data/raw/sentinel-1-grd/coverage_manifest.json --overwrite
-    restart: 'no'
+    restart: "no"
 
 volumes:
   postgis_data:

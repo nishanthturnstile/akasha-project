@@ -4,15 +4,15 @@ No live PostGIS is required: `app.plots_repo` is monkeypatched with an in-memory
 store, so these tests exercise the full router/validation/serialization path and
 the standard error shapes without a database.
 """
+
 import logging
 import math
 import uuid
 from datetime import UTC, datetime
 
 import pytest
-from app import plots, plots_repo
+from app import plots_repo
 from app.main import app
-from app.providers.models import FieldMirrorResult
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -40,12 +40,6 @@ USER_METADATA_FIELDS = (
     "sowingDate",
     "plantingDate",
     "status",
-)
-PROVIDER_LINK_FIELDS = (
-    "externalProvider",
-    "externalFieldId",
-    "providerSyncStatus",
-    "providerSyncedAt",
 )
 FIELD_METADATA = {
     "groupName": "North Farm",
@@ -83,9 +77,9 @@ class FakeStore:
         return {k: v for k, v in row.items() if not k.startswith("_")}
 
     def _metadata_defaults(self) -> dict:
-        return {field: None for field in (*USER_METADATA_FIELDS, *PROVIDER_LINK_FIELDS)}
+        return {field: None for field in USER_METADATA_FIELDS}
 
-    def create(self, name, geometry, area_ha, metadata=None):
+    def create(self, name, geometry, area_ha, metadata=None, **_kwargs):
         self._seq += 1
         pid = str(uuid.uuid4())
         row = {
@@ -103,15 +97,15 @@ class FakeStore:
         self.rows[pid] = row
         return self._public(row)
 
-    def list(self):
+    def list(self, *_args, **_kwargs):
         ordered = sorted(self.rows.values(), key=lambda r: r["_seq"], reverse=True)
         return [self._public(r) for r in ordered]
 
-    def get(self, pid):
+    def get(self, pid, *_args, **_kwargs):
         row = self.rows.get(pid)
         return self._public(row) if row else None
 
-    def update(self, pid, name=None, geometry=None, area_ha=None, metadata=None):
+    def update(self, pid, name=None, geometry=None, area_ha=None, metadata=None, *_args, **_kwargs):
         row = self.rows.get(pid)
         if row is None:
             return None
@@ -125,31 +119,10 @@ class FakeStore:
         row["updatedAt"] = self._now()
         return self._public(row)
 
-    def delete(self, pid):
+    def delete(self, pid, *_args, **_kwargs):
         return self.rows.pop(pid, None) is not None
 
-    def provider_link(
-        self,
-        pid,
-        *,
-        external_provider,
-        external_field_id,
-        provider_sync_status,
-        provider_metadata=None,
-    ):
-        row = self.rows.get(pid)
-        if row is None:
-            return None
-        row["externalProvider"] = external_provider
-        row["externalFieldId"] = external_field_id
-        row["providerSyncStatus"] = provider_sync_status
-        if provider_sync_status == "synced":
-            row["providerSyncedAt"] = self._now()
-        row["providerMetadata"] = provider_metadata
-        row["updatedAt"] = self._now()
-        return self._public(row)
-
-    def bulk(self, items):
+    def bulk(self, items, **_kwargs):
         return [
             self.create(it["name"], it["geometry"], it.get("areaHa"), it.get("metadata"))
             for it in items
@@ -165,8 +138,6 @@ def store(monkeypatch):
     monkeypatch.setattr(plots_repo, "update_plot", s.update)
     monkeypatch.setattr(plots_repo, "delete_plot", s.delete)
     monkeypatch.setattr(plots_repo, "create_plots_bulk", s.bulk)
-    monkeypatch.setattr(plots_repo, "update_provider_link", s.provider_link)
-    monkeypatch.setattr(plots.provider_factory, "is_ready", lambda provider="eos": False)
     return s
 
 
@@ -193,68 +164,13 @@ def test_create_plot_with_field_metadata(store):
     body = r.json()
     for field, value in FIELD_METADATA.items():
         assert body[field] == value
-    for field in (*PROVIDER_LINK_FIELDS, "providerMetadata", "provider_metadata"):
-        assert field not in body
+    assert "internalMetadata" not in body
 
 
 def test_create_plot_accepts_multipolygon(store):
     r = client.post("/api/plots", json={"name": "MP", "geometry": VALID_MULTIPOLY})
     assert r.status_code == 201
     assert r.json()["geometry"]["type"] == "MultiPolygon"
-
-
-def test_create_plot_auto_syncs_to_eos_when_provider_ready(store, monkeypatch):
-    calls = []
-
-    class FakeFieldProvider:
-        def mirror_field(self, plot):
-            calls.append(plot)
-            return FieldMirrorResult(
-                plot_id=plot["id"],
-                external_field_id="eos-field-123",
-                sync_status="synced",
-                synced_at=datetime(2026, 1, 1, tzinfo=UTC),
-                provider_area_ha=plot["areaHa"],
-            )
-
-    monkeypatch.setattr(plots.provider_factory, "is_ready", lambda provider="eos": True)
-    monkeypatch.setattr(
-        plots.provider_factory,
-        "field_provider",
-        lambda provider="eos": FakeFieldProvider(),
-    )
-
-    r = client.post("/api/plots", json={"name": "EOS field", "geometry": VALID_POLY})
-
-    assert r.status_code == 201
-    assert len(calls) == 1
-    body = r.json()
-    assert body["externalProvider"] == "eos"
-    assert body["externalFieldId"] == "eos-field-123"
-    assert body["providerSyncStatus"] == "synced"
-    assert "providerMetadata" not in body
-
-
-def test_create_plot_keeps_local_plot_when_eos_sync_fails(store, monkeypatch):
-    class FailingFieldProvider:
-        def mirror_field(self, plot):
-            raise RuntimeError("secret upstream failure")
-
-    monkeypatch.setattr(plots.provider_factory, "is_ready", lambda provider="eos": True)
-    monkeypatch.setattr(
-        plots.provider_factory,
-        "field_provider",
-        lambda provider="eos": FailingFieldProvider(),
-    )
-
-    r = client.post("/api/plots", json={"name": "Failed EOS field", "geometry": VALID_POLY})
-
-    assert r.status_code == 201
-    body = r.json()
-    assert body["name"] == "Failed EOS field"
-    assert body["externalProvider"] == "eos"
-    assert body["providerSyncStatus"] == "failed"
-    assert "secret upstream failure" not in r.text
 
 
 def test_create_plot_blank_name_400(store):
@@ -390,27 +306,25 @@ def test_patch_geometry_preserves_metadata(store):
         assert body[field] == value
 
 
-def test_public_provider_link_fields_are_return_only_for_public_payloads(store):
-    provider_payload = {
-        "externalProvider": "eos",
-        "externalFieldId": "provider-field-123",
-        "providerSyncStatus": "synced",
-        "providerSyncedAt": "2026-06-20T00:00:00Z",
-        "providerMetadata": {"secret": "do-not-expose", "internalUrl": "http://minio:9000"},
+def test_internal_fields_are_ignored_for_public_payloads(store):
+    internal_payload = {
+        "internalToken": "do-not-expose",
+        "internalUrl": "http://minio:9000",
+        "syncState": "invalid-secret-status",
     }
     created = client.post(
         "/api/plots",
-        json={"name": "field", "geometry": VALID_POLY, **provider_payload},
+        json={"name": "field", "geometry": VALID_POLY, **internal_payload},
     )
     assert created.status_code == 201
-    for leak in provider_payload:
+    for leak in internal_payload:
         assert leak not in created.json()
     assert "do-not-expose" not in created.text
     assert "http://minio:9000" not in created.text
 
     r = client.patch(
         f"/api/plots/{created.json()['id']}",
-        json={"providerSyncStatus": "invalid-secret-status", "providerSyncedAt": "not-a-date"},
+        json={"syncState": "invalid-secret-status", "internalUrl": "http://minio:9000"},
     )
     assert r.status_code == 400
     body = r.json()
@@ -482,7 +396,7 @@ def test_import_geojson_partial_success(store):
         "type": "FeatureCollection",
         "features": [
             {"type": "Feature", "properties": {"name": "Good A"}, "geometry": VALID_POLY},
-            {"type": "Feature", "properties": {}, "geometry": POINT_GEOM},        # invalid
+            {"type": "Feature", "properties": {}, "geometry": POINT_GEOM},  # invalid
             {"type": "Feature", "properties": {"title": "Good B"}, "geometry": VALID_MULTIPOLY},
         ],
     }
@@ -564,22 +478,18 @@ def test_export_single_plot_media_type(store):
     assert feat["properties"]["name"] == "p"
 
 
-def test_export_geojson_includes_safe_metadata_and_omits_raw_provider_metadata(store):
+def test_export_geojson_includes_safe_metadata_and_omits_internal_metadata(store):
     created = client.post(
         "/api/plots",
         json={"name": "metadata field", "geometry": VALID_POLY, **FIELD_METADATA},
     ).json()
     store.rows[created["id"]].update(
         {
-            "externalProvider": "eos",
-            "externalFieldId": "provider-field-123",
-            "providerSyncStatus": "synced",
-            "providerSyncedAt": "2026-06-20T00:00:00Z",
-            "providerMetadata": {
-                "apiKey": "provider-secret",
+            "_internalMetadata": {
+                "apiKey": "internal-secret",
                 "internalUrl": "http://minio:9000/private-cog.tif",
             },
-            "provider_metadata": {"raw": "provider-secret"},
+            "internal_metadata": {"raw": "internal-secret"},
         }
     )
 
@@ -588,18 +498,14 @@ def test_export_geojson_includes_safe_metadata_and_omits_raw_provider_metadata(s
     props = r.json()["properties"]
     for field, value in FIELD_METADATA.items():
         assert props[field] == value
-    assert props["externalProvider"] == "eos"
-    assert props["externalFieldId"] == "provider-field-123"
-    assert props["providerSyncStatus"] == "synced"
-    assert props["providerSyncedAt"] == "2026-06-20T00:00:00Z"
-    assert "providerMetadata" not in props
-    assert "provider_metadata" not in props
-    for leak in ["provider-secret", "http://minio:9000", "private-cog"]:
+    assert "_internalMetadata" not in props
+    assert "internal_metadata" not in props
+    for leak in ["internal-secret", "http://minio:9000", "private-cog"]:
         assert leak not in r.text
 
     exported_all = client.get("/api/plots/export.geojson")
     assert exported_all.status_code == 200
-    for leak in ["providerMetadata", "provider_metadata", "provider-secret", "http://minio:9000"]:
+    for leak in ["_internalMetadata", "internal_metadata", "internal-secret", "http://minio:9000"]:
         assert leak not in exported_all.text
 
 
@@ -621,7 +527,7 @@ def test_no_secret_or_internal_leakage_in_503(monkeypatch, caplog):
     # Simulate a DB driver failure whose message embeds a DSN-like secret.
     secret_dsn = "postgresql://akasha:s3cr3t@postgis.railway.internal:5432/akasha"
 
-    def boom():
+    def boom(*_args, **_kwargs):
         raise RuntimeError(f"connection failed: {secret_dsn}")
 
     monkeypatch.setattr(plots_repo, "list_plots", boom)
@@ -646,7 +552,14 @@ def test_no_internal_leakage_in_success_paths(store, monkeypatch):
     export = client.get(f"/api/plots/{created.json()['id']}/export.geojson")
     blob = created.text + listing.text + export.text
     for leak in [
-        "s3cr3t", "minio-secret-XYZ", "http://minio:9000", "DATABASE_URL",
-        "AWS_SECRET_ACCESS_KEY", "Traceback", "psycopg", "INSERT INTO", "SELECT ",
+        "s3cr3t",
+        "minio-secret-XYZ",
+        "http://minio:9000",
+        "DATABASE_URL",
+        "AWS_SECRET_ACCESS_KEY",
+        "Traceback",
+        "psycopg",
+        "INSERT INTO",
+        "SELECT ",
     ]:
         assert leak not in blob, f"leaked '{leak}' in response body"

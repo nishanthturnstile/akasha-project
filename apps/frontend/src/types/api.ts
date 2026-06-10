@@ -11,11 +11,25 @@ export interface AoiConfig {
   bounds: [number, number, number, number];
 }
 
+export type BasemapProvider = 'esri';
+export type BasemapUsageModel = 'session';
+export type BasemapPlacesPreference = 'all' | 'attributed' | 'none';
+
+export interface BasemapConfig {
+  provider: BasemapProvider;
+  style: string;
+  styleFamily: string;
+  usageModel: BasemapUsageModel;
+  places: BasemapPlacesPreference;
+  sessionDurationSeconds: number;
+}
+
 export interface AppConfig {
   appName: string;
   aoi: AoiConfig;
-  /** May be empty; resolve via basemap precedence rule. */
+  /** Backward-compatible field. Esri basemaps are configured through `basemap`. */
   basemapStyleUrl: string;
+  basemap: BasemapConfig;
   maxPolygonAreaHa: number;
   maxPolygonVertices: number;
   usablePixelThresholdPercent: number;
@@ -78,8 +92,6 @@ export interface DefaultLayer {
 
 export type PlotStatus = 'planned' | 'active' | 'inactive' | 'archived';
 
-export type ProviderSyncStatus = 'not_synced' | 'pending' | 'synced' | 'failed';
-
 export interface CloudMaskOptions {
   clouds: boolean;
   cloudShadows: boolean;
@@ -88,8 +100,6 @@ export interface CloudMaskOptions {
 
 export interface CloudMaskMapping {
   nativeExcludedSclClasses: number[];
-  eosCloudMaskingLevel?: number | null;
-  eosExact: boolean;
   warnings: string[];
 }
 
@@ -121,10 +131,6 @@ export interface Plot {
   sowingDate?: string | null;
   plantingDate?: string | null;
   status?: PlotStatus | null;
-  externalProvider?: string | null;
-  externalFieldId?: string | null;
-  providerSyncStatus?: ProviderSyncStatus | null;
-  providerSyncedAt?: string | null;
 }
 
 export interface PlotCreatePayload {
@@ -162,60 +168,6 @@ export interface PlotImportResponse {
   rejected: RejectedFeature[];
   importedCount: number;
   rejectedCount: number;
-}
-
-export interface ProviderSyncResponse {
-  plotId: string;
-  provider: string;
-  syncStatus: ProviderSyncStatus;
-  syncedAt?: string | null;
-  field?: {
-    plotId: string;
-    provider: string;
-    externalFieldId: string;
-    syncStatus: ProviderSyncStatus;
-    syncedAt?: string | null;
-    providerAreaHa?: number | null;
-  } | null;
-}
-
-export type FieldLayerKind = 'rgb' | 'index' | 'composite';
-
-export interface FieldLayer {
-  displayMode: string;
-  label: string;
-  kind: FieldLayerKind;
-  tileUrlTemplate: string;
-  available: boolean;
-  unavailableReason?: string | null;
-  attribution: string;
-}
-
-export interface FieldScene {
-  sceneToken: string;
-  acquisitionDate: string;
-  datetime?: string | null;
-  sensor?: string | null;
-  cloudPercent?: number | null;
-  usablePixelPercent: number | null;
-  cloudMaskedPercent?: number | null;
-  coveragePercent?: number | null;
-  bounds?: [number, number, number, number];
-  tileAvailable: boolean;
-  metricsProvisional: boolean;
-  sceneCount?: number | null;
-  layers: FieldLayer[];
-}
-
-export interface FieldSceneListResponse {
-  plotId: string;
-  provider: string;
-  scope: 'field' | 'global_fallback';
-  sourceId: string;
-  defaultDisplayMode: 'RGB';
-  displayModes: string[];
-  scenes: FieldScene[];
-  fallbackReason?: string | null;
 }
 
 export interface IndexStatistics {
@@ -286,8 +238,8 @@ export interface FieldTrendPoint {
 
 export interface FieldTrendResponse {
   plotId: string;
-  provider: string;
-  scope: 'field' | 'native_fallback';
+  provider: 'native';
+  scope: 'native_fallback';
   sourceId: string;
   indexType: string;
   startDate: string;
@@ -312,15 +264,12 @@ export interface FieldIndexExportOptions {
   sourceId: string;
   acquisitionDate: string;
   indexType: string;
-  provider?: 'auto' | 'eos' | 'native';
-  sceneToken?: string | null;
   cloudMask?: CloudMaskOptions;
 }
 
 export interface FieldReportExportOptions {
   sourceId: string;
   indexType: string;
-  provider?: 'auto' | 'eos' | 'native';
   startDate?: string;
   endDate?: string;
   cloudMask?: CloudMaskOptions;
@@ -330,142 +279,6 @@ export interface FileDownload {
   blob: Blob;
   filename: string;
 }
-
-export type WeatherProviderChoice = 'auto' | 'eos';
-
-export type WeatherSeriesId =
-  | 'accumulatedPrecipitation'
-  | 'dailyPrecipitation'
-  | 'dailyTemperature'
-  | 'sumActiveTemperatures'
-  | 'evapotranspiration'
-  | 'relativeHumidity'
-  | 'globalRadiation';
-
-export interface WeatherForecastCard {
-  id: 'temperature' | 'precipitation' | 'relativeHumidity' | 'clouds' | 'wind';
-  label: string;
-  value: number | null;
-  unit: string;
-  secondaryValue?: number | null;
-  secondaryUnit?: string | null;
-  summary: string;
-}
-
-export interface WeatherForecastPoint {
-  date: string;
-  startTime?: string | null;
-  endTime?: string | null;
-  temperatureMinC?: number | null;
-  temperatureMaxC?: number | null;
-  temperatureAvgC?: number | null;
-  precipitationMm?: number | null;
-  humidityPercent?: number | null;
-  cloudinessPercent?: number | null;
-  windMps?: number | null;
-  windDirection?: string | null;
-  conditions?: string | null;
-}
-
-export interface WeatherForecastResponse {
-  plotId: string;
-  provider: string;
-  scope: 'field';
-  startDate: string;
-  endDate: string;
-  cards: WeatherForecastCard[];
-  timeline: WeatherForecastPoint[];
-  metadata: Record<string, unknown>;
-}
-
-export interface WeatherSeriesPoint {
-  date: string;
-  value: number | null;
-}
-
-export interface WeatherSeries {
-  id: WeatherSeriesId | 'soilMoisture';
-  label: string;
-  unit: string;
-  available: boolean;
-  unavailableReason?: string | null;
-  points: WeatherSeriesPoint[];
-}
-
-export interface WeatherHistoryResponse {
-  plotId: string;
-  provider: string;
-  scope: 'field';
-  startDate: string;
-  endDate: string;
-  series: WeatherSeries[];
-  metadata: Record<string, unknown>;
-}
-
-export interface WeatherSoilMoistureResponse {
-  plotId: string;
-  provider: string;
-  scope: 'field';
-  startDate: string;
-  endDate: string;
-  available: boolean;
-  series?: WeatherSeries | null;
-  unavailableReason?: string | null;
-  unavailableCode?: string | null;
-  metadata: Record<string, unknown>;
-}
-
-export type ZoningStatus = 'processing' | 'ready' | 'failed' | 'unknown';
-
-export interface VegetationZoningRequest {
-  indexType: string;
-  imageDate: string;
-  zoneCount: number;
-  minZoneArea: number;
-  provider?: 'auto' | 'eos';
-  asyncProcessing?: boolean;
-}
-
-export interface ZoningZone {
-  zoneId: string;
-  color: string;
-  areaHa?: number | null;
-  areaPercent?: number | null;
-  clusterValue?: number | null;
-  geometry?: PlotGeometry | null;
-}
-
-export interface ZoningMapMetadata {
-  requestedAt?: string | null;
-  imageDate?: string | null;
-  indexType?: string | null;
-  zoneCount?: number | null;
-  minZoneAreaHa?: number | null;
-  statusUpdatedAt?: string | null;
-  source: 'provider-adapter';
-}
-
-export interface ZoningMap {
-  plotId: string;
-  mapId: string;
-  provider: string;
-  status: ZoningStatus;
-  mapType: string;
-  indexType?: string | null;
-  imageDate?: string | null;
-  zoneCount?: number | null;
-  minZoneAreaHa?: number | null;
-  zones: ZoningZone[];
-  metadata: ZoningMapMetadata;
-}
-
-export interface ZoningMapListResponse {
-  plotId: string;
-  provider: string;
-  maps: ZoningMap[];
-}
-
-export type ZoningExportFormat = 'geojson' | 'shp';
 
 export type LeaderboardSortKey =
   | 'rank'
@@ -761,7 +574,7 @@ export interface FieldRiskSummaryResponse {
 }
 
 export interface AccountMe {
-  user: { id: string; email: string; displayName: string };
+  user: { id: string; username?: string | null; email: string; displayName: string };
   currentTeam: { id: string; name: string; role: string };
   memberships: Array<{ teamId: string; teamName: string; role: string }>;
   authMode: string;

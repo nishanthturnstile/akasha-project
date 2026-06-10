@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldScene, FieldTrendPoint, Plot } from '@/types/api';
+import type { CloudMaskOptions, FieldTrendPoint, Plot } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
@@ -16,7 +16,6 @@ interface IndexPanelProps {
   displayMode: string;
   supportedIndices: string[];
   cloudMask: CloudMaskOptions;
-  selectedScene?: FieldScene | null;
   /** Inclusive lower bound (YYYY-MM-DD) carried from the timeline calendar range. */
   periodFrom?: string | null;
   /** Inclusive upper bound (YYYY-MM-DD) carried from the timeline calendar range. */
@@ -57,7 +56,6 @@ export function IndexPanel({
   displayMode,
   supportedIndices,
   cloudMask,
-  selectedScene,
   periodFrom,
   periodTo,
 }: IndexPanelProps) {
@@ -90,10 +88,7 @@ export function IndexPanel({
 
   const stats = statisticsQ.data?.statistics;
   const warnings = statisticsQ.data?.metadata.warnings ?? [];
-  const providerCopy =
-    trendQ.data?.provider === 'eos'
-      ? 'Provider-backed trial analytics'
-      : 'Akasha masked-raster fallback';
+  const analyticsCopy = 'Akasha masked-raster analytics';
 
   return (
     <section
@@ -106,11 +101,6 @@ export function IndexPanel({
           <BarChart3 className="size-4 text-primary" strokeWidth={ 1.75 } />
           <h2 className="font-display text-base font-semibold text-foreground">Analytics</h2>
         </div>
-        { selectedScene?.metricsProvisional && (
-          <span className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[10px] uppercase text-amber-300">
-            provisional
-          </span>
-        ) }
       </header>
 
       { !selectedPlot ? (
@@ -150,7 +140,7 @@ export function IndexPanel({
               data-testid="index-panel-content-crop-info"
               className="space-y-2"
             >
-              <CropInfoTab seasonLabel={ selectedScene?.acquisitionDate ?? selectedDate ?? null } />
+              <CropInfoTab seasonLabel={ selectedDate ?? null } />
             </TabsContent>
 
             <TabsContent
@@ -171,7 +161,7 @@ export function IndexPanel({
                       : 'Unable to load statistics.'
                     : null
                 }
-                trendPoints={ (trendQ.data?.points ?? []) as FieldTrendPoint[] }
+                trendPoints={ trendQ.data?.points ?? [] }
                 trendLoading={ trendQ.isLoading }
                 trendError={
                   trendQ.isError
@@ -181,7 +171,7 @@ export function IndexPanel({
                     : null
                 }
                 selectedDate={ selectedDate }
-                providerCopy={ providerCopy }
+                analyticsCopy={ analyticsCopy }
                 fallbackReason={ trendQ.data?.fallbackReason ?? null }
                 formula={ statisticsQ.data?.metadata.formula }
                 bands={
@@ -352,7 +342,7 @@ interface ChartTabProps {
   trendLoading: boolean;
   trendError: string | null;
   selectedDate: string | null;
-  providerCopy: string;
+  analyticsCopy: string;
   fallbackReason: string | null;
   formula?: string | null;
   bands: string[] | null | undefined;
@@ -372,7 +362,7 @@ function ChartTab({
   trendLoading,
   trendError,
   selectedDate,
-  providerCopy,
+  analyticsCopy,
   fallbackReason,
   formula,
   bands,
@@ -499,7 +489,7 @@ function ChartTab({
         </div>
 
         <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-          { providerCopy }
+          { analyticsCopy }
           { fallbackReason ? ` · ${fallbackReason}` : '' }
         </p>
       </div>

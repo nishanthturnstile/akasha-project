@@ -19,7 +19,6 @@ const plots: Plot[] = [
     cropType: 'Paddy',
     groupName: 'Farm A',
     status: 'active',
-    providerSyncStatus: 'not_synced',
   },
   {
     id: 'plot-2',

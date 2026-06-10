@@ -32,8 +32,7 @@ function shortRange(from: string | null, to: string | null): string | null {
 
 /**
  * Hand-rolled date-range popover that drives the timeline `period_from` / `period_to`
- * window (URL-bridged via `useMapUrlState`). EOS surfaces this as a calendar control
- * to the left of the filmstrip; we mirror placement + behaviour with native inputs.
+ * window (URL-bridged via `useMapUrlState`) with native date inputs.
  */
 export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRangePickerProps) {
     const [open, setOpen] = useState(false);
@@ -42,14 +41,6 @@ export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRa
     const wrapperRef = useRef<HTMLDivElement | null>(null);
     const fromInputId = useId();
     const toInputId = useId();
-
-    // Re-sync draft to props whenever the popover opens so stale edits don't bleed.
-    useEffect(() => {
-        if (open) {
-            setDraftFrom(from ?? '');
-            setDraftTo(to ?? '');
-        }
-    }, [open, from, to]);
 
     // Outside-click + Escape close (matches LayerControlBar popover pattern).
     useEffect(() => {
@@ -73,6 +64,14 @@ export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRa
 
     const triggerLabel = shortRange(from, to);
     const hasRange = Boolean(from || to);
+
+    const toggleOpen = () => {
+        if (!open) {
+            setDraftFrom(from ?? '');
+            setDraftTo(to ?? '');
+        }
+        setOpen((prev) => !prev);
+    };
 
     const apply = () => {
         const nextFrom = draftFrom || null;
@@ -105,7 +104,7 @@ export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRa
                         data-testid="timeline-period-trigger"
                         data-active={ hasRange }
                         disabled={ disabled }
-                        onClick={ () => setOpen((prev) => !prev) }
+                        onClick={ toggleOpen }
                         className={ cn(
                             'glass inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors duration-fast ease-standard',
                             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',

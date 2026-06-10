@@ -1,4 +1,5 @@
 """Field activity log routes for Phase 10."""
+
 from __future__ import annotations
 
 import csv
@@ -13,9 +14,9 @@ from fastapi.responses import Response
 from pydantic import Field
 
 from . import phase10_repo
-from .auth import get_current_team
+from .api_models import ApiModel
+from .auth import CurrentTeam, CurrentUser, get_current_team, get_current_user, require_role
 from .field_exports import _disposition
-from .providers.models import ProviderModel
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 
 logger = logging.getLogger("akasha.api.operations")
@@ -28,7 +29,7 @@ router = APIRouter(
 ActivityStatus = Literal["planned", "in_progress", "done", "cancelled"]
 
 
-class AttachmentPublic(ProviderModel):
+class AttachmentPublic(ApiModel):
     id: str
     parent_type: str | None = None
     parent_id: str | None = None
@@ -40,14 +41,14 @@ class AttachmentPublic(ProviderModel):
     updated_at: str | None = None
 
 
-class AttachmentCreate(ProviderModel):
+class AttachmentCreate(ApiModel):
     filename: str
     content_type: str | None = None
     size_bytes: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class FieldActivityPayload(ProviderModel):
+class FieldActivityPayload(ApiModel):
     activity_type: str
     activity_date: str
     plot_id: str | None = None
@@ -60,7 +61,7 @@ class FieldActivityPayload(ProviderModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class FieldActivityUpdate(ProviderModel):
+class FieldActivityUpdate(ApiModel):
     activity_type: str | None = None
     activity_date: str | None = None
     plot_id: str | None = None
@@ -73,7 +74,7 @@ class FieldActivityUpdate(ProviderModel):
     metadata: dict[str, Any] | None = None
 
 
-class FieldActivity(ProviderModel):
+class FieldActivity(ApiModel):
     id: str
     plot_id: str | None = None
     field_name: str | None = None
@@ -100,6 +101,8 @@ async def _run_blocking(func, *args, **kwargs):
     try:
         return await anyio.to_thread.run_sync(call)
     except ValueError as exc:
+        if str(exc) == "PLOT_NOT_FOUND":
+            raise not_found("Plot not found.", code="PLOT_NOT_FOUND") from exc
         if str(exc) == "ATTACHMENT_NOT_FOUND":
             raise not_found("Attachment not found.", code="ATTACHMENT_NOT_FOUND") from exc
         if str(exc) == "ATTACHMENT_ALREADY_LINKED":
@@ -152,13 +155,19 @@ def _filters(
     response_model_by_alias=True,
     status_code=201,
 )
-async def create_attachment(payload: AttachmentCreate) -> AttachmentPublic:
+async def create_attachment(
+    payload: AttachmentCreate,
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> AttachmentPublic:
     row = await _run_blocking(
         phase10_repo.create_attachment,
         filename=payload.filename,
         content_type=payload.content_type,
         size_bytes=payload.size_bytes,
         metadata=payload.metadata,
+        owner_id=user.id,
+        team_id=team.id,
     )
     return AttachmentPublic(**row)
 
@@ -167,11 +176,13 @@ async def create_attachment(payload: AttachmentCreate) -> AttachmentPublic:
 async def list_attachments(
     parentType: str | None = Query(default=None),
     parentId: str | None = Query(default=None),
+    team: CurrentTeam = Depends(get_current_team),
 ) -> list[AttachmentPublic]:
     rows = await _run_blocking(
         phase10_repo.list_attachments,
         parent_type=parentType,
         parent_id=parentId,
+        team_id=team.id,
     )
     return [AttachmentPublic(**row) for row in rows]
 
@@ -186,10 +197,12 @@ async def list_activities(
     assignee: str | None = Query(default=None),
     year: int | None = Query(default=None),
     status: str | None = Query(default=None),
+    team: CurrentTeam = Depends(get_current_team),
 ) -> list[FieldActivity]:
     rows = await _run_blocking(
         phase10_repo.list_activities,
         _filters(plotId, groupName, cropType, variety, activityType, assignee, year, status),
+        team.id,
     )
     return [FieldActivity(**row) for row in rows]
 
@@ -200,9 +213,16 @@ async def list_activities(
     response_model_by_alias=True,
     status_code=201,
 )
-async def create_field_activity(plot_id: str, payload: FieldActivityPayload) -> FieldActivity:
+async def create_field_activity(
+    plot_id: str,
+    payload: FieldActivityPayload,
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> FieldActivity:
     data = payload.model_dump(by_alias=True)
     data["plotId"] = plot_id
+    data["ownerId"] = user.id
+    data["teamId"] = team.id
     row = await _run_blocking(
         phase10_repo.create_activity,
         data,
@@ -221,6 +241,7 @@ async def export_activities_csv(
     assignee: str | None = Query(default=None),
     year: int | None = Query(default=None),
     status: str | None = Query(default=None),
+    team: CurrentTeam = Depends(get_current_team),
 ) -> Response:
     rows = await list_activities(
         plotId,
@@ -231,6 +252,7 @@ async def export_activities_csv(
         assignee,
         year,
         status,
+        team,
     )
     output = StringIO()
     fields = [
@@ -256,8 +278,11 @@ async def export_activities_csv(
 
 
 @router.get("/activities/{activity_id}", response_model=FieldActivity, response_model_by_alias=True)
-async def get_activity(activity_id: str) -> FieldActivity:
-    row = await _run_blocking(phase10_repo.get_activity, activity_id)
+async def get_activity(
+    activity_id: str,
+    team: CurrentTeam = Depends(get_current_team),
+) -> FieldActivity:
+    row = await _run_blocking(phase10_repo.get_activity, activity_id, team.id)
     if row is None:
         raise not_found("Activity not found.", code="ACTIVITY_NOT_FOUND", activityId=activity_id)
     return FieldActivity(**row)
@@ -268,7 +293,11 @@ async def get_activity(activity_id: str) -> FieldActivity:
     response_model=FieldActivity,
     response_model_by_alias=True,
 )
-async def update_activity(activity_id: str, payload: FieldActivityUpdate) -> FieldActivity:
+async def update_activity(
+    activity_id: str,
+    payload: FieldActivityUpdate,
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> FieldActivity:
     data = payload.model_dump(by_alias=True, exclude_unset=True)
     attachment_ids = data.pop("attachmentIds", None)
     row = await _run_blocking(
@@ -276,6 +305,7 @@ async def update_activity(activity_id: str, payload: FieldActivityUpdate) -> Fie
         activity_id,
         data,
         attachment_ids,
+        team.id,
     )
     if row is None:
         raise not_found("Activity not found.", code="ACTIVITY_NOT_FOUND", activityId=activity_id)
@@ -283,8 +313,11 @@ async def update_activity(activity_id: str, payload: FieldActivityUpdate) -> Fie
 
 
 @router.delete("/activities/{activity_id}", status_code=204)
-async def delete_activity(activity_id: str) -> Response:
-    deleted = await _run_blocking(phase10_repo.delete_activity, activity_id)
+async def delete_activity(
+    activity_id: str,
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> Response:
+    deleted = await _run_blocking(phase10_repo.delete_activity, activity_id, team.id)
     if not deleted:
         raise not_found("Activity not found.", code="ACTIVITY_NOT_FOUND", activityId=activity_id)
     return Response(status_code=204)

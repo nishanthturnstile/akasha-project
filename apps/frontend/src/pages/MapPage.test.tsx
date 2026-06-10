@@ -4,20 +4,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import MapPage from '@/pages/MapPage';
 import { MapViewProvider, type MapViewState } from '@/state/mapViewContext';
-import type {
-  FieldSceneListResponse,
-  FieldStatisticsResponse,
-  FieldTrendResponse,
-  Plot,
-  SceneDate,
-} from '@/types/api';
+import type { FieldStatisticsResponse, FieldTrendResponse, Plot, SceneDate } from '@/types/api';
 
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: ({
+    basemap,
     scene,
     sceneB,
     visible,
   }: {
+    basemap: { style?: string; places?: string };
     scene: { tileUrlTemplate?: string; attribution?: string } | null;
     sceneB?: { tileUrlTemplate?: string } | null;
     visible: boolean;
@@ -27,6 +23,8 @@ vi.mock('@/components/map/MapLayerManager', () => ({
       data-tile-template={ scene?.tileUrlTemplate ?? '' }
       data-compare-tile-template={ sceneB?.tileUrlTemplate ?? '' }
       data-attribution={ scene?.attribution ?? '' }
+      data-basemap-style={ basemap.style ?? '' }
+      data-basemap-places={ basemap.places ?? '' }
       data-visible={ String(visible) }
     />
   ),
@@ -80,92 +78,7 @@ const FIELD_PLOT: Plot = {
   areaHa: 5,
   createdAt: null,
   updatedAt: null,
-  externalProvider: 'eos',
-  externalFieldId: 'eos-field-1',
-  providerSyncStatus: 'synced',
-  providerSyncedAt: '2026-06-03T00:00:00Z',
 };
-
-function makeFieldScenes(overrides: Partial<FieldSceneListResponse> = {}): FieldSceneListResponse {
-  return {
-    plotId: 'plot-1',
-    provider: 'eos',
-    scope: 'field',
-    sourceId: 'sentinel-2-l2a',
-    defaultDisplayMode: 'RGB',
-    displayModes: ['RGB', 'NDVI'],
-    scenes: [
-      {
-        sceneToken: 'field-scene-a',
-        acquisitionDate: '2026-06-01',
-        datetime: '2026-06-01T00:00:00Z',
-        sensor: 'S2',
-        cloudPercent: 5,
-        usablePixelPercent: 95,
-        cloudMaskedPercent: 5,
-        coveragePercent: 100,
-        bounds: [77, 12, 77.1, 12.1],
-        tileAvailable: true,
-        metricsProvisional: false,
-        sceneCount: 1,
-        layers: [
-          {
-            displayMode: 'RGB',
-            label: 'True colour',
-            kind: 'rgb',
-            tileUrlTemplate:
-              '/api/tiles/fields/plot-1/field-scene-a/RGB/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
-            available: true,
-            attribution: 'EOSDA API Connect',
-          },
-          {
-            displayMode: 'NDVI',
-            label: 'NDVI',
-            kind: 'index',
-            tileUrlTemplate:
-              '/api/tiles/fields/plot-1/field-scene-a/NDVI/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
-            available: true,
-            attribution: 'EOSDA API Connect',
-          },
-        ],
-      },
-      {
-        sceneToken: 'field-scene-b',
-        acquisitionDate: '2026-05-20',
-        datetime: '2026-05-20T00:00:00Z',
-        sensor: 'S2',
-        cloudPercent: 12,
-        usablePixelPercent: 88,
-        cloudMaskedPercent: 12,
-        coveragePercent: 100,
-        tileAvailable: true,
-        metricsProvisional: false,
-        sceneCount: 1,
-        layers: [
-          {
-            displayMode: 'RGB',
-            label: 'True colour',
-            kind: 'rgb',
-            tileUrlTemplate:
-              '/api/tiles/fields/plot-1/field-scene-b/RGB/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
-            available: true,
-            attribution: 'EOSDA API Connect',
-          },
-          {
-            displayMode: 'NDVI',
-            label: 'NDVI',
-            kind: 'index',
-            tileUrlTemplate:
-              '/api/tiles/fields/plot-1/field-scene-b/NDVI/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
-            available: true,
-            attribution: 'EOSDA API Connect',
-          },
-        ],
-      },
-    ],
-    ...overrides,
-  };
-}
 
 function makeFieldStatistics(overrides: Partial<FieldStatisticsResponse> = {}): FieldStatisticsResponse {
   return {
@@ -250,6 +163,7 @@ class ResizeObserverMock {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 function stubAkashaFetch({
@@ -263,18 +177,17 @@ function stubAkashaFetch({
     }),
   ],
   plots = [],
-  fieldScenes,
   fieldStatistics = makeFieldStatistics(),
   fieldTrend = makeFieldTrend(),
 }: {
   sentinel2Dates?: SceneDate[];
   sentinel1Dates?: SceneDate[];
   plots?: Plot[];
-  fieldScenes?: FieldSceneListResponse;
   fieldStatistics?: FieldStatisticsResponse;
   fieldTrend?: FieldTrendResponse;
 } = {}) {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+  vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -292,10 +205,18 @@ function stubAkashaFetch({
               bounds: [74, 8, 81, 14],
             },
             basemapStyleUrl: '',
+            basemap: {
+              provider: 'esri',
+              style: 'arcgis/imagery',
+              styleFamily: 'arcgis',
+              usageModel: 'session',
+              places: 'none',
+              sessionDurationSeconds: 43200,
+            },
             maxPolygonAreaHa: 100,
             maxPolygonVertices: 40,
             usablePixelThresholdPercent: 70,
-            supportedIndices: ['NDVI'],
+            supportedIndices: ['NDVI', 'NDRE', 'NDMI'],
             defaultIndex: 'NDVI',
           }),
         );
@@ -309,8 +230,8 @@ function stubAkashaFetch({
               label: 'Sentinel-2 L2A',
               provider: 'Copernicus',
               kind: 'optical',
-              supportedIndices: ['NDVI'],
-              displayModes: ['RGB'],
+              supportedIndices: ['NDVI', 'NDRE', 'NDMI'],
+              displayModes: ['RGB', 'NDVI'],
               defaultDisplayMode: 'RGB',
               attribution: 'Copernicus Sentinel-2',
             },
@@ -349,23 +270,6 @@ function stubAkashaFetch({
         return Promise.resolve(jsonResponse(plots));
       }
 
-      if (path.startsWith('/api/fields/plot-1/scenes')) {
-        return Promise.resolve(
-          jsonResponse(
-            fieldScenes ?? {
-              plotId: 'plot-1',
-              provider: 'native',
-              scope: 'global_fallback',
-              sourceId: 'sentinel-2-l2a',
-              defaultDisplayMode: 'RGB',
-              displayModes: ['RGB'],
-              scenes: [],
-              fallbackReason: 'Selected field is not synced to the configured provider.',
-            },
-          ),
-        );
-      }
-
       if (path === '/api/fields/plot-1/indices/statistics') {
         const requestBody = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
         return Promise.resolve(
@@ -378,24 +282,6 @@ function stubAkashaFetch({
 
       if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
         return Promise.resolve(jsonResponse(fieldTrend));
-      }
-
-      if (path === '/api/fields/plot-1/providers/eos/sync') {
-        return Promise.resolve(
-          jsonResponse({
-            plotId: 'plot-1',
-            provider: 'eos',
-            syncStatus: 'synced',
-            syncedAt: '2026-06-03T00:00:00Z',
-            field: {
-              plotId: 'plot-1',
-              provider: 'eos',
-              externalFieldId: 'eos-field-1',
-              syncStatus: 'synced',
-              syncedAt: '2026-06-03T00:00:00Z',
-            },
-          }),
-        );
       }
 
       if (path === '/api/sources/sentinel-2-l2a/dates') {
@@ -411,13 +297,20 @@ function stubAkashaFetch({
   );
 }
 
-describe('MapPage Sentinel-1 source behavior', () => {
+describe('MapPage native source behavior', () => {
   it('shows the field-required analytics state before a field is selected', async () => {
     stubAkashaFetch();
 
     renderMapPage();
 
     await screen.findByTestId('index-panel');
+    expect(screen.getByTestId('map-layer-manager').getAttribute('data-basemap-style')).toBe(
+      'arcgis/imagery',
+    );
+    expect(screen.getByTestId('map-layer-manager').getAttribute('data-basemap-places')).toBe(
+      'none',
+    );
+    expect(screen.getByTestId('attribution').textContent).toBe('Copernicus Sentinel-2');
     expect(
       screen.getByText('Select a field to view cloud-masked statistics and trend analytics.'),
     ).toBeTruthy();
@@ -430,7 +323,6 @@ describe('MapPage Sentinel-1 source behavior', () => {
 
     await screen.findByTestId('index-panel');
 
-    // Open the source popover on the layer bar, then switch to Sentinel-1 (SAR).
     fireEvent.click(screen.getByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-sentinel-1-grd'));
 
@@ -438,8 +330,6 @@ describe('MapPage Sentinel-1 source behavior', () => {
       expect(screen.queryByTestId('index-panel')).toBeNull();
     });
 
-    // The nearest-pass note and SAR tile template depend on the Sentinel-1
-    // dates query resolving, so wait for them.
     const note = await screen.findByTestId('nearest-pass-note');
     expect(note.textContent).toContain('Nearest radar pass: 2026-04-26.');
     await waitFor(() => {
@@ -511,72 +401,41 @@ describe('MapPage Sentinel-1 source behavior', () => {
   });
 });
 
-describe('MapPage field-aware scene behavior', () => {
-  it('uses field scenes when a synced field is selected and keeps RGB as the default', async () => {
-    stubAkashaFetch({ plots: [FIELD_PLOT], fieldScenes: makeFieldScenes() });
+describe('MapPage selected-field native analytics', () => {
+  it('keeps native source-date imagery active when a field is selected', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
 
     renderMapPage({ selectedPlotId: 'plot-1' });
 
-    await screen.findByTestId('field-scene-status');
+    await screen.findByTestId('index-panel');
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/fields/plot-1/field-scene-a/RGB/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
+        '/api/tiles/sentinel-2-l2a/2026-04-27/RGB/{z}/{x}/{y}.png',
       );
     });
-    expect(screen.getByTestId('timeline-bar').textContent).toContain('Jun');
-    expect(screen.queryByTestId('map-legend')).toBeNull();
+
     const chartTab = await screen.findByTestId('index-panel-tab-chart');
     fireEvent.mouseDown(chartTab);
     fireEvent.click(chartTab);
+
     expect((await screen.findAllByText('0.56')).length).toBeGreaterThan(0);
     expect(screen.getByTestId('field-trend-chart')).toBeTruthy();
-    expect(screen.getByText('Akasha masked-raster fallback')).toBeTruthy();
+    expect(screen.getByText('Akasha masked-raster analytics')).toBeTruthy();
   });
 
-  it('switches field display modes and applies cloud mask query params', async () => {
-    stubAkashaFetch({ plots: [FIELD_PLOT], fieldScenes: makeFieldScenes() });
+  it('switches native display modes and refetches selected-field statistics', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
 
     renderMapPage({ selectedPlotId: 'plot-1' });
 
+    fireEvent.click(await screen.findByTestId('layer-display-trigger'));
     fireEvent.click(await screen.findByTestId('display-mode-NDVI'));
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/fields/plot-1/field-scene-a/NDVI/{z}/{x}/{y}.png?clouds=true&cloudShadows=true&cirrus=true',
-      );
-    });
-
-    fireEvent.click(screen.getByTestId('layer-cloud-mask-trigger'));
-    fireEvent.click(await screen.findByTestId('cloud-mask-cloudShadows'));
-    await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        'clouds=true&cloudShadows=false&cirrus=true',
+        '/api/tiles/sentinel-2-l2a/2026-04-27/NDVI/{z}/{x}/{y}.png',
       );
     });
     expect(screen.getByTestId('map-legend').getAttribute('data-display-mode')).toBe('NDVI');
-    await waitFor(() => {
-      const calls = (globalThis.fetch as unknown as {
-        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
-      }).mock.calls;
-      const trendRequest = calls
-        .map(([input]) => String(input))
-        .find((path) => path.includes('/api/fields/plot-1/analytics/trend') && path.includes('cloudShadows=false'));
-      expect(trendRequest).toBeTruthy();
-    });
-  });
-
-  it('switches analytics indices and refetches selected-field statistics', async () => {
-    stubAkashaFetch({
-      plots: [FIELD_PLOT],
-      fieldScenes: makeFieldScenes({ displayModes: ['RGB', 'NDVI', 'MSAVI'] }),
-    });
-
-    renderMapPage({ selectedPlotId: 'plot-1' });
-
-    const chartTab = await screen.findByTestId('index-panel-tab-chart');
-    fireEvent.mouseDown(chartTab);
-    fireEvent.click(chartTab);
-
-    fireEvent.click(await screen.findByTestId('analytics-index-MSAVI'));
 
     await waitFor(() => {
       const calls = (globalThis.fetch as unknown as {
@@ -585,72 +444,8 @@ describe('MapPage field-aware scene behavior', () => {
       const statsCall = calls
         .filter(([input]) => String(input) === '/api/fields/plot-1/indices/statistics')
         .map(([, init]) => (typeof init?.body === 'string' ? init.body : ''))
-        .find((body) => body.includes('"indexType":"MSAVI"'));
+        .find((body) => body.includes('"indexType":"NDVI"'));
       expect(statsCall).toBeTruthy();
     });
-  });
-
-  it('shows sync and download affordances for an unsynced selected field without replacing global imagery', async () => {
-    const unsynced = {
-      ...FIELD_PLOT,
-      externalProvider: null,
-      externalFieldId: null,
-      providerSyncStatus: 'not_synced' as const,
-    };
-    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
-      const path = String(input);
-      if (path === '/api/fields/plot-1/providers/eos/sync') {
-        return Promise.resolve(
-          jsonResponse({
-            plotId: 'plot-1',
-            provider: 'eos',
-            syncStatus: 'synced',
-            syncedAt: '2026-06-03T00:00:00Z',
-          }),
-        );
-      }
-      return (globalThis.fetch as unknown as typeof fetch)(input);
-    });
-    stubAkashaFetch({ plots: [unsynced] });
-    const baseFetch = globalThis.fetch;
-    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
-      const path = String(input);
-      if (path === '/api/fields/plot-1/providers/eos/sync') return fetchSpy(input);
-      return baseFetch(input);
-    });
-
-    renderMapPage({ selectedPlotId: 'plot-1' });
-
-    await screen.findByTestId('field-sync-button');
-    await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/sentinel-2-l2a/2026-04-27/RGB/{z}/{x}/{y}.png',
-      );
-    });
-
-    fireEvent.click(screen.getByTestId('download-menu-toggle'));
-    expect((await screen.findByTestId('download-index-tiff') as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-
-    fireEvent.click(screen.getByTestId('field-sync-button'));
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
-  });
-
-  it('toggles the field legend without changing the selected tile', async () => {
-    stubAkashaFetch({ plots: [FIELD_PLOT], fieldScenes: makeFieldScenes() });
-
-    renderMapPage({ selectedPlotId: 'plot-1', displayMode: 'NDVI' });
-
-    await screen.findByTestId('map-legend');
-    await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/fields/plot-1/field-scene-a/NDVI/',
-      );
-    });
-    const before = screen.getByTestId('map-layer-manager').getAttribute('data-tile-template');
-    fireEvent.click(screen.getByTestId('legend-toggle-btn'));
-    expect(screen.queryByTestId('map-legend')).toBeNull();
-    expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toBe(before);
   });
 });

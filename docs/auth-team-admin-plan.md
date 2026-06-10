@@ -14,13 +14,13 @@ Phase 12 implements the BFF-side foundations: users, teams, memberships, API key
 
 ## Local development mode
 
-`AUTH_MODE=disabled` injects a deterministic dev user and team only for local/dev/test environments. Runtime ownership checks must still use `team_id = current_team.id`; no protected route should rely on `team_id IS NULL`.
+`AUTH_MODE=disabled` injects a deterministic dev user and team only when local/dev/test environments explicitly set `AUTH_ALLOW_DISABLED=true`. Runtime ownership checks must still use `team_id = current_team.id`; no protected route should rely on `team_id IS NULL`.
 
 ## Railway / deployment mode
 
-Customer or Railway deployments must set `AUTH_MODE=enabled`. Disabled auth is forbidden when Railway deployment environment variables are present. Protected routes fail closed with `AUTH_NOT_CONFIGURED` if auth is disabled in deployment.
+Customer or Railway deployments must set `AUTH_MODE=enabled`, `AUTH_ALLOW_DISABLED=false`, and a strong `AUTH_PASSWORD_PEPPER`. Disabled auth is forbidden when Railway deployment environment variables are present. Protected routes fail closed with `AUTH_NOT_CONFIGURED` if auth is disabled in deployment.
 
-## Session and provider boundary
+## Session and identity boundary
 
 Future Better Auth integration runs in the web/gateway layer and issues a signed session or gateway-attested identity. The BFF maps that identity to `akasha.users` and `akasha.teams`, then enforces ownership. Native BFF `akasha.sessions` exists as a fallback/dev-compatible session store only.
 
@@ -35,11 +35,11 @@ Future Better Auth integration runs in the web/gateway layer and issues a signed
 
 ## Ownership matrix
 
-Direct `team_id`: plots, field activities, scout tasks, uploaded datasets, field groups, report templates, zoning maps, attachments, notifications, API keys, sessions.
+Direct `team_id`: plots, field activities, scout tasks, uploaded datasets, field groups, report templates, attachments, notifications, API keys, sessions.
 
-Indirect: field group members are scoped through field groups and plots; provider links are scoped through plots; index requests are scoped through `plot_id`.
+Indirect: field group members are scoped through field groups and plots; index requests are scoped through `plot_id`.
 
-Global/system: app settings, STAC/pgSTAC catalog, seed data, public product configuration.
+Global/system: app settings, STAC/pgSTAC catalog, and seed data. Product configuration, sources, layers, tiles, and statistics are portal-authenticated BFF APIs.
 
 ## API key policy
 
@@ -47,4 +47,4 @@ Phase 12 API keys are an admin foundation only. They are stored hash-only and ar
 
 ## Notification scope
 
-Phase 12 provides notification infrastructure and minimal emitters. Full field-change, risk-alert, provider-sync-failure, and report-availability wiring is a Phase 13 hardening follow-up.
+Phase 12 provides notification infrastructure and minimal emitters. Full field-change, risk-alert, task-assignment, and report-availability wiring is a Phase 13 hardening follow-up.

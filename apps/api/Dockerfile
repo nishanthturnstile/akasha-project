@@ -22,9 +22,10 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application code + DB migrations (applied via `python -m app.cli migrate`).
+# Application code + Alembic app-schema baseline/revisions.
 COPY app ./app
-COPY migrations ./migrations
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
 # Railway/Compose health check target: GET /health
 # The service listens on $PORT (defaults to 8000 to match the documented

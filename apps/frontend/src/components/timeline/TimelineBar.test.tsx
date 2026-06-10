@@ -44,7 +44,7 @@ function renderBar(props: Partial<React.ComponentProps<typeof TimelineBar>> = {}
     );
 }
 
-describe('TimelineBar — Phase E parity', () => {
+describe('TimelineBar — date navigation behavior', () => {
     it('renders the calendar trigger only when onPeriodChange is provided', () => {
         renderBar({ onPeriodChange: vi.fn() });
         expect(screen.getByTestId('timeline-period-trigger')).toBeTruthy();

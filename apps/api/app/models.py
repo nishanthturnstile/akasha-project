@@ -137,6 +137,31 @@ class AppSetting(Base):
     )
 
 
+class Season(TimestampMixin, Base):
+    __tablename__ = "seasons"
+    __table_args__ = (
+        CheckConstraint("length(btrim(name)) > 0", name="seasons_name_not_blank"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    season_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    can_delete: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+
+
 class User(UuidPkMixin, TimestampMixin, Base):
     __tablename__ = "users"
     __table_args__ = (

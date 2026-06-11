@@ -1,0 +1,226 @@
+# Akasha self-hosted Coolify Compose stack.
+#
+# Runtime target: staging/production Linux hosts managed by Coolify.
+# Source of truth: prebuilt images + environment variables, not local builds.
+# Public exposure rule: only `web` gets a Coolify FQDN. All other services stay
+# private on the Compose network and must not receive host `ports:` mappings.
+
+services:
+  web:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-web:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    environment:
+      SERVICE_FQDN_WEB: "/"
+      PORT: "80"
+      API_UPSTREAM_URL: "http://api:8000"
+      TITILER_UPSTREAM_URL: "http://titiler:8000"
+      PUBLIC_APP_NAME: "${PUBLIC_APP_NAME:-Akasha}"
+      PUBLIC_DEFAULT_AOI_NAME: "${PUBLIC_DEFAULT_AOI_NAME:-Bangalore}"
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+      titiler:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-api:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    environment:
+      APP_ENV: "${APP_ENV:-production}"
+      PORT: "8000"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      STAC_API_URL: "http://stac-api:8080"
+      TITILER_URL: "http://titiler:8000"
+      S3_ENDPOINT_URL: "http://minio:9000"
+      AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
+      AWS_S3_ENDPOINT: "minio:9000"
+      AWS_VIRTUAL_HOSTING: "FALSE"
+      AWS_HTTPS: "NO"
+      AWS_REGION: "${AWS_REGION:-us-east-1}"
+      GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
+      AKASHA_RGB_RESCALE: "${AKASHA_RGB_RESCALE:-0,3000}"
+      AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
+      DEFAULT_SOURCE_ID: "${DEFAULT_SOURCE_ID:-sentinel-2-l2a}"
+      DEFAULT_AOI_ID: "${DEFAULT_AOI_ID:-bangalore}"
+      USABLE_PIXEL_THRESHOLD_PERCENT: "${USABLE_PIXEL_THRESHOLD_PERCENT:-70}"
+      MAX_POLYGON_AREA_HA: "${MAX_POLYGON_AREA_HA:-50}"
+      MAX_POLYGON_VERTICES: "${MAX_POLYGON_VERTICES:-5000}"
+      INDEX_REQUEST_TIMEOUT_SECONDS: "${INDEX_REQUEST_TIMEOUT_SECONDS:-30}"
+      RATE_LIMIT_INDEX_PER_MINUTE: "${RATE_LIMIT_INDEX_PER_MINUTE:-30}"
+      MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1048576}"
+      CORS_ALLOWED_ORIGINS: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN must be set to the exact public web origin}"
+      AUTH_MODE: "${AUTH_MODE:-enabled}"
+      AUTH_ALLOW_DISABLED: "${AUTH_ALLOW_DISABLED:-false}"
+      AUTH_PASSWORD_PEPPER: "${AUTH_PASSWORD_PEPPER:?AUTH_PASSWORD_PEPPER must be set}"
+      AUTH_ALLOW_BOOTSTRAP: "${AUTH_ALLOW_BOOTSTRAP:-false}"
+      AUTH_BOOTSTRAP_TOKEN: "${AUTH_BOOTSTRAP_TOKEN:-}"
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-true}"
+      AUTH_SESSION_COOKIE_NAME: "${AUTH_SESSION_COOKIE_NAME:-akasha_session}"
+      AUTH_SESSION_TTL_MINUTES: "${AUTH_SESSION_TTL_MINUTES:-480}"
+      AUTH_REMEMBER_TTL_DAYS: "${AUTH_REMEMBER_TTL_DAYS:-30}"
+      AUTH_LOGIN_RATE_LIMIT_PER_MINUTE: "${AUTH_LOGIN_RATE_LIMIT_PER_MINUTE:-10}"
+      AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR: "${AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR:-5}"
+    expose:
+      - "8000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  titiler:
+    image: ghcr.io/developmentseed/titiler:1.0.0
+    environment:
+      PORT: "8000"
+      AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
+      AWS_S3_ENDPOINT: "minio:9000"
+      AWS_VIRTUAL_HOSTING: "FALSE"
+      AWS_HTTPS: "NO"
+      AWS_REGION: "${AWS_REGION:-us-east-1}"
+      GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
+      CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
+    expose:
+      - "8000"
+    depends_on:
+      minio:
+        condition: service_started
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  stac-api:
+    image: ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2
+    environment:
+      POSTGRES_HOST_READER: "postgis"
+      POSTGRES_HOST_WRITER: "postgis"
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASS: "${POSTGRES_PASSWORD}"
+      POSTGRES_DBNAME: "${POSTGRES_DB}"
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+    expose:
+      - "8080"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/_mgmt/ping').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  postgis:
+    image: postgis/postgis:16-3.5
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+    volumes:
+      - /srv/akasha/postgis:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_BROWSER: "off"
+    volumes:
+      - /srv/akasha/minio:/data
+    expose:
+      - "9000"
+      - "9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ingestion-worker:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-ingestion-worker:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      STAC_API_URL: "http://stac-api:8080"
+      S3_ENDPOINT_URL: "http://minio:9000"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
+      S3_REGION: "${AWS_REGION:-us-east-1}"
+      AKASHA_COG_BUCKET: "${AKASHA_COG_BUCKET:-akasha-cogs}"
+      SEED_DATA_DIR: "/app/data/seed"
+      AOI_CONFIG_PATH: "/app/data/seed/bangalore-aoi.geojson"
+    volumes:
+      - /srv/akasha/data/raw:/app/data/raw
+      - /srv/akasha/data/work:/app/data/work
+      - /srv/akasha/data/seed/rasters:/app/data/seed/rasters
+    depends_on:
+      postgis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: "no"
+
+  ingestion-sar:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-ingestion-sar:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    platform: linux/amd64
+    environment:
+      PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      SNAP_USER_DIR: "/snap-cache"
+      SNAP_CACHE_SIZE: "${SNAP_CACHE_SIZE:-8G}"
+      SNAP_PARALLELISM: "${SNAP_PARALLELISM:-4}"
+      JAVA_TOOL_OPTIONS: "-Xmx${SNAP_JAVA_MAX_HEAP:-12g}"
+      AKASHA_S1_DEM_SOURCE: "${AKASHA_S1_DEM_SOURCE:-Copernicus 30m Global DEM}"
+      AKASHA_S1_FALLBACK_DEM_SOURCE: "${AKASHA_S1_FALLBACK_DEM_SOURCE:-SRTM 1Sec HGT}"
+      AKASHA_S1_TARGET_CRS: "${AKASHA_S1_TARGET_CRS:-EPSG:4326}"
+      AKASHA_S1_PIXEL_SPACING_METERS: "${AKASHA_S1_PIXEL_SPACING_METERS:-10}"
+      AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
+      AKASHA_S1_VH_RESCALE: "${AKASHA_S1_VH_RESCALE:--30,-5}"
+    volumes:
+      - /srv/akasha/data:/app/data
+      - /srv/akasha/snap-cache:/snap-cache
+    restart: "no"

@@ -1,0 +1,104 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Exact Git SHA image tag previously validated in staging
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  COMPOSE_TEMPLATE: infra/selfhosted/coolify-compose.yml
+
+jobs:
+  deploy-production:
+    name: Patch Coolify production stack and deploy
+    if: github.repository == 'Akasha-TechCatalyst/akasha-project'
+    runs-on: [self-hosted, linux, x64, akasha-control]
+    environment: production
+    env:
+      COOLIFY_API_URL: ${{ secrets.COOLIFY_API_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_SERVICE_UUID: ${{ vars.COOLIFY_PRODUCTION_SERVICE_UUID }}
+      IMAGE_TAG: ${{ inputs.image_tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate production deployment configuration
+        run: |
+          test -n "$COOLIFY_API_URL" || { echo "COOLIFY_API_URL secret is required, including /api/v1."; exit 1; }
+          test -n "$COOLIFY_TOKEN" || { echo "COOLIFY_TOKEN secret is required."; exit 1; }
+          test -n "$COOLIFY_SERVICE_UUID" || { echo "COOLIFY_PRODUCTION_SERVICE_UUID repository variable is required."; exit 1; }
+          case "$IMAGE_TAG" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
+            *) echo "image_tag must be an immutable Git SHA, not main/latest."; exit 1 ;;
+          esac
+          if [ "$IMAGE_TAG" = "main" ] || [ "$IMAGE_TAG" = "latest" ]; then
+            echo "Mutable image tags are not allowed for production."
+            exit 1
+          fi
+
+      - name: Render Compose with approved image tag
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+
+          tag = os.environ["IMAGE_TAG"]
+          text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
+          text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
+          Path("/tmp/akasha-coolify-compose.yml").write_text(text)
+          PY
+
+      - name: Patch Coolify service stack
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          api_url = os.environ["COOLIFY_API_URL"].rstrip("/")
+          service_uuid = os.environ["COOLIFY_SERVICE_UUID"]
+          token = os.environ["COOLIFY_TOKEN"]
+          compose = open("/tmp/akasha-coolify-compose.yml", "rb").read()
+          payload = json.dumps({"docker_compose_raw": base64.b64encode(compose).decode()}).encode()
+          req = urllib.request.Request(
+              f"{api_url}/services/{service_uuid}",
+              data=payload,
+              method="PATCH",
+              headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+          )
+          with urllib.request.urlopen(req, timeout=60) as response:  # noqa: S310
+              print(response.status, response.read().decode(errors="replace"))
+          PY
+
+      - name: Trigger Coolify deployment
+        run: |
+          python - <<'PY'
+          import os
+          import urllib.parse
+          import urllib.request
+
+          api_url = os.environ["COOLIFY_API_URL"].rstrip("/")
+          service_uuid = os.environ["COOLIFY_SERVICE_UUID"]
+          token = os.environ["COOLIFY_TOKEN"]
+          query = urllib.parse.urlencode({"uuid": service_uuid, "force": "false"})
+          req = urllib.request.Request(
+              f"{api_url}/deploy?{query}",
+              method="GET",
+              headers={"Authorization": f"Bearer {token}"},
+          )
+          with urllib.request.urlopen(req, timeout=60) as response:  # noqa: S310
+              print(response.status, response.read().decode(errors="replace"))
+          PY

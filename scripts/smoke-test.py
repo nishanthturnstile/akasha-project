@@ -12,24 +12,30 @@ clean 502/503 and this script reports the step as BLOCKED (not a failure), so
 the contract is exercised end-to-end without fabricating raster data.
 
 Usage:
-    python scripts/smoke-test.py [BASE_URL] [--require-raster]
+    python scripts/smoke-test.py [BASE_URL] [--require-raster] [--login]
     BASE_URL env var also supported. Default: http://localhost:8080
     --require-raster (or REQUIRE_RASTER=1) turns BLOCKED tile/stat checks into failures.
+    --login logs in before product checks using AKASHA_SMOKE_USERNAME and
+    AKASHA_SMOKE_PASSWORD, then reuses the session cookie.
 """
 from __future__ import annotations
 
+import http.cookiejar
 import json
 import os
 import sys
 import urllib.request
 from urllib.error import HTTPError, URLError
 
-ARGS = [arg for arg in sys.argv[1:] if arg != "--require-raster"]
+ARGS = [arg for arg in sys.argv[1:] if arg not in {"--require-raster", "--login"}]
 REQUIRE_RASTER = "--require-raster" in sys.argv[1:] or os.environ.get("REQUIRE_RASTER") == "1"
+LOGIN = "--login" in sys.argv[1:] or os.environ.get("AKASHA_SMOKE_LOGIN") == "1"
 BASE = (ARGS[0] if ARGS else None) or os.environ.get("BASE_URL", "http://localhost:8080")
 BASE = BASE.rstrip("/")
 
 passed = failed = blocked = 0
+_COOKIE_JAR = http.cookiejar.CookieJar()
+_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_COOKIE_JAR))
 
 _HEADERS = {
     "Accept": "*/*",
@@ -45,7 +51,7 @@ def _request(path: str, method: str = "GET", body: dict | None = None, timeout: 
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with _OPENER.open(req, timeout=timeout) as resp:  # noqa: S310
             return resp.status, resp.read()
     except HTTPError as exc:  # 4xx/5xx still carry a body
         return exc.code, exc.read()
@@ -115,6 +121,53 @@ def check_allow_blocked(
         failed += 1
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def login() -> None:
+    """Authenticate once and keep the session cookie in the global opener."""
+    global passed, failed
+    username = os.environ.get("AKASHA_SMOKE_USERNAME", "").strip()
+    password = os.environ.get("AKASHA_SMOKE_PASSWORD", "")
+    remember_me = _bool_env("AKASHA_SMOKE_REMEMBER_ME")
+    if not username or not password:
+        print(
+            "  [x] login: AKASHA_SMOKE_USERNAME and AKASHA_SMOKE_PASSWORD "
+            "are required when --login is used"
+        )
+        failed += 1
+        return
+    try:
+        status, body = _request(
+            "/api/auth/login",
+            method="POST",
+            body={"username": username, "password": password, "rememberMe": remember_me},
+        )
+    except (URLError, TimeoutError) as exc:
+        print(f"  [x] login: /api/auth/login -> ERROR ({exc})")
+        failed += 1
+        return
+    ok = status == 200
+    detail = f"HTTP {status}"
+    if ok:
+        try:
+            data = json.loads(body)
+            ok = isinstance(data, dict) and "user" in data and "currentTeam" in data
+            detail += ", session cookie captured" if ok else ", unexpected response JSON"
+        except json.JSONDecodeError:
+            ok = False
+            detail += ", invalid JSON"
+    print(f"  [{'v' if ok else 'x'}] login: /api/auth/login -> {detail}")
+    if ok:
+        passed += 1
+    else:
+        failed += 1
+
+
 IN_FOOTPRINT_POLY = {
     "type": "Polygon",
     "coordinates": [[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.105], [78.2, 12.1]]],
@@ -129,6 +182,10 @@ check("web/gateway health", "/health")
 check("api health (proxied)", "/api/health", expect_json=True, want_key="status")
 check("skeleton services", "/api/_skeleton/services", expect_json=True, want_key="services")
 check("skeleton manifest", "/api/_skeleton/manifest", expect_json=True, want_key="pinnedImages")
+
+if LOGIN:
+    print("\n> Authentication (--login)")
+    login()
 
 print("\n> Phase 2 product endpoints (must pass)")
 check("config", "/api/config", expect_json=True, want_key="supportedIndices")

@@ -2,7 +2,7 @@
 goal: Azure rehearsal startup plan for Akasha self-hosted Coolify deployment
 version: 1.0
 date_created: 2026-06-10
-last_updated: 2026-06-10
+last_updated: 2026-06-11
 owner: Akasha deployment operator
 tags:
   - infrastructure
@@ -125,22 +125,36 @@ Phase 3 operational notes:
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-031 | Create Azure VM `akasha-staging` using Ubuntu 24.04 LTS and `Standard_D4s_v5` with `4` vCPU and `16` GiB RAM. | | |
-| TASK-032 | Attach SSD-backed data storage of at least `512` GB to `akasha-staging`. | | |
-| TASK-033 | Assign a static public IP address to `akasha-staging`. | | |
-| TASK-034 | Configure Azure network security group rules for `akasha-staging`: allow `80/tcp` and `443/tcp`; allow `22/tcp` only from admin IP and `akasha-control`; deny public access to `5432`, `9000`, `9001`, `8080`, and `8000`. | | |
-| TASK-035 | Log in to `akasha-staging` using the configured SSH key. | | |
-| TASK-036 | Update system packages on `akasha-staging`. | | |
-| TASK-037 | Mount the staging data disk at `/srv/akasha`. | | |
-| TASK-038 | Configure `/etc/fstab` so `/srv/akasha` survives reboot. | | |
-| TASK-039 | Create directories `/srv/akasha/postgis`, `/srv/akasha/minio`, `/srv/akasha/data`, `/srv/akasha/logs`, and `/srv/akasha/backups`. | | |
-| TASK-040 | Reboot `akasha-staging` once and verify `/srv/akasha` is mounted after reboot. | | |
-| TASK-041 | Disable password SSH login on `akasha-staging`. | | |
-| TASK-042 | Disable root SSH login on `akasha-staging` after bootstrap if operationally possible. | | |
-| TASK-043 | Enable a host firewall on `akasha-staging` with the same inbound policy as the Azure network security group. | | |
-| TASK-044 | Install and enable `fail2ban` on `akasha-staging`. | | |
-| TASK-045 | Enable unattended security updates on `akasha-staging`. | | |
-| TASK-046 | Install Docker from the official Docker packages on `akasha-staging`. Do not install Docker from Snap. | | |
+| TASK-031 | Create Azure VM `akasha-staging` using Ubuntu 24.04 LTS and `Standard_D4s_v5` with `4` vCPU and `16` GiB RAM. | Yes — deployed Ubuntu 24.04 LTS as `Standard_D4s_v4`, matching the approved `akasha-control` fallback SKU. Private IP is `10.10.2.4`. | 2026-06-10 |
+| TASK-032 | Attach SSD-backed data storage of at least `512` GB to `akasha-staging`. | Yes — attached `512` GiB Premium SSD `datadisk-akasha-staging-001`. | 2026-06-10 |
+| TASK-033 | Assign a static public IP address to `akasha-staging`. | Yes — `20.219.3.35`. | 2026-06-10 |
+| TASK-034 | Configure Azure network security group rules for `akasha-staging`: allow `80/tcp` and `443/tcp`; allow `22/tcp` only from admin IP and `akasha-control`; deny public access to `5432`, `9000`, `9001`, `8080`, and `8000`. | Partially — Azure NSG `nsg-akasha-staging` allows `22/tcp`, `80/tcp`, and `443/tcp` from `0.0.0.0/0` by operator request for this rehearsal step; no public rules exist for `5432`, `9000`, `9001`, `8080`, or `8000`, and external TCP checks showed those private ports filtered. Restrict `22/tcp` to admin/team CIDRs and `akasha-control` later. | 2026-06-10 |
+| TASK-035 | Log in to `akasha-staging` using the configured SSH key. | Yes — SSH verified as `akashaadmin@20.219.3.35` using `~/.ssh/id_ed25519_thaarei`. | 2026-06-10 |
+| TASK-036 | Update system packages on `akasha-staging`. | Yes — apt metadata refreshed and packages upgraded; reboot completed. | 2026-06-10 |
+| TASK-037 | Mount the staging data disk at `/srv/akasha`. | Yes — data disk formatted as ext4 and mounted at `/srv/akasha`; Azure device name changed across reboot, but the UUID mount remained correct. | 2026-06-10 |
+| TASK-038 | Configure `/etc/fstab` so `/srv/akasha` survives reboot. | Yes — `/srv/akasha` added to `/etc/fstab` by UUID with `nofail`. | 2026-06-10 |
+| TASK-039 | Create directories `/srv/akasha/postgis`, `/srv/akasha/minio`, `/srv/akasha/data`, `/srv/akasha/logs`, and `/srv/akasha/backups`. | Yes — all required directories created under `/srv/akasha`. | 2026-06-10 |
+| TASK-040 | Reboot `akasha-staging` once and verify `/srv/akasha` is mounted after reboot. | Yes — rebooted successfully; `/srv/akasha` remounted from the data disk after reboot with about `477` GiB available. | 2026-06-10 |
+| TASK-041 | Disable password SSH login on `akasha-staging`. | Yes — SSH hardening drop-in sets `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, and `ChallengeResponseAuthentication no`. | 2026-06-10 |
+| TASK-042 | Disable root SSH login on `akasha-staging` after bootstrap if operationally possible. | Partially — root password login is disabled, while root public-key SSH remains allowed as `PermitRootLogin prohibit-password` for the practical Coolify remote-server pattern. | 2026-06-10 |
+| TASK-043 | Enable a host firewall on `akasha-staging` with the same inbound policy as the Azure network security group. | Partially — UFW enabled with default deny incoming/default allow outgoing; `22/tcp`, `80/tcp`, and `443/tcp` are temporarily allowed from anywhere by operator request. Restrict `22/tcp` later. | 2026-06-10 |
+| TASK-044 | Install and enable `fail2ban` on `akasha-staging`. | Yes — `fail2ban` installed, enabled, active, and `sshd` jail verified. | 2026-06-10 |
+| TASK-045 | Enable unattended security updates on `akasha-staging`. | Yes — `unattended-upgrades` installed, enabled, and active. | 2026-06-10 |
+| TASK-046 | Install Docker from the official Docker packages on `akasha-staging`. Do not install Docker from Snap. | Yes — Docker Engine `29.5.3` and Docker Compose plugin `v5.1.4` installed from Docker's official apt repo; `hello-world` smoke test passed; Snap Docker absent. | 2026-06-10 |
+
+Phase 4 operational notes:
+
+- Azure resources created for staging:
+  - VM: `akasha-staging`
+  - Public IP: `pip-akasha-staging` / `20.219.3.35`
+  - Private IP: `10.10.2.4`
+  - Subnet: `snet-akasha-staging` / `10.10.2.0/24`
+  - NSG: `nsg-akasha-staging`
+  - Data disk: `datadisk-akasha-staging-001` / `512` GiB Premium SSD
+- External TCP checks after host firewall and Azure NSG configuration:
+  - `22/tcp`: open by temporary operator request
+  - `80/tcp`, `443/tcp`: permitted by NSG/UFW but closed until Coolify deploys a web route
+  - `5432/tcp`, `9000/tcp`, `9001/tcp`, `8080/tcp`, `8000/tcp`: filtered
 
 ### Implementation Phase 5
 
@@ -148,13 +162,26 @@ Phase 3 operational notes:
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-047 | From the Coolify UI on `akasha-control`, add `akasha-staging` as a remote server over SSH. | | |
-| TASK-048 | Verify Coolify can connect to `akasha-staging` over SSH. | | |
-| TASK-049 | Verify Coolify can control Docker on `akasha-staging`. | | |
-| TASK-050 | Create Coolify project `akasha`. | | |
-| TASK-051 | Create Coolify environment `staging` under project `akasha`. | | |
-| TASK-052 | Create a placeholder Docker Compose resource named `akasha-staging-compose` under the `staging` environment. Do not deploy until `infra/selfhosted/coolify-compose.yml` exists in the repository. | | |
-| TASK-053 | Assign a public domain only to the future `web` service. Do not assign public domains to `api`, `titiler`, `stac-api`, `postgis`, `minio`, `ingestion-worker`, or `ingestion-sar`. | | |
+| TASK-047 | From the Coolify UI on `akasha-control`, add `akasha-staging` as a remote server over SSH. | Yes — operator completed Coolify UI registration for `akasha-staging` after Coolify's management public key was authorized for `root` on the staging VM. | 2026-06-11 |
+| TASK-048 | Verify Coolify can connect to `akasha-staging` over SSH. | Yes — verified from `akasha-control` using Coolify's SSH key: `root@20.219.3.35` returns `akasha-staging`; Coolify UI shows the server is reachable and validated. | 2026-06-11 |
+| TASK-049 | Verify Coolify can control Docker on `akasha-staging`. | Yes — verified from `akasha-control` using Coolify's SSH key: `docker ps` and `docker compose version` work on `akasha-staging`; Coolify UI resources show the staging server and resource binding. | 2026-06-11 |
+| TASK-050 | Create Coolify project `akasha`. | Yes — operator completed in Coolify UI. | 2026-06-11 |
+| TASK-051 | Create Coolify environment `staging` under project `akasha`. | Yes — operator completed in Coolify UI. | 2026-06-11 |
+| TASK-052 | Create a placeholder Docker Compose resource named `akasha-staging-compose` under the `staging` environment. Do not deploy until `infra/selfhosted/coolify-compose.yml` exists in the repository. | Yes — verified in Coolify UI and fixed during review by creating/renaming the placeholder service stack `akasha-staging-compose` on `akasha-staging`; it remains a placeholder and no Akasha deployment has been performed. | 2026-06-11 |
+| TASK-053 | Assign a public domain only to the future `web` service. Do not assign public domains to `api`, `titiler`, `stac-api`, `postgis`, `minio`, `ingestion-worker`, or `ingestion-sar`. | Pre-deployment check passed — the placeholder `akasha-staging-compose` has no public FQDN/domain and no Akasha private services are deployed yet. Re-validate during the first real staging deployment from `infra/selfhosted/coolify-compose.yml`. | 2026-06-11 |
+
+Phase 5 operational notes:
+
+- Coolify management key path on `akasha-control`: `/data/coolify/ssh/keys/ssh_key@fwetwaw4wp2xz50fneaucjrf`.
+- The corresponding public key was added to `/root/.ssh/authorized_keys` on `akasha-staging`.
+- Verified from `akasha-control` with the Coolify key:
+  - `ssh root@20.219.3.35 hostname` returns `akasha-staging`
+  - `ssh root@20.219.3.35 docker ps` succeeds
+  - `ssh root@20.219.3.35 docker compose version` returns Docker Compose `v5.1.4`
+- Coolify UI review on 2026-06-11 found project `akasha`, environment `staging`, and server `akasha-staging` present; server configuration uses `root@20.219.3.35`, is reachable/validated, and is not enabled as a build server.
+- Coolify UI review initially found the `staging` environment had no resource card despite the earlier manual note. A safe Docker Compose Empty placeholder was created on `akasha-staging` and renamed to `akasha-staging-compose`; it has no FQDN/domain and no public route.
+- The `akasha-staging` server initially showed `Sentinel Out Of Sync`; clicking `Sync` restarted Sentinel and `Refresh Status` then showed `Sentinel In Sync`. Host-side verification showed `coolify-sentinel` and `coolify-proxy` healthy on staging.
+- External private-port checks after the placeholder resource was created still showed `5432/tcp`, `9000/tcp`, `9001/tcp`, `8080/tcp`, and `8000/tcp` as closed or filtered on `20.219.3.35`.
 
 ### Implementation Phase 6
 
@@ -177,13 +204,13 @@ Phase 3 operational notes:
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-062 | Create `infra/selfhosted/coolify-compose.yml` from `infra/docker/docker-compose.yml`, adapted for Coolify-managed self-hosted deployment. | | |
-| TASK-063 | Create `infra/selfhosted/env.example` documenting all required staging and production variables without real secrets. | | |
-| TASK-064 | Create `infra/selfhosted/README.md` documenting Coolify setup, first deploy, one-shot jobs, and rollback. | | |
-| TASK-065 | Create `.github/workflows/ci.yml` with Python lint, API tests, frontend lint/test/build, slice validators, gitleaks, and Trivy checks. | Partially — created base CI with API tests, frontend lint/test/build, and Slice 0/1/2 validators on branch `dev-akasha-core`; gitleaks and Trivy still to add before production readiness. | 2026-06-10 |
-| TASK-066 | Create `.github/workflows/deploy-staging.yml` to build `web`, `api`, `ingestion-worker`, and `ingestion-sar`, tag them with the Git SHA, push to GHCR, and trigger Coolify staging deploy with `IMAGE_TAG=<git-sha>`. | | |
-| TASK-067 | Create `.github/workflows/deploy-production.yml` to deploy only an already validated image SHA after manual GitHub Environment approval. | | |
-| TASK-068 | Extend `scripts/smoke-test.py` with optional `--login` mode that reads credentials from environment variables and reuses the session cookie for authenticated product checks. | | |
+| TASK-062 | Create `infra/selfhosted/coolify-compose.yml` from `infra/docker/docker-compose.yml`, adapted for Coolify-managed self-hosted deployment. | Yes — created prebuilt-image Coolify Compose stack with `/srv/akasha` mounts, no `build:` blocks, no host `ports:`, and only `web` using `SERVICE_FQDN_WEB=/`. | 2026-06-11 |
+| TASK-063 | Create `infra/selfhosted/env.example` documenting all required staging and production variables without real secrets. | Yes — created template with placeholders for image tag, public origin, Postgres, MinIO, auth, raster, and SAR runtime variables. | 2026-06-11 |
+| TASK-064 | Create `infra/selfhosted/README.md` documenting Coolify setup, first deploy, one-shot jobs, and rollback. | Yes — created operator runbook covering Coolify setup, env configuration, first deploy, migrations, ingestion jobs, smoke tests, private-port checks, rollback, and production promotion. | 2026-06-11 |
+| TASK-065 | Create `.github/workflows/ci.yml` with Python lint, API tests, frontend lint/test/build, slice validators, gitleaks, and Trivy checks. | Yes — base CI already existed; added gitleaks secret scan and Trivy filesystem vulnerability scan. | 2026-06-11 |
+| TASK-066 | Create `.github/workflows/deploy-staging.yml` to build `web`, `api`, `ingestion-worker`, and `ingestion-sar`, tag them with the Git SHA, push to GHCR, and trigger Coolify staging deploy with `IMAGE_TAG=<git-sha>`. | Yes — created staging workflow guarded to client repo; builds and pushes four Akasha images, renders Compose with the Git SHA, patches the Coolify staging service stack, and triggers deployment. Not executed yet. | 2026-06-11 |
+| TASK-067 | Create `.github/workflows/deploy-production.yml` to deploy only an already validated image SHA after manual GitHub Environment approval. | Yes — created manual production workflow requiring explicit immutable `image_tag` and GitHub Environment `production`; it does not build images. Not executable until production server/resource and environment approval are configured. | 2026-06-11 |
+| TASK-068 | Extend `scripts/smoke-test.py` with optional `--login` mode that reads credentials from environment variables and reuses the session cookie for authenticated product checks. | Yes — added `--login` / `AKASHA_SMOKE_LOGIN=1`, `AKASHA_SMOKE_USERNAME`, `AKASHA_SMOKE_PASSWORD`, optional `AKASHA_SMOKE_REMEMBER_ME`, and cookie-jar reuse. | 2026-06-11 |
 
 Repository ownership and sync notes:
 
@@ -192,6 +219,8 @@ Repository ownership and sync notes:
 - Added `.github/workflows/sync-client-main.yml` on source branch `dev-akasha-core`; after PR merge to source `main`, pushes to source `main` will sync to client `main` using secret `CLIENT_REPO_SYNC_SSH_KEY`.
 - The sync workflow is guarded to run only in source repository `nishanthturnstile/akasha-project`, so the copied workflow should not recursively run in the client repository.
 - Added client-only `.github/workflows/build-client-images.yml`; after sync to `Akasha-TechCatalyst/akasha-project`, client workflow run `27290559364` successfully built and pushed `akasha-api`, `akasha-ingestion-sar`, `akasha-ingestion-worker`, and `akasha-web` to `ghcr.io/akasha-techcatalyst/*` with Git SHA tag `a7f67f47f3b801e5a62dcd053a7d1a54296b144e` and `main` tags.
+- Added detailed Phase 7 execution plan at `docs/impl-plan/infrastructure-selfhosted-coolify-phase7-deployment-artifacts-1.md`.
+- Phase 7 artifact validation on 2026-06-11 passed: `scripts/smoke-test.py` compiles, Compose/workflow YAML parse successfully, Compose has no `build:` blocks or host `ports:`, only `web` has a Coolify FQDN marker, `git diff --check` passes, and edited-file diagnostics report no errors.
 
 ### Implementation Phase 8
 
@@ -199,7 +228,7 @@ Repository ownership and sync notes:
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-069 | Enter staging environment variables in Coolify. Use environment-specific secrets and do not reuse production secrets. | | |
+| TASK-069 | Enter staging environment variables in Coolify. Use environment-specific secrets and do not reuse production secrets. | Partially — pre-Phase 8 UI validation on 2026-06-11 found required variables present and fixed temporary HTTP settings: `PUBLIC_ORIGIN=http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io`, `AUTH_ALLOW_BOOTSTRAP=true`, and `AUTH_COOKIE_SECURE=false`. Remaining blockers: replace `POSTGRES_USER`, `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`, and `MINIO_ROOT_PASSWORD` placeholder values directly in Coolify. | 2026-06-11 |
 | TASK-070 | Deploy `akasha-staging-compose` from `infra/selfhosted/coolify-compose.yml`. | | |
 | TASK-071 | Verify only the `web` service has a public domain or public route. | | |
 | TASK-072 | Run app schema migration inside the `api` container using the repository-supported app migration command. | | |
@@ -209,6 +238,13 @@ Repository ownership and sync notes:
 | TASK-076 | Run authenticated smoke checks against `/api/config`, `/api/sources`, `/api/sources/sentinel-2-l2a/dates`, `/api/layers/default`, one RGB tile request, and one NDVI statistics request. | | |
 | TASK-077 | From outside the host, verify ports `5432`, `9000`, `9001`, `8080`, and `8000` are refused or filtered on the staging public IP. | | |
 | TASK-078 | Perform one staging rollback rehearsal by redeploying a previous known-good image tag and rerunning smoke checks. | | |
+
+Phase 8 pre-deployment notes:
+
+- Temporary HTTP/IP staging route selected for rehearsal. Coolify generated the web route `http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io`, which resolves to the staging public IP and is now used as `PUBLIC_ORIGIN`.
+- Coolify Compose editor validation passed for the self-hosted stack and the saved Compose model contains the real Akasha services with `SERVICE_FQDN_WEB=/`.
+- The service list still shows an orphaned `Akasha Staging Compose Placeholder (alpine:3.20)` child from the earlier placeholder resource. Coolify requires the admin password to delete it; delete only that child service directly in the UI before deploying.
+- Public-route check before deployment shows one public URL, on `web`; private services have no visible public URL.
 
 ### Implementation Phase 9
 
@@ -268,11 +304,11 @@ Repository ownership and sync notes:
 ## 6. Testing
 
 - **TEST-001**: Verify `akasha-control` reboots and keeps the Coolify/build data mount active. **Status**: Passed on 2026-06-10; `/data` remounted from `/dev/sdb` after reboot.
-- **TEST-002**: Verify `akasha-staging` reboots and keeps `/srv/akasha` mounted.
+- **TEST-002**: Verify `akasha-staging` reboots and keeps `/srv/akasha` mounted. **Status**: Passed on 2026-06-10; `/srv/akasha` remounted by UUID after reboot with about `477` GiB available.
 - **TEST-003**: Verify `akasha-production` reboots and keeps `/srv/akasha` mounted before production deployment.
-- **TEST-004**: Verify SSH login works by key and password login is disabled on all VMs. **Status**: Passed for `akasha-control` on 2026-06-10; SSH key login works for `akashaadmin`, password and root SSH login are disabled.
-- **TEST-005**: Verify Docker is installed from official packages and not from Snap on all VMs. **Status**: Passed for `akasha-control` on 2026-06-10; Docker Engine `29.5.3` and Compose plugin `v5.1.4` installed from Docker apt repo, Snap Docker absent, `hello-world` smoke test passed.
-- **TEST-006**: Verify Coolify can control Docker on `akasha-staging`.
+- **TEST-004**: Verify SSH login works by key and password login is disabled on all VMs. **Status**: Passed for `akasha-control` on 2026-06-10; SSH key login works for `akashaadmin`, password and root SSH login are disabled. Passed for `akasha-staging` on 2026-06-10; SSH key login works for `akashaadmin`, password auth is disabled, and root password login is disabled while root public-key SSH remains available for Coolify.
+- **TEST-005**: Verify Docker is installed from official packages and not from Snap on all VMs. **Status**: Passed for `akasha-control` on 2026-06-10; Docker Engine `29.5.3` and Compose plugin `v5.1.4` installed from Docker apt repo, Snap Docker absent, `hello-world` smoke test passed. Passed for `akasha-staging` on 2026-06-10 with the same Docker Engine and Compose plugin versions.
+- **TEST-006**: Verify Coolify can control Docker on `akasha-staging`. **Status**: Passed on 2026-06-11; from `akasha-control`, Coolify's SSH key reached `root@20.219.3.35`, listed Docker containers, and returned Docker Compose `v5.1.4`.
 - **TEST-007**: Verify Coolify can control Docker on `akasha-production` before production deployment.
 - **TEST-008**: Verify GitHub self-hosted runner appears online with labels `self-hosted`, `linux`, `x64`, and `akasha-control`.
 - **TEST-009**: Verify a minimal GitHub Actions job completes on the self-hosted runner.
@@ -282,7 +318,7 @@ Repository ownership and sync notes:
 - **TEST-013**: Verify staging authenticated product checks pass after login.
 - **TEST-014**: Verify one staging RGB tile request returns a PNG response.
 - **TEST-015**: Verify one staging NDVI statistics request returns valid JSON.
-- **TEST-016**: Verify private service ports `5432`, `9000`, `9001`, `8080`, and `8000` are not externally reachable on staging.
+- **TEST-016**: Verify private service ports `5432`, `9000`, `9001`, `8080`, and `8000` are not externally reachable on staging. **Status**: Passed on 2026-06-10 before application deployment; external TCP checks showed all five private ports filtered on `20.219.3.35`. Rechecked on 2026-06-11 after creating the Coolify placeholder resource; all five ports remained closed or filtered.
 - **TEST-017**: Verify staging rollback rehearsal succeeds.
 - **TEST-018**: Verify production deploy uses the exact image tag previously validated in staging.
 - **TEST-019**: Verify production unauthenticated and authenticated smoke checks pass.

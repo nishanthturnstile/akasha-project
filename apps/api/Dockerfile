@@ -20,7 +20,7 @@ RUN apt-get update \
 
 # Install dependencies first for better layer caching.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # Application code + Alembic app-schema baseline/revisions.
 COPY app ./app

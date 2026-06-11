@@ -84,6 +84,12 @@ app = FastAPI(
         "plot, auth, operations, reporting, and raster-statistics APIs."
     ),
     lifespan=lifespan,
+    # The public gateway only proxies /api/* to this service, so the OpenAPI
+    # schema and interactive docs must live under that prefix to be reachable
+    # at the same origin (e.g. http://<host>/api/docs).
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 app.add_middleware(

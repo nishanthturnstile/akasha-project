@@ -178,7 +178,6 @@ services:
   postgis:
     platform: linux/amd64
     image: postgis/postgis:16-3.5
-    platform: linux/amd64
     environment:
       POSTGRES_USER: "${POSTGRES_USER}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
@@ -257,7 +256,6 @@ services:
     build:
       context: ../..
       dockerfile: services/ingestion-sar/Dockerfile
-    platform: linux/amd64
     image: akasha-ingestion-sar:s1
     environment:
       PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

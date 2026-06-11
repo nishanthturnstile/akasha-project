@@ -53,6 +53,7 @@ from .raster.errors import (
 from .reports import router as reports_router
 from .risk import router as risk_router
 from .scout_tasks import router as scout_tasks_router
+from .seasons import router as seasons_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -256,6 +257,9 @@ app.include_router(operations_router)
 app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
+
+# --- Seasons API ------------------------------------------------------------
+app.include_router(seasons_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)

@@ -35,7 +35,7 @@ services:
     environment:
       APP_ENV: "${APP_ENV:-production}"
       PORT: "8000"
-      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD_URLENCODED}@postgis:5432/${POSTGRES_DB}"
       STAC_API_URL: "http://stac-api:8080"
       TITILER_URL: "http://titiler:8000"
       S3_ENDPOINT_URL: "http://minio:9000"
@@ -185,7 +185,7 @@ services:
   ingestion-worker:
     image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-ingestion-worker:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
     environment:
-      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD_URLENCODED}@postgis:5432/${POSTGRES_DB}"
       STAC_API_URL: "http://stac-api:8080"
       S3_ENDPOINT_URL: "http://minio:9000"
       S3_ACCESS_KEY: "${MINIO_ROOT_USER}"

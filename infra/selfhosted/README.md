@@ -35,6 +35,18 @@ sudo mkdir -p /srv/akasha/postgis /srv/akasha/minio /srv/akasha/data/raw /srv/ak
 8. Do not assign public domains to private services.
 9. Deploy the service stack only after the required env values are present.
 
+Postgres password note: `POSTGRES_PASSWORD` is passed directly to the Postgres
+container, while `POSTGRES_PASSWORD_URLENCODED` is used inside `DATABASE_URL` for
+`api` and `ingestion-worker`. If the password contains URL-special characters
+such as `@`, `/`, `:`, `#`, `%`, `?`, or `&`, URL-encode it before setting
+`POSTGRES_PASSWORD_URLENCODED`.
+
+Generate the encoded value locally without printing the password in chat:
+
+```bash
+python -c "import urllib.parse, getpass; print(urllib.parse.quote(getpass.getpass('Postgres password: '), safe=''))"
+```
+
 For temporary HTTP public-IP rehearsal, set:
 
 ```text

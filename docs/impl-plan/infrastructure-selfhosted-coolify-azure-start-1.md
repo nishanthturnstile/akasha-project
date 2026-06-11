@@ -218,7 +218,7 @@ Repository ownership and sync notes:
 - Client `main` is aligned to source `origin/main` at commit `2df880f98bc422cddec0ca8f76eb97ff9aeb1825`; the earlier feature-branch snapshot was corrected.
 - Added `.github/workflows/sync-client-main.yml` on source branch `dev-akasha-core`; after PR merge to source `main`, pushes to source `main` will sync to client `main` using secret `CLIENT_REPO_SYNC_SSH_KEY`.
 - The sync workflow is guarded to run only in source repository `nishanthturnstile/akasha-project`, so the copied workflow should not recursively run in the client repository.
-- Added client-only `.github/workflows/build-client-images.yml`; after sync to `Akasha-TechCatalyst/akasha-project`, client workflow run `27290559364` successfully built and pushed `akasha-api`, `akasha-ingestion-sar`, `akasha-ingestion-worker`, and `akasha-web` to `ghcr.io/akasha-techcatalyst/*` with Git SHA tag `a7f67f47f3b801e5a62dcd053a7d1a54296b144e` and `main` tags.
+- Added client-only `.github/workflows/build-client-images.yml`; after sync to `Akasha-TechCatalyst/akasha-project`, client workflow run `27290559364` successfully built and pushed `akasha-api`, `akasha-ingestion-sar`, `akasha-ingestion-worker`, and `akasha-web` to `ghcr.io/akasha-techcatalyst/*` with Git SHA tag `a7f67f47f3b801e5a62dcd053a7d1a54296b144e` and `main` tags. This standalone workflow was later removed on 2026-06-11 to avoid duplicate builds; `.github/workflows/deploy-staging.yml` is now the single staging path that builds, pushes, patches Coolify, and deploys.
 - Added detailed Phase 7 execution plan at `docs/impl-plan/infrastructure-selfhosted-coolify-phase7-deployment-artifacts-1.md`.
 - Phase 7 artifact validation on 2026-06-11 passed: `scripts/smoke-test.py` compiles, Compose/workflow YAML parse successfully, Compose has no `build:` blocks or host `ports:`, only `web` has a Coolify FQDN marker, `git diff --check` passes, and edited-file diagnostics report no errors.
 
@@ -228,23 +228,28 @@ Repository ownership and sync notes:
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-069 | Enter staging environment variables in Coolify. Use environment-specific secrets and do not reuse production secrets. | Partially — pre-Phase 8 UI validation on 2026-06-11 found required variables present and fixed temporary HTTP settings: `PUBLIC_ORIGIN=http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io`, `AUTH_ALLOW_BOOTSTRAP=true`, and `AUTH_COOKIE_SECURE=false`. Remaining blockers: replace `POSTGRES_USER`, `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`, and `MINIO_ROOT_PASSWORD` placeholder values directly in Coolify. | 2026-06-11 |
-| TASK-070 | Deploy `akasha-staging-compose` from `infra/selfhosted/coolify-compose.yml`. | | |
+| TASK-069 | Enter staging environment variables in Coolify. Use environment-specific secrets and do not reuse production secrets. | Yes for staging pre-deploy — UI validation on 2026-06-11 found all expected staging variables present, non-blank, and without `CHANGE_ME` placeholders. Temporary HTTP settings are set to `PUBLIC_ORIGIN=http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io`, `AUTH_ALLOW_BOOTSTRAP=true`, and `AUTH_COOKIE_SECURE=false`. | 2026-06-11 |
+| TASK-070 | Deploy `akasha-staging-compose` from `infra/selfhosted/coolify-compose.yml`. | Yes — after GHCR access was fixed on staging, Coolify deployed the stack and reported `Running (healthy)`. Docker shows `web`, `api`, `titiler`, `stac-api`, `postgis`, and `minio` running healthy; one-shot `ingestion-worker` and `ingestion-sar` exited `0` as expected. | 2026-06-11 |
 | TASK-071 | Verify only the `web` service has a public domain or public route. | | |
-| TASK-072 | Run app schema migration inside the `api` container using the repository-supported app migration command. | | |
+| TASK-072 | Run app schema migration inside the `api` container using the repository-supported app migration command. | Yes — after adding `POSTGRES_PASSWORD_URLENCODED` and redeploying, `docker exec api-s6f7s03fv8dhnxx8ld6a8nuh python -m app.cli migrate` completed successfully with `app-schema Alembic upgrade complete`. | 2026-06-11 |
 | TASK-073 | Run catalog/storage seed or verification commands from the `ingestion-worker` container only when required for the staging dataset. | | |
 | TASK-074 | Bootstrap the first admin user only if `AUTH_MODE=enabled` and no password users exist. Set `AUTH_ALLOW_BOOTSTRAP=false` after bootstrap. | | |
-| TASK-075 | Run unauthenticated smoke checks against `/health`, `/api/health`, and `/api/_skeleton/services`. | | |
-| TASK-076 | Run authenticated smoke checks against `/api/config`, `/api/sources`, `/api/sources/sentinel-2-l2a/dates`, `/api/layers/default`, one RGB tile request, and one NDVI statistics request. | | |
-| TASK-077 | From outside the host, verify ports `5432`, `9000`, `9001`, `8080`, and `8000` are refused or filtered on the staging public IP. | | |
+| TASK-075 | Run unauthenticated smoke checks against `/health`, `/api/health`, and `/api/_skeleton/services`. | Yes — checks passed on `http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io` with HTTP `200` for all three endpoints. | 2026-06-11 |
+| TASK-076 | Run authenticated smoke checks against `/api/config`, `/api/sources`, `/api/sources/sentinel-2-l2a/dates`, `/api/layers/default`, one RGB tile request, and one NDVI statistics request. | Pending first admin/bootstrap — unauthenticated product checks correctly return HTTP `401` because `AUTH_MODE=enabled`; run `scripts/smoke-test.py --login` after creating the first staging user. | 2026-06-11 |
+| TASK-077 | From outside the host, verify ports `5432`, `9000`, `9001`, `8080`, and `8000` are refused or filtered on the staging public IP. | Yes — rechecked after staging deployment on 2026-06-11; all five private ports remained closed or filtered on `20.219.3.35`. | 2026-06-11 |
 | TASK-078 | Perform one staging rollback rehearsal by redeploying a previous known-good image tag and rerunning smoke checks. | | |
 
 Phase 8 pre-deployment notes:
 
 - Temporary HTTP/IP staging route selected for rehearsal. Coolify generated the web route `http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io`, which resolves to the staging public IP and is now used as `PUBLIC_ORIGIN`.
 - Coolify Compose editor validation passed for the self-hosted stack and the saved Compose model contains the real Akasha services with `SERVICE_FQDN_WEB=/`.
-- The service list still shows an orphaned `Akasha Staging Compose Placeholder (alpine:3.20)` child from the earlier placeholder resource. Coolify requires the admin password to delete it; delete only that child service directly in the UI before deploying.
-- Public-route check before deployment shows one public URL, on `web`; private services have no visible public URL.
+- The orphaned `Akasha Staging Compose Placeholder (alpine:3.20)` child from the earlier placeholder resource was deleted by the operator and is no longer present in the service list.
+- Public-route check before deployment shows exactly one public `sslip.io` URL, on `web`; private services have no visible public URL.
+- Environment-variable check validated 43 expected staging variables: none missing, none blank, no `CHANGE_ME` placeholders, and expected temporary HTTP values match.
+- GHCR access was later fixed on staging; image pre-pull succeeded for all Akasha and upstream images.
+- First staging deploy succeeded and reached healthy status. App schema migration succeeded after `POSTGRES_PASSWORD_URLENCODED` was added and the stack redeployed.
+- Product smoke checks require authentication on staging. The unauthenticated smoke script passed Slice 0 health endpoints and returned expected HTTP `401` for product endpoints until the first staging user is bootstrapped and `--login` smoke mode can be used.
+- Post-deploy unauthenticated health checks passed for `/health`, `/api/health`, and `/api/_skeleton/services`; private service ports stayed externally closed/filtered.
 
 ### Implementation Phase 9
 

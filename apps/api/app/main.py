@@ -42,6 +42,7 @@ from .data_manager import router as data_manager_router
 from .field_analytics import router as field_analytics_router
 from .field_exports import router as field_exports_router
 from .field_groups import router as field_groups_router
+from .fields import router as fields_router
 from .operations import router as operations_router
 from .plots import router as plots_router
 from .product import router as product_router
@@ -263,6 +264,7 @@ app.include_router(operations_router)
 app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
+app.include_router(fields_router)
 
 # --- Seasons API ------------------------------------------------------------
 app.include_router(seasons_router)

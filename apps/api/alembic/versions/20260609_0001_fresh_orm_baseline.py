@@ -28,6 +28,7 @@ UPDATED_AT_TABLES = (
     "users",
     "teams",
     "notifications",
+    "fields",
 )
 
 

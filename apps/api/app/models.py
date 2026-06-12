@@ -399,6 +399,53 @@ class FieldGroupMember(Base):
     )
 
 
+class Field(UuidPkMixin, TimestampMixin, Base):
+    __tablename__ = "fields"
+    __table_args__ = (
+        CheckConstraint("length(btrim(name)) > 0", name="fields_name_not_blank"),
+        CheckConstraint(
+            "GeometryType(geometry) IN ('POLYGON', 'MULTIPOLYGON') AND ST_IsValid(geometry)",
+            name="fields_geometry_type_chk",
+        ),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    area_ha: Mapped[float | None] = mapped_column(Float)
+    geometry: Mapped[Any] = mapped_column(
+        Geometry(geometry_type="GEOMETRY", srid=4326, spatial_index=False),
+        nullable=False,
+    )
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.field_groups.id", ondelete="SET NULL"),
+    )
+
+
+class FieldSeason(UuidPkMixin, Base):
+    __tablename__ = "field_seasons"
+    __table_args__ = (
+        UniqueConstraint("season_id", "field_id", name="field_seasons_unique_pair"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    field_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.fields.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    season_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.seasons.season_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+
 class Attachment(UuidPkMixin, TimestampMixin, OwnerTeamMixin, Base):
     __tablename__ = "attachments"
     __table_args__ = (
@@ -579,3 +626,7 @@ Index("scout_tasks_status_idx", ScoutTask.status)
 Index("scout_tasks_team_idx", ScoutTask.team_id)
 Index("uploaded_datasets_created_idx", UploadedDataset.created_at.desc())
 Index("uploaded_datasets_team_idx", UploadedDataset.team_id)
+Index("fields_geometry_gix", Field.geometry, postgresql_using="gist")
+Index("fields_user_idx", Field.user_id)
+Index("field_seasons_field_idx", FieldSeason.field_id)
+Index("field_seasons_season_idx", FieldSeason.season_id)

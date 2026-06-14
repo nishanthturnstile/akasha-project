@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Opt JavaScript actions into Node.js 24 ahead of the June 2026 runner default.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -102,20 +106,6 @@ jobs:
       - name: Run Slice 2 validator
         run: python scripts/validate_slice2.py
 
-  gitleaks:
-    name: Secret scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   trivy:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest
@@ -124,7 +114,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .

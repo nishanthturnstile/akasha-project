@@ -95,6 +95,26 @@ class Settings:
         default_factory=lambda: _get_int("MAX_REQUEST_BODY_BYTES", 1_048_576)
     )
 
+    # Temporary staging diagnostic for Bhoonidhi ResourceSat BOA product inspection.
+    # Keep disabled by default; secrets are server-side only and never browser-visible.
+    bhoonidhi_diagnostics_enabled: bool = field(
+        default_factory=lambda: _get_bool("BHOONIDHI_DIAGNOSTICS_ENABLED", False)
+    )
+    bhoonidhi_user_id: str = field(default_factory=lambda: _get("BHOONIDHI_USER_ID", ""))
+    bhoonidhi_password: str = field(default_factory=lambda: _get("BHOONIDHI_PASSWORD", ""))
+    bhoonidhi_api_base: str = field(
+        default_factory=lambda: _get("BHOONIDHI_API_BASE", "https://bhoonidhi-api.nrsc.gov.in")
+    )
+    bhoonidhi_download_root: str = field(
+        default_factory=lambda: _get("BHOONIDHI_DOWNLOAD_ROOT", "/tmp/akasha-bhoonidhi-diagnostics")
+    )
+    bhoonidhi_download_timeout_seconds: int = field(
+        default_factory=lambda: _get_int("BHOONIDHI_DOWNLOAD_TIMEOUT_SECONDS", 300)
+    )
+    bhoonidhi_max_download_bytes: int = field(
+        default_factory=lambda: _get_int("BHOONIDHI_MAX_DOWNLOAD_BYTES", 5_368_709_120)
+    )
+
     # Phase 12 auth/team foundations. AUTH_MODE=disabled requires explicit local opt-in.
     auth_mode: str = field(default_factory=lambda: _get("AUTH_MODE", "disabled"))
     auth_allow_disabled: bool = field(

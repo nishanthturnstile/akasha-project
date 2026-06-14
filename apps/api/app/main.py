@@ -37,11 +37,13 @@ from starlette.types import ExceptionHandler
 from . import skeleton
 from .account import router as account_router
 from .auth_routes import router as auth_router
+from .bhoonidhi_diagnostics import router as bhoonidhi_diagnostics_router
 from .config import settings
 from .data_manager import router as data_manager_router
 from .field_analytics import router as field_analytics_router
 from .field_exports import router as field_exports_router
 from .field_groups import router as field_groups_router
+from .fields import router as fields_router
 from .operations import router as operations_router
 from .plots import router as plots_router
 from .product import router as product_router
@@ -53,6 +55,7 @@ from .raster.errors import (
 from .reports import router as reports_router
 from .risk import router as risk_router
 from .scout_tasks import router as scout_tasks_router
+from .seasons import router as seasons_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,6 +86,12 @@ app = FastAPI(
         "plot, auth, operations, reporting, and raster-statistics APIs."
     ),
     lifespan=lifespan,
+    # The public gateway only proxies /api/* to this service, so the OpenAPI
+    # schema and interactive docs must live under that prefix to be reachable
+    # at the same origin (e.g. http://<host>/api/docs).
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 app.add_middleware(
@@ -256,6 +265,13 @@ app.include_router(operations_router)
 app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
+app.include_router(fields_router)
+
+# --- Temporary staging diagnostics ----------------------------------------
+app.include_router(bhoonidhi_diagnostics_router)
+
+# --- Seasons API ------------------------------------------------------------
+app.include_router(seasons_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)

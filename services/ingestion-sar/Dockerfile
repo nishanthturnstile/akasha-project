@@ -35,7 +35,7 @@ RUN curl --fail --location --retry 3 --retry-delay 5 --progress-bar \
     && rm -f /tmp-snap-installer.sh \
     && mkdir -p "${SNAP_USER_DIR}" /app/data /app/scripts
 
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --prefer-binary \
       "numpy>=1.26,<3" \
       rasterio==1.4.3 \
       rio-cogeo==5.4.2

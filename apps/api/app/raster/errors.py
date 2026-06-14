@@ -133,6 +133,14 @@ def plots_backend_unavailable(message: str, **details: Any) -> AkashaError:
     return AkashaError("PLOTS_BACKEND_UNAVAILABLE", message, 503, details or None)
 
 
+def seasons_backend_unavailable(message: str, **details: Any) -> AkashaError:
+    """503: the seasons storage is unreachable from this environment."""
+    return AkashaError("SEASONS_BACKEND_UNAVAILABLE", message, 503, details or None)
+
+def field_backend_unavailable(message: str, **details: Any) -> AkashaError:
+    """503: the field storage is unreachable from this environment."""
+    return AkashaError("FIELD_BACKEND_UNAVAILABLE", message, 503, details or None)
+
 async def akasha_error_handler(_: Request, exc: AkashaError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
 

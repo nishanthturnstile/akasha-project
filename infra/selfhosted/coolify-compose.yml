@@ -57,6 +57,13 @@ services:
       INDEX_REQUEST_TIMEOUT_SECONDS: "${INDEX_REQUEST_TIMEOUT_SECONDS:-30}"
       RATE_LIMIT_INDEX_PER_MINUTE: "${RATE_LIMIT_INDEX_PER_MINUTE:-30}"
       MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1048576}"
+      BHOONIDHI_DIAGNOSTICS_ENABLED: "${BHOONIDHI_DIAGNOSTICS_ENABLED:-false}"
+      BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
+      BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
+      BHOONIDHI_API_BASE: "${BHOONIDHI_API_BASE:-https://bhoonidhi-api.nrsc.gov.in}"
+      BHOONIDHI_DOWNLOAD_ROOT: "${BHOONIDHI_DOWNLOAD_ROOT:-/srv/akasha/bhoonidhi-diagnostics}"
+      BHOONIDHI_DOWNLOAD_TIMEOUT_SECONDS: "${BHOONIDHI_DOWNLOAD_TIMEOUT_SECONDS:-300}"
+      BHOONIDHI_MAX_DOWNLOAD_BYTES: "${BHOONIDHI_MAX_DOWNLOAD_BYTES:-5368709120}"
       CORS_ALLOWED_ORIGINS: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN must be set to the exact public web origin}"
       AUTH_MODE: "${AUTH_MODE:-enabled}"
       AUTH_ALLOW_DISABLED: "${AUTH_ALLOW_DISABLED:-false}"
@@ -71,6 +78,8 @@ services:
       AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR: "${AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR:-5}"
     expose:
       - "8000"
+    volumes:
+      - /srv/akasha/bhoonidhi-diagnostics:/srv/akasha/bhoonidhi-diagnostics
     depends_on:
       postgis:
         condition: service_healthy

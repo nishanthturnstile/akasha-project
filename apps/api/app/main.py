@@ -37,6 +37,7 @@ from starlette.types import ExceptionHandler
 from . import skeleton
 from .account import router as account_router
 from .auth_routes import router as auth_router
+from .bhoonidhi_diagnostics import router as bhoonidhi_diagnostics_router
 from .config import settings
 from .data_manager import router as data_manager_router
 from .field_analytics import router as field_analytics_router
@@ -265,6 +266,9 @@ app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
 app.include_router(fields_router)
+
+# --- Temporary staging diagnostics ----------------------------------------
+app.include_router(bhoonidhi_diagnostics_router)
 
 # --- Seasons API ------------------------------------------------------------
 app.include_router(seasons_router)

@@ -157,6 +157,11 @@ def test_search_manifest_filters_online_positive_overlap():
                 "properties": {"Online": "Y"},
             },
             {
+                "id": "online-overlap-reversed-lat-bbox",
+                "bbox": [77.5, 13.5, 78.5, 12.5],
+                "properties": {"Online": "Y"},
+            },
+            {
                 "id": "offline-overlap",
                 "bbox": [77.5, 12.5, 78.5, 13.5],
                 "properties": {"Online": "N"},
@@ -169,8 +174,12 @@ def test_search_manifest_filters_online_positive_overlap():
         ],
     )
 
-    assert manifest["selection"]["selected_product_ids"] == ["online-overlap"]
+    assert manifest["selection"]["selected_product_ids"] == [
+        "online-overlap",
+        "online-overlap-reversed-lat-bbox",
+    ]
     assert manifest["candidates"][0]["overlap_area"] > 0
+    assert manifest["candidates"][1]["bbox"] == [77.5, 12.5, 78.5, 13.5]
 
 
 def test_worker_bhoonidhi_search_writes_manifest(monkeypatch, tmp_path):

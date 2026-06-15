@@ -338,6 +338,20 @@ def _bbox_intersection(a: list[float], b: list[float]) -> list[float] | None:
     return [minx, miny, maxx, maxy]
 
 
+def _normalise_bbox(value: Any) -> list[float] | None:
+    if not isinstance(value, list | tuple) or len(value) != 4:
+        return None
+    try:
+        west, south_or_north, east, north_or_south = [float(item) for item in value]
+    except (TypeError, ValueError):
+        return None
+    south = min(south_or_north, north_or_south)
+    north = max(south_or_north, north_or_south)
+    if west >= east:
+        return None
+    return [west, south, east, north]
+
+
 def _bbox_area(bbox: list[float] | None) -> float:
     if not bbox:
         return 0.0
@@ -347,7 +361,7 @@ def _bbox_area(bbox: list[float] | None) -> float:
 def candidate_from_item(item: dict[str, Any], aoi_bbox: list[float] | None) -> dict[str, Any]:
     raw_props = item.get("properties")
     props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
-    bbox = item.get("bbox") if isinstance(item.get("bbox"), list) else None
+    bbox = _normalise_bbox(item.get("bbox") or props.get("bbox") or props.get("BoundingBox"))
     overlap_bbox = _bbox_intersection(bbox, aoi_bbox) if bbox and aoi_bbox else None
     item_id = str(item.get("id") or props.get("id") or "")
     return {

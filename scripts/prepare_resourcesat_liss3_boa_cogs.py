@@ -269,8 +269,8 @@ def selected_product_from_manifest_entry(
     acquisition_datetime = (
         acquisition_datetime_from_text(acquisition_datetime) or acquisition_datetime
     )
-    path = _entry_value(entry, "path", "path_id", "pathId")
-    row = _entry_value(entry, "row", "row_id", "rowId")
+    path = _entry_value(entry, "path", "Path", "path_id", "pathId")
+    row = _entry_value(entry, "row", "Row", "row_id", "rowId")
     bbox = _entry_value(entry, "bbox")
     geometry = _entry_value(entry, "geometry")
     return SelectedProduct(

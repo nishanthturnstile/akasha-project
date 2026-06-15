@@ -87,9 +87,11 @@ def test_selection_manifest_accepts_bhoonidhi_download_candidates(tmp_path: Path
                         "item_id": "RS_PRODUCT",
                         "downloaded_path": downloaded.as_posix(),
                         "datetime": "2026-03-19T00:00:00Z",
-                        "path": "99",
-                        "row": "65",
                         "bbox": [77.0, 11.0, 78.0, 12.0],
+                        "properties": {
+                            "Path": "99",
+                            "Row": "65",
+                        },
                     }
                 ],
             }

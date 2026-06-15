@@ -228,6 +228,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    healthcheck:
+      disable: true
     restart: "no"
 
   ingestion-sar:
@@ -249,4 +251,6 @@ services:
     volumes:
       - /srv/akasha/data:/app/data
       - /srv/akasha/snap-cache:/snap-cache
+    healthcheck:
+      disable: true
     restart: "no"

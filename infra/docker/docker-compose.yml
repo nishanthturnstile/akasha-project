@@ -257,6 +257,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    healthcheck:
+      disable: true
     # One-shot: prints config and exits. Run seeding/verify on demand, e.g.:
     #   docker compose run --rm ingestion-worker python worker.py seed
     #   docker compose run --rm ingestion-worker python worker.py verify
@@ -284,6 +286,8 @@ services:
       - ../../data:/app/data
       - ../../scripts:/app/scripts:ro
       - snap_cache:/snap-cache
+    healthcheck:
+      disable: true
     # One-shot SAR preprocessing runtime. Example:
     #   docker compose run --rm ingestion-sar python scripts/prepare_sentinel1_grd_cogs.py --selection-manifest data/raw/sentinel-1-grd/coverage_manifest.json --overwrite
     restart: "no"

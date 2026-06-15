@@ -104,6 +104,27 @@ def _s1_manifest() -> dict:
     }
 
 
+def _eos04_sar_manifest() -> dict:
+    manifest = _s1_manifest()
+    manifest.update(
+        {
+            "source_id": "eos-04-sar-mrs-l2b",
+            "collection": "EOS-04_SAR-MRS_L2B",
+            "product_id": "EOS04_SAMPLE_SAR_MRS_L2B_20260427",
+            "platform": "eos-04",
+            "product_level": "L2B",
+            "sar:instrument_mode": "MRS",
+            "product:type": "SAR-MRS_L2B",
+            "sar:frequency_band": "C",
+            "sar:polarizations": ["HH", "HV"],
+        }
+    )
+    manifest["outputs"]["backscatter"]["resolution"] = [25, 25]
+    manifest["outputs"]["backscatter"]["width"] = 4096
+    manifest["outputs"]["backscatter"]["height"] = 4096
+    return manifest
+
+
 def _resourcesat_manifest() -> dict:
     return {
         "source_id": "resourcesat-2a-liss3-boa",
@@ -287,6 +308,17 @@ def test_sentinel1_scene_identity_uses_manifest_orbit_fields_and_collision_safe_
         "sentinel-1-grd/2026-04-27/42/" f"{scene.scene_component}/backscatter.tif"
     )
     assert scene.item_id == f"sentinel-1-grd_42_{scene.scene_component}"
+
+
+def test_eos04_sar_scene_identity_accepts_bhoonidhi_collection_alias() -> None:
+    manifest = _eos04_sar_manifest()
+    manifest.pop("source_id")
+
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+
+    assert scene.source_id == "eos-04-sar-mrs-l2b"
+    assert scene.scene_key.startswith("eos-04-sar-mrs-l2b:eos-04:MRS:SAR-MRS_L2B")
+    assert scene.backscatter_key.startswith("eos-04-sar-mrs-l2b/2026-04-27/42/")
 
 
 def test_sentinel1_scene_identity_accepts_prepare_orbit_direction_alias() -> None:
@@ -497,6 +529,24 @@ def test_build_sentinel1_stac_item_emits_sar_metadata_and_backscatter_asset() ->
     assert item["assets"]["backscatter"]["raster:bands"][0]["unit"] == "dB"
     assert "eo:bands" not in item["assets"]["backscatter"]
     assert "scl" not in item["assets"]
+
+
+def test_build_eos04_sar_stac_item_emits_sar_safe_metadata() -> None:
+    item = catalog.build_stac_item_from_prepare_manifest(_eos04_sar_manifest())
+
+    assert item["collection"] == "eos-04-sar-mrs-l2b"
+    assert item["properties"]["constellation"] == "eos-04"
+    assert item["properties"]["instruments"] == ["sar"]
+    assert item["properties"]["sar:instrument_mode"] == "MRS"
+    assert item["properties"]["sar:frequency_band"] == "C"
+    assert item["properties"]["sar:polarizations"] == ["HH", "HV"]
+    assert item["properties"]["akasha:date_metrics_kind"] == "radar"
+    assert item["assets"]["backscatter"]["href"].startswith(
+        "s3://akasha-cogs/eos-04-sar-mrs-l2b/"
+    )
+    assert item["assets"]["backscatter"]["raster:bands"][0]["unit"] == "dB"
+    assert "eo:bands" not in item["assets"]["backscatter"]
+    assert "analytic" not in item["assets"]
 
 
 def test_build_stac_item_transforms_projected_output_bounds_to_wgs84() -> None:

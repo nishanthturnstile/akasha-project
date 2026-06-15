@@ -77,6 +77,17 @@ def test_source_collection_supports_awifs_phase5_source():
     )
 
 
+def test_source_collection_supports_phase6_sar_sources():
+    assert (
+        bhoonidhi.source_collection("eos-04-sar-mrs-l2b")
+        == bhoonidhi.EOS04_SAR_BHOONIDHI_COLLECTION
+    )
+    assert (
+        bhoonidhi.source_collection("nisar-ssar-beta-gcov")
+        == bhoonidhi.NISAR_GCOV_BHOONIDHI_COLLECTION
+    )
+
+
 def test_client_reuses_token_and_retries_search_429():
     opener = FakeOpener(
         [

@@ -163,6 +163,30 @@ RESOURCESAT_BOA_SOURCE_META = {
     },
 }
 
+SAR_SOURCE_META = {
+    config.SENTINEL1_COLLECTION_ID: {
+        "constellation": "sentinel-1",
+        "instruments": ["c-sar"],
+        "frequency_band": "C",
+        "default_gsd": 10,
+        "title": "Calibrated terrain-corrected SAR backscatter COG (dB)",
+    },
+    config.EOS04_SAR_COLLECTION_ID: {
+        "constellation": "eos-04",
+        "instruments": ["sar"],
+        "frequency_band": "C",
+        "default_gsd": None,
+        "title": "EOS-04 SAR backscatter COG (dB)",
+    },
+    config.NISAR_GCOV_COLLECTION_ID: {
+        "constellation": "nisar",
+        "instruments": ["s-sar"],
+        "frequency_band": "S",
+        "default_gsd": None,
+        "title": "NISAR S-SAR GCOV backscatter COG (dB)",
+    },
+}
+
 
 def _require_dsn() -> str:
     if not config.DATABASE_URL:
@@ -442,8 +466,8 @@ def _properties(manifest: dict[str, Any]) -> dict[str, Any]:
 def build_stac_item_from_prepare_manifest(manifest: dict[str, Any]) -> dict:
     """Create a STAC item for one prepared manifest using dynamic object keys."""
     scene = SceneIdentity.from_prepare_manifest(manifest)
-    if scene.source_id == config.SENTINEL1_COLLECTION_ID:
-        return _build_sentinel1_stac_item(manifest, scene)
+    if scene.source_id in config.SAR_COLLECTION_IDS:
+        return _build_sar_stac_item(manifest, scene)
     if scene.source_id in config.RESOURCESAT_BOA_COLLECTION_IDS:
         return _build_resourcesat_boa_stac_item(manifest, scene)
     return _build_sentinel2_stac_item(manifest, scene)
@@ -748,7 +772,7 @@ def _as_list(value: Any) -> list[Any]:
     return [value]
 
 
-def _sentinel1_polarizations(manifest: dict[str, Any], meta: dict[str, Any]) -> list[str]:
+def _sar_polarizations(manifest: dict[str, Any], meta: dict[str, Any]) -> list[str]:
     props = _properties(manifest)
     value = _first(
         manifest.get("sar:polarizations"),
@@ -785,7 +809,17 @@ def _backscatter_raster_bands(
     return bands
 
 
-def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+def _build_sar_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+    source_meta = SAR_SOURCE_META.get(
+        scene.source_id,
+        {
+            "constellation": scene.source_id,
+            "instruments": ["sar"],
+            "frequency_band": "unknown",
+            "default_gsd": None,
+            "title": "SAR backscatter COG (dB)",
+        },
+    )
     props = _properties(manifest)
     backscatter = _output_meta(manifest, "backscatter")
     bbox = _bbox_from_manifest(manifest, backscatter)
@@ -794,17 +828,25 @@ def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -
     shape = _shape(backscatter)
     transform = _transform(backscatter)
     proj_bbox = list(_first(backscatter.get("proj:bbox"), backscatter.get("bounds"), bbox))
-    gsd = _first(manifest.get("gsd"), props.get("gsd"), backscatter.get("gsd"), 10)
-    polarizations = _sentinel1_polarizations(manifest, backscatter)
+    gsd = _first(
+        manifest.get("gsd"),
+        props.get("gsd"),
+        backscatter.get("gsd"),
+        source_meta["default_gsd"],
+    )
+    polarizations = _sar_polarizations(manifest, backscatter)
 
     item_props: dict[str, Any] = {
         "datetime": scene.acquisition_datetime,
         "platform": scene.platform,
-        "constellation": "sentinel-1",
-        "instruments": ["c-sar"],
+        "constellation": source_meta["constellation"],
+        "instruments": _first(props.get("instruments"), source_meta["instruments"]),
         "gsd": gsd,
         "sar:instrument_mode": scene.instrument_mode,
-        "sar:frequency_band": _first(props.get("sar:frequency_band"), "C"),
+        "sar:frequency_band": _first(
+            props.get("sar:frequency_band"),
+            source_meta["frequency_band"],
+        ),
         "sar:polarizations": polarizations,
         "sar:product_type": scene.product_type,
         "product:type": scene.product_type,
@@ -840,12 +882,13 @@ def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -
     backscatter_asset: dict[str, Any] = {
         "href": f"s3://{config.BUCKET}/{scene.backscatter_key}",
         "type": "image/tiff; application=geotiff; profile=cloud-optimized",
-        "title": "Calibrated terrain-corrected SAR backscatter COG (dB)",
+        "title": source_meta["title"],
         "roles": ["data", "backscatter"],
-        "gsd": gsd,
         "sar:polarizations": polarizations,
         "raster:bands": _backscatter_raster_bands(backscatter, polarizations),
     }
+    if gsd is not None:
+        backscatter_asset["gsd"] = gsd
     if epsg is not None:
         backscatter_asset["proj:epsg"] = epsg
     if shape:

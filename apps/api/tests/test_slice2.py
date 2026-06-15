@@ -305,6 +305,8 @@ def test_phase5_gated_collection_contracts_are_loadable():
         "resourcesat-2a-liss4-mx70-l2",
         "eos-06-ocm-lac-ndvi-8day-360m",
         "irs-1c-liss3-archive",
+        "eos-04-sar-mrs-l2b",
+        "nisar-ssar-beta-gcov",
     ):
         collection = catalog.get_collection(source_id)
         assert collection["id"] == source_id
@@ -315,6 +317,11 @@ def test_phase5_gated_collection_contracts_are_loadable():
     assert eos["akasha:supported_indices"] == []
     irs = catalog.get_collection("irs-1c-liss3-archive")
     assert irs["akasha:refresh_policy"] == "Archive only; no scheduled refresh."
+    eos04 = catalog.get_collection("eos-04-sar-mrs-l2b")
+    assert eos04["akasha:kind"] == "sar"
+    assert eos04["akasha:supported_indices"] == []
+    nisar = catalog.get_collection("nisar-ssar-beta-gcov")
+    assert nisar["akasha:default_display_mode"] == "VV_GRAYSCALE"
 
 
 def test_dates_endpoint_returns_real_scene():

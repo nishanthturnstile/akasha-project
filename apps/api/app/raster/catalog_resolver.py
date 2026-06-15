@@ -46,6 +46,7 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "maskAsset": "scl",
         "maskMethod": "Sentinel-2 Scene Classification Layer (SCL).",
+        "excludedMaskClasses": [0, 1, 2, 3, 7, 8, 9, 10, 11],
         "displayModes": ["RGB"],
         "defaultDisplayMode": "RGB",
         "description": "Optical Sentinel-2 L2A surface reflectance with cloud/SCL masking.",
@@ -69,6 +70,7 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
             "SWIR1": "BAND5",
         },
         "maskAsset": "mask",
+        "excludedMaskClasses": [0, 2, 3],
         "displayModes": ["FCC"],
         "defaultDisplayMode": "FCC",
         "description": (
@@ -137,6 +139,7 @@ _SOURCE_REGISTRY.update(
             "refreshPolicy": "Gated until AWiFS BOA download and COG prep are validated.",
             "limitations": ["Registered for roadmap visibility; no composites are loaded yet."],
             "maskMethod": "Pending Akasha mask validation.",
+            "excludedMaskClasses": [0, 2, 3],
             "availableMaskOptions": ["clouds", "cloudShadows"],
             "metricsProvisional": True,
             "availabilityStatus": "gated",
@@ -164,6 +167,7 @@ _SOURCE_REGISTRY.update(
             "refreshPolicy": "Gated until access, calibration, and band metadata are validated.",
             "limitations": ["FCC/indices depend on downloaded product band metadata."],
             "maskMethod": "Pending Akasha mask validation.",
+            "excludedMaskClasses": [0, 2, 3],
             "availableMaskOptions": ["clouds", "cloudShadows"],
             "metricsProvisional": True,
             "availabilityStatus": "gated",
@@ -734,6 +738,7 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
         "bandNames": band_names,
         "bandRoleMapping": band_role_mapping,
         "maskMethod": source.get("maskMethod"),
+        "excludedMaskClasses": source.get("excludedMaskClasses"),
         "metricsProvisional": bool(
             props.get("akasha:metrics_provisional", source.get("metricsProvisional", False))
         ),

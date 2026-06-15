@@ -9,6 +9,7 @@ from scripts.prepare_resourcesat_liss3_boa_cogs import (
     PreparedPaths,
     ResourceSatMeta,
     SelectedProduct,
+    acquisition_datetime_from_text,
     build_mask_array,
     load_selected_products,
     output_dir_for_product,
@@ -107,6 +108,66 @@ def test_selection_manifest_accepts_bhoonidhi_download_candidates(tmp_path: Path
     assert products[0].acquisition_date == "2026-03-19"
     assert products[0].path == "99"
     assert products[0].row == "65"
+
+
+def test_bhoonidhi_product_id_date_takes_precedence_over_embedded_numeric_tokens() -> None:
+    assert (
+        acquisition_datetime_from_text("RA319MAR2026048153009900065PSANSTUCSRHTDF")
+        == "2026-03-19T00:00:00Z"
+    )
+
+
+def test_downloaded_zip_path_does_not_override_bhoonidhi_path_row(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "download_manifest.json"
+    downloaded = (
+        tmp_path
+        / "raw"
+        / "resourcesat-2a-liss3-boa"
+        / "RA319MAR2026048153009900065PSANSTUCSRHTDF.zip"
+    )
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "source_id": "resourcesat-2a-liss3-boa",
+                "candidates": [
+                    {
+                        "item_id": "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+                        "bbox": [75.598123, 11.140278, 77.293455, 12.717257],
+                        "properties": {
+                            "datetime": "2026-03-19T00:00:00Z",
+                            "Path": "99",
+                            "Row": "65",
+                        },
+                    }
+                ],
+                "downloaded": [
+                    {
+                        "item_id": "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+                        "status": "downloaded",
+                        "path": downloaded.as_posix(),
+                        "bytes": 240751189,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    products = load_selected_products(manifest_path, raw_dir=tmp_path / "raw")
+
+    assert len(products) == 1
+    assert products[0].source_path == downloaded
+    assert products[0].acquisition_datetime == "2026-03-19T00:00:00Z"
+    assert products[0].acquisition_date == "2026-03-19"
+    assert products[0].path == "99"
+    assert products[0].row == "65"
+    assert output_dir_for_product(tmp_path / "rasters", products[0]) == (
+        tmp_path
+        / "rasters"
+        / "scene"
+        / "2026-03-19"
+        / scene_component(products[0])
+    )
 
 
 def test_output_dir_matches_resourcesat_scene_component(tmp_path: Path) -> None:

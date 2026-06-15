@@ -1028,6 +1028,70 @@ def test_resourcesat_rejects_unsupported_ndre_without_raster_access(monkeypatch)
     ]
 
 
+def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import service
+    from app.raster.raster_reader import WindowRead
+
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "resourcesat-composite",
+                "analyticHref": "s3://akasha-cogs/resourcesat/analytic.tif",
+                "sclHref": "s3://akasha-cogs/resourcesat/mask.tif",
+                "maskHref": "s3://akasha-cogs/resourcesat/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2",
+                    "RED": "BAND3",
+                    "NIR": "BAND4",
+                    "SWIR1": "BAND5",
+                },
+                "maskMethod": "Akasha threshold mask v1",
+                "excludedMaskClasses": [0, 2, 3],
+                "metricsProvisional": True,
+                "scale": 0.0001,
+                "offset": 0.0,
+                "nodata": 0,
+                "bbox": [78.19, 12.09, 78.22, 12.12],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        service,
+        "read_index_windows",
+        lambda **_kwargs: WindowRead(
+            band_arrays={
+                2: np.array([[1000, 1000], [1000, 1000]], dtype="uint16"),
+                3: np.array([[3000, 3000], [3000, 3000]], dtype="uint16"),
+            },
+            # ResourceSat mask: 1=valid, 2=cloud, 3=shadow, 4=water. Keep 1 and 4.
+            mask=np.array([[1, 2], [4, 3]], dtype="uint8"),
+            geometry_mask=np.array([[True, True], [True, True]]),
+            nodata=0,
+            height=2,
+            width=2,
+            intersects=True,
+        ),
+    )
+
+    body = service.compute_statistics(
+        geometry=IN_FOOTPRINT_POLY,
+        source_id="resourcesat-2a-liss3-boa",
+        acquisition_date="2026-03-19",
+        index_type="NDVI",
+    )
+
+    assert body["pixelCounts"]["coveragePixels"] == 4
+    assert body["pixelCounts"]["maskedPixels"] == 2
+    assert body["pixelCounts"]["validPixels"] == 2
+    assert body["statistics"]["validPixelPercent"] == 50.0
+    assert body["statistics"]["mean"] == pytest.approx(0.5)
+    assert body["metadata"]["metricsProvisional"] is True
+
+
 def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypatch):
     pytest.importorskip("shapely")
     pytest.importorskip("pyproj")

@@ -705,6 +705,7 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
     raster_bands = analytic.get("raster:bands", [])
     first = raster_bands[0] if raster_bands else {}
     band_role_mapping = _band_role_mapping_for_item(source_id, item)
+    props = item.get("properties", {}) if isinstance(item.get("properties"), dict) else {}
     return {
         "itemId": item.get("id"),
         "analyticHref": analytic.get("href"),
@@ -714,6 +715,9 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
         "bandNames": band_names,
         "bandRoleMapping": band_role_mapping,
         "maskMethod": source.get("maskMethod"),
+        "metricsProvisional": bool(
+            props.get("akasha:metrics_provisional", source.get("metricsProvisional", False))
+        ),
         "scale": float(first.get("scale", 0.0001)),
         "offset": float(first.get("offset", -0.1)),
         "nodata": first.get("nodata", 0),

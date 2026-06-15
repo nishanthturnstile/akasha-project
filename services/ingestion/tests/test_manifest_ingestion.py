@@ -627,3 +627,16 @@ def test_prepared_manifest_files_discovers_sentinel1_source_scoped_layout(
     assert config.prepared_manifest_files(root=root, source_id="sentinel-1-grd") == [
         s1_manifest.resolve()
     ]
+
+
+def test_resourcesat_sample_item_is_contract_only_not_seed_loaded(
+    monkeypatch: pytest.MonkeyPatch, scratch_dir: Path
+) -> None:
+    stac_dir = scratch_dir / "stac"
+    stac_dir.mkdir(parents=True)
+    sample = stac_dir / "resourcesat-2a-liss3-boa-sample-item.json"
+    sample.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(config, "find_seed_dir", lambda: scratch_dir)
+
+    assert config.item_file("resourcesat-2a-liss3-boa") == sample
+    assert config.item_files("resourcesat-2a-liss3-boa") == []

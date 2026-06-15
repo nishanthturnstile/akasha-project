@@ -18,7 +18,7 @@ from typing import Any
 import anyio
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from . import seasons_repo
 from .api_models import ApiModel
@@ -44,6 +44,7 @@ class SeasonCreate(ApiModel):
     name: str
     start_date: date | None = None
     end_date: date | None = None
+    fieldIds: list[str] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -79,6 +80,7 @@ class SeasonUpdate(ApiModel):
     name: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    fieldIds: list[str] | None = None
 
     @field_validator("name")
     @classmethod
@@ -112,15 +114,22 @@ class SeasonUpdate(ApiModel):
         return end_date
 
 
+class FieldIdEntry(ApiModel):
+    id: str
+    name: str
+    canRemove: bool
+
 class SeasonResponse(ApiModel):
     id: str
     userId: str
     name: str
-    startDate: date | None = None
-    endDate: date | None = None
+    startDate: str | None
+    endDate: str | None
     canDelete: bool
-    createdAt: str | None = None
-    updatedAt: str | None = None
+    totalArea: float = 0.0
+    fieldIds: list[FieldIdEntry] = []
+    createdAt: str
+    updatedAt: str
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -165,6 +174,7 @@ async def create_season(
         payload.name,
         payload.start_date,
         payload.end_date,
+        field_ids=payload.fieldIds,
     )
 
 

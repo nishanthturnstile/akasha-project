@@ -84,6 +84,40 @@ Expected successful result fields:
 - `result.missing.roles` and `result.missing.qualityLayer`.
 - `result.recommendations[]` with concrete next steps for the ResourceSat prep/composite implementation.
 
+### Live Staging Validation Result — 2026-06-14
+
+The diagnostic was run from the `api` container in the Akasha staging Coolify stack after setting
+`BHOONIDHI_DIAGNOSTICS_ENABLED=true` and deploying image tag
+`962f8e598699d2573f2019522a2ca4ac89e49b9c`.
+
+Validated runtime facts:
+
+- Container egress IP: `20.219.3.35`.
+- Bhoonidhi auth succeeded with `expires_in=1200`.
+- `POST /data/search` for `ResourceSat-2A_LISS3_BOA`, `Online=Y`, Bangalore 60 km AOI, 120 day
+	lookback returned 5 products.
+- Downloaded/inspected product: `RA319MAR2026048153009900065PSANSTUCSRHTDF`.
+
+Observed product facts:
+
+| Field | Result |
+| --- | --- |
+| `GREEN` | `BAND2.tif` present |
+| `RED` | `BAND3.tif` present |
+| `NIR` | `BAND4.tif` present |
+| `SWIR1` | `BAND5.tif` present |
+| Metadata sidecar | `BAND_META.txt` present |
+| Native quality/cloud/shadow/mask raster | Not found |
+| Raster metadata | 4/4 sampled rasters readable |
+| Raster size | `7657 x 7230` |
+| CRS | `EPSG:32643` |
+| Data type | `uint16` |
+| Native GeoTIFF nodata tag | `None` |
+
+Conclusion: the diagnostic endpoint and Bhoonidhi access path are validated. The full ingestion
+pipeline must proceed with an Akasha-generated provisional `mask.tif` fallback unless later samples
+or NRSC documentation expose a separate native quality layer.
+
 ## 3. Alternatives
 
 - **ALT-001**: Synchronous one-shot endpoint. Rejected because real Bhoonidhi downloads can be large and would risk request timeouts.

@@ -16,6 +16,7 @@ at the end as BLOCKED and must be validated on Railway / local Docker.
 
 Usage:  python scripts/validate_slice2.py
 """
+
 from __future__ import annotations
 
 import json
@@ -115,20 +116,28 @@ check(in_fp, "reference polygon lies inside the scene footprint")
 # ---------------------------------------------------------------- BFF package
 section("BFF raster package modules")
 for mod in [
-    "indices", "statistics_core", "catalog_resolver", "raster_reader",
-    "tiles", "geo_validate", "errors", "models", "service",
+    "indices",
+    "statistics_core",
+    "catalog_resolver",
+    "raster_reader",
+    "tiles",
+    "geo_validate",
+    "errors",
+    "models",
+    "service",
 ]:
     check((REPO / "apps/api/app/raster" / f"{mod}.py").is_file(), f"app/raster/{mod}.py exists")
 
 from app.raster import indices  # noqa: E402
 
-core_indices = {"NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"}
+core_indices = {"NDVI", "MSAVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"}
 check(
     core_indices.issubset(indices.INDEX_REGISTRY),
     "core Slice 2 indices remain supported",
 )
 ndvi = indices.get_index("NDVI")
-check(ndvi.band_a == "B08" and ndvi.band_b == "B04", "NDVI = (B08 - B04)/(B08 + B04)")
+check(ndvi.required_roles == ("NIR", "RED"), "NDVI = (NIR - RED)/(NIR + RED)")
+check(indices.get_index("MSAVI").formula_kind == "msavi", "MSAVI formula registered")
 check(
     indices.rgb_band_positions(indices.FROZEN_ANALYTIC_BANDS) == [1, 8, 9],
     "RGB positions [1,8,9]",
@@ -153,16 +162,28 @@ sclv[0, 0] = 9
 red[0, 1] = 0
 geom[0, 2] = False
 s = compute_index_statistics(
-    index_type="NDVI", band_a_dn=nir, band_b_dn=red, scl=sclv, geometry_mask=geom,
-    scale=0.0001, offset=-0.1, nodata=0,
+    index_type="NDVI",
+    band_a_dn=nir,
+    band_b_dn=red,
+    mask=sclv,
+    geometry_mask=geom,
+    scale=0.0001,
+    offset=-0.1,
+    nodata=0,
 ).as_dict()
 check(s["mean"] == 0.5, f"NDVI mean == 0.5 (offset applied) [{s['mean']}]")
 check(s["totalPixels"] == 8 and s["validPixels"] == 6, "pixel accounting total=8 valid=6")
-check(s["nodataPixels"] == 1 and s["sclExcludedPixels"] == 1, "nodata=1 sclExcluded=1")
+check(s["nodataPixels"] == 1 and s["maskedPixels"] == 1, "nodata=1 masked=1")
 check(s["validPixelPercent"] == 75.0, "validPixelPercent == 75.0")
 no_off = compute_index_statistics(
-    index_type="NDVI", band_a_dn=nir, band_b_dn=red, scl=sclv, geometry_mask=geom,
-    scale=0.0001, offset=0.0, nodata=0,
+    index_type="NDVI",
+    band_a_dn=nir,
+    band_b_dn=red,
+    mask=sclv,
+    geometry_mask=geom,
+    scale=0.0001,
+    offset=0.0,
+    nodata=0,
 ).mean
 check(abs(0.5 - no_off) > 0.1, f"offset materially changes NDVI (no-offset={round(no_off,4)})")
 
@@ -223,7 +244,11 @@ from app.raster.tiles import build_rgb_tile_url  # noqa: E402
 
 url = build_rgb_tile_url(
     analytic_href="s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif",
-    rgb_positions=[1, 8, 9], z=12, x=2937, y=1909, titiler_url="http://titiler:8000",
+    rgb_positions=[1, 8, 9],
+    z=12,
+    x=2937,
+    y=1909,
+    titiler_url="http://titiler:8000",
 )
 check("/cog/tiles/WebMercatorQuad/12/2937/1909.png" in url, "TiTiler 1.0 COG tile route")
 check(url.count("bidx=1") == 1 and "bidx=8" in url and "bidx=9" in url, "bidx for RGB [1,8,9]")
@@ -299,23 +324,51 @@ try:
     scl_arr = np.full((h, w), 4, dtype="uint8")
     a_path = tmp / "analytic.tif"
     s_path = tmp / "scl.tif"
-    prof = dict(driver="GTiff", width=w, height=h, count=9, dtype="uint16",
-                crs=crs, transform=transform, nodata=0)
+    prof = dict(
+        driver="GTiff",
+        width=w,
+        height=h,
+        count=9,
+        dtype="uint16",
+        crs=crs,
+        transform=transform,
+        nodata=0,
+    )
     with rasterio.open(a_path, "w", **prof) as dst:
         dst.write(analytic_arr)
     with rasterio.open(s_path, "w", **dict(prof, count=1, dtype="uint8")) as dst:
         dst.write(scl_arr, 1)
     synthetic_assets = {
-        "itemId": "synthetic", "analyticHref": str(a_path), "sclHref": str(s_path),
-        "bandNames": indices.FROZEN_ANALYTIC_BANDS, "scale": 0.0001, "offset": -0.1,
-        "nodata": 0, "epsg": 32643, "bbox": None,
+        "itemId": "synthetic",
+        "analyticHref": str(a_path),
+        "sclHref": str(s_path),
+        "maskHref": str(s_path),
+        "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+        "scale": 0.0001,
+        "offset": -0.1,
+        "bandRoleMapping": {
+            "BLUE": "B02",
+            "GREEN": "B03",
+            "RED": "B04",
+            "NIR": "B08",
+            "RED_EDGE": "B05",
+            "SWIR1": "B11",
+            "SWIR2": "B12",
+        },
+        "nodata": 0,
+        "epsg": 32643,
+        "bbox": None,
     }
     catalog.resolve_assets = lambda source_id, acquisition_date: synthetic_assets
     catalog.resolve_assets_for_date = lambda source_id, acquisition_date: [synthetic_assets]
     catalog.supported_indices = lambda source_id="sentinel-2-l2a": list(indices.SUPPORTED_INDICES)
     resp = compute_statistics(
-        geometry=poly, source_id="sentinel-2-l2a", acquisition_date="2025-09-14",
-        index_type="NDVI", max_area_ha=50, max_vertices=5000,
+        geometry=poly,
+        source_id="sentinel-2-l2a",
+        acquisition_date="2025-09-14",
+        index_type="NDVI",
+        max_area_ha=50,
+        max_vertices=5000,
     )
     check(
         abs(resp["statistics"]["mean"] - 0.5) < 1e-6,

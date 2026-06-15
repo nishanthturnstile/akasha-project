@@ -1,0 +1,110 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/classification/v1.1.0/schema.json"
+  ],
+  "id": "resourcesat-2a-liss3-boa",
+  "title": "ResourceSat-2A LISS-3 BOA (Bhoonidhi)",
+  "description": "ResourceSat-2A LISS-3 bottom-of-atmosphere reflectance composites for the Bangalore 60 km AOI. LISS-3 has Green, Red, NIR, and SWIR1 bands, so default display is FCC (NIR, Red, Green). The first mask product is Akasha-generated and provisional because the validated Bhoonidhi BOA archive did not include a native quality/cloud/shadow raster.",
+  "license": "proprietary",
+  "keywords": ["isro", "nrsc", "bhoonidhi", "resourcesat-2a", "liss-3", "boa", "bangalore", "composite"],
+  "providers": [
+    { "name": "ISRO/NRSC", "roles": ["producer", "licensor"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Bhoonidhi", "roles": ["host"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[77.023647, 12.537266, 78.131561, 13.61645]] },
+    "temporal": { "interval": [["2026-03-19T00:00:00Z", null]] }
+  },
+  "summaries": {
+    "platform": ["resourcesat-2a"],
+    "constellation": ["resourcesat"],
+    "instruments": ["liss-3"],
+    "gsd": [23.5, 24],
+    "proj:epsg": [32643]
+  },
+  "akasha:provider": "ISRO/NRSC Bhoonidhi",
+  "akasha:bhoonidhi_collection_id": "ResourceSat-2A_LISS3_BOA",
+  "akasha:source_kind": "optical",
+  "akasha:analysis_level": "field",
+  "akasha:aoi_id": "bangalore-60km",
+  "akasha:supported_indices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+  "akasha:unsupported_indices": ["NDRE", "RECI"],
+  "akasha:default_index": "NDVI",
+  "akasha:display_modes": ["FCC"],
+  "akasha:default_display_mode": "FCC",
+  "akasha:tile_route_mode": "fcc",
+  "akasha:fcc_role_order": ["NIR", "RED", "GREEN"],
+  "akasha:band_role_mapping": {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4",
+    "SWIR1": "BAND5"
+  },
+  "akasha:expected_assets": ["analytic", "mask"],
+  "akasha:mask_asset": "mask",
+  "akasha:default_excluded_mask_classes": [0, 2, 3],
+  "akasha:mask_method": "Akasha threshold mask v1 (no native quality layer found in validated LISS-3 BOA sample; provisional).",
+  "akasha:metrics_provisional": true,
+  "akasha:reflectance": {
+    "scale": 0.0001,
+    "offset": 0,
+    "background_value": 0,
+    "nodata_policy": "all-band-background-or-warp-gap",
+    "note": "BAND_META.txt remains authoritative during Phase 2a; validated GeoTIFFs had no native nodata tag."
+  },
+  "akasha:composite_policy": {
+    "aoi_id": "bangalore-60km",
+    "grid_crs": "EPSG:32643",
+    "window_days": 45,
+    "selection_rule": "best-available-valid-pixel-with-recency-tiebreak"
+  },
+  "akasha:attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+  "item_assets": {
+    "analytic": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "ResourceSat-2A LISS-3 BOA analytic composite COG",
+      "roles": ["data", "reflectance", "composite"],
+      "gsd": 24,
+      "eo:bands": [
+        { "name": "BAND2", "common_name": "green", "center_wavelength": 0.555 },
+        { "name": "BAND3", "common_name": "red", "center_wavelength": 0.655 },
+        { "name": "BAND4", "common_name": "nir", "center_wavelength": 0.815 },
+        { "name": "BAND5", "common_name": "swir16", "center_wavelength": 1.65 }
+      ],
+      "raster:bands": [
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 24, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 24, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 24, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 24, "unit": "reflectance", "scale": 0.0001, "offset": 0 }
+      ]
+    },
+    "mask": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Akasha-generated provisional cloud/validity mask COG",
+      "roles": ["metadata", "data-mask"],
+      "gsd": 24,
+      "raster:bands": [
+        { "data_type": "uint8", "nodata": 0, "spatial_resolution": 24 }
+      ],
+      "classification:classes": [
+        { "value": 0, "name": "gap_or_background", "description": "All-band background, outside footprint, or warp gap", "nodata": true },
+        { "value": 1, "name": "valid", "description": "Usable optical pixel" },
+        { "value": 2, "name": "cloud", "description": "Akasha threshold-derived cloud; provisional" },
+        { "value": 3, "name": "shadow", "description": "Akasha threshold-derived shadow; provisional" },
+        { "value": 4, "name": "water", "description": "Akasha threshold-derived water; kept by default" }
+      ]
+    }
+  },
+  "links": [
+    { "rel": "root", "href": "./resourcesat-2a-liss3-boa-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./resourcesat-2a-liss3-boa-collection.json", "type": "application/json" },
+    { "rel": "license", "href": "https://bhoonidhi.nrsc.gov.in", "title": "Bhoonidhi" }
+  ]
+}

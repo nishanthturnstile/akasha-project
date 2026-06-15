@@ -4,16 +4,16 @@ NO file/network I/O lives here on purpose: every input is an in-memory numpy
 array, so the offset/scale correction + SCL masking + index math + pixel
 accounting are fully unit-testable without a COG, MinIO, or GDAL.
 
-Pixel accounting (data-ingestion-and-satellite-rules.md § Pixel accounting):
+Pixel accounting:
 
     totalPixels       = pixels intersecting the request geometry
-    nodataPixels      = out-of-coverage / nodata pixels (analytic nodata OR SCL no_data=0)
+    nodataPixels      = out-of-coverage / nodata pixels
     coveragePixels    = totalPixels - nodataPixels
-    sclExcludedPixels = pixels excluded by the SCL mask (within coverage)
-    validPixels       = coveragePixels - sclExcludedPixels
+    maskedPixels      = pixels excluded by the source mask (within coverage)
+    validPixels       = coveragePixels - maskedPixels
 
     validPixelPercent  = validPixels      / totalPixels    * 100
-    cloudMaskedPercent = sclExcludedPixels / totalPixels    * 100
+    cloudMaskedPercent = maskedPixels     / totalPixels    * 100
     coveragePercent    = coveragePixels   / totalPixels    * 100
 
 Reflectance correction (raw uint16 DN stored):
@@ -21,6 +21,7 @@ Reflectance correction (raw uint16 DN stored):
 The offset does NOT cancel in a normalized-difference index because it biases
 the denominator; correction is therefore applied BEFORE the index is computed.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -34,7 +35,7 @@ from .indices import (
     get_index,
 )
 
-SCL_NODATA_CLASS = 0
+MASK_NODATA_CLASS = 0
 
 
 @dataclass
@@ -49,7 +50,7 @@ class IndexStatistics:
     total_pixels: int
     nodata_pixels: int
     coverage_pixels: int
-    scl_excluded_pixels: int
+    masked_pixels: int
     valid_pixels: int
     valid_pixel_percent: float
     cloud_masked_percent: float
@@ -66,7 +67,7 @@ class IndexStatistics:
             "totalPixels": self.total_pixels,
             "nodataPixels": self.nodata_pixels,
             "coveragePixels": self.coverage_pixels,
-            "sclExcludedPixels": self.scl_excluded_pixels,
+            "maskedPixels": self.masked_pixels,
             "validPixels": self.valid_pixels,
             "validPixelPercent": self.valid_pixel_percent,
             "cloudMaskedPercent": self.cloud_masked_percent,
@@ -95,14 +96,14 @@ def compute_index_statistics(
     index_type: str,
     band_a_dn: np.ndarray,
     band_b_dn: np.ndarray,
-    scl: np.ndarray,
+    mask: np.ndarray,
     geometry_mask: np.ndarray,
     scale: float = DEFAULT_SCALE,
     offset: float = DEFAULT_OFFSET,
     nodata: float | int = 0,
-    excluded_scl_classes: tuple[int, ...] = DEFAULT_EXCLUDED_SCL_CLASSES,
+    excluded_mask_classes: tuple[int, ...] = DEFAULT_EXCLUDED_SCL_CLASSES,
 ) -> IndexStatistics:
-    """Compute cloud/SCL-masked, offset-corrected index statistics.
+    """Compute source-mask-aware, offset-corrected index statistics.
 
     Parameters
     ----------
@@ -113,8 +114,8 @@ def compute_index_statistics(
     band_a_dn, band_b_dn:
         Raw DN windows for the index's two bands (same shape).
     index is computed from the formula registered for index_type after reflectance correction.
-    scl:
-        Scene Classification Layer window (same shape, categorical uint8).
+    mask:
+        Source mask window (same shape, categorical uint8).
     geometry_mask:
         Boolean window, True where a pixel is INSIDE the request polygon.
     """
@@ -122,12 +123,12 @@ def compute_index_statistics(
 
     a = np.asarray(band_a_dn)
     b = np.asarray(band_b_dn)
-    scl = np.asarray(scl)
+    mask = np.asarray(mask)
     geom = np.asarray(geometry_mask, dtype=bool)
 
-    if not (a.shape == b.shape == scl.shape == geom.shape):
+    if not (a.shape == b.shape == mask.shape == geom.shape):
         raise ValueError(
-            f"shape mismatch: a={a.shape} b={b.shape} scl={scl.shape} geom={geom.shape}"
+            f"shape mismatch: a={a.shape} b={b.shape} mask={mask.shape} geom={geom.shape}"
         )
 
     warnings: list[str] = []
@@ -136,23 +137,23 @@ def compute_index_statistics(
 
     # --- coverage / nodata -------------------------------------------------
     # A pixel is nodata (out of coverage) if either analytic band equals the
-    # nodata value OR the SCL marks it as no_data (class 0).
+    # nodata value OR the source mask marks it as no_data (class 0).
     analytic_nodata = (a == nodata) | (b == nodata)
-    scl_nodata = scl == SCL_NODATA_CLASS
-    nodata_mask = geom & (analytic_nodata | scl_nodata)
+    mask_nodata = mask == MASK_NODATA_CLASS
+    nodata_mask = geom & (analytic_nodata | mask_nodata)
     coverage_mask = geom & ~nodata_mask
 
     nodata_pixels = int(nodata_mask.sum())
     coverage_pixels = int(coverage_mask.sum())
 
-    # --- SCL exclusion within coverage ------------------------------------
+    # --- source mask exclusion within coverage ----------------------------
     # Class 0 is already counted as nodata; the remaining excluded classes
     # (1,2,3,7,8,9,10,11 by default) are the "cloud-masked" pixels.
-    excluded_within_coverage = tuple(c for c in excluded_scl_classes if c != SCL_NODATA_CLASS)
-    scl_excluded_mask = coverage_mask & np.isin(scl, excluded_within_coverage)
-    scl_excluded_pixels = int(scl_excluded_mask.sum())
+    excluded_within_coverage = tuple(c for c in excluded_mask_classes if c != MASK_NODATA_CLASS)
+    mask_excluded_mask = coverage_mask & np.isin(mask, excluded_within_coverage)
+    masked_pixels = int(mask_excluded_mask.sum())
 
-    valid_mask = coverage_mask & ~scl_excluded_mask
+    valid_mask = coverage_mask & ~mask_excluded_mask
     valid_pixels = int(valid_mask.sum())
 
     # --- index on valid pixels (reflectance corrected) --------------------
@@ -190,10 +191,10 @@ def compute_index_statistics(
         total_pixels=total_pixels,
         nodata_pixels=nodata_pixels,
         coverage_pixels=coverage_pixels,
-        scl_excluded_pixels=scl_excluded_pixels,
+        masked_pixels=masked_pixels,
         valid_pixels=valid_pixels,
         valid_pixel_percent=pct(valid_pixels),
-        cloud_masked_percent=pct(scl_excluded_pixels),
+        cloud_masked_percent=pct(masked_pixels),
         coverage_percent=pct(coverage_pixels),
         warnings=warnings,
     )
@@ -204,6 +205,14 @@ def _evaluate_index(
     a_ref: np.ndarray,
     b_ref: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
+    if formula_kind == "msavi":
+        term = 2 * a_ref + 1
+        radicand = term**2 - 8 * (a_ref - b_ref)
+        good = radicand >= 0
+        values = np.full(a_ref.shape, np.nan, dtype="float64")
+        values[good] = (term[good] - np.sqrt(radicand[good])) / 2
+        return values, good
+
     denom = a_ref + b_ref
     good = denom != 0
     values = np.full(a_ref.shape, np.nan, dtype="float64")

@@ -59,6 +59,9 @@ class Settings:
         default_factory=lambda: _get("DEFAULT_SOURCE_ID", "sentinel-2-l2a")
     )
     default_aoi_id: str = field(default_factory=lambda: _get("DEFAULT_AOI_ID", "bangalore"))
+    aoi_config_path: str = field(
+        default_factory=lambda: _get("AOI_CONFIG_PATH", "data/seed/bangalore-60km-aoi.geojson")
+    )
 
     # Public basemap metadata surfaced to the frontend. Credentials are configured
     # on the web build as a referrer-restricted VITE_ESRI_API_KEY, not exposed here.

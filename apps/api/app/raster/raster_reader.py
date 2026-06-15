@@ -1,6 +1,6 @@
-"""rasterio-based dual-COG window reader (Slice 2 — Phase 2).
+"""rasterio-based dual-COG window reader.
 
-Reads the analytic COG window AND the SCL COG window for the SAME request
+Reads the analytic COG window AND the source mask COG window for the SAME request
 geometry. The two COGs share an identical grid (same CRS/transform/shape per the
 prepared scene), so a single pixel window is used for both, which keeps the
 arrays pixel-aligned for masked statistics.
@@ -12,6 +12,7 @@ happens when an index-statistics request is actually served.
 Supports `s3://bucket/key` (MinIO/S3 via GDAL /vsis3/), local file paths
 (used by synthetic tests), and http(s) COGs.
 """
+
 from __future__ import annotations
 
 import math
@@ -24,10 +25,10 @@ from .errors import AkashaError, raster_backend_unavailable, upstream_error
 
 @dataclass
 class WindowRead:
-    """Pixel-aligned analytic + SCL windows for one geometry."""
+    """Pixel-aligned analytic + mask windows for one geometry."""
 
     band_arrays: dict[int, Any]  # 1-based position -> 2D numpy array (DN)
-    scl: Any  # 2D numpy array (uint8)
+    mask: Any  # 2D numpy array (uint8)
     geometry_mask: Any  # 2D bool, True INSIDE polygon
     nodata: float | int
     height: int
@@ -94,11 +95,11 @@ def to_gdal_path(href: str) -> str:
 def read_index_windows(
     *,
     analytic_href: str,
-    scl_href: str,
+    mask_href: str,
     geometry: dict[str, Any],
     positions: list[int],
 ) -> WindowRead:
-    """Read the analytic (selected positions) + SCL windows for a geometry.
+    """Read the analytic (selected positions) + mask windows for a geometry.
 
     Raises AkashaError(503) if the raster backend (rasterio/GDAL or MinIO) is
     unavailable in this environment.
@@ -117,7 +118,7 @@ def read_index_windows(
         ) from exc
 
     a_path = to_gdal_path(analytic_href)
-    s_path = to_gdal_path(scl_href)
+    m_path = to_gdal_path(mask_href)
     env_opts = gdal_s3_options()
 
     try:
@@ -149,22 +150,22 @@ def read_index_windows(
                 mask = geometry_mask(
                     [geom_ds], out_shape=(height, width), transform=wt, invert=True
                 )
-            with rasterio.open(s_path) as s_ds:
+            with rasterio.open(m_path) as m_ds:
                 if (
-                    s_ds.crs != analytic_crs
-                    or s_ds.transform != analytic_transform
-                    or s_ds.width != analytic_width
-                    or s_ds.height != analytic_height
+                    m_ds.crs != analytic_crs
+                    or m_ds.transform != analytic_transform
+                    or m_ds.width != analytic_width
+                    or m_ds.height != analytic_height
                 ):
                     raise upstream_error(
-                        "Analytic and SCL rasters are not on the same pixel grid.",
+                        "Analytic and mask rasters are not on the same pixel grid.",
                         code="RASTER_GRID_MISMATCH",
                         analyticCrs=str(analytic_crs),
-                        sclCrs=str(s_ds.crs),
+                        maskCrs=str(m_ds.crs),
                         analyticShape=[analytic_height, analytic_width],
-                        sclShape=[s_ds.height, s_ds.width],
+                        maskShape=[m_ds.height, m_ds.width],
                     )
-                scl = s_ds.read(1, window=Window(col_off, row_off, width, height))
+                mask_arr = m_ds.read(1, window=Window(col_off, row_off, width, height))
     except AkashaError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -175,12 +176,12 @@ def read_index_windows(
             reason=str(exc),
         ) from exc
 
-    # Ensure SCL matches the analytic window shape (defensive).
-    if scl.shape != (height, width):
-        scl = np.asarray(scl)[:height, :width]
+    # Ensure mask matches the analytic window shape (defensive).
+    if mask_arr.shape != (height, width):
+        mask_arr = np.asarray(mask_arr)[:height, :width]
     return WindowRead(
         band_arrays=band_arrays,
-        scl=scl,
+        mask=mask_arr,
         geometry_mask=mask,
         nodata=nodata,
         height=height,

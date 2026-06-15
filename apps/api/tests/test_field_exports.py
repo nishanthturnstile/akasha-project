@@ -1,4 +1,5 @@
 """Selected-field native export route tests."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -52,7 +53,7 @@ def _stats_response(
             "totalPixels": 100,
             "nodataPixels": 7,
             "coveragePixels": 93,
-            "sclExcludedPixels": 10,
+            "maskedPixels": 10,
             "validPixels": 83,
         },
         "metadata": {"formula": "(B08 - B04) / (B08 + B04)", "bands": ["B08", "B04"]},
@@ -82,7 +83,9 @@ def test_index_csv_export_uses_server_side_geometry_and_cloud_mapping(monkeypatc
     assert "North-Field_2026-06-01_NDVI.csv" in r.headers["content-disposition"]
     assert "mean" in r.text
     assert "0.55" in r.text
-    assert 3 not in calls[0]["excluded_scl_classes"]
+    assert 3 not in calls[0]["excluded_mask_classes"]
+    assert "masked_pixels" in r.text
+    assert "scl_excluded_pixels" not in r.text
 
 
 def test_index_geojson_export_contains_safe_field_statistics(monkeypatch):
@@ -105,7 +108,7 @@ def test_index_geojson_export_contains_safe_field_statistics(monkeypatch):
     body = r.json()
     assert body["type"] == "Feature"
     assert body["properties"]["mean"] == pytest.approx(0.55)
-    assert body["properties"]["cloudMaskMapping"]["nativeExcludedSclClasses"] == [
+    assert body["properties"]["cloudMaskMapping"]["nativeExcludedMaskClasses"] == [
         0,
         1,
         2,

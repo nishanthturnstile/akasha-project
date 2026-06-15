@@ -12,11 +12,14 @@ Usage:
     python worker.py seed-minio [--force]
     python worker.py seed [--method ...] [--force]   # full idempotent seed
     python worker.py ingest-manifest [--manifest-glob ...] [--method ...] [--force]
+    python worker.py bhoonidhi-search --source resourcesat-2a-liss3-boa --aoi bangalore-60km
+    python worker.py bhoonidhi-download --manifest ...
     python worker.py verify                    # Slice 1 exit criteria
     python worker.py verify-cogs               # Phase 2: + non-empty real COGs
     python worker.py verify-manifest-cogs [--manifest-glob ...]
     python worker.py healthcheck               # required env vars present
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,7 +38,7 @@ REQUIRED_ENV: list[str] = [
 def _redact(name: str, value: str) -> str:
     if not value:
         return "<unset>"
-    if any(tok in name for tok in ("SECRET", "KEY", "PASSWORD", "URL")):
+    if any(tok in name for tok in ("SECRET", "KEY", "PASSWORD", "URL", "USER_ID")):
         return f"<set:{len(value)} chars>"
     return value
 
@@ -67,7 +70,17 @@ def cmd_info(_: argparse.Namespace) -> int:
     print(f"    analytic key: {SAMPLE_SCENE.analytic_key}")
     print(f"    scl key:      {SAMPLE_SCENE.scl_key}")
     print("  resolved env (secrets redacted):")
-    for name in REQUIRED_ENV + ["AKASHA_COG_BUCKET"]:
+    for name in REQUIRED_ENV + [
+        "AKASHA_COG_BUCKET",
+        "AOI_CONFIG_PATH",
+        "BHOONIDHI_API_BASE",
+        "BHOONIDHI_USER_ID",
+        "BHOONIDHI_SEARCH_RPS",
+        "BHOONIDHI_DOWNLOAD_CONCURRENCY",
+        "BHOONIDHI_RAW_ROOT",
+        "BHOONIDHI_TEMP_ROOT",
+        "BHOONIDHI_LEDGER_PATH",
+    ]:
         print(f"    - {name}: {_redact(name, os.environ.get(name, ''))}")
     return 0
 
@@ -138,6 +151,75 @@ def cmd_ingest_manifest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bhoonidhi_search(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from akasha_ingest import bhoonidhi, config
+
+    collection = bhoonidhi.source_collection(args.source)
+    aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
+    if args.aoi and args.aoi != aoi.get("id"):
+        raise SystemExit(f"AOI '{args.aoi}' not found; loaded '{aoi.get('id')}'")
+    datetime_range = args.datetime or bhoonidhi.lookback_datetime_range(args.lookback_days)
+    client = bhoonidhi.BhoonidhiClient()
+    items = client.search(
+        collection=collection,
+        datetime_range=datetime_range,
+        intersects=aoi["geometry"],
+        limit=args.limit,
+    )
+    manifest = bhoonidhi.build_search_manifest(
+        source_id=args.source,
+        collection=collection,
+        aoi=aoi,
+        datetime_range=datetime_range,
+        items=items,
+    )
+    out_dir = Path(args.out_dir or config.BHOONIDHI_TEMP_ROOT) / args.source
+    path = out_dir / "coverage_manifest.json"
+    bhoonidhi.write_manifest(manifest, path)
+    print(f"found {len(items)} Bhoonidhi item(s)")
+    print(f"selected {len(manifest['selection']['selected_product_ids'])} candidate(s)")
+    print(f"manifest: {path}")
+    return 0
+
+
+def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
+    import json
+    from pathlib import Path
+
+    from akasha_ingest import bhoonidhi, config
+
+    manifest_path = Path(args.manifest)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    source_id = str(manifest.get("source_id") or args.source or "")
+    collection = str(manifest.get("collection") or bhoonidhi.source_collection(source_id))
+    raw_root = Path(args.raw_root or config.BHOONIDHI_RAW_ROOT) / source_id
+    client = bhoonidhi.BhoonidhiClient()
+    downloaded: list[dict[str, object]] = []
+    for candidate in manifest.get("candidates", []):
+        item_id = candidate.get("item_id")
+        if not item_id:
+            continue
+        dest = raw_root / f"{item_id}.zip"
+        result = client.download_product(
+            product_id=str(item_id),
+            collection=collection,
+            destination=dest,
+        )
+        candidate["download_status"] = result["status"]
+        candidate["downloaded_path"] = result["path"]
+        candidate["downloaded_bytes"] = result["bytes"]
+        downloaded.append({"item_id": item_id, **result})
+    output = dict(manifest)
+    output["downloaded"] = downloaded
+    output_path = manifest_path.parent / "download_manifest.json"
+    bhoonidhi.write_manifest(output, output_path)
+    print(f"downloaded {len(downloaded)} product(s)")
+    print(f"manifest: {output_path}")
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from akasha_ingest import verify
 
@@ -194,6 +276,34 @@ def build_parser() -> argparse.ArgumentParser:
     p_manifest.add_argument("--method", default="upsert", choices=["upsert", "insert_ignore"])
     p_manifest.add_argument("--force", action="store_true")
     p_manifest.set_defaults(func=cmd_ingest_manifest)
+    p_bhoonidhi_search = sub.add_parser(
+        "bhoonidhi-search",
+        help="Search Bhoonidhi and write a dry-run coverage manifest.",
+    )
+    p_bhoonidhi_search.add_argument(
+        "--source",
+        default="resourcesat-2a-liss3-boa",
+        help="Akasha source id to search.",
+    )
+    p_bhoonidhi_search.add_argument(
+        "--aoi",
+        default="bangalore-60km",
+        help="AOI id expected in the AOI config.",
+    )
+    p_bhoonidhi_search.add_argument("--aoi-path", default=None, help="AOI GeoJSON path.")
+    p_bhoonidhi_search.add_argument("--lookback-days", type=int, default=45)
+    p_bhoonidhi_search.add_argument("--datetime", default=None, help="RFC3339 interval override.")
+    p_bhoonidhi_search.add_argument("--limit", type=int, default=100)
+    p_bhoonidhi_search.add_argument("--out-dir", default=None)
+    p_bhoonidhi_search.set_defaults(func=cmd_bhoonidhi_search)
+    p_bhoonidhi_download = sub.add_parser(
+        "bhoonidhi-download",
+        help="Download Bhoonidhi products from a search manifest.",
+    )
+    p_bhoonidhi_download.add_argument("--manifest", required=True)
+    p_bhoonidhi_download.add_argument("--source", default=None)
+    p_bhoonidhi_download.add_argument("--raw-root", default=None)
+    p_bhoonidhi_download.set_defaults(func=cmd_bhoonidhi_download)
     p_verify = sub.add_parser("verify", help="Verify Slice 1 exit criteria.")
     p_verify.add_argument("--collection-id", default=None, help="Collection/source id to verify.")
     p_verify.set_defaults(func=cmd_verify)

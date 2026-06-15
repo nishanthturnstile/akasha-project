@@ -10,6 +10,7 @@ Covers (no Docker / no MinIO required):
   * (when rasterio is installed) a full synthetic dual-COG read -> mask -> stat
     pipeline that proves NDVI end-to-end without the real 2.24 GiB scene
 """
+
 import numpy as np
 import pytest
 from app.main import app
@@ -24,6 +25,16 @@ IN_FOOTPRINT_POLY = {
     "coordinates": [[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.105], [78.2, 12.1]]],
 }
 
+SENTINEL2_BAND_ROLE_MAPPING = {
+    "BLUE": "B02",
+    "GREEN": "B03",
+    "RED": "B04",
+    "NIR": "B08",
+    "RED_EDGE": "B05",
+    "SWIR1": "B11",
+    "SWIR2": "B12",
+}
+
 
 # --------------------------------------------------------------------------
 # index registry + band mapping
@@ -31,6 +42,7 @@ IN_FOOTPRINT_POLY = {
 def test_index_registry_has_supported_core_indices():
     assert set(indices.INDEX_REGISTRY) == {
         "NDVI",
+        "MSAVI",
         "NDRE",
         "NDMI",
         "NDWI_GREEN_NIR",
@@ -40,8 +52,15 @@ def test_index_registry_has_supported_core_indices():
 
 def test_ndvi_band_assignment_is_nir_minus_red():
     ndvi = indices.get_index("NDVI")
-    assert ndvi.band_a == "B08" and ndvi.band_b == "B04"
-    assert ndvi.formula == "(B08 - B04) / (B08 + B04)"
+    assert ndvi.required_roles == ("NIR", "RED")
+    assert ndvi.formula == "(NIR - RED) / (NIR + RED)"
+
+
+def test_msavi_formula_uses_nir_and_red_roles():
+    msavi = indices.get_index("MSAVI")
+    assert msavi.formula_kind == "msavi"
+    assert msavi.required_roles == ("NIR", "RED")
+    assert "sqrt" in msavi.formula
 
 
 def test_band_name_to_position_uses_frozen_order():
@@ -52,8 +71,22 @@ def test_band_name_to_position_uses_frozen_order():
     assert pos["B02"] == 9  # blue
 
 
+def test_role_to_position_resolves_sentinel2_mapping():
+    pos = indices.role_to_position(indices.FROZEN_ANALYTIC_BANDS, SENTINEL2_BAND_ROLE_MAPPING)
+    assert pos["RED"] == 1
+    assert pos["NIR"] == 2
+    assert pos["GREEN"] == 8
+
+
 def test_rgb_positions_are_1_8_9_not_1_2_3():
     assert indices.rgb_band_positions(indices.FROZEN_ANALYTIC_BANDS) == [1, 8, 9]
+
+
+def test_fcc_positions_use_nir_red_green_roles():
+    assert indices.fcc_band_positions(
+        ["BAND2", "BAND3", "BAND4", "BAND5"],
+        {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5"},
+    ) == [3, 2, 1]
 
 
 # --------------------------------------------------------------------------
@@ -71,19 +104,25 @@ def test_ndvi_reference_with_offset_and_masking():
     red = np.full((3, 3), 2000, dtype="uint16")
     scl = np.full((3, 3), 4, dtype="uint8")  # vegetation -> kept
     geom = np.ones((3, 3), dtype=bool)
-    scl[0, 0] = 9       # cloud high -> excluded
-    red[0, 1] = 0       # analytic nodata
+    scl[0, 0] = 9  # cloud high -> excluded
+    red[0, 1] = 0  # analytic nodata
     geom[0, 2] = False  # outside polygon
 
     s = compute_index_statistics(
-        index_type="NDVI", band_a_dn=nir, band_b_dn=red, scl=scl, geometry_mask=geom,
-        scale=0.0001, offset=-0.1, nodata=0,
+        index_type="NDVI",
+        band_a_dn=nir,
+        band_b_dn=red,
+        mask=scl,
+        geometry_mask=geom,
+        scale=0.0001,
+        offset=-0.1,
+        nodata=0,
     ).as_dict()
 
     assert s["totalPixels"] == 8
     assert s["nodataPixels"] == 1
     assert s["coveragePixels"] == 7
-    assert s["sclExcludedPixels"] == 1
+    assert s["maskedPixels"] == 1
     assert s["validPixels"] == 6
     assert s["mean"] == pytest.approx(0.5)
     assert s["min"] == pytest.approx(0.5) and s["max"] == pytest.approx(0.5)
@@ -100,12 +139,24 @@ def test_offset_does_not_cancel_in_ndvi():
     scl = np.full((2, 2), 4, dtype="uint8")
     geom = np.ones((2, 2), dtype=bool)
     with_off = compute_index_statistics(
-        index_type="NDVI", band_a_dn=nir, band_b_dn=red, scl=scl, geometry_mask=geom,
-        scale=0.0001, offset=-0.1, nodata=0,
+        index_type="NDVI",
+        band_a_dn=nir,
+        band_b_dn=red,
+        mask=scl,
+        geometry_mask=geom,
+        scale=0.0001,
+        offset=-0.1,
+        nodata=0,
     ).mean
     no_off = compute_index_statistics(
-        index_type="NDVI", band_a_dn=nir, band_b_dn=red, scl=scl, geometry_mask=geom,
-        scale=0.0001, offset=0.0, nodata=0,
+        index_type="NDVI",
+        band_a_dn=nir,
+        band_b_dn=red,
+        mask=scl,
+        geometry_mask=geom,
+        scale=0.0001,
+        offset=0.0,
+        nodata=0,
     ).mean
     assert with_off == pytest.approx(0.5)
     assert no_off == pytest.approx(1 / 3, abs=1e-4)
@@ -118,12 +169,18 @@ def test_water_class_6_is_kept_clouds_excluded():
     geom = np.ones((1, 4), dtype=bool)
     scl = np.array([[4, 6, 8, 3]], dtype="uint8")  # veg, water, cloud-med, cloud-shadow
     s = compute_index_statistics(
-        index_type="NDVI", band_a_dn=nir, band_b_dn=red, scl=scl, geometry_mask=geom,
-        scale=0.0001, offset=-0.1, nodata=0,
+        index_type="NDVI",
+        band_a_dn=nir,
+        band_b_dn=red,
+        mask=scl,
+        geometry_mask=geom,
+        scale=0.0001,
+        offset=-0.1,
+        nodata=0,
     ).as_dict()
     # veg (4) + water (6) kept = 2 valid ; classes 8 and 3 excluded = 2.
     assert s["validPixels"] == 2
-    assert s["sclExcludedPixels"] == 2
+    assert s["maskedPixels"] == 2
 
 
 # --------------------------------------------------------------------------
@@ -171,6 +228,7 @@ def test_config_endpoint_contract():
     body = r.json()
     assert body["supportedIndices"] == [
         "NDVI",
+        "MSAVI",
         "NDRE",
         "NDMI",
         "NDWI_GREEN_NIR",
@@ -178,7 +236,11 @@ def test_config_endpoint_contract():
     assert body["defaultIndex"] == "NDVI"
     assert body["indexFieldsKind"] == "global-optical-defaults"
     assert body["maxPolygonAreaHa"] == 50
-    assert body["aoi"]["id"] == "bangalore"
+    assert body["aoi"]["id"] == "bangalore-60km"
+    assert body["aoi"]["name"] == "Bangalore 60 km"
+    assert body["aoi"]["center"] == [77.5776037099731, 13.076858177177233]
+    assert body["aoi"]["bounds"] == [77.023647, 12.537266, 78.131561, 13.61645]
+    assert body["aoi"]["geometry"]["type"] == "Polygon"
     assert body["basemapStyleUrl"] == ""
     assert body["basemap"] == {
         "provider": "esri",
@@ -198,7 +260,29 @@ def test_sources_endpoint_contract():
     src = sources["sentinel-2-l2a"]
     assert "NDVI" in src["supportedIndices"]
     assert src["kind"] == "optical"
+    assert src["bandRoleMapping"]["NIR"] == "B08"
+    assert src["maskAsset"] == "scl"
     assert src["displayModes"] == ["RGB"]
+    rs = sources["resourcesat-2a-liss3-boa"]
+    assert rs["provider"] == "ISRO/NRSC Bhoonidhi"
+    assert rs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert rs["bandRoleMapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+        "SWIR1": "BAND5",
+    }
+    assert rs["maskAsset"] == "mask"
+    assert rs["displayModes"] == ["FCC"]
+    assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
+    assert rs["metricsProvisional"] is True
+    assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
+    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
+    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["availabilityStatus"] == "gated"
+    assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
+    assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "gated"
+    assert sources["cartosat-3-gated"]["gatedReason"]
+    assert sources["irs-1c-liss3-archive"]["analysisLevel"] == "archive"
     s1 = sources["sentinel-1-grd"]
     assert s1["label"] == "Sentinel-1 GRD"
     assert s1["provider"] == "Copernicus"
@@ -216,6 +300,22 @@ def test_dates_endpoint_returns_real_scene():
     assert any(d["acquisitionDate"] == "2025-09-14" for d in dates)
 
 
+def test_registered_empty_source_returns_empty_dates_and_clear_default_layer():
+    dates = client.get("/api/sources/resourcesat-2a-awifs-boa/dates")
+    assert dates.status_code == 200
+    assert dates.json() == []
+
+    layer = client.get("/api/layers/default?sourceId=resourcesat-2a-awifs-boa")
+    assert layer.status_code == 200
+    body = layer.json()
+    assert body["sourceId"] == "resourcesat-2a-awifs-boa"
+    assert body["acquisitionDate"] is None
+    assert body["displayMode"] == "FCC"
+    assert body["tileUrlTemplate"] is None
+    assert body["tileAvailable"] is False
+    assert body["unavailableReason"]
+
+
 def test_layers_default_tile_template_is_same_origin_api_route():
     r = client.get("/api/layers/default")
     assert r.status_code == 200
@@ -223,9 +323,7 @@ def test_layers_default_tile_template_is_same_origin_api_route():
     assert body["sourceId"] == "sentinel-2-l2a"
     assert body["acquisitionDate"] == "2025-09-14"
     assert body["displayMode"] == "RGB"
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/sentinel-2-l2a/2025-09-14/rgb/{z}/{x}/{y}.png"
-    )
+    assert body["tileUrlTemplate"] == ("/api/tiles/sentinel-2-l2a/2025-09-14/rgb/{z}/{x}/{y}.png")
 
 
 def _stac_item(item_id, acquisition_date, bbox, analytic_href, scl_href, usable=80.0):
@@ -450,9 +548,7 @@ def test_layers_default_uses_merged_bounds_for_latest_date(monkeypatch):
     assert body["acquisitionDate"] == "2026-01-15"
     assert body["sceneCount"] == 2
     assert body["bounds"] == [77.0, 11.5, 79.0, 13.5]
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/sentinel-2-l2a/2026-01-15/rgb/{z}/{x}/{y}.png"
-    )
+    assert body["tileUrlTemplate"] == ("/api/tiles/sentinel-2-l2a/2026-01-15/rgb/{z}/{x}/{y}.png")
 
 
 def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
@@ -482,6 +578,17 @@ def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
     )
     assert body["usablePixelPercent"] is None
     assert body["cloudMaskedPercent"] is None
+
+
+def test_layers_default_supports_resourcesat_fcc():
+    r = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sourceId"] == "resourcesat-2a-liss3-boa"
+    assert body["displayMode"] == "FCC"
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
+    )
 
 
 def test_layers_default_skips_unsupported_sentinel1_multi_scene_date(monkeypatch):
@@ -559,6 +666,49 @@ def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
     assert captured["url"] == (
         "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
         "url=s3%3A%2F%2Fakasha-cogs%2Fa%2Fanalytic.tif&bidx=1&bidx=8&bidx=9&"
+        "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
+    )
+
+
+def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    captured = {}
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "resourcesat-scene",
+                "analyticHref": "s3://akasha-cogs/resourcesat/analytic.tif",
+                "maskHref": "s3://akasha-cogs/resourcesat/mask.tif",
+                "sclHref": "s3://akasha-cogs/resourcesat/mask.tif",
+                "maskAsset": "mask",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2",
+                    "RED": "BAND3",
+                    "NIR": "BAND4",
+                    "SWIR1": "BAND5",
+                },
+            }
+        ],
+    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+
+    r = client.get("/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/3/4/5.png")
+    assert r.status_code == 200
+    assert r.content == b"png-bytes"
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fresourcesat%2Fanalytic.tif&bidx=3&bidx=2&bidx=1&"
         "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
     )
 
@@ -645,12 +795,14 @@ def test_tile_route_multi_scene_fails_without_leaking_cog_hrefs(monkeypatch):
                 "itemId": "scene-a",
                 "analyticHref": "s3://secret-bucket/a/analytic.tif",
                 "sclHref": "s3://secret-bucket/a/scl.tif",
+                "maskHref": "s3://secret-bucket/a/scl.tif",
                 "bandNames": indices.FROZEN_ANALYTIC_BANDS,
             },
             {
                 "itemId": "scene-b",
                 "analyticHref": "s3://secret-bucket/b/analytic.tif",
                 "sclHref": "s3://secret-bucket/b/scl.tif",
+                "maskHref": "s3://secret-bucket/b/scl.tif",
                 "bandNames": indices.FROZEN_ANALYTIC_BANDS,
             },
         ],
@@ -719,6 +871,34 @@ def test_statistics_rejects_sentinel1_optical_index_without_raster_io(monkeypatc
     assert "s3://" not in r.text
 
 
+def test_resourcesat_rejects_unsupported_ndre_without_raster_access(monkeypatch):
+    from app.raster import service
+
+    monkeypatch.setattr(
+        service,
+        "read_index_windows",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not read rasters")),
+    )
+    r = client.post(
+        "/api/indices/statistics",
+        json={
+            "geometry": IN_FOOTPRINT_POLY,
+            "sourceId": "resourcesat-2a-liss3-boa",
+            "acquisitionDate": "2026-03-19",
+            "indexType": "NDRE",
+        },
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "UNSUPPORTED_INDEX"
+    assert body["error"]["details"]["supported"] == [
+        "NDVI",
+        "MSAVI",
+        "NDMI",
+        "NDWI_GREEN_NIR",
+    ]
+
+
 def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypatch):
     pytest.importorskip("shapely")
     pytest.importorskip("pyproj")
@@ -741,7 +921,9 @@ def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypat
                 "itemId": "scene-a",
                 "analyticHref": "s3://secret-bucket/a/analytic.tif",
                 "sclHref": "s3://secret-bucket/a/scl.tif",
+                "maskHref": "s3://secret-bucket/a/scl.tif",
                 "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "bandRoleMapping": SENTINEL2_BAND_ROLE_MAPPING,
                 "scale": 0.0001,
                 "offset": -0.1,
                 "nodata": 0,
@@ -751,7 +933,9 @@ def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypat
                 "itemId": "scene-b",
                 "analyticHref": "s3://secret-bucket/b/analytic.tif",
                 "sclHref": "s3://secret-bucket/b/scl.tif",
+                "maskHref": "s3://secret-bucket/b/scl.tif",
                 "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "bandRoleMapping": SENTINEL2_BAND_ROLE_MAPPING,
                 "scale": 0.0001,
                 "offset": -0.1,
                 "nodata": 0,
@@ -767,14 +951,14 @@ def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypat
 
     read_hrefs = []
 
-    def fake_read_index_windows(*, analytic_href, scl_href, geometry, positions):
+    def fake_read_index_windows(*, analytic_href, mask_href, geometry, positions):
         read_hrefs.append(analytic_href)
         return WindowRead(
             band_arrays={
                 1: np.full((1, 1), 2000, dtype="uint16"),
                 2: np.full((1, 1), 4000, dtype="uint16"),
             },
-            scl=np.full((1, 1), 4, dtype="uint8"),
+            mask=np.full((1, 1), 4, dtype="uint8"),
             geometry_mask=np.ones((1, 1), dtype=bool),
             nodata=0,
             height=1,
@@ -813,7 +997,9 @@ def test_statistics_multi_scene_overlap_fails_without_leaking_hrefs(monkeypatch)
                 "itemId": "scene-a",
                 "analyticHref": "s3://secret-bucket/a/analytic.tif",
                 "sclHref": "s3://secret-bucket/a/scl.tif",
+                "maskHref": "s3://secret-bucket/a/scl.tif",
                 "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "bandRoleMapping": SENTINEL2_BAND_ROLE_MAPPING,
                 "scale": 0.0001,
                 "offset": -0.1,
                 "nodata": 0,
@@ -823,7 +1009,9 @@ def test_statistics_multi_scene_overlap_fails_without_leaking_hrefs(monkeypatch)
                 "itemId": "scene-b",
                 "analyticHref": "s3://secret-bucket/b/analytic.tif",
                 "sclHref": "s3://secret-bucket/b/scl.tif",
+                "maskHref": "s3://secret-bucket/b/scl.tif",
                 "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "bandRoleMapping": SENTINEL2_BAND_ROLE_MAPPING,
                 "scale": 0.0001,
                 "offset": -0.1,
                 "nodata": 0,
@@ -832,13 +1020,13 @@ def test_statistics_multi_scene_overlap_fails_without_leaking_hrefs(monkeypatch)
         ],
     )
 
-    def fake_read_index_windows(*, analytic_href, scl_href, geometry, positions):
+    def fake_read_index_windows(*, analytic_href, mask_href, geometry, positions):
         return WindowRead(
             band_arrays={
                 1: np.full((1, 1), 2000, dtype="uint16"),
                 2: np.full((1, 1), 4000, dtype="uint16"),
             },
-            scl=np.full((1, 1), 4, dtype="uint8"),
+            mask=np.full((1, 1), 4, dtype="uint8"),
             geometry_mask=np.ones((1, 1), dtype=bool),
             nodata=0,
             height=1,
@@ -902,8 +1090,16 @@ def test_synthetic_dual_cog_statistics_end_to_end(tmp_path, monkeypatch):
 
     a_path = tmp_path / "analytic.tif"
     s_path = tmp_path / "scl.tif"
-    prof = dict(driver="GTiff", width=w, height=h, count=9, dtype="uint16",
-                crs=crs, transform=transform, nodata=0)
+    prof = dict(
+        driver="GTiff",
+        width=w,
+        height=h,
+        count=9,
+        dtype="uint16",
+        crs=crs,
+        transform=transform,
+        nodata=0,
+    )
     with rasterio.open(a_path, "w", **prof) as dst:
         dst.write(analytic)
     prof_s = dict(prof, count=1, dtype="uint8")
@@ -918,7 +1114,9 @@ def test_synthetic_dual_cog_statistics_end_to_end(tmp_path, monkeypatch):
                 "itemId": "synthetic",
                 "analyticHref": str(a_path),
                 "sclHref": str(s_path),
+                "maskHref": str(s_path),
                 "bandNames": indices.FROZEN_ANALYTIC_BANDS,
+                "bandRoleMapping": SENTINEL2_BAND_ROLE_MAPPING,
                 "scale": 0.0001,
                 "offset": -0.1,
                 "nodata": 0,
@@ -928,14 +1126,18 @@ def test_synthetic_dual_cog_statistics_end_to_end(tmp_path, monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        catalog, "supported_indices",
+        catalog,
+        "supported_indices",
         lambda source_id="sentinel-2-l2a": ["NDVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"],
     )
 
     resp = compute_statistics(
-        geometry=IN_FOOTPRINT_POLY, source_id="sentinel-2-l2a",
-        acquisition_date="2025-09-14", index_type="NDVI",
-        max_area_ha=50, max_vertices=5000,
+        geometry=IN_FOOTPRINT_POLY,
+        source_id="sentinel-2-l2a",
+        acquisition_date="2025-09-14",
+        index_type="NDVI",
+        max_area_ha=50,
+        max_vertices=5000,
     )
     assert resp["statistics"]["mean"] == pytest.approx(0.5, abs=1e-6)
     assert resp["pixelCounts"]["validPixels"] > 0

@@ -24,6 +24,8 @@ _S1_PRODUCT_RE = re.compile(
     re.IGNORECASE,
 )
 _UNSAFE_COMPONENT_RE = re.compile(r"[^0-9A-Za-z]+")
+_RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
+_RESOURCESAT_LISS3_BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
 
 
 def _nested(manifest: dict[str, Any], *keys: str) -> Any:
@@ -80,7 +82,10 @@ def _s1_product_match(manifest: dict[str, Any]) -> re.Match[str] | None:
 def _source_id_from_manifest(manifest: dict[str, Any]) -> str:
     source_id = _first_value(manifest, "source_id", "sourceId", "collection_id", "collection")
     if source_id:
-        return str(source_id)
+        source_text = str(source_id)
+        if source_text in {_RESOURCESAT_LISS3_SOURCE_ID, _RESOURCESAT_LISS3_BHOONIDHI_COLLECTION}:
+            return _RESOURCESAT_LISS3_SOURCE_ID
+        return source_text
     if _s1_product_match(manifest):
         return "sentinel-1-grd"
     return "sentinel-2-l2a"
@@ -149,12 +154,17 @@ class SceneIdentity:
     relative_orbit: str | int | None = None
     orbit_state: str | None = None
     product_id: str | None = None
+    path: str | int | None = None
+    row: str | int | None = None
 
     @classmethod
     def from_prepare_manifest(cls, manifest: dict[str, Any]) -> SceneIdentity:
         """Build a dynamic scene identity from a COG prepare manifest."""
-        if _source_id_from_manifest(manifest) == "sentinel-1-grd":
+        source_id = _source_id_from_manifest(manifest)
+        if source_id == "sentinel-1-grd":
             return cls._sentinel1_from_prepare_manifest(manifest)
+        if source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            return cls._resourcesat_liss3_from_prepare_manifest(manifest)
         return cls._sentinel2_from_prepare_manifest(manifest)
 
     @classmethod
@@ -287,6 +297,49 @@ class SceneIdentity:
             product_id=product_id,
         )
 
+    @classmethod
+    def _resourcesat_liss3_from_prepare_manifest(cls, manifest: dict[str, Any]) -> SceneIdentity:
+        product_id = _first_value(manifest, "product_id", "productId", "source_product_id", "id")
+        product_id = str(product_id or "resourcesat-2a-liss3")
+
+        acquisition_datetime = _first_value(
+            manifest,
+            "acquisition_datetime",
+            "acquisitionDateTime",
+            "datetime",
+            "sensing_time",
+        )
+        if not acquisition_datetime:
+            acquisition_date = _first_value(manifest, "acquisition_date", "acquisitionDate")
+            if acquisition_date:
+                acquisition_datetime = f"{acquisition_date}T00:00:00Z"
+        if not acquisition_datetime:
+            raise ValueError("ResourceSat LISS-3 prepare manifest is missing acquisition datetime")
+
+        path = _first_value(manifest, "path", "path_id", "pathId")
+        if path in (None, ""):
+            path = _nested(manifest, "pathRow", "path") or _nested(manifest, "path_row", "path")
+        row = _first_value(manifest, "row", "row_id", "rowId")
+        if row in (None, ""):
+            row = _nested(manifest, "pathRow", "row") or _nested(manifest, "path_row", "row")
+        if path in (None, ""):
+            raise ValueError("ResourceSat LISS-3 prepare manifest is missing path")
+        if row in (None, ""):
+            raise ValueError("ResourceSat LISS-3 prepare manifest is missing row")
+
+        return cls(
+            satellite=_RESOURCESAT_LISS3_SOURCE_ID,
+            product_level=str(_first_value(manifest, "product_level", "productLevel") or "BOA"),
+            mgrs_tile="",
+            acquisition_datetime=_normalise_datetime(str(acquisition_datetime)),
+            processing_baseline="",
+            platform=str(_first_value(manifest, "platform") or "resourcesat-2a"),
+            product_type=str(_first_value(manifest, "product:type", "product_type") or "BOA"),
+            product_id=product_id,
+            path=path,
+            row=row,
+        )
+
     @property
     def acquisition_date(self) -> str:
         return self.acquisition_datetime[:10]
@@ -308,6 +361,18 @@ class SceneIdentity:
         return _safe_path_component(str(self.orbit_state).lower(), "unknown")
 
     @property
+    def path_or_unknown(self) -> str:
+        if self.path in (None, ""):
+            return "unknown"
+        return _safe_path_component(str(self.path), "unknown")
+
+    @property
+    def row_or_unknown(self) -> str:
+        if self.row in (None, ""):
+            return "unknown"
+        return _safe_path_component(str(self.row), "unknown")
+
+    @property
     def product_id_hash(self) -> str:
         value = self.product_id or (
             f"{self.source_id}:{self.acquisition_datetime}:"
@@ -327,6 +392,11 @@ class SceneIdentity:
                 f"{self.product_type or 'unknown'}:{self.relative_orbit_or_unknown}:"
                 f"{self.orbit_state_or_unknown}:{self.acquisition_datetime}:{self.product_id_hash}"
             )
+        if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            return (
+                f"{self.source_id}:{self.product_level}:{self.path_or_unknown}:"
+                f"{self.row_or_unknown}:{self.acquisition_datetime}"
+            )
         return (
             f"{self.satellite}:{self.product_level}:{self.mgrs_tile}:"
             f"{self.acquisition_datetime}:{self.processing_baseline}"
@@ -336,6 +406,8 @@ class SceneIdentity:
     def item_id(self) -> str:
         if self.source_id == "sentinel-1-grd":
             return f"{self.source_id}_{self.relative_orbit_or_unknown}_{self.scene_component}"
+        if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            return f"{self.source_id}_{self.scene_component}"
         if self.legacy_object_layout:
             date_compact = self.acquisition_date.replace("-", "")
             baseline_compact = _safe_component(self.processing_baseline)
@@ -351,6 +423,12 @@ class SceneIdentity:
             instrument = _safe_path_component(self.instrument_mode or "unknown")
             product = _safe_path_component(self.product_type or "unknown")
             return f"{datetime_compact}_{platform}_{instrument}_{product}_{self.product_id_hash}"
+        if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            datetime_compact = _safe_component(self.acquisition_datetime)
+            return (
+                f"{datetime_compact}_path-{self.path_or_unknown}_"
+                f"row-{self.row_or_unknown}_{self.product_id_hash}"
+            )
         datetime_compact = _safe_component(self.acquisition_datetime)
         baseline_compact = _safe_component(self.processing_baseline)
         return f"{datetime_compact}_{baseline_compact}"
@@ -362,6 +440,8 @@ class SceneIdentity:
                 f"{self.source_id}/{self.acquisition_date}/"
                 f"{self.relative_orbit_or_unknown}/{self.scene_component}"
             )
+        if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            return f"{self.source_id}/scene/{self.acquisition_date}/{self.scene_component}"
         return f"{self.satellite}/{self.acquisition_date}/{self.mgrs_tile}/{self.scene_component}"
 
     @property
@@ -387,6 +467,10 @@ class SceneIdentity:
     @property
     def scl_key(self) -> str:
         return f"{self._key_prefix}/scl.tif"
+
+    @property
+    def mask_key(self) -> str:
+        return f"{self._key_prefix}/mask.tif"
 
     @property
     def backscatter_key(self) -> str:

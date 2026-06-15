@@ -52,7 +52,7 @@ def _stats_response(
             "totalPixels": 100,
             "nodataPixels": 7,
             "coveragePixels": 93,
-            "sclExcludedPixels": 10,
+            "maskedPixels": 10,
             "validPixels": 83,
         },
         "metadata": {
@@ -90,7 +90,7 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert calls[0]["geometry"] == plot["geometry"]
-    assert 3 not in calls[0]["excluded_scl_classes"]
+    assert 3 not in calls[0]["excluded_mask_classes"]
     assert body["plotId"] == "plot-1"
     assert body["provider"] == "native"
     assert body["scope"] == "field"
@@ -145,7 +145,8 @@ def test_native_trend_normalizes_points(monkeypatch):
     assert body["points"][0]["acquisitionDate"] == "2026-01-01"
     assert body["points"][0]["mean"] == pytest.approx(0.55)
     assert body["points"][0]["validPixelPercent"] == pytest.approx(82.5)
-    assert body["metadata"]["formula"] == "(B08 - B04) / (B08 + B04)"
+    assert body["metadata"]["formula"] == "(NIR - RED) / (NIR + RED)"
+    assert body["metadata"]["spectralRoles"] == ["NIR", "RED"]
 
 
 def test_native_trend_rejects_unsupported_index(monkeypatch):

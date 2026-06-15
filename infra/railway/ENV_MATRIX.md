@@ -40,6 +40,7 @@ CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff
 AKASHA_RGB_RESCALE=0,3000                        # true-colour DN rescale min,max
 DEFAULT_SOURCE_ID=sentinel-2-l2a
 DEFAULT_AOI_ID=bangalore
+AOI_CONFIG_PATH=/app/data/seed/bangalore-60km-aoi.geojson
 BASEMAP_PROVIDER=esri
 ESRI_BASEMAP_STYLE=arcgis/imagery
 ESRI_BASEMAP_STYLE_FAMILY=arcgis
@@ -119,6 +120,14 @@ S3_SECRET_KEY=<secret-key>
 S3_REGION=us-east-1
 AKASHA_COG_BUCKET=akasha-cogs
 SEED_DATA_DIR=/app/data/seed
-AOI_CONFIG_PATH=/app/data/seed/bangalore-aoi.geojson
-# CDSE_CLIENT_ID / CDSE_CLIENT_SECRET only when Wave 2 automated ingestion is built
+AOI_CONFIG_PATH=/app/data/seed/bangalore-60km-aoi.geojson
+BHOONIDHI_USER_ID=<bhoonidhi-user-id>
+BHOONIDHI_PASSWORD=<bhoonidhi-password>
+BHOONIDHI_API_BASE=https://bhoonidhi-api.nrsc.gov.in
+BHOONIDHI_SEARCH_RPS=3
+BHOONIDHI_DOWNLOAD_CONCURRENCY=3
+BHOONIDHI_RAW_ROOT=/srv/akasha/data/raw/bhoonidhi
+BHOONIDHI_TEMP_ROOT=/srv/akasha/data/work/bhoonidhi
+BHOONIDHI_LEDGER_PATH=/srv/akasha/ingestion/ledger.sqlite
+# CDSE_CLIENT_ID / CDSE_CLIENT_SECRET only when legacy Sentinel automation is used
 ```

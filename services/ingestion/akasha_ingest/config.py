@@ -12,6 +12,11 @@ from pathlib import Path
 SENTINEL2_COLLECTION_ID = "sentinel-2-l2a"
 SENTINEL1_COLLECTION_ID = "sentinel-1-grd"
 RESOURCESAT_LISS3_COLLECTION_ID = "resourcesat-2a-liss3-boa"
+RESOURCESAT_AWIFS_COLLECTION_ID = "resourcesat-2a-awifs-boa"
+RESOURCESAT_BOA_COLLECTION_IDS = {
+    RESOURCESAT_LISS3_COLLECTION_ID,
+    RESOURCESAT_AWIFS_COLLECTION_ID,
+}
 COLLECTION_ID = os.environ.get("AKASHA_COLLECTION_ID", SENTINEL2_COLLECTION_ID)
 
 # Object storage (MinIO / S3-compatible). Internal-only; placeholders in env.

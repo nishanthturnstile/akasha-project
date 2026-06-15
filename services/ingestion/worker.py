@@ -309,9 +309,13 @@ def _latest_composite_manifest(source: str, aoi: str):
 def cmd_verify_composite(args: argparse.Namespace) -> int:
     from akasha_ingest import composite, config
 
-    manifest_path = Path(args.manifest) if args.manifest else _latest_composite_manifest(
-        args.source,
-        args.aoi,
+    manifest_path = (
+        Path(args.manifest)
+        if args.manifest
+        else _latest_composite_manifest(
+            args.source,
+            args.aoi,
+        )
     )
     deps = composite.require_raster_deps()
     result = composite.verify_composite_manifest(
@@ -342,6 +346,8 @@ def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> No
     command = [
         sys.executable,
         str(script),
+        "--source",
+        args.source,
         "--selection-manifest",
         str(download_manifest),
         "--raw-dir",
@@ -362,8 +368,17 @@ def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> No
 def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
     from akasha_ingest import bhoonidhi, catalog, composite, config, storage, sync
 
-    if args.source != config.RESOURCESAT_LISS3_COLLECTION_ID:
-        raise SystemExit("bhoonidhi-sync currently supports resourcesat-2a-liss3-boa only")
+    if args.source not in config.RESOURCESAT_BOA_COLLECTION_IDS:
+        raise SystemExit("bhoonidhi-sync currently supports ResourceSat-2A BOA sources only")
+    if (
+        args.source != config.RESOURCESAT_LISS3_COLLECTION_ID
+        and not args.dry_run
+        and not args.skip_composite
+    ):
+        raise SystemExit(
+            "AWiFS sync can search/download/prepare, but requires --skip-composite until "
+            "AWiFS composite verification is validated."
+        )
 
     collection = bhoonidhi.source_collection(args.source)
     aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
@@ -375,8 +390,10 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
     new_manifest_path = out_dir / "coverage_manifest.new.json"
     download_manifest_path = out_dir / "download_manifest.json"
     ledger_path = Path(args.ledger_path or config.BHOONIDHI_LEDGER_PATH)
-    lock_path = Path(args.lock_path) if args.lock_path else ledger_path.with_suffix(
-        ledger_path.suffix + ".lock"
+    lock_path = (
+        Path(args.lock_path)
+        if args.lock_path
+        else ledger_path.with_suffix(ledger_path.suffix + ".lock")
     )
 
     lock = None

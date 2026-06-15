@@ -104,6 +104,40 @@ def test_client_reuses_token_and_retries_search_429():
     assert opener.requests[-1].headers["Authorization"] == "Bearer token-a"
 
 
+def test_search_uses_bhoonidhi_cql2_filter_shape():
+    opener = FakeOpener(
+        [
+            json_response(
+                {
+                    "access_token": "token-a",
+                    "refresh_token": "refresh-a",
+                    "expires_in": 1200,
+                }
+            ),
+            json_response({"features": []}),
+        ]
+    )
+    client = bhoonidhi.BhoonidhiClient(
+        user_id="user",
+        password="pw",
+        opener=opener,
+        now=lambda: 1000.0,
+    )
+
+    client.search(
+        collection=bhoonidhi.RESOURCESAT_LISS3_BHOONIDHI_COLLECTION,
+        datetime_range="2026-03-01T00:00:00Z/2026-03-31T23:59:59Z",
+        intersects={"type": "Polygon", "coordinates": []},
+    )
+
+    payload = json.loads(opener.requests[-1].data.decode("utf-8"))
+    assert payload["filter"] == {
+        "op": "eq",
+        "args": [{"property": "Online"}, "Y"],
+    }
+    assert payload["filter-lang"] == "cql2-json"
+
+
 def test_search_manifest_filters_online_positive_overlap():
     aoi = {
         "id": "bangalore-60km",

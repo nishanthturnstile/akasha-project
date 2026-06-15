@@ -19,6 +19,7 @@ import {
   getConfig,
   getAccountMe,
   getAssistantStatus,
+  getDates,
   getFieldLeaderboard,
   getFieldRiskSummary,
   getJohnDeereConnection,
@@ -59,6 +60,22 @@ describe('api client error mapping', () => {
     const cfg = await getConfig();
     expect(cfg).toEqual(payload);
     expect(fetchMock).toHaveBeenCalledWith('/api/config', expect.anything());
+  });
+
+  it('requests source dates with the launch lookback window', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getDates('resourcesat-2a-liss3-boa');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sources/resourcesat-2a-liss3-boa/dates?lookbackDays=92',
+      expect.anything(),
+    );
   });
 
   it('maps the BFF error envelope to ApiError code/message/status', async () => {

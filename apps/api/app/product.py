@@ -16,10 +16,11 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from datetime import date, timedelta
 from typing import Any
 
 import anyio
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
 from .aoi import load_aoi_config
@@ -102,10 +103,64 @@ async def get_sources() -> list[dict[str, Any]]:
     return catalog.list_sources()
 
 
+def _filter_source_dates(
+    dates: list[dict[str, Any]],
+    *,
+    start_date: date | None,
+    end_date: date | None,
+    lookback_days: int | None,
+) -> list[dict[str, Any]]:
+    """Optionally window source dates while preserving the newest-first contract."""
+    if not dates or (start_date is None and end_date is None and lookback_days is None):
+        return dates
+
+    parsed: list[tuple[date, dict[str, Any]]] = []
+    for entry in dates:
+        raw = entry.get("acquisitionDate")
+        if not isinstance(raw, str):
+            continue
+        try:
+            parsed.append((date.fromisoformat(raw), entry))
+        except ValueError:
+            continue
+
+    if not parsed:
+        return []
+
+    window_end = end_date or max(item_date for item_date, _entry in parsed)
+    window_start = start_date
+    if window_start is None and lookback_days is not None:
+        window_start = window_end - timedelta(days=lookback_days - 1)
+
+    if window_start and window_start > window_end:
+        raise bad_request(
+            "startDate must be on or before endDate.",
+            code="INVALID_DATE_RANGE",
+            startDate=window_start.isoformat(),
+            endDate=window_end.isoformat(),
+        )
+
+    return [
+        entry
+        for item_date, entry in parsed
+        if (window_start is None or item_date >= window_start) and item_date <= window_end
+    ]
+
+
 @router.get("/sources/{source_id}/dates")
-async def get_source_dates(source_id: str) -> list[dict[str, Any]]:
+async def get_source_dates(
+    source_id: str,
+    startDate: date | None = Query(default=None),
+    endDate: date | None = Query(default=None),
+    lookbackDays: int | None = Query(default=None, ge=1, le=366),
+) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
-    return catalog.list_dates(source_id)
+    return _filter_source_dates(
+        catalog.list_dates(source_id),
+        start_date=startDate,
+        end_date=endDate,
+        lookback_days=lookbackDays,
+    )
 
 
 @router.get("/layers/default")

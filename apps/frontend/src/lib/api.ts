@@ -217,8 +217,12 @@ export const getConfig = (): Promise<AppConfig> => request<AppConfig>('/api/conf
 
 export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sources');
 
+const SOURCE_DATE_LOOKBACK_DAYS = 92;
+
 export const getDates = (sourceId: string): Promise<SceneDate[]> =>
-  request<SceneDate[]>(`/api/sources/${encodeURIComponent(sourceId)}/dates`);
+  request<SceneDate[]>(
+    `/api/sources/${encodeURIComponent(sourceId)}/dates?lookbackDays=${SOURCE_DATE_LOOKBACK_DAYS}`,
+  );
 
 export const getDefaultLayer = (): Promise<DefaultLayer> =>
   request<DefaultLayer>('/api/layers/default');

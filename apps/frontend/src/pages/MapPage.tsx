@@ -41,7 +41,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/mapViewContext';
 import { useMapUrlState } from '@/hooks/useMapUrlState';
-import type { Plot, PlotGeometry, Source } from '@/types/api';
+import type { CloudMaskOptions, Plot, PlotGeometry, Source } from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -141,9 +141,26 @@ function geoJsonFilename(plot: Plot | null): string {
 function sensorBadgeForSource(source: Source | null | undefined): string | null {
   if (!source) return null;
   const haystack = `${source.id} ${source.label}`.toLowerCase();
+  if (haystack.includes('resourcesat-2a')) return 'RS2A';
   if (haystack.includes('sentinel-2') || haystack.includes('sentinel 2')) return 'S2';
   if (haystack.includes('sentinel-1') || haystack.includes('sentinel 1')) return 'S1';
   return null;
+}
+
+function maskOptionsForSource(source: Source | null | undefined): Array<keyof CloudMaskOptions> {
+  return source?.availableMaskOptions ?? ['clouds', 'cloudShadows', 'cirrus'];
+}
+
+function sanitizeCloudMaskForSource(
+  value: CloudMaskOptions,
+  source: Source | null | undefined,
+): CloudMaskOptions {
+  const available = new Set(maskOptionsForSource(source));
+  return {
+    clouds: available.has('clouds') ? value.clouds : false,
+    cloudShadows: available.has('cloudShadows') ? value.cloudShadows : false,
+    cirrus: available.has('cirrus') ? value.cirrus : false,
+  };
 }
 
 export default function MapPage() {
@@ -218,6 +235,10 @@ export default function MapPage() {
 
   const activeTimelineDates = datesQ.data;
   const activeSourceKind = selectedSource?.kind;
+  const effectiveCloudMask = useMemo(
+    () => sanitizeCloudMaskForSource(cloudMask, selectedSource),
+    [cloudMask, selectedSource],
+  );
 
   // Effective acquisition date: keep a still-valid user choice, otherwise the
   // computed default (latest usable -> threshold -> newest). Derived, not stored,
@@ -582,7 +603,9 @@ export default function MapPage() {
             sourceId={ effectiveSourceId }
             displayMode={ selectedDisplayMode }
             supportedIndices={ analyticsSupportedIndices }
-            cloudMask={ cloudMask }
+            cloudMask={ effectiveCloudMask }
+            sourceMaskMethod={ selectedSource?.maskMethod ?? null }
+            sourceMetricsProvisional={ Boolean(selectedSource?.metricsProvisional) }
             periodFrom={ periodFrom }
             periodTo={ periodTo }
           />
@@ -620,6 +643,7 @@ export default function MapPage() {
           selectedDate={ selectedDate }
           exportSourceId={ effectiveSourceId }
           exportIndexType={ exportIndexType }
+          exportCloudMask={ effectiveCloudMask }
           collapsed={ view.layerBarCollapsed }
           onCollapsedChange={ view.setLayerBarCollapsed }
         />

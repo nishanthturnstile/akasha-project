@@ -236,8 +236,8 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
 def cmd_build_composite(args: argparse.Namespace) -> int:
     from akasha_ingest import bhoonidhi, composite, config
 
-    if args.source != config.RESOURCESAT_LISS3_COLLECTION_ID:
-        raise SystemExit("build-composite currently supports resourcesat-2a-liss3-boa only")
+    if args.source not in config.RESOURCESAT_BOA_COLLECTION_IDS:
+        raise SystemExit("build-composite currently supports ResourceSat-2A BOA sources only")
     aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
     if args.aoi and args.aoi != aoi.get("id"):
         raise SystemExit(f"AOI '{args.aoi}' not found; loaded '{aoi.get('id')}'")
@@ -245,6 +245,7 @@ def cmd_build_composite(args: argparse.Namespace) -> int:
         _manifest_paths(args.manifest_glob, args.source),
         window_start=args.window_start,
         window_end=args.window_end,
+        source_id=args.source,
     )
     if not manifest_paths:
         raise SystemExit("no ResourceSat scene manifests found for the requested window")
@@ -256,7 +257,8 @@ def cmd_build_composite(args: argparse.Namespace) -> int:
         output_root=args.output_root or config.raster_source_root(),
         window_start=args.window_start,
         window_end=args.window_end,
-        resolution=args.resolution,
+        source_id=args.source,
+        resolution=args.resolution or composite.default_resolution(args.source),
         padding_pixels=args.padding_pixels,
         overwrite=args.overwrite,
         skip_validation=args.skip_validation,
@@ -309,14 +311,19 @@ def _latest_composite_manifest(source: str, aoi: str):
 def cmd_verify_composite(args: argparse.Namespace) -> int:
     from akasha_ingest import composite, config
 
-    manifest_path = Path(args.manifest) if args.manifest else _latest_composite_manifest(
-        args.source,
-        args.aoi,
+    manifest_path = (
+        Path(args.manifest)
+        if args.manifest
+        else _latest_composite_manifest(
+            args.source,
+            args.aoi,
+        )
     )
     deps = composite.require_raster_deps()
     result = composite.verify_composite_manifest(
         deps=deps,
         manifest_path=manifest_path,
+        source_id=args.source,
         min_coverage_percent=args.min_coverage_percent,
         expected_crs=args.expected_crs,
         expected_resolution=args.expected_resolution,
@@ -342,6 +349,8 @@ def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> No
     command = [
         sys.executable,
         str(script),
+        "--source",
+        args.source,
         "--selection-manifest",
         str(download_manifest),
         "--raw-dir",
@@ -362,9 +371,8 @@ def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> No
 def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
     from akasha_ingest import bhoonidhi, catalog, composite, config, storage, sync
 
-    if args.source != config.RESOURCESAT_LISS3_COLLECTION_ID:
-        raise SystemExit("bhoonidhi-sync currently supports resourcesat-2a-liss3-boa only")
-
+    if args.source not in config.RESOURCESAT_BOA_COLLECTION_IDS:
+        raise SystemExit("bhoonidhi-sync currently supports ResourceSat-2A BOA sources only")
     collection = bhoonidhi.source_collection(args.source)
     aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
     if args.aoi and args.aoi != aoi.get("id"):
@@ -375,8 +383,10 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
     new_manifest_path = out_dir / "coverage_manifest.new.json"
     download_manifest_path = out_dir / "download_manifest.json"
     ledger_path = Path(args.ledger_path or config.BHOONIDHI_LEDGER_PATH)
-    lock_path = Path(args.lock_path) if args.lock_path else ledger_path.with_suffix(
-        ledger_path.suffix + ".lock"
+    lock_path = (
+        Path(args.lock_path)
+        if args.lock_path
+        else ledger_path.with_suffix(ledger_path.suffix + ".lock")
     )
 
     lock = None
@@ -485,6 +495,7 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
             config.prepared_manifest_files(source_id=args.source),
             window_start=args.window_start,
             window_end=args.window_end,
+            source_id=args.source,
         )
         if not manifest_paths:
             raise SystemExit("no prepared scene manifests found for composite window")
@@ -496,7 +507,8 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
             output_root=config.raster_source_root(),
             window_start=args.window_start,
             window_end=args.window_end,
-            resolution=args.resolution,
+            source_id=args.source,
+            resolution=args.resolution or composite.default_resolution(args.source),
             padding_pixels=args.padding_pixels,
             overwrite=args.overwrite,
             skip_validation=args.skip_composite_validation,
@@ -505,6 +517,7 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
         verify = composite.verify_composite_manifest(
             deps=deps,
             manifest_path=build.manifest,
+            source_id=args.source,
             min_coverage_percent=args.min_coverage_percent,
             require_overviews=not args.allow_missing_overviews,
         )
@@ -522,6 +535,7 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
         post_ingest = composite.verify_composite_manifest(
             deps=deps,
             manifest_path=build.manifest,
+            source_id=args.source,
             min_coverage_percent=args.min_coverage_percent,
             require_overviews=not args.allow_missing_overviews,
             require_catalog_item=True,
@@ -624,7 +638,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_sync.add_argument("--raw-root", default=None)
     p_sync.add_argument("--ledger-path", default=None)
     p_sync.add_argument("--lock-path", default=None)
-    p_sync.add_argument("--resolution", type=float, default=24.0)
+    p_sync.add_argument(
+        "--resolution",
+        type=float,
+        default=None,
+        help="Composite grid resolution in meters; defaults from the source profile.",
+    )
     p_sync.add_argument("--padding-pixels", type=int, default=0)
     p_sync.add_argument("--min-coverage-percent", type=float, default=95.0)
     p_sync.add_argument("--method", default="upsert", choices=["upsert", "insert_ignore"])
@@ -660,7 +679,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_composite.add_argument("--output-root", type=Path, default=None)
     p_composite.add_argument("--window-start", required=True, help="Composite period start date.")
     p_composite.add_argument("--window-end", required=True, help="Composite period end date.")
-    p_composite.add_argument("--resolution", type=float, default=24.0)
+    p_composite.add_argument(
+        "--resolution",
+        type=float,
+        default=None,
+        help="Composite grid resolution in meters; defaults from the source profile.",
+    )
     p_composite.add_argument("--padding-pixels", type=int, default=0)
     p_composite.add_argument("--overwrite", action="store_true")
     p_composite.add_argument("--keep-intermediate", action="store_true")
@@ -707,7 +731,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify_composite.add_argument("--manifest", help="Composite prepare_manifest.json path.")
     p_verify_composite.add_argument("--min-coverage-percent", type=float, default=95.0)
     p_verify_composite.add_argument("--expected-crs", default="EPSG:32643")
-    p_verify_composite.add_argument("--expected-resolution", type=float, default=24.0)
+    p_verify_composite.add_argument(
+        "--expected-resolution",
+        type=float,
+        default=None,
+        help="Expected output resolution in meters; defaults from the source profile.",
+    )
     p_verify_composite.add_argument("--resolution-tolerance", type=float, default=0.25)
     p_verify_composite.add_argument("--allow-missing-overviews", action="store_true")
     p_verify_composite.add_argument(

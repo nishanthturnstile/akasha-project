@@ -33,8 +33,7 @@ def _manifest(
     acquisition_datetime = acquisition_datetime or f"{date}T05:20:00Z"
     return {
         "product_id": (
-            f"S2B_MSIL2A_{date.replace('-', '')}T052000_N0500_R019_"
-            f"T{tile}_20260115T074457.SAFE"
+            f"S2B_MSIL2A_{date.replace('-', '')}T052000_N0500_R019_" f"T{tile}_20260115T074457.SAFE"
         ),
         "mgrs_tile": tile,
         "acquisition_datetime": acquisition_datetime,
@@ -76,9 +75,7 @@ def _manifest(
 def _s1_manifest() -> dict:
     return {
         "source_id": "sentinel-1-grd",
-        "product_id": (
-            "S1C_IW_GRDH_1SDV_20260427T002015_20260427T002040_001234_ABCDEF_1234.SAFE"
-        ),
+        "product_id": ("S1C_IW_GRDH_1SDV_20260427T002015_20260427T002040_001234_ABCDEF_1234.SAFE"),
         "platform": "sentinel-1c",
         "acquisition_datetime": "2026-04-27T00:20:15Z",
         "sar:instrument_mode": "IW",
@@ -89,9 +86,7 @@ def _s1_manifest() -> dict:
         "bbox": [77.0, 11.0, 78.0, 12.0],
         "geometry": {
             "type": "Polygon",
-            "coordinates": [
-                [[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]
-            ],
+            "coordinates": [[[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]],
         },
         "outputs": {
             "backscatter": {
@@ -109,6 +104,27 @@ def _s1_manifest() -> dict:
     }
 
 
+def _eos04_sar_manifest() -> dict:
+    manifest = _s1_manifest()
+    manifest.update(
+        {
+            "source_id": "eos-04-sar-mrs-l2b",
+            "collection": "EOS-04_SAR-MRS_L2B",
+            "product_id": "EOS04_SAMPLE_SAR_MRS_L2B_20260427",
+            "platform": "eos-04",
+            "product_level": "L2B",
+            "sar:instrument_mode": "MRS",
+            "product:type": "SAR-MRS_L2B",
+            "sar:frequency_band": "C",
+            "sar:polarizations": ["HH", "HV"],
+        }
+    )
+    manifest["outputs"]["backscatter"]["resolution"] = [25, 25]
+    manifest["outputs"]["backscatter"]["width"] = 4096
+    manifest["outputs"]["backscatter"]["height"] = 4096
+    return manifest
+
+
 def _resourcesat_manifest() -> dict:
     return {
         "source_id": "resourcesat-2a-liss3-boa",
@@ -123,9 +139,7 @@ def _resourcesat_manifest() -> dict:
         "bbox": [77.0, 11.0, 78.0, 12.0],
         "geometry": {
             "type": "Polygon",
-            "coordinates": [
-                [[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]
-            ],
+            "coordinates": [[[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]],
         },
         "outputs": {
             "analytic": {
@@ -179,6 +193,21 @@ def _resourcesat_composite_manifest() -> dict:
             ],
         }
     )
+    return manifest
+
+
+def _awifs_manifest() -> dict:
+    manifest = _resourcesat_manifest()
+    manifest.update(
+        {
+            "source_id": "resourcesat-2a-awifs-boa",
+            "collection": "ResourceSat-2A_AWIFS_BOA",
+            "product_id": "AW319MAR2026048153009900065PSANSTUCSRHTDF",
+            "gsd": 56,
+        }
+    )
+    manifest["outputs"]["analytic"]["resolution"] = [56, 56]
+    manifest["outputs"]["mask"]["resolution"] = [56, 56]
     return manifest
 
 
@@ -237,8 +266,7 @@ def test_scene_identity_from_prepare_manifest_uses_dynamic_tile_keys() -> None:
     assert scene.scene_key == "sentinel-2-l2a:L2A:43PHQ:2026-01-15T05:20:00Z:05.00"
     assert scene.scene_component == "20260115T052000Z_0500"
     assert (
-        scene.analytic_key
-        == "sentinel-2-l2a/2026-01-15/43PHQ/20260115T052000Z_0500/analytic.tif"
+        scene.analytic_key == "sentinel-2-l2a/2026-01-15/43PHQ/20260115T052000Z_0500/analytic.tif"
     )
     assert scene.scl_key == "sentinel-2-l2a/2026-01-15/43PHQ/20260115T052000Z_0500/scl.tif"
     assert SAMPLE_SCENE.analytic_key == "sentinel-2-l2a/2025-09-14/analytic.tif"
@@ -277,10 +305,20 @@ def test_sentinel1_scene_identity_uses_manifest_orbit_fields_and_collision_safe_
     assert scene.product_id_hash
     assert scene.product_id_hash in scene.scene_component
     assert scene.backscatter_key == (
-        "sentinel-1-grd/2026-04-27/42/"
-        f"{scene.scene_component}/backscatter.tif"
+        "sentinel-1-grd/2026-04-27/42/" f"{scene.scene_component}/backscatter.tif"
     )
     assert scene.item_id == f"sentinel-1-grd_42_{scene.scene_component}"
+
+
+def test_eos04_sar_scene_identity_accepts_bhoonidhi_collection_alias() -> None:
+    manifest = _eos04_sar_manifest()
+    manifest.pop("source_id")
+
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+
+    assert scene.source_id == "eos-04-sar-mrs-l2b"
+    assert scene.scene_key.startswith("eos-04-sar-mrs-l2b:eos-04:MRS:SAR-MRS_L2B")
+    assert scene.backscatter_key.startswith("eos-04-sar-mrs-l2b/2026-04-27/42/")
 
 
 def test_sentinel1_scene_identity_accepts_prepare_orbit_direction_alias() -> None:
@@ -303,8 +341,7 @@ def test_sentinel1_product_name_parser_handles_s1a_and_s1c_without_orbit_fields(
         manifest.pop("sat:relative_orbit")
         manifest.pop("sat:orbit_state")
         manifest["product_id"] = (
-            f"{platform}_IW_GRDH_1SDV_20260427T002015_"
-            "20260427T002040_001234_ABCDEF_1234.SAFE"
+            f"{platform}_IW_GRDH_1SDV_20260427T002015_" "20260427T002040_001234_ABCDEF_1234.SAFE"
         )
 
         scene = SceneIdentity.from_prepare_manifest(manifest)
@@ -321,20 +358,15 @@ def test_resourcesat_scene_identity_uses_path_row_scene_keys() -> None:
     assert scene.source_id == "resourcesat-2a-liss3-boa"
     assert scene.path_or_unknown == "99"
     assert scene.row_or_unknown == "65"
-    assert (
-        scene.scene_key
-        == "resourcesat-2a-liss3-boa:BOA:99:65:2026-03-19T00:00:00Z"
-    )
+    assert scene.scene_key == "resourcesat-2a-liss3-boa:BOA:99:65:2026-03-19T00:00:00Z"
     assert scene.scene_component.startswith("20260319T000000Z_path-99_row-65_")
     assert scene.product_id_hash in scene.scene_component
     assert scene.item_id == f"resourcesat-2a-liss3-boa_{scene.scene_component}"
     assert scene.analytic_key == (
-        "resourcesat-2a-liss3-boa/scene/2026-03-19/"
-        f"{scene.scene_component}/analytic.tif"
+        "resourcesat-2a-liss3-boa/scene/2026-03-19/" f"{scene.scene_component}/analytic.tif"
     )
     assert scene.mask_key == (
-        "resourcesat-2a-liss3-boa/scene/2026-03-19/"
-        f"{scene.scene_component}/mask.tif"
+        "resourcesat-2a-liss3-boa/scene/2026-03-19/" f"{scene.scene_component}/mask.tif"
     )
 
 
@@ -363,6 +395,17 @@ def test_resourcesat_scene_identity_accepts_bhoonidhi_collection_alias() -> None
 
     assert scene.source_id == "resourcesat-2a-liss3-boa"
     assert scene.scene_key == "resourcesat-2a-liss3-boa:BOA:99:65:2026-03-19T00:00:00Z"
+
+
+def test_awifs_scene_identity_accepts_bhoonidhi_collection_alias() -> None:
+    manifest = _awifs_manifest()
+    manifest.pop("source_id")
+
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+
+    assert scene.source_id == "resourcesat-2a-awifs-boa"
+    assert scene.scene_key == "resourcesat-2a-awifs-boa:BOA:99:65:2026-03-19T00:00:00Z"
+    assert scene.analytic_key.startswith("resourcesat-2a-awifs-boa/scene/2026-03-19/")
 
 
 def test_build_stac_item_from_prepare_manifest_uses_dynamic_asset_hrefs() -> None:
@@ -435,6 +478,20 @@ def test_build_resourcesat_stac_item_emits_liss3_mask_contract() -> None:
     assert "scl" not in item["assets"]
 
 
+def test_build_awifs_stac_item_uses_awifs_collection_and_resolution() -> None:
+    item = catalog.build_stac_item_from_prepare_manifest(_awifs_manifest())
+
+    assert item["collection"] == "resourcesat-2a-awifs-boa"
+    assert item["properties"]["instruments"] == ["awifs"]
+    assert item["properties"]["gsd"] == 56
+    assert item["assets"]["analytic"]["gsd"] == 56
+    assert item["assets"]["analytic"]["title"].startswith("ResourceSat-2A AWiFS BOA")
+    assert item["assets"]["analytic"]["raster:bands"][0]["spatial_resolution"] == 56
+    assert item["assets"]["analytic"]["href"].startswith(
+        "s3://akasha-cogs/resourcesat-2a-awifs-boa/"
+    )
+
+
 def test_build_resourcesat_composite_stac_item_emits_composite_metadata() -> None:
     item = catalog.build_stac_item_from_prepare_manifest(_resourcesat_composite_manifest())
 
@@ -474,6 +531,24 @@ def test_build_sentinel1_stac_item_emits_sar_metadata_and_backscatter_asset() ->
     assert "scl" not in item["assets"]
 
 
+def test_build_eos04_sar_stac_item_emits_sar_safe_metadata() -> None:
+    item = catalog.build_stac_item_from_prepare_manifest(_eos04_sar_manifest())
+
+    assert item["collection"] == "eos-04-sar-mrs-l2b"
+    assert item["properties"]["constellation"] == "eos-04"
+    assert item["properties"]["instruments"] == ["sar"]
+    assert item["properties"]["sar:instrument_mode"] == "MRS"
+    assert item["properties"]["sar:frequency_band"] == "C"
+    assert item["properties"]["sar:polarizations"] == ["HH", "HV"]
+    assert item["properties"]["akasha:date_metrics_kind"] == "radar"
+    assert item["assets"]["backscatter"]["href"].startswith(
+        "s3://akasha-cogs/eos-04-sar-mrs-l2b/"
+    )
+    assert item["assets"]["backscatter"]["raster:bands"][0]["unit"] == "dB"
+    assert "eo:bands" not in item["assets"]["backscatter"]
+    assert "analytic" not in item["assets"]
+
+
 def test_build_stac_item_transforms_projected_output_bounds_to_wgs84() -> None:
     manifest = _manifest(tile="43PHP")
     manifest.pop("bbox")
@@ -510,7 +585,9 @@ def test_seed_manifest_cogs_uploads_to_dynamic_keys_without_live_s3(
         def __init__(self) -> None:
             self.uploads: list[tuple[str, str, str, dict]] = []
 
-        def upload_file(self, filename: str, bucket: str, key: str, ExtraArgs: dict) -> None:  # noqa: N803
+        def upload_file(
+            self, filename: str, bucket: str, key: str, ExtraArgs: dict
+        ) -> None:  # noqa: N803
             self.uploads.append((filename, bucket, key, ExtraArgs))
 
     fake_client = FakeClient()
@@ -536,7 +613,9 @@ def test_seed_manifest_cogs_uploads_sentinel1_backscatter_only(
         def __init__(self) -> None:
             self.uploads: list[tuple[str, str, str, dict]] = []
 
-        def upload_file(self, filename: str, bucket: str, key: str, ExtraArgs: dict) -> None:  # noqa: N803
+        def upload_file(
+            self, filename: str, bucket: str, key: str, ExtraArgs: dict
+        ) -> None:  # noqa: N803
             self.uploads.append((filename, bucket, key, ExtraArgs))
 
     fake_client = FakeClient()
@@ -562,7 +641,9 @@ def test_seed_manifest_cogs_uploads_resourcesat_analytic_and_mask(
         def __init__(self) -> None:
             self.uploads: list[tuple[str, str, str, dict]] = []
 
-        def upload_file(self, filename: str, bucket: str, key: str, ExtraArgs: dict) -> None:  # noqa: N803
+        def upload_file(
+            self, filename: str, bucket: str, key: str, ExtraArgs: dict
+        ) -> None:  # noqa: N803
             self.uploads.append((filename, bucket, key, ExtraArgs))
 
     fake_client = FakeClient()
@@ -596,7 +677,9 @@ def test_seed_manifest_cogs_uploads_resourcesat_composite_layout(
         def __init__(self) -> None:
             self.uploads: list[tuple[str, str, str, dict]] = []
 
-        def upload_file(self, filename: str, bucket: str, key: str, ExtraArgs: dict) -> None:  # noqa: N803
+        def upload_file(
+            self, filename: str, bucket: str, key: str, ExtraArgs: dict
+        ) -> None:  # noqa: N803
             self.uploads.append((filename, bucket, key, ExtraArgs))
 
     fake_client = FakeClient()

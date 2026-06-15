@@ -16,6 +16,17 @@ const sources: Source[] = [
         supportedIndices: ['NDVI', 'NDRE', 'NDMI'],
     },
     {
+        id: 'resourcesat-2a-liss3-boa',
+        label: 'ResourceSat-2A LISS-3 BOA',
+        provider: 'ISRO/NRSC Bhoonidhi',
+        kind: 'optical',
+        displayModes: ['FCC'],
+        defaultDisplayMode: 'FCC',
+        supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        availableMaskOptions: ['clouds', 'cloudShadows'],
+        metricsProvisional: true,
+    },
+    {
         id: 'sentinel-1-grd',
         label: 'Sentinel-1 GRD',
         provider: 'Copernicus',
@@ -165,5 +176,26 @@ describe('LayerControlBar', () => {
 
         const layerTrigger = screen.getByTestId('layer-display-trigger') as HTMLButtonElement;
         expect(layerTrigger.disabled).toBe(true);
+    });
+
+    it('hides unsupported cirrus masking for ResourceSat sources', () => {
+        renderBar(
+            <LayerControlBar
+                { ...baseProps({
+                    activeSourceId: 'resourcesat-2a-liss3-boa',
+                    displayModes: ['FCC'],
+                    displayMode: 'FCC',
+                    exportSourceId: 'resourcesat-2a-liss3-boa',
+                    exportCloudMask: { clouds: true, cloudShadows: true, cirrus: false },
+                }) }
+            />,
+        );
+
+        fireEvent.click(screen.getByTestId('layer-cloud-mask-trigger'));
+
+        expect(screen.getByText('Provisional mask')).toBeTruthy();
+        expect(screen.getByTestId('cloud-mask-clouds')).toBeTruthy();
+        expect(screen.getByTestId('cloud-mask-cloudShadows')).toBeTruthy();
+        expect(screen.queryByTestId('cloud-mask-cirrus')).toBeNull();
     });
 });

@@ -50,6 +50,9 @@ export interface Source {
   description?: string;
   attribution?: string;
   supportedIndices?: string[];
+  maskMethod?: string | null;
+  availableMaskOptions?: Array<keyof CloudMaskOptions>;
+  metricsProvisional?: boolean;
 }
 
 export interface SceneDate {

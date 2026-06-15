@@ -70,6 +70,24 @@ def json_response(payload: dict) -> FakeResponse:
     return FakeResponse(json.dumps(payload).encode("utf-8"))
 
 
+def test_source_collection_supports_awifs_phase5_source():
+    assert (
+        bhoonidhi.source_collection("resourcesat-2a-awifs-boa")
+        == bhoonidhi.RESOURCESAT_AWIFS_BHOONIDHI_COLLECTION
+    )
+
+
+def test_source_collection_supports_phase6_sar_sources():
+    assert (
+        bhoonidhi.source_collection("eos-04-sar-mrs-l2b")
+        == bhoonidhi.EOS04_SAR_BHOONIDHI_COLLECTION
+    )
+    assert (
+        bhoonidhi.source_collection("nisar-ssar-beta-gcov")
+        == bhoonidhi.NISAR_GCOV_BHOONIDHI_COLLECTION
+    )
+
+
 def test_client_reuses_token_and_retries_search_429():
     opener = FakeOpener(
         [
@@ -336,13 +354,11 @@ def test_sync_ledger_failed_status_increments_retries(tmp_path):
         bytes_count=123,
     )
 
-    status, retries, bytes_count, error = conn.execute(
-        """
+    status, retries, bytes_count, error = conn.execute("""
         select status, retries, bytes, error
         from ingestion_ledger
         where product_id = 'RS_FAIL'
-        """
-    ).fetchone()
+        """).fetchone()
     assert status == "downloaded"
     assert retries == 2
     assert bytes_count == 123
@@ -432,12 +448,7 @@ def test_worker_bhoonidhi_sync_dry_run_writes_filtered_manifest(monkeypatch, tmp
     )
 
     filtered = json.loads(
-        (
-            tmp_path
-            / "work"
-            / "resourcesat-2a-liss3-boa"
-            / "coverage_manifest.new.json"
-        ).read_text()
+        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.new.json").read_text()
     )
     assert result == 0
     assert filtered["selection"]["selected_product_ids"] == ["RS_NEW"]

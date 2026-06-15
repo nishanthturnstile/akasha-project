@@ -6,6 +6,7 @@ module imports cleanly without it installed (static validation / `info`).
 
 pypgstac 0.9.x matches the stac-fastapi-pgstac:5.0.2 runtime (>=0.8,<0.10).
 """
+
 from __future__ import annotations
 
 import json
@@ -146,8 +147,45 @@ RESOURCESAT_BAND_ROLE_MAPPING = {
 
 RESOURCESAT_MASK_METHOD = (
     "Akasha threshold mask v1 (no native quality layer found in validated "
-    "LISS-3 BOA sample; provisional)."
+    "ResourceSat BOA sample; provisional)."
 )
+
+RESOURCESAT_BOA_SOURCE_META = {
+    config.RESOURCESAT_LISS3_COLLECTION_ID: {
+        "instrument": "liss-3",
+        "label": "LISS-3",
+        "default_gsd": 24,
+    },
+    config.RESOURCESAT_AWIFS_COLLECTION_ID: {
+        "instrument": "awifs",
+        "label": "AWiFS",
+        "default_gsd": 56,
+    },
+}
+
+SAR_SOURCE_META = {
+    config.SENTINEL1_COLLECTION_ID: {
+        "constellation": "sentinel-1",
+        "instruments": ["c-sar"],
+        "frequency_band": "C",
+        "default_gsd": 10,
+        "title": "Calibrated terrain-corrected SAR backscatter COG (dB)",
+    },
+    config.EOS04_SAR_COLLECTION_ID: {
+        "constellation": "eos-04",
+        "instruments": ["sar"],
+        "frequency_band": "C",
+        "default_gsd": None,
+        "title": "EOS-04 SAR backscatter COG (dB)",
+    },
+    config.NISAR_GCOV_COLLECTION_ID: {
+        "constellation": "nisar",
+        "instruments": ["s-sar"],
+        "frequency_band": "S",
+        "default_gsd": None,
+        "title": "NISAR S-SAR GCOV backscatter COG (dB)",
+    },
+}
 
 
 def _require_dsn() -> str:
@@ -428,10 +466,10 @@ def _properties(manifest: dict[str, Any]) -> dict[str, Any]:
 def build_stac_item_from_prepare_manifest(manifest: dict[str, Any]) -> dict:
     """Create a STAC item for one prepared manifest using dynamic object keys."""
     scene = SceneIdentity.from_prepare_manifest(manifest)
-    if scene.source_id == config.SENTINEL1_COLLECTION_ID:
-        return _build_sentinel1_stac_item(manifest, scene)
-    if scene.source_id == config.RESOURCESAT_LISS3_COLLECTION_ID:
-        return _build_resourcesat_liss3_stac_item(manifest, scene)
+    if scene.source_id in config.SAR_COLLECTION_IDS:
+        return _build_sar_stac_item(manifest, scene)
+    if scene.source_id in config.RESOURCESAT_BOA_COLLECTION_IDS:
+        return _build_resourcesat_boa_stac_item(manifest, scene)
     return _build_sentinel2_stac_item(manifest, scene)
 
 
@@ -576,7 +614,11 @@ def _resourcesat_raster_bands(
     ]
 
 
-def _build_resourcesat_liss3_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+    source_meta = RESOURCESAT_BOA_SOURCE_META.get(
+        scene.source_id,
+        {"instrument": "unknown", "label": "BOA", "default_gsd": 24},
+    )
     props = _properties(manifest)
     analytic = _output_meta(manifest, "analytic")
     mask = _output_meta(manifest, "mask")
@@ -586,14 +628,19 @@ def _build_resourcesat_liss3_stac_item(manifest: dict[str, Any], scene: SceneIde
     shape = _shape(analytic)
     transform = _transform(analytic)
     proj_bbox = list(_first(analytic.get("proj:bbox"), analytic.get("bounds"), bbox))
-    gsd = _first(manifest.get("gsd"), props.get("gsd"), analytic.get("gsd"), 24)
+    gsd = _first(
+        manifest.get("gsd"),
+        props.get("gsd"),
+        analytic.get("gsd"),
+        source_meta["default_gsd"],
+    )
     cloud_cover = _first(manifest.get("eo:cloud_cover"), props.get("eo:cloud_cover"))
 
     item_props: dict[str, Any] = {
         "datetime": scene.acquisition_datetime,
         "platform": scene.platform or "resourcesat-2a",
         "constellation": "resourcesat",
-        "instruments": ["liss-3"],
+        "instruments": [source_meta["instrument"]],
         "gsd": gsd,
         "product:type": scene.product_type or "BOA",
         "akasha:scene_key": scene.scene_key,
@@ -652,13 +699,13 @@ def _build_resourcesat_liss3_stac_item(manifest: dict[str, Any], scene: SceneIde
     analytic_asset: dict[str, Any] = {
         "href": f"s3://{config.BUCKET}/{scene.analytic_key}",
         "type": "image/tiff; application=geotiff; profile=cloud-optimized",
-        "title": "ResourceSat-2A LISS-3 BOA analytic COG (BAND2/BAND3/BAND4/BAND5)",
+        "title": (
+            f"ResourceSat-2A {source_meta['label']} BOA analytic COG " "(BAND2/BAND3/BAND4/BAND5)"
+        ),
         "roles": ["data", "reflectance"],
         "gsd": gsd,
         "eo:bands": (
-            manifest.get("eo_bands")
-            or analytic.get("eo:bands")
-            or RESOURCESAT_LISS3_EO_BANDS
+            manifest.get("eo_bands") or analytic.get("eo:bands") or RESOURCESAT_LISS3_EO_BANDS
         ),
         "raster:bands": _resourcesat_raster_bands(analytic, 4, "analytic"),
     }
@@ -725,7 +772,7 @@ def _as_list(value: Any) -> list[Any]:
     return [value]
 
 
-def _sentinel1_polarizations(manifest: dict[str, Any], meta: dict[str, Any]) -> list[str]:
+def _sar_polarizations(manifest: dict[str, Any], meta: dict[str, Any]) -> list[str]:
     props = _properties(manifest)
     value = _first(
         manifest.get("sar:polarizations"),
@@ -762,7 +809,17 @@ def _backscatter_raster_bands(
     return bands
 
 
-def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+def _build_sar_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+    source_meta = SAR_SOURCE_META.get(
+        scene.source_id,
+        {
+            "constellation": scene.source_id,
+            "instruments": ["sar"],
+            "frequency_band": "unknown",
+            "default_gsd": None,
+            "title": "SAR backscatter COG (dB)",
+        },
+    )
     props = _properties(manifest)
     backscatter = _output_meta(manifest, "backscatter")
     bbox = _bbox_from_manifest(manifest, backscatter)
@@ -771,17 +828,25 @@ def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -
     shape = _shape(backscatter)
     transform = _transform(backscatter)
     proj_bbox = list(_first(backscatter.get("proj:bbox"), backscatter.get("bounds"), bbox))
-    gsd = _first(manifest.get("gsd"), props.get("gsd"), backscatter.get("gsd"), 10)
-    polarizations = _sentinel1_polarizations(manifest, backscatter)
+    gsd = _first(
+        manifest.get("gsd"),
+        props.get("gsd"),
+        backscatter.get("gsd"),
+        source_meta["default_gsd"],
+    )
+    polarizations = _sar_polarizations(manifest, backscatter)
 
     item_props: dict[str, Any] = {
         "datetime": scene.acquisition_datetime,
         "platform": scene.platform,
-        "constellation": "sentinel-1",
-        "instruments": ["c-sar"],
+        "constellation": source_meta["constellation"],
+        "instruments": _first(props.get("instruments"), source_meta["instruments"]),
         "gsd": gsd,
         "sar:instrument_mode": scene.instrument_mode,
-        "sar:frequency_band": _first(props.get("sar:frequency_band"), "C"),
+        "sar:frequency_band": _first(
+            props.get("sar:frequency_band"),
+            source_meta["frequency_band"],
+        ),
         "sar:polarizations": polarizations,
         "sar:product_type": scene.product_type,
         "product:type": scene.product_type,
@@ -817,12 +882,13 @@ def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -
     backscatter_asset: dict[str, Any] = {
         "href": f"s3://{config.BUCKET}/{scene.backscatter_key}",
         "type": "image/tiff; application=geotiff; profile=cloud-optimized",
-        "title": "Calibrated terrain-corrected SAR backscatter COG (dB)",
+        "title": source_meta["title"],
         "roles": ["data", "backscatter"],
-        "gsd": gsd,
         "sar:polarizations": polarizations,
         "raster:bands": _backscatter_raster_bands(backscatter, polarizations),
     }
+    if gsd is not None:
+        backscatter_asset["gsd"] = gsd
     if epsg is not None:
         backscatter_asset["proj:epsg"] = epsg
     if shape:
@@ -864,8 +930,7 @@ def _build_sentinel1_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -
 
 def build_stac_items_from_prepare_manifests(manifest_paths: list[Path]) -> list[dict]:
     return [
-        build_stac_item_from_prepare_manifest(_read_manifest(Path(path)))
-        for path in manifest_paths
+        build_stac_item_from_prepare_manifest(_read_manifest(Path(path))) for path in manifest_paths
     ]
 
 

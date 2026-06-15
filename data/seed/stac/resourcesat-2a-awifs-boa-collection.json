@@ -1,0 +1,112 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/classification/v1.1.0/schema.json"
+  ],
+  "id": "resourcesat-2a-awifs-boa",
+  "title": "ResourceSat-2A AWiFS BOA (Bhoonidhi)",
+  "description": "ResourceSat-2A AWiFS bottom-of-atmosphere reflectance source for regional crop and context monitoring. AWiFS is coarser than LISS-3, so field-level analytics remain provisional until real AWiFS composites are validated over the AOI.",
+  "license": "proprietary",
+  "keywords": ["isro", "nrsc", "bhoonidhi", "resourcesat-2a", "awifs", "boa", "regional", "composite"],
+  "providers": [
+    { "name": "ISRO/NRSC", "roles": ["producer", "licensor"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Bhoonidhi", "roles": ["host"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[77.023647, 12.537266, 78.131561, 13.61645]] },
+    "temporal": { "interval": [[null, null]] }
+  },
+  "summaries": {
+    "platform": ["resourcesat-2a"],
+    "constellation": ["resourcesat"],
+    "instruments": ["awifs"],
+    "gsd": [56],
+    "proj:epsg": [32643]
+  },
+  "akasha:provider": "ISRO/NRSC Bhoonidhi",
+  "akasha:bhoonidhi_collection_id": "ResourceSat-2A_AWIFS_BOA",
+  "akasha:source_kind": "optical",
+  "akasha:analysis_level": "regional",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "No validated AWiFS BOA composite has been ingested.",
+  "akasha:aoi_id": "bangalore-60km",
+  "akasha:supported_indices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+  "akasha:unsupported_indices": ["NDRE", "RECI"],
+  "akasha:default_index": "NDVI",
+  "akasha:display_modes": ["FCC"],
+  "akasha:default_display_mode": "FCC",
+  "akasha:tile_route_mode": "fcc",
+  "akasha:fcc_role_order": ["NIR", "RED", "GREEN"],
+  "akasha:band_role_mapping": {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4",
+    "SWIR1": "BAND5"
+  },
+  "akasha:expected_assets": ["analytic", "mask"],
+  "akasha:mask_asset": "mask",
+  "akasha:default_excluded_mask_classes": [0, 2, 3],
+  "akasha:mask_method": "Akasha threshold mask v1 (no native quality layer found in validated ResourceSat BOA sample; provisional).",
+  "akasha:metrics_provisional": true,
+  "akasha:reflectance": {
+    "scale": 0.0001,
+    "offset": 0,
+    "background_value": 0,
+    "nodata_policy": "all-band-background-or-warp-gap"
+  },
+  "akasha:composite_policy": {
+    "aoi_id": "bangalore-60km",
+    "grid_crs": "EPSG:32643",
+    "window_days": 45,
+    "selection_rule": "best-available-valid-pixel-with-recency-tiebreak",
+    "status": "gated until AWiFS composite verification is validated"
+  },
+  "akasha:attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+  "item_assets": {
+    "analytic": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "ResourceSat-2A AWiFS BOA analytic COG",
+      "roles": ["data", "reflectance"],
+      "gsd": 56,
+      "eo:bands": [
+        { "name": "BAND2", "common_name": "green", "center_wavelength": 0.555 },
+        { "name": "BAND3", "common_name": "red", "center_wavelength": 0.655 },
+        { "name": "BAND4", "common_name": "nir", "center_wavelength": 0.815 },
+        { "name": "BAND5", "common_name": "swir16", "center_wavelength": 1.65 }
+      ],
+      "raster:bands": [
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 56, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 56, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 56, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 56, "unit": "reflectance", "scale": 0.0001, "offset": 0 }
+      ]
+    },
+    "mask": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Akasha-generated provisional AWiFS cloud/validity mask COG",
+      "roles": ["metadata", "data-mask"],
+      "gsd": 56,
+      "raster:bands": [
+        { "data_type": "uint8", "nodata": 0, "spatial_resolution": 56 }
+      ],
+      "classification:classes": [
+        { "value": 0, "name": "gap_or_background", "description": "All-band background, outside footprint, or warp gap", "nodata": true },
+        { "value": 1, "name": "valid", "description": "Usable optical pixel" },
+        { "value": 2, "name": "cloud", "description": "Akasha threshold-derived cloud; provisional" },
+        { "value": 3, "name": "shadow", "description": "Akasha threshold-derived shadow; provisional" },
+        { "value": 4, "name": "water", "description": "Akasha threshold-derived water; kept by default" }
+      ]
+    }
+  },
+  "links": [
+    { "rel": "root", "href": "./resourcesat-2a-awifs-boa-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./resourcesat-2a-awifs-boa-collection.json", "type": "application/json" },
+    { "rel": "license", "href": "https://bhoonidhi.nrsc.gov.in", "title": "Bhoonidhi" }
+  ]
+}

@@ -1,13 +1,18 @@
 # Akasha — Railway MVP
 
-Geospatial MVP for browsing true-colour Sentinel-2 imagery over an Area of
-Interest (Bangalore) and computing cloud-masked vegetation-index statistics for
-user-drawn plots. Railway-first, but fully portable to Docker Compose / on-prem.
+Geospatial platform for browsing true-colour Sentinel-2 L2A (and ISRO ResourceSat
+LISS-3) imagery over an Area of Interest (Bangalore) and computing cloud-masked
+vegetation-index statistics (NDVI/NDRE/NDMI/NDWI/MSAVI) for user-drawn plots and
+fields. Railway-first, but fully portable to self-hosted Coolify and Docker
+Compose / on-prem.
 
 > **Status: Slice 4 implementation in progress.** Slice 0 (skeleton), Slice 1
 > (storage/catalog), Slice 2 (raster de-risk), and Slice 3 (BFF product + plot
-> contracts) are implemented. The canonical frontend map/product shell now lives
-> in `apps/frontend`. Railway/local Docker still run the same multi-service
+> contracts) are implemented. On top of the raster core, a farm-management
+> product layer (auth/teams, fields/seasons, field operations, scouting,
+> reports/risk) and a second imagery source (ISRO Bhoonidhi / ResourceSat
+> LISS-3) have been added. The canonical frontend map/product shell lives in
+> `apps/frontend`. Railway/Coolify/local Docker run the same multi-service
 > topology described below.
 
 ## Architecture (one public service)
@@ -18,7 +23,7 @@ Browser ──> web (Caddy + React SPA)  ── /api/*  ──> api (FastAPI BFF
                   │
    api ──> stac-api (pgSTAC) ──> postgis (PostgreSQL + PostGIS)
    api ──> titiler ──> minio (S3-compatible COG storage)
-   ingestion-worker ──> minio / stac-api / postgis
+   ingestion-worker ──> minio / stac-api / postgis / Bhoonidhi (ISRO)
 ```
 
 Only the **`web`** gateway is publicly reachable. The browser calls `/api/*`
@@ -31,18 +36,19 @@ are never given a public domain.
 ```text
 apps/
   frontend/          Canonical React + Vite + TypeScript SPA
-  api/               Canonical FastAPI BFF (/api product, plot, auth, ops APIs)
+  api/               Canonical FastAPI BFF (/api product, plot, auth, fields/seasons, ops APIs)
 services/
   titiler/           TiTiler image/config (RGB display tiles)
   stac-api/          stac-fastapi-pgstac wrapper/config
-  ingestion/         Python ingestion worker and STAC/MinIO seed loader
+  ingestion/         Python ingestion worker + STAC/MinIO seed loader + Bhoonidhi (ISRO) client
   ingestion-sar/     Sentinel-1/SAR preprocessing runtime
 infra/
   gateway/           Caddy reverse proxy + multi-stage web Dockerfile
   railway/           Per-service Railway config + env matrix + deploy notes
+  selfhosted/        Coolify compose + env template + setup notes (self-hosted)
   docker/            Local docker-compose.yml (dev / on-prem portability)
 docs/                Source-of-truth product/architecture/deploy docs
-scripts/             validate_slice0.py + smoke-test.py
+scripts/             Imagery download/prepare scripts + slice validators + smoke test
 ```
 
 When changing application behavior, edit `apps/api` and `apps/frontend`.
@@ -225,6 +231,14 @@ Each service is a **separate** Railway service. See
 [`infra/railway/README.md`](infra/railway/README.md) for the service→config
 matrix, environment variables ([`ENV_MATRIX.md`](infra/railway/ENV_MATRIX.md)),
 and the deployment sequence.
+
+## Deploy self-hosted (Coolify)
+
+For on-prem / dedicated-server hosting, deploy the prebuilt GHCR images via
+Coolify. See [`infra/selfhosted/README.md`](infra/selfhosted/README.md) for the
+compose source of truth, host directory layout, env template, and the
+SHA-tagged image deployment workflow. The one-public-service rule still holds:
+only `web` gets a public FQDN.
 
 ## Slice roadmap
 

@@ -156,6 +156,8 @@ class SceneIdentity:
     product_id: str | None = None
     path: str | int | None = None
     row: str | int | None = None
+    composite: bool = False
+    aoi_id: str | None = None
 
     @classmethod
     def from_prepare_manifest(cls, manifest: dict[str, Any]) -> SceneIdentity:
@@ -299,6 +301,12 @@ class SceneIdentity:
 
     @classmethod
     def _resourcesat_liss3_from_prepare_manifest(cls, manifest: dict[str, Any]) -> SceneIdentity:
+        props = manifest.get("properties") if isinstance(manifest.get("properties"), dict) else {}
+        is_composite = bool(
+            manifest.get("composite")
+            or manifest.get("akasha:composite")
+            or props.get("akasha:composite")
+        )
         product_id = _first_value(manifest, "product_id", "productId", "source_product_id", "id")
         product_id = str(product_id or "resourcesat-2a-liss3")
 
@@ -308,6 +316,10 @@ class SceneIdentity:
             "acquisitionDateTime",
             "datetime",
             "sensing_time",
+            "composite_date",
+            "compositeDate",
+            "anchor_date",
+            "anchorDate",
         )
         if not acquisition_datetime:
             acquisition_date = _first_value(manifest, "acquisition_date", "acquisitionDate")
@@ -315,6 +327,28 @@ class SceneIdentity:
                 acquisition_datetime = f"{acquisition_date}T00:00:00Z"
         if not acquisition_datetime:
             raise ValueError("ResourceSat LISS-3 prepare manifest is missing acquisition datetime")
+
+        if is_composite:
+            aoi_id = _first_value(manifest, "aoi_id", "aoiId", "akasha:aoi_id") or props.get(
+                "akasha:aoi_id"
+            )
+            if not aoi_id:
+                raise ValueError("ResourceSat LISS-3 composite manifest is missing AOI id")
+            acquisition_datetime = _normalise_datetime(str(acquisition_datetime))
+            return cls(
+                satellite=_RESOURCESAT_LISS3_SOURCE_ID,
+                product_level=str(
+                    _first_value(manifest, "product_level", "productLevel") or "BOA-COMPOSITE"
+                ),
+                mgrs_tile="",
+                acquisition_datetime=acquisition_datetime,
+                processing_baseline="",
+                platform=str(_first_value(manifest, "platform") or "resourcesat-2a"),
+                product_type=str(_first_value(manifest, "product:type", "product_type") or "BOA"),
+                product_id=product_id,
+                composite=True,
+                aoi_id=_safe_path_component(str(aoi_id)),
+            )
 
         path = _first_value(manifest, "path", "path_id", "pathId")
         if path in (None, ""):
@@ -393,6 +427,11 @@ class SceneIdentity:
                 f"{self.orbit_state_or_unknown}:{self.acquisition_datetime}:{self.product_id_hash}"
             )
         if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            if self.composite:
+                return (
+                    f"{self.source_id}:composite:{self.aoi_id or 'unknown'}:"
+                    f"{self.acquisition_datetime}"
+                )
             return (
                 f"{self.source_id}:{self.product_level}:{self.path_or_unknown}:"
                 f"{self.row_or_unknown}:{self.acquisition_datetime}"
@@ -407,6 +446,11 @@ class SceneIdentity:
         if self.source_id == "sentinel-1-grd":
             return f"{self.source_id}_{self.relative_orbit_or_unknown}_{self.scene_component}"
         if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            if self.composite:
+                return (
+                    f"{self.source_id}_composite_"
+                    f"{self.aoi_id or 'unknown'}_{self.acquisition_date}"
+                )
             return f"{self.source_id}_{self.scene_component}"
         if self.legacy_object_layout:
             date_compact = self.acquisition_date.replace("-", "")
@@ -424,6 +468,9 @@ class SceneIdentity:
             product = _safe_path_component(self.product_type or "unknown")
             return f"{datetime_compact}_{platform}_{instrument}_{product}_{self.product_id_hash}"
         if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            if self.composite:
+                date_compact = _safe_component(self.acquisition_datetime)
+                return f"composite_{self.aoi_id or 'unknown'}_{date_compact}"
             datetime_compact = _safe_component(self.acquisition_datetime)
             return (
                 f"{datetime_compact}_path-{self.path_or_unknown}_"
@@ -441,6 +488,11 @@ class SceneIdentity:
                 f"{self.relative_orbit_or_unknown}/{self.scene_component}"
             )
         if self.source_id == _RESOURCESAT_LISS3_SOURCE_ID:
+            if self.composite:
+                return (
+                    f"{self.source_id}/composite/"
+                    f"{self.aoi_id or 'unknown'}/{self.acquisition_date}"
+                )
             return f"{self.source_id}/scene/{self.acquisition_date}/{self.scene_component}"
         return f"{self.satellite}/{self.acquisition_date}/{self.mgrs_tile}/{self.scene_component}"
 

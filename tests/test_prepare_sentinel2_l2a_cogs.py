@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from scripts.prepare_sentinel2_l2a_cogs import (
     PreparedPaths,
     load_selected_products,

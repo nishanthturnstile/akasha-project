@@ -14,6 +14,7 @@ Usage:
     python worker.py ingest-manifest [--manifest-glob ...] [--method ...] [--force]
     python worker.py bhoonidhi-search --source resourcesat-2a-liss3-boa --aoi bangalore-60km
     python worker.py bhoonidhi-download --manifest ...
+    python worker.py build-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km ...
     python worker.py verify                    # Slice 1 exit criteria
     python worker.py verify-cogs               # Phase 2: + non-empty real COGs
     python worker.py verify-manifest-cogs [--manifest-glob ...]
@@ -25,6 +26,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 REQUIRED_ENV: list[str] = [
     "DATABASE_URL",
@@ -220,6 +222,48 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_build_composite(args: argparse.Namespace) -> int:
+    from akasha_ingest import bhoonidhi, composite, config
+
+    if args.source != config.RESOURCESAT_LISS3_COLLECTION_ID:
+        raise SystemExit("build-composite currently supports resourcesat-2a-liss3-boa only")
+    aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
+    if args.aoi and args.aoi != aoi.get("id"):
+        raise SystemExit(f"AOI '{args.aoi}' not found; loaded '{aoi.get('id')}'")
+    manifest_paths = composite.scene_manifest_paths_for_window(
+        _manifest_paths(args.manifest_glob, args.source),
+        window_start=args.window_start,
+        window_end=args.window_end,
+    )
+    if not manifest_paths:
+        raise SystemExit("no ResourceSat scene manifests found for the requested window")
+    deps = composite.require_raster_deps()
+    result = composite.build_resource_sat_composite(
+        deps=deps,
+        manifest_paths=manifest_paths,
+        aoi=aoi,
+        output_root=args.output_root or config.raster_source_root(),
+        window_start=args.window_start,
+        window_end=args.window_end,
+        resolution=args.resolution,
+        padding_pixels=args.padding_pixels,
+        overwrite=args.overwrite,
+        skip_validation=args.skip_validation,
+        keep_intermediate=args.keep_intermediate,
+    )
+    print(f"composite output: {result.output_dir}")
+    print(f"analytic: {result.analytic_cog}")
+    print(f"mask: {result.mask_cog}")
+    print(f"manifest: {result.manifest}")
+    print(
+        "metrics: "
+        f"coverage={result.metrics['coverage_percent']} "
+        f"usable={result.metrics['usable_pixel_percent']} "
+        f"cloudMasked={result.metrics['cloud_masked_percent']}"
+    )
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from akasha_ingest import verify
 
@@ -304,6 +348,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_bhoonidhi_download.add_argument("--source", default=None)
     p_bhoonidhi_download.add_argument("--raw-root", default=None)
     p_bhoonidhi_download.set_defaults(func=cmd_bhoonidhi_download)
+    p_composite = sub.add_parser(
+        "build-composite",
+        help="Build a ResourceSat full-AOI composite from prepared scene manifests.",
+    )
+    p_composite.add_argument(
+        "--source",
+        default="resourcesat-2a-liss3-boa",
+        help="Akasha source id to composite.",
+    )
+    p_composite.add_argument(
+        "--aoi",
+        default="bangalore-60km",
+        help="AOI id expected in the AOI config.",
+    )
+    p_composite.add_argument("--aoi-path", default=None, help="AOI GeoJSON path.")
+    p_composite.add_argument("--manifest-glob", help="Glob for scene prepare_manifest.json files.")
+    p_composite.add_argument("--output-root", type=Path, default=None)
+    p_composite.add_argument("--window-start", required=True, help="Composite period start date.")
+    p_composite.add_argument("--window-end", required=True, help="Composite period end date.")
+    p_composite.add_argument("--resolution", type=float, default=24.0)
+    p_composite.add_argument("--padding-pixels", type=int, default=0)
+    p_composite.add_argument("--overwrite", action="store_true")
+    p_composite.add_argument("--keep-intermediate", action="store_true")
+    p_composite.add_argument("--skip-validation", action="store_true")
+    p_composite.set_defaults(func=cmd_build_composite)
     p_verify = sub.add_parser("verify", help="Verify Slice 1 exit criteria.")
     p_verify.add_argument("--collection-id", default=None, help="Collection/source id to verify.")
     p_verify.set_defaults(func=cmd_verify)

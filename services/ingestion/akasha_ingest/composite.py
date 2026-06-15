@@ -7,15 +7,39 @@ already aligned analytic and mask arrays.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 RESOURCE_SAT_VALID_MASK_CLASSES = frozenset({1, 4})
 RESOURCE_SAT_EXCLUDED_MASK_CLASSES = frozenset({0, 2, 3})
+SOURCE_ID = "resourcesat-2a-liss3-boa"
+BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
+COG_BLOCKSIZE = 512
+NODATA_DN = 0
+MASK_METHOD = (
+    "Akasha threshold mask v1 (no native quality layer found in validated "
+    "LISS-3 BOA sample; provisional)."
+)
+MASK_CLASSES = [
+    {"value": 0, "name": "nodata", "description": "No data / all-band gap", "nodata": True},
+    {"value": 1, "name": "valid", "description": "Valid clear land or water pixel"},
+    {"value": 2, "name": "cloud", "description": "Akasha threshold-derived cloud"},
+    {"value": 3, "name": "shadow", "description": "Akasha threshold-derived shadow"},
+    {"value": 4, "name": "water", "description": "Akasha threshold-derived water"},
+]
+ANALYTIC_BAND_ORDER = ["BAND2", "BAND3", "BAND4", "BAND5"]
+BAND_ROLE_MAPPING = {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4",
+    "SWIR1": "BAND5",
+}
 
 
 @dataclass(frozen=True)
@@ -73,6 +97,41 @@ class AlignedScene:
         if value.endswith("Z"):
             value = value[:-1] + "+00:00"
         return datetime.fromisoformat(value)
+
+
+@dataclass(frozen=True)
+class CompositeBuildResult:
+    output_dir: Path
+    analytic_cog: Path
+    mask_cog: Path
+    manifest: Path
+    metrics: dict[str, Any]
+
+
+def require_raster_deps() -> dict[str, Any]:
+    try:
+        import rasterio
+        from affine import Affine
+        from rasterio.enums import Resampling
+        from rasterio.warp import reproject, transform_bounds
+        from rio_cogeo.cogeo import cog_translate, cog_validate
+        from rio_cogeo.profiles import cog_profiles
+    except ModuleNotFoundError as exc:
+        missing = exc.name or "raster dependency"
+        raise SystemExit(
+            f"Missing {missing}. Run this via the ingestion container, or install "
+            "services/ingestion/requirements.txt in a Python 3.11 environment."
+        ) from exc
+    return {
+        "rasterio": rasterio,
+        "Affine": Affine,
+        "Resampling": Resampling,
+        "reproject": reproject,
+        "transform_bounds": transform_bounds,
+        "cog_translate": cog_translate,
+        "cog_validate": cog_validate,
+        "cog_profiles": cog_profiles,
+    }
 
 
 def _as_scene_arrays(scene: AlignedScene) -> tuple[np.ndarray, np.ndarray]:
@@ -155,3 +214,474 @@ def build_best_available_composite(scenes: list[AlignedScene]) -> dict[str, Any]
         "source_scene_index": output_scene_index,
         "metrics": metrics,
     }
+
+
+def _read_manifest(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _manifest_asset_path(manifest_path: Path, manifest: dict[str, Any], asset: str) -> Path:
+    outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
+    value = outputs.get(asset)
+    if isinstance(value, dict):
+        value = value.get("path") or value.get("href")
+    if not value:
+        value = manifest.get(f"{asset}_path") or manifest.get(f"{asset}Path")
+    path = Path(str(value)) if value else manifest_path.parent / f"{asset}.tif"
+    if path.is_absolute():
+        return path
+    return (manifest_path.parent / path).resolve()
+
+
+def _manifest_datetime(manifest: dict[str, Any]) -> str:
+    value = (
+        manifest.get("acquisition_datetime")
+        or manifest.get("acquisitionDateTime")
+        or manifest.get("datetime")
+    )
+    if not value:
+        raise ValueError("scene manifest is missing acquisition datetime")
+    text = str(value)
+    return text if "T" in text else f"{text}T00:00:00Z"
+
+
+def scene_manifest_paths_for_window(
+    manifest_paths: list[Path],
+    *,
+    window_start: str,
+    window_end: str,
+) -> list[Path]:
+    selected: list[Path] = []
+    for manifest_path in manifest_paths:
+        manifest = _read_manifest(manifest_path)
+        if bool(
+            manifest.get("composite")
+            or manifest.get("akasha:composite")
+            or (
+                isinstance(manifest.get("properties"), dict)
+                and manifest["properties"].get("akasha:composite")
+            )
+        ):
+            continue
+        if str(manifest.get("source_id") or manifest.get("collection")) not in (
+            SOURCE_ID,
+            BHOONIDHI_COLLECTION,
+        ):
+            continue
+        acquisition_date = _manifest_datetime(manifest)[:10]
+        if window_start <= acquisition_date <= window_end:
+            selected.append(manifest_path)
+    return sorted(selected)
+
+
+def _manifest_scene_id(manifest: dict[str, Any], manifest_path: Path) -> str:
+    return str(
+        manifest.get("product_id")
+        or manifest.get("id")
+        or manifest.get("source_product_id")
+        or manifest_path.parent.name
+    )
+
+
+def _positions(coords: Any) -> list[tuple[float, float]]:
+    if (
+        isinstance(coords, list | tuple)
+        and len(coords) >= 2
+        and isinstance(coords[0], int | float)
+        and isinstance(coords[1], int | float)
+    ):
+        return [(float(coords[0]), float(coords[1]))]
+    points: list[tuple[float, float]] = []
+    if isinstance(coords, list | tuple):
+        for child in coords:
+            points.extend(_positions(child))
+    return points
+
+
+def _aoi_wgs84_bbox(aoi: dict[str, Any]) -> tuple[float, float, float, float]:
+    geometry = aoi.get("geometry") if isinstance(aoi.get("geometry"), dict) else aoi
+    points = _positions(geometry.get("coordinates") if isinstance(geometry, dict) else None)
+    if not points:
+        raise ValueError("AOI geometry has no coordinates")
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def grid_from_aoi(
+    *,
+    deps: dict[str, Any],
+    aoi: dict[str, Any],
+    crs: str = "EPSG:32643",
+    resolution: float = 24.0,
+    padding_pixels: int = 0,
+) -> CompositeGrid:
+    west, south, east, north = _aoi_wgs84_bbox(aoi)
+    projected = deps["transform_bounds"](
+        "EPSG:4326",
+        crs,
+        west,
+        south,
+        east,
+        north,
+        densify_pts=21,
+    )
+    return CompositeGrid.from_projected_bounds(
+        projected,
+        crs=crs,
+        resolution=resolution,
+        padding_pixels=padding_pixels,
+    )
+
+
+def _grid_affine(deps: dict[str, Any], grid: CompositeGrid) -> Any:
+    return deps["Affine"](*grid.transform[:6])
+
+
+def align_manifest_scene(
+    *,
+    deps: dict[str, Any],
+    manifest_path: Path,
+    grid: CompositeGrid,
+) -> AlignedScene:
+    manifest = _read_manifest(manifest_path)
+    analytic_path = _manifest_asset_path(manifest_path, manifest, "analytic")
+    mask_path = _manifest_asset_path(manifest_path, manifest, "mask")
+    rasterio = deps["rasterio"]
+    reproject = deps["reproject"]
+    Resampling = deps["Resampling"]
+    dst_transform = _grid_affine(deps, grid)
+
+    analytic_out = np.zeros((4, grid.height, grid.width), dtype=np.uint16)
+    mask_out = np.zeros((grid.height, grid.width), dtype=np.uint8)
+    with rasterio.open(analytic_path) as analytic:
+        if analytic.count != 4:
+            raise ValueError(f"{analytic_path}: expected 4 ResourceSat analytic bands")
+        for band_index in range(1, 5):
+            reproject(
+                source=rasterio.band(analytic, band_index),
+                destination=analytic_out[band_index - 1],
+                src_transform=analytic.transform,
+                src_crs=analytic.crs,
+                src_nodata=NODATA_DN,
+                dst_transform=dst_transform,
+                dst_crs=grid.crs,
+                dst_nodata=NODATA_DN,
+                resampling=Resampling.bilinear,
+            )
+    with rasterio.open(mask_path) as mask:
+        if mask.count != 1:
+            raise ValueError(f"{mask_path}: expected 1 ResourceSat mask band")
+        reproject(
+            source=rasterio.band(mask, 1),
+            destination=mask_out,
+            src_transform=mask.transform,
+            src_crs=mask.crs,
+            src_nodata=0,
+            dst_transform=dst_transform,
+            dst_crs=grid.crs,
+            dst_nodata=0,
+            resampling=Resampling.nearest,
+        )
+    return AlignedScene(
+        scene_id=_manifest_scene_id(manifest, manifest_path),
+        acquisition_datetime=_manifest_datetime(manifest),
+        analytic=analytic_out,
+        mask=mask_out,
+    )
+
+
+def _write_intermediate_rasters(
+    *,
+    deps: dict[str, Any],
+    grid: CompositeGrid,
+    analytic: np.ndarray,
+    mask: np.ndarray,
+    analytic_path: Path,
+    mask_path: Path,
+    overwrite: bool,
+) -> None:
+    if analytic_path.exists() and not overwrite and mask_path.exists():
+        return
+    if analytic_path.exists():
+        analytic_path.unlink()
+    if mask_path.exists():
+        mask_path.unlink()
+    analytic_path.parent.mkdir(parents=True, exist_ok=True)
+    rasterio = deps["rasterio"]
+    transform = _grid_affine(deps, grid)
+    profile = {
+        "driver": "GTiff",
+        "crs": grid.crs,
+        "transform": transform,
+        "width": grid.width,
+        "height": grid.height,
+        "tiled": True,
+        "blockxsize": COG_BLOCKSIZE,
+        "blockysize": COG_BLOCKSIZE,
+        "compress": "DEFLATE",
+        "BIGTIFF": "IF_SAFER",
+    }
+    analytic_profile = dict(
+        profile,
+        count=4,
+        dtype="uint16",
+        nodata=NODATA_DN,
+        predictor=2,
+    )
+    with rasterio.open(analytic_path, "w", **analytic_profile) as dst:
+        dst.write(analytic)
+        for band_index, band_name in enumerate(ANALYTIC_BAND_ORDER, start=1):
+            dst.set_band_description(band_index, band_name)
+        dst.update_tags(
+            AKASHA_SOURCE_ID=SOURCE_ID,
+            AKASHA_COMPOSITE="true",
+            AKASHA_BAND_ORDER=",".join(ANALYTIC_BAND_ORDER),
+            AKASHA_REFLECTANCE_SCALE="0.0001",
+            AKASHA_REFLECTANCE_OFFSET="0",
+            AREA_OR_POINT="Area",
+        )
+    mask_profile = dict(profile, count=1, dtype="uint8", nodata=0, predictor=1)
+    with rasterio.open(mask_path, "w", **mask_profile) as dst:
+        dst.write(mask, 1)
+        dst.set_band_description(1, "mask")
+        dst.update_tags(1, name="mask", description=MASK_METHOD, classes=json.dumps(MASK_CLASSES))
+        dst.update_tags(AKASHA_MASK_METHOD=MASK_METHOD, AKASHA_COMPOSITE="true")
+
+
+def _translate_to_cog(
+    *,
+    deps: dict[str, Any],
+    source_path: Path,
+    output_path: Path,
+    overview_resampling: str,
+    overwrite: bool,
+) -> None:
+    if output_path.exists() and not overwrite:
+        return
+    if output_path.exists():
+        output_path.unlink()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    profile = deps["cog_profiles"].get("deflate")
+    profile.update(
+        {
+            "blocksize": COG_BLOCKSIZE,
+            "BIGTIFF": "IF_SAFER",
+            "overview_resampling": overview_resampling,
+        }
+    )
+    deps["cog_translate"](
+        str(source_path),
+        str(output_path),
+        profile,
+        nodata=NODATA_DN,
+        overview_resampling=overview_resampling,
+        quiet=False,
+    )
+
+
+def _validate_cog(deps: dict[str, Any], path: Path) -> None:
+    is_valid, errors, warnings = deps["cog_validate"](str(path), strict=True)
+    for warning in warnings:
+        print(f"warning {path.name}: {warning}")
+    if not is_valid:
+        for error in errors:
+            print(f"error {path.name}: {error}")
+        raise SystemExit(f"COG validation failed for {path}")
+
+
+def _geometry_from_bbox(bbox: list[float]) -> dict[str, Any]:
+    west, south, east, north = bbox
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]]
+        ],
+    }
+
+
+def _raster_summary(deps: dict[str, Any], path: Path) -> dict[str, Any]:
+    with deps["rasterio"].open(path) as dataset:
+        summary = {
+            "path": path.as_posix(),
+            "crs": dataset.crs.to_string() if dataset.crs else None,
+            "transform": [float(value) for value in dataset.transform],
+            "bounds": [float(value) for value in dataset.bounds],
+            "resolution": [float(value) for value in dataset.res],
+            "width": dataset.width,
+            "height": dataset.height,
+            "dimensions": [dataset.width, dataset.height],
+            "dtype": dataset.dtypes[0] if dataset.dtypes else None,
+            "band_count": dataset.count,
+            "nodata": dataset.nodata,
+            "descriptions": list(dataset.descriptions),
+            "band_descriptions": list(dataset.descriptions),
+            "overviews": dataset.overviews(1) if dataset.count else [],
+        }
+        if dataset.crs:
+            west, south, east, north = deps["transform_bounds"](
+                dataset.crs,
+                "EPSG:4326",
+                *dataset.bounds,
+                densify_pts=21,
+            )
+            bbox = [float(west), float(south), float(east), float(north)]
+            summary["wgs84_bbox"] = bbox
+            summary["wgs84_bounds"] = bbox
+            summary["wgs84_geometry"] = _geometry_from_bbox(bbox)
+        return summary
+
+
+def _composite_output_dir(output_root: Path, aoi_id: str, composite_date: str) -> Path:
+    return output_root / SOURCE_ID / "composite" / aoi_id / composite_date
+
+
+def _write_composite_manifest(
+    *,
+    deps: dict[str, Any],
+    manifest_path: Path,
+    aoi_id: str,
+    composite_datetime: str,
+    period_start: str,
+    period_end: str,
+    source_manifest_paths: list[Path],
+    analytic_cog: Path,
+    mask_cog: Path,
+    metrics: dict[str, Any],
+) -> None:
+    analytic_summary = _raster_summary(deps, analytic_cog)
+    mask_summary = _raster_summary(deps, mask_cog)
+    composite_date = composite_datetime[:10]
+    payload: dict[str, Any] = {
+        "source_id": SOURCE_ID,
+        "collection": BHOONIDHI_COLLECTION,
+        "product_id": f"{SOURCE_ID}-composite-{aoi_id}-{composite_date}",
+        "platform": "resourcesat-2a",
+        "product_level": "BOA-COMPOSITE",
+        "composite": True,
+        "aoi_id": aoi_id,
+        "composite_date": composite_date,
+        "acquisition_datetime": composite_datetime,
+        "acquisition_date": composite_date,
+        "period_start": period_start,
+        "period_end": period_end,
+        "source_manifests": [path.as_posix() for path in source_manifest_paths],
+        "contributing_scenes": metrics["contributing_scenes"],
+        "analytic_band_order": ANALYTIC_BAND_ORDER,
+        "band_role_mapping": BAND_ROLE_MAPPING,
+        "mask_method": MASK_METHOD,
+        "classification_classes": MASK_CLASSES,
+        "outputs": {
+            "analytic": analytic_summary,
+            "mask": mask_summary,
+        },
+        "properties": {
+            "akasha:composite": True,
+            "akasha:aoi_id": aoi_id,
+            "akasha:period_start": period_start,
+            "akasha:period_end": period_end,
+            "akasha:contributing_scenes": metrics["contributing_scenes"],
+            "akasha:coverage_percent": metrics["coverage_percent"],
+            "akasha:usable_pixel_percent": metrics["usable_pixel_percent"],
+            "akasha:cloud_masked_percent": metrics["cloud_masked_percent"],
+            "akasha:mask_method": MASK_METHOD,
+            "akasha:metrics_provisional": True,
+            "akasha:band_role_mapping": BAND_ROLE_MAPPING,
+        },
+    }
+    if analytic_summary.get("wgs84_bbox"):
+        payload["bbox"] = analytic_summary["wgs84_bbox"]
+        payload["geometry"] = analytic_summary.get("wgs84_geometry") or _geometry_from_bbox(
+            analytic_summary["wgs84_bbox"]
+        )
+    manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def build_resource_sat_composite(
+    *,
+    deps: dict[str, Any],
+    manifest_paths: list[Path],
+    aoi: dict[str, Any],
+    output_root: Path,
+    window_start: str,
+    window_end: str,
+    resolution: float = 24.0,
+    padding_pixels: int = 0,
+    overwrite: bool = False,
+    skip_validation: bool = False,
+    keep_intermediate: bool = False,
+) -> CompositeBuildResult:
+    if not manifest_paths:
+        raise ValueError("no ResourceSat scene manifests supplied")
+    aoi_id = str(aoi.get("id") or aoi.get("properties", {}).get("id") or "unknown-aoi")
+    crs = str(aoi.get("properties", {}).get("compositeGridCrs") or "EPSG:32643")
+    grid = grid_from_aoi(
+        deps=deps,
+        aoi=aoi,
+        crs=crs,
+        resolution=resolution,
+        padding_pixels=padding_pixels,
+    )
+    aligned = [
+        align_manifest_scene(deps=deps, manifest_path=path, grid=grid)
+        for path in manifest_paths
+    ]
+    result = build_best_available_composite(aligned)
+    composite_datetime = max(scene.acquisition_datetime for scene in aligned)
+    composite_date = composite_datetime[:10]
+    output_dir = _composite_output_dir(output_root, aoi_id, composite_date)
+    temp_dir = output_dir / "_tmp"
+    analytic_intermediate = temp_dir / "analytic_intermediate.tif"
+    mask_intermediate = temp_dir / "mask_intermediate.tif"
+    analytic_cog = output_dir / "analytic.tif"
+    mask_cog = output_dir / "mask.tif"
+    manifest = output_dir / "prepare_manifest.json"
+    _write_intermediate_rasters(
+        deps=deps,
+        grid=grid,
+        analytic=result["analytic"],
+        mask=result["mask"],
+        analytic_path=analytic_intermediate,
+        mask_path=mask_intermediate,
+        overwrite=overwrite,
+    )
+    _translate_to_cog(
+        deps=deps,
+        source_path=analytic_intermediate,
+        output_path=analytic_cog,
+        overview_resampling="average",
+        overwrite=overwrite,
+    )
+    _translate_to_cog(
+        deps=deps,
+        source_path=mask_intermediate,
+        output_path=mask_cog,
+        overview_resampling="nearest",
+        overwrite=overwrite,
+    )
+    if not skip_validation:
+        _validate_cog(deps, analytic_cog)
+        _validate_cog(deps, mask_cog)
+    _write_composite_manifest(
+        deps=deps,
+        manifest_path=manifest,
+        aoi_id=aoi_id,
+        composite_datetime=composite_datetime,
+        period_start=window_start,
+        period_end=window_end,
+        source_manifest_paths=manifest_paths,
+        analytic_cog=analytic_cog,
+        mask_cog=mask_cog,
+        metrics=result["metrics"],
+    )
+    if not keep_intermediate:
+        import shutil
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    return CompositeBuildResult(
+        output_dir=output_dir,
+        analytic_cog=analytic_cog,
+        mask_cog=mask_cog,
+        manifest=manifest,
+        metrics=result["metrics"],
+    )

@@ -1,0 +1,50 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/classification/v1.1.0/schema.json"
+  ],
+  "id": "resourcesat-2a-liss4-mx70-l2",
+  "title": "ResourceSat-2A LISS-4 MX70 L2 (gated)",
+  "description": "Gated high-resolution ResourceSat-2A LISS-4 context source. This collection is a contract scaffold only; analytics remain disabled until downloaded product metadata confirms calibrated red/NIR bands and mask behavior.",
+  "license": "proprietary",
+  "keywords": ["isro", "nrsc", "bhoonidhi", "resourcesat-2a", "liss-4", "mx70", "context", "gated"],
+  "providers": [
+    { "name": "ISRO/NRSC", "roles": ["producer", "licensor"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Bhoonidhi", "roles": ["host"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[77.023647, 12.537266, 78.131561, 13.61645]] },
+    "temporal": { "interval": [[null, null]] }
+  },
+  "summaries": {
+    "platform": ["resourcesat-2a"],
+    "constellation": ["resourcesat"],
+    "instruments": ["liss-4"],
+    "gsd": [5.8]
+  },
+  "akasha:provider": "ISRO/NRSC Bhoonidhi",
+  "akasha:bhoonidhi_collection_id": "ResourceSat-2A_LISS4-MX70_L2",
+  "akasha:source_kind": "optical",
+  "akasha:analysis_level": "context",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "LISS-4 band/radiometry metadata has not been validated.",
+  "akasha:supported_indices": ["NDVI", "MSAVI"],
+  "akasha:unsupported_indices": ["NDRE", "RECI", "NDMI", "NDWI_GREEN_NIR"],
+  "akasha:display_modes": ["FCC"],
+  "akasha:default_display_mode": "FCC",
+  "akasha:expected_assets": ["analytic", "mask"],
+  "akasha:mask_asset": "mask",
+  "akasha:mask_method": "Pending Akasha mask validation.",
+  "akasha:metrics_provisional": true,
+  "links": [
+    { "rel": "root", "href": "./resourcesat-2a-liss4-mx70-l2-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./resourcesat-2a-liss4-mx70-l2-collection.json", "type": "application/json" },
+    { "rel": "license", "href": "https://bhoonidhi.nrsc.gov.in", "title": "Bhoonidhi" }
+  ]
+}

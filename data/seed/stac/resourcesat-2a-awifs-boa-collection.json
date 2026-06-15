@@ -33,6 +33,8 @@
   "akasha:bhoonidhi_collection_id": "ResourceSat-2A_AWIFS_BOA",
   "akasha:source_kind": "optical",
   "akasha:analysis_level": "regional",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "No validated AWiFS BOA composite has been ingested.",
   "akasha:aoi_id": "bangalore-60km",
   "akasha:supported_indices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
   "akasha:unsupported_indices": ["NDRE", "RECI"],

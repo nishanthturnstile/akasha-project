@@ -22,6 +22,8 @@ from .indices import DEFAULT_INDEX, SUPPORTED_INDICES
 SENTINEL_2_SOURCE_ID = "sentinel-2-l2a"
 SENTINEL_1_SOURCE_ID = "sentinel-1-grd"
 RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
+RESOURCESAT_AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
+RESOURCESAT_BOA_SOURCE_IDS = {RESOURCESAT_LISS3_SOURCE_ID, RESOURCESAT_AWIFS_SOURCE_ID}
 COLLECTION_ID = SENTINEL_2_SOURCE_ID
 SOURCE_LABEL = "Sentinel-2 L2A"
 SOURCE_PROVIDER = "Copernicus"
@@ -669,7 +671,7 @@ def _servable_items_for_date(source_id: str, items: list[dict[str, Any]]) -> lis
     composite exists it is the single served analytic+mask pair for tiles and
     statistics. Sentinel and SAR sources retain their same-date scene behavior.
     """
-    if source_id != RESOURCESAT_LISS3_SOURCE_ID:
+    if source_id not in RESOURCESAT_BOA_SOURCE_IDS:
         return items
     composites = [item for item in items if _is_composite_item(item)]
     return composites or items

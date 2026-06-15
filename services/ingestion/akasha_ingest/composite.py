@@ -22,6 +22,26 @@ RESOURCE_SAT_VALID_MASK_CLASSES = frozenset({1, 4})
 RESOURCE_SAT_EXCLUDED_MASK_CLASSES = frozenset({0, 2, 3})
 SOURCE_ID = "resourcesat-2a-liss3-boa"
 BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
+AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
+AWIFS_BHOONIDHI_COLLECTION = "ResourceSat-2A_AWIFS_BOA"
+SOURCE_PROFILES = {
+    SOURCE_ID: {
+        "collection": BHOONIDHI_COLLECTION,
+        "label": "ResourceSat LISS-3",
+        "resolution": 24.0,
+    },
+    AWIFS_SOURCE_ID: {
+        "collection": AWIFS_BHOONIDHI_COLLECTION,
+        "label": "ResourceSat AWiFS",
+        "resolution": 56.0,
+    },
+}
+SOURCE_ALIASES = {
+    SOURCE_ID: SOURCE_ID,
+    BHOONIDHI_COLLECTION: SOURCE_ID,
+    AWIFS_SOURCE_ID: AWIFS_SOURCE_ID,
+    AWIFS_BHOONIDHI_COLLECTION: AWIFS_SOURCE_ID,
+}
 COG_BLOCKSIZE = 512
 NODATA_DN = 0
 MASK_METHOD = (
@@ -42,6 +62,25 @@ BAND_ROLE_MAPPING = {
     "NIR": "BAND4",
     "SWIR1": "BAND5",
 }
+
+
+def source_id_from_manifest(manifest: dict[str, Any]) -> str:
+    raw = str(manifest.get("source_id") or manifest.get("collection") or SOURCE_ID)
+    return SOURCE_ALIASES.get(raw, raw)
+
+
+def source_profile(source_id: str) -> dict[str, Any]:
+    try:
+        return SOURCE_PROFILES[source_id]
+    except KeyError as exc:
+        supported = ", ".join(sorted(SOURCE_PROFILES))
+        raise ValueError(
+            f"unsupported ResourceSat BOA source '{source_id}'. " f"Supported: {supported}"
+        ) from exc
+
+
+def default_resolution(source_id: str) -> float:
+    return float(source_profile(source_id)["resolution"])
 
 
 @dataclass(frozen=True)
@@ -275,7 +314,9 @@ def scene_manifest_paths_for_window(
     *,
     window_start: str,
     window_end: str,
+    source_id: str = SOURCE_ID,
 ) -> list[Path]:
+    source_id = SOURCE_ALIASES.get(source_id, source_id)
     selected: list[Path] = []
     for manifest_path in manifest_paths:
         manifest = _read_manifest(manifest_path)
@@ -288,10 +329,7 @@ def scene_manifest_paths_for_window(
             )
         ):
             continue
-        if str(manifest.get("source_id") or manifest.get("collection")) not in (
-            SOURCE_ID,
-            BHOONIDHI_COLLECTION,
-        ):
+        if source_id_from_manifest(manifest) != source_id:
             continue
         acquisition_date = _manifest_datetime(manifest)[:10]
         if window_start <= acquisition_date <= window_end:
@@ -424,6 +462,7 @@ def _write_intermediate_rasters(
     mask: np.ndarray,
     analytic_path: Path,
     mask_path: Path,
+    source_id: str,
     overwrite: bool,
 ) -> None:
     if analytic_path.exists() and not overwrite and mask_path.exists():
@@ -459,7 +498,7 @@ def _write_intermediate_rasters(
         for band_index, band_name in enumerate(ANALYTIC_BAND_ORDER, start=1):
             dst.set_band_description(band_index, band_name)
         dst.update_tags(
-            AKASHA_SOURCE_ID=SOURCE_ID,
+            AKASHA_SOURCE_ID=source_id,
             AKASHA_COMPOSITE="true",
             AKASHA_BAND_ORDER=",".join(ANALYTIC_BAND_ORDER),
             AKASHA_REFLECTANCE_SCALE="0.0001",
@@ -575,10 +614,7 @@ def _stac_item_exists(
 ) -> tuple[bool, str]:
     if not stac_api_url:
         return False, "STAC_API_URL is not configured"
-    url = (
-        f"{stac_api_url.rstrip('/')}/collections/"
-        f"{collection_id}/items/{item_id}"
-    )
+    url = f"{stac_api_url.rstrip('/')}/collections/" f"{collection_id}/items/{item_id}"
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
@@ -597,15 +633,17 @@ def verify_composite_manifest(
     *,
     deps: dict[str, Any],
     manifest_path: Path,
+    source_id: str = SOURCE_ID,
     min_coverage_percent: float = 95.0,
     expected_crs: str = "EPSG:32643",
-    expected_resolution: float = 24.0,
+    expected_resolution: float | None = None,
     resolution_tolerance: float = 0.25,
     require_overviews: bool = True,
     require_catalog_item: bool = False,
     stac_api_url: str = "",
 ) -> CompositeVerifyResult:
     manifest_path = Path(manifest_path)
+    source_id = SOURCE_ALIASES.get(source_id, source_id)
     problems: list[str] = []
     checks: list[str] = []
     if not manifest_path.is_file():
@@ -616,18 +654,19 @@ def verify_composite_manifest(
             problems=[f"missing manifest {manifest_path}"],
         )
     manifest = _read_manifest(manifest_path)
+    expected_resolution = (
+        default_resolution(source_id) if expected_resolution is None else expected_resolution
+    )
+    profile = source_profile(source_id)
     props = manifest.get("properties") if isinstance(manifest.get("properties"), dict) else {}
     if not bool(manifest.get("composite") or props.get("akasha:composite")):
         problems.append("manifest is not marked as a composite")
     else:
         checks.append("manifest is marked composite")
-    if str(manifest.get("source_id") or manifest.get("collection")) not in (
-        SOURCE_ID,
-        BHOONIDHI_COLLECTION,
-    ):
-        problems.append("manifest source is not ResourceSat LISS-3")
+    if source_id_from_manifest(manifest) != source_id:
+        problems.append(f"manifest source is not {profile['label']}")
     else:
-        checks.append("manifest source is ResourceSat LISS-3")
+        checks.append(f"manifest source is {profile['label']}")
     for key in ("aoi_id", "composite_date", "period_start", "period_end"):
         if not manifest.get(key):
             problems.append(f"manifest missing {key}")
@@ -711,9 +750,7 @@ def verify_composite_manifest(
         mask_array = mask.read(1, masked=False)
         coverage_percent = _percent(int(np.count_nonzero(mask_array != 0)), mask_array.size)
         if coverage_percent < min_coverage_percent:
-            problems.append(
-                f"coverage {coverage_percent}% below threshold {min_coverage_percent}%"
-            )
+            problems.append(f"coverage {coverage_percent}% below threshold {min_coverage_percent}%")
         else:
             checks.append(f"coverage {coverage_percent}% >= {min_coverage_percent}%")
 
@@ -722,7 +759,7 @@ def verify_composite_manifest(
 
         item = catalog.build_stac_item_from_prepare_manifest(manifest)
         expected_item_id = (
-            f"{SOURCE_ID}_composite_{manifest.get('aoi_id')}_{manifest.get('composite_date')}"
+            f"{source_id}_composite_" f"{manifest.get('aoi_id')}_{manifest.get('composite_date')}"
         )
         if item["id"] != expected_item_id:
             problems.append(f"unexpected composite STAC item id: {item['id']}")
@@ -752,8 +789,10 @@ def verify_composite_manifest(
     return CompositeVerifyResult(ok=ok, detail=detail, checks=checks, problems=problems)
 
 
-def _composite_output_dir(output_root: Path, aoi_id: str, composite_date: str) -> Path:
-    return output_root / SOURCE_ID / "composite" / aoi_id / composite_date
+def _composite_output_dir(
+    output_root: Path, source_id: str, aoi_id: str, composite_date: str
+) -> Path:
+    return output_root / source_id / "composite" / aoi_id / composite_date
 
 
 def _write_composite_manifest(
@@ -768,14 +807,16 @@ def _write_composite_manifest(
     analytic_cog: Path,
     mask_cog: Path,
     metrics: dict[str, Any],
+    source_id: str,
 ) -> None:
     analytic_summary = _raster_summary(deps, analytic_cog)
     mask_summary = _raster_summary(deps, mask_cog)
     composite_date = composite_datetime[:10]
+    profile = source_profile(source_id)
     payload: dict[str, Any] = {
-        "source_id": SOURCE_ID,
-        "collection": BHOONIDHI_COLLECTION,
-        "product_id": f"{SOURCE_ID}-composite-{aoi_id}-{composite_date}",
+        "source_id": source_id,
+        "collection": profile["collection"],
+        "product_id": f"{source_id}-composite-{aoi_id}-{composite_date}",
         "platform": "resourcesat-2a",
         "product_level": "BOA-COMPOSITE",
         "composite": True,
@@ -825,7 +866,8 @@ def build_resource_sat_composite(
     output_root: Path,
     window_start: str,
     window_end: str,
-    resolution: float = 24.0,
+    source_id: str = SOURCE_ID,
+    resolution: float | None = None,
     padding_pixels: int = 0,
     overwrite: bool = False,
     skip_validation: bool = False,
@@ -833,6 +875,9 @@ def build_resource_sat_composite(
 ) -> CompositeBuildResult:
     if not manifest_paths:
         raise ValueError("no ResourceSat scene manifests supplied")
+    source_id = SOURCE_ALIASES.get(source_id, source_id)
+    source_profile(source_id)
+    resolution = default_resolution(source_id) if resolution is None else resolution
     aoi_id = str(aoi.get("id") or aoi.get("properties", {}).get("id") or "unknown-aoi")
     crs = str(aoi.get("properties", {}).get("compositeGridCrs") or "EPSG:32643")
     grid = grid_from_aoi(
@@ -843,13 +888,12 @@ def build_resource_sat_composite(
         padding_pixels=padding_pixels,
     )
     aligned = [
-        align_manifest_scene(deps=deps, manifest_path=path, grid=grid)
-        for path in manifest_paths
+        align_manifest_scene(deps=deps, manifest_path=path, grid=grid) for path in manifest_paths
     ]
     result = build_best_available_composite(aligned)
     composite_datetime = max(scene.acquisition_datetime for scene in aligned)
     composite_date = composite_datetime[:10]
-    output_dir = _composite_output_dir(output_root, aoi_id, composite_date)
+    output_dir = _composite_output_dir(output_root, source_id, aoi_id, composite_date)
     temp_dir = output_dir / "_tmp"
     analytic_intermediate = temp_dir / "analytic_intermediate.tif"
     mask_intermediate = temp_dir / "mask_intermediate.tif"
@@ -863,6 +907,7 @@ def build_resource_sat_composite(
         mask=result["mask"],
         analytic_path=analytic_intermediate,
         mask_path=mask_intermediate,
+        source_id=source_id,
         overwrite=overwrite,
     )
     _translate_to_cog(
@@ -893,6 +938,7 @@ def build_resource_sat_composite(
         analytic_cog=analytic_cog,
         mask_cog=mask_cog,
         metrics=result["metrics"],
+        source_id=source_id,
     )
     if not keep_intermediate:
         import shutil

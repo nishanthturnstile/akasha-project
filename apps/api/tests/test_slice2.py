@@ -277,8 +277,12 @@ def test_sources_endpoint_contract():
     assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
     assert rs["metricsProvisional"] is True
     assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
+    assert sources["resourcesat-2a-awifs-boa"]["analysisLevel"] == "regional"
     assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
+    assert sources["resourcesat-2a-liss4-mx70-l2"]["analysisLevel"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["availabilityStatus"] == "gated"
+    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
+    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["displayModes"] == ["NDVI_CONTEXT"]
     assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
     assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "gated"
     assert sources["cartosat-3-gated"]["gatedReason"]
@@ -291,6 +295,26 @@ def test_sources_endpoint_contract():
     assert s1["defaultDisplayMode"] == "VV_GRAYSCALE"
     assert s1["dateMetricsKind"] == "radar"
     assert s1["supportedIndices"] == []
+
+
+def test_phase5_gated_collection_contracts_are_loadable():
+    from app.raster import catalog_resolver as catalog
+
+    for source_id in (
+        "resourcesat-2a-awifs-boa",
+        "resourcesat-2a-liss4-mx70-l2",
+        "eos-06-ocm-lac-ndvi-8day-360m",
+        "irs-1c-liss3-archive",
+    ):
+        collection = catalog.get_collection(source_id)
+        assert collection["id"] == source_id
+        assert collection.get("akasha:availability_status") == "gated"
+
+    eos = catalog.get_collection("eos-06-ocm-lac-ndvi-8day-360m")
+    assert eos["akasha:source_kind"] == "context"
+    assert eos["akasha:supported_indices"] == []
+    irs = catalog.get_collection("irs-1c-liss3-archive")
+    assert irs["akasha:refresh_policy"] == "Archive only; no scheduled refresh."
 
 
 def test_dates_endpoint_returns_real_scene():
@@ -636,9 +660,7 @@ def test_source_dates_reject_invalid_window(monkeypatch):
         ],
     )
 
-    r = client.get(
-        "/api/sources/sentinel-2-l2a/dates?startDate=2026-04-01&endDate=2026-03-01"
-    )
+    r = client.get("/api/sources/sentinel-2-l2a/dates?startDate=2026-04-01&endDate=2026-03-01")
 
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "INVALID_DATE_RANGE"

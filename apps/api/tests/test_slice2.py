@@ -387,6 +387,62 @@ def _s1_stac_item(
     }
 
 
+def _resourcesat_stac_item(
+    item_id,
+    acquisition_date,
+    bbox,
+    analytic_href,
+    mask_href,
+    *,
+    composite=False,
+    usable=80.0,
+    coverage=100.0,
+) -> dict:
+    props = {
+        "datetime": f"{acquisition_date}T00:00:00Z",
+        "akasha:acquisition_date": acquisition_date,
+        "akasha:usable_pixel_percent": usable,
+        "akasha:cloud_masked_percent": 100.0 - usable,
+        "akasha:coverage_percent": coverage,
+        "akasha:is_latest_usable": True,
+        "akasha:metrics_provisional": True,
+        "akasha:band_role_mapping": {
+            "GREEN": "BAND2",
+            "RED": "BAND3",
+            "NIR": "BAND4",
+            "SWIR1": "BAND5",
+        },
+        "akasha:mask_asset": "mask",
+        "proj:epsg": 32643,
+    }
+    if composite:
+        props.update(
+            {
+                "akasha:composite": True,
+                "akasha:aoi_id": "bangalore-60km",
+                "akasha:period_start": "2026-03-05",
+                "akasha:period_end": acquisition_date,
+                "akasha:contributing_scenes": [{"id": "scene-a"}, {"id": "scene-b"}],
+            }
+        )
+    return {
+        "type": "Feature",
+        "id": item_id,
+        "collection": "resourcesat-2a-liss3-boa",
+        "bbox": bbox,
+        "properties": props,
+        "assets": {
+            "analytic": {
+                "href": analytic_href,
+                "eo:bands": [{"name": name} for name in ["BAND2", "BAND3", "BAND4", "BAND5"]],
+                "raster:bands": [{"scale": 0.0001, "offset": 0, "nodata": 0}],
+                "proj:epsg": 32643,
+            },
+            "mask": {"href": mask_href},
+        },
+    }
+
+
 def test_supported_indices_preserves_explicit_empty_collection(monkeypatch):
     from app.raster import catalog_resolver as catalog
 
@@ -528,6 +584,79 @@ def test_dates_endpoint_deduplicates_same_date_scenes_with_merged_bounds(monkeyp
     assert dates[0]["sceneCount"] == 2
     assert dates[0]["bounds"] == [77.0, 11.5, 79.0, 13.5]
     assert dates[0]["usablePixelPercent"] == pytest.approx(85.0)
+
+
+def test_resourcesat_dates_prefer_composite_when_scene_items_coexist(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="resourcesat-2a-liss3-boa": [
+            _resourcesat_stac_item(
+                "scene-a",
+                "2026-03-19",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://scene-a/analytic.tif",
+                "s3://scene-a/mask.tif",
+                usable=70.0,
+            ),
+            _resourcesat_stac_item(
+                "composite",
+                "2026-03-19",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://composite/analytic.tif",
+                "s3://composite/mask.tif",
+                composite=True,
+                usable=92.0,
+                coverage=99.0,
+            ),
+        ],
+    )
+
+    r = client.get("/api/sources/resourcesat-2a-liss3-boa/dates")
+
+    assert r.status_code == 200
+    dates = r.json()
+    assert len(dates) == 1
+    assert dates[0]["sceneCount"] == 1
+    assert dates[0]["bounds"] == [76.5, 11.5, 79.0, 13.5]
+    assert dates[0]["usablePixelPercent"] == pytest.approx(92.0)
+    assert dates[0]["coveragePercent"] == pytest.approx(99.0)
+    assert dates[0]["tileAvailable"] is True
+
+
+def test_resourcesat_resolve_assets_prefers_composite_when_scene_items_coexist(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="resourcesat-2a-liss3-boa": [
+            _resourcesat_stac_item(
+                "scene-a",
+                "2026-03-19",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://scene-a/analytic.tif",
+                "s3://scene-a/mask.tif",
+            ),
+            _resourcesat_stac_item(
+                "composite",
+                "2026-03-19",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://composite/analytic.tif",
+                "s3://composite/mask.tif",
+                composite=True,
+            ),
+        ],
+    )
+
+    assets = catalog.resolve_assets_for_date("resourcesat-2a-liss3-boa", "2026-03-19")
+
+    assert len(assets) == 1
+    assert assets[0]["itemId"] == "composite"
+    assert assets[0]["analyticHref"] == "s3://composite/analytic.tif"
+    assert assets[0]["maskHref"] == "s3://composite/mask.tif"
 
 
 def test_layers_default_uses_merged_bounds_for_latest_date(monkeypatch):

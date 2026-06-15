@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import math
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -106,6 +108,14 @@ class CompositeBuildResult:
     mask_cog: Path
     manifest: Path
     metrics: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class CompositeVerifyResult:
+    ok: bool
+    detail: str
+    checks: list[str]
+    problems: list[str]
 
 
 def require_raster_deps() -> dict[str, Any]:
@@ -227,6 +237,21 @@ def _manifest_asset_path(manifest_path: Path, manifest: dict[str, Any], asset: s
         value = value.get("path") or value.get("href")
     if not value:
         value = manifest.get(f"{asset}_path") or manifest.get(f"{asset}Path")
+    path = Path(str(value)) if value else manifest_path.parent / f"{asset}.tif"
+    if path.is_absolute():
+        return path
+    return (manifest_path.parent / path).resolve()
+
+
+def _manifest_asset_path_from_outputs(
+    manifest_path: Path,
+    manifest: dict[str, Any],
+    asset: str,
+) -> Path:
+    outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
+    value = outputs.get(asset)
+    if isinstance(value, dict):
+        value = value.get("path") or value.get("href")
     path = Path(str(value)) if value else manifest_path.parent / f"{asset}.tif"
     if path.is_absolute():
         return path
@@ -530,6 +555,201 @@ def _raster_summary(deps: dict[str, Any], path: Path) -> dict[str, Any]:
             summary["wgs84_bounds"] = bbox
             summary["wgs84_geometry"] = _geometry_from_bbox(bbox)
         return summary
+
+
+def _unique_mask_values(mask_dataset: Any) -> set[int]:
+    values = np.unique(mask_dataset.read(1, masked=False))
+    return {int(value) for value in values.tolist()}
+
+
+def _percent(part: int, total: int) -> float:
+    return round(part * 100.0 / total, 4) if total else 0.0
+
+
+def _stac_item_exists(
+    *,
+    stac_api_url: str,
+    collection_id: str,
+    item_id: str,
+    timeout: int = 10,
+) -> tuple[bool, str]:
+    if not stac_api_url:
+        return False, "STAC_API_URL is not configured"
+    url = (
+        f"{stac_api_url.rstrip('/')}/collections/"
+        f"{collection_id}/items/{item_id}"
+    )
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            if response.status == 200:
+                return True, f"catalog item present: {item_id}"
+            return False, f"unexpected STAC status {response.status} for {item_id}"
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False, f"catalog item missing: {item_id}"
+        return False, f"STAC API returned HTTP {exc.code} for {item_id}"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"STAC API check failed for {item_id}: {exc}"
+
+
+def verify_composite_manifest(
+    *,
+    deps: dict[str, Any],
+    manifest_path: Path,
+    min_coverage_percent: float = 95.0,
+    expected_crs: str = "EPSG:32643",
+    expected_resolution: float = 24.0,
+    resolution_tolerance: float = 0.25,
+    require_overviews: bool = True,
+    require_catalog_item: bool = False,
+    stac_api_url: str = "",
+) -> CompositeVerifyResult:
+    manifest_path = Path(manifest_path)
+    problems: list[str] = []
+    checks: list[str] = []
+    if not manifest_path.is_file():
+        return CompositeVerifyResult(
+            ok=False,
+            detail=f"composite manifest not found: {manifest_path}",
+            checks=[],
+            problems=[f"missing manifest {manifest_path}"],
+        )
+    manifest = _read_manifest(manifest_path)
+    props = manifest.get("properties") if isinstance(manifest.get("properties"), dict) else {}
+    if not bool(manifest.get("composite") or props.get("akasha:composite")):
+        problems.append("manifest is not marked as a composite")
+    else:
+        checks.append("manifest is marked composite")
+    if str(manifest.get("source_id") or manifest.get("collection")) not in (
+        SOURCE_ID,
+        BHOONIDHI_COLLECTION,
+    ):
+        problems.append("manifest source is not ResourceSat LISS-3")
+    else:
+        checks.append("manifest source is ResourceSat LISS-3")
+    for key in ("aoi_id", "composite_date", "period_start", "period_end"):
+        if not manifest.get(key):
+            problems.append(f"manifest missing {key}")
+        else:
+            checks.append(f"manifest has {key}")
+    contributing = manifest.get("contributing_scenes") or props.get("akasha:contributing_scenes")
+    if not isinstance(contributing, list) or not contributing:
+        problems.append("manifest has no contributing scenes")
+    else:
+        checks.append(f"manifest has {len(contributing)} contributing scene(s)")
+
+    analytic_path = _manifest_asset_path_from_outputs(manifest_path, manifest, "analytic")
+    mask_path = _manifest_asset_path_from_outputs(manifest_path, manifest, "mask")
+    if not analytic_path.is_file():
+        problems.append(f"missing analytic COG: {analytic_path}")
+    if not mask_path.is_file():
+        problems.append(f"missing mask COG: {mask_path}")
+    if problems:
+        return CompositeVerifyResult(
+            ok=False,
+            detail="; ".join(problems),
+            checks=checks,
+            problems=problems,
+        )
+
+    rasterio = deps["rasterio"]
+    with rasterio.open(analytic_path) as analytic, rasterio.open(mask_path) as mask:
+        if analytic.count != 4:
+            problems.append(f"analytic band count {analytic.count} != 4")
+        else:
+            checks.append("analytic has 4 bands")
+        if mask.count != 1:
+            problems.append(f"mask band count {mask.count} != 1")
+        else:
+            checks.append("mask has 1 band")
+        if analytic.crs != mask.crs:
+            problems.append(f"CRS mismatch analytic={analytic.crs} mask={mask.crs}")
+        elif analytic.crs is None:
+            problems.append("analytic/mask CRS is missing")
+        elif analytic.crs.to_string() != expected_crs:
+            problems.append(f"CRS {analytic.crs.to_string()} != {expected_crs}")
+        else:
+            checks.append(f"CRS is {expected_crs}")
+        if analytic.transform != mask.transform:
+            problems.append("analytic/mask transform mismatch")
+        else:
+            checks.append("analytic/mask transform aligned")
+        if (analytic.width, analytic.height) != (mask.width, mask.height):
+            problems.append(
+                "analytic/mask shape mismatch "
+                f"{analytic.width}x{analytic.height} != {mask.width}x{mask.height}"
+            )
+        else:
+            checks.append(f"shape aligned {analytic.width}x{analytic.height}")
+        xres, yres = analytic.res
+        if abs(float(xres) - expected_resolution) > resolution_tolerance or (
+            abs(abs(float(yres)) - expected_resolution) > resolution_tolerance
+        ):
+            problems.append(
+                f"resolution {analytic.res} not within {resolution_tolerance} "
+                f"of {expected_resolution}"
+            )
+        else:
+            checks.append(f"resolution near {expected_resolution}m")
+        if require_overviews:
+            if not analytic.overviews(1):
+                problems.append("analytic COG has no overviews")
+            else:
+                checks.append("analytic has overviews")
+            if not mask.overviews(1):
+                problems.append("mask COG has no overviews")
+            else:
+                checks.append("mask has overviews")
+        mask_values = _unique_mask_values(mask)
+        allowed = {klass["value"] for klass in MASK_CLASSES}
+        invalid_mask_values = sorted(mask_values - allowed)
+        if invalid_mask_values:
+            problems.append(f"invalid mask class value(s): {invalid_mask_values}")
+        else:
+            checks.append(f"mask classes valid: {sorted(mask_values)}")
+        mask_array = mask.read(1, masked=False)
+        coverage_percent = _percent(int(np.count_nonzero(mask_array != 0)), mask_array.size)
+        if coverage_percent < min_coverage_percent:
+            problems.append(
+                f"coverage {coverage_percent}% below threshold {min_coverage_percent}%"
+            )
+        else:
+            checks.append(f"coverage {coverage_percent}% >= {min_coverage_percent}%")
+
+    try:
+        from . import catalog
+
+        item = catalog.build_stac_item_from_prepare_manifest(manifest)
+        expected_item_id = (
+            f"{SOURCE_ID}_composite_{manifest.get('aoi_id')}_{manifest.get('composite_date')}"
+        )
+        if item["id"] != expected_item_id:
+            problems.append(f"unexpected composite STAC item id: {item['id']}")
+        elif not item["properties"].get("akasha:composite"):
+            problems.append("STAC item is not marked composite")
+        else:
+            checks.append(f"dated composite STAC item buildable: {item['id']}")
+        if require_catalog_item:
+            exists, detail = _stac_item_exists(
+                stac_api_url=stac_api_url,
+                collection_id=str(item["collection"]),
+                item_id=str(item["id"]),
+            )
+            if exists:
+                checks.append(detail)
+            else:
+                problems.append(detail)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"could not build composite STAC item: {exc}")
+
+    ok = not problems
+    detail = (
+        f"composite verification passed ({len(checks)} checks)"
+        if ok
+        else "composite verification failed -> " + "; ".join(problems)
+    )
+    return CompositeVerifyResult(ok=ok, detail=detail, checks=checks, problems=problems)
 
 
 def _composite_output_dir(output_root: Path, aoi_id: str, composite_date: str) -> Path:

@@ -1,10 +1,20 @@
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
-from akasha_ingest import composite
-from akasha_ingest.composite import AlignedScene, CompositeGrid, build_best_available_composite
+
+INGESTION_ROOT = Path(__file__).resolve().parents[1] / "services" / "ingestion"
+if str(INGESTION_ROOT) not in sys.path:
+    sys.path.insert(0, str(INGESTION_ROOT))
+
+from akasha_ingest import composite  # noqa: E402
+from akasha_ingest.composite import (  # noqa: E402
+    AlignedScene,
+    CompositeGrid,
+    build_best_available_composite,
+)
 
 
 def _scene(scene_id: str, dt: str, values: list[list[int]], mask: list[list[int]]) -> AlignedScene:
@@ -183,6 +193,287 @@ def test_build_resource_sat_composite_writes_manifest_from_scene_cogs(tmp_path: 
     assert payload["properties"]["akasha:contributing_scenes"][1]["id"] == "newer"
     assert payload["outputs"]["analytic"]["band_count"] == 4
     assert payload["outputs"]["mask"]["band_count"] == 1
+
+
+def test_verify_composite_manifest_accepts_generated_composite(tmp_path: Path) -> None:
+    deps = composite.require_raster_deps()
+    rasterio = deps["rasterio"]
+    transform_bounds = deps["transform_bounds"]
+    Affine = deps["Affine"]
+    transform = Affine(24, 0, 799980, 0, -24, 1290288)
+    bounds = (799980, 1290240, 800028, 1290288)
+    west, south, east, north = transform_bounds("EPSG:32643", "EPSG:4326", *bounds)
+    aoi = {
+        "id": "test-aoi",
+        "type": "Feature",
+        "properties": {"compositeGridCrs": "EPSG:32643"},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[west, south], [east, south], [east, north], [west, north], [west, south]]
+            ],
+        },
+    }
+
+    def write_scene(scene_dir: Path, scene_id: str, dt: str) -> Path:
+        scene_dir.mkdir(parents=True)
+        profile = {
+            "driver": "GTiff",
+            "crs": "EPSG:32643",
+            "transform": transform,
+            "width": 2,
+            "height": 2,
+            "count": 4,
+            "dtype": "uint16",
+            "nodata": 0,
+        }
+        with rasterio.open(scene_dir / "analytic.tif", "w", **profile) as dst:
+            dst.write(np.ones((4, 2, 2), dtype="uint16") * 100)
+        with rasterio.open(
+            scene_dir / "mask.tif",
+            "w",
+            **dict(profile, count=1, dtype="uint8", nodata=0),
+        ) as dst:
+            dst.write(np.ones((2, 2), dtype="uint8"), 1)
+        manifest = {
+            "source_id": "resourcesat-2a-liss3-boa",
+            "product_id": scene_id,
+            "acquisition_datetime": dt,
+            "path": "99",
+            "row": "65",
+            "outputs": {
+                "analytic": {"path": "analytic.tif"},
+                "mask": {"path": "mask.tif"},
+            },
+        }
+        path = scene_dir / "prepare_manifest.json"
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        return path
+
+    scene = write_scene(tmp_path / "scene", "scene", "2026-03-19T00:00:00Z")
+    build = composite.build_resource_sat_composite(
+        deps=deps,
+        manifest_paths=[scene],
+        aoi=aoi,
+        output_root=tmp_path / "rasters",
+        window_start="2026-03-01",
+        window_end="2026-03-31",
+        overwrite=True,
+        skip_validation=True,
+    )
+
+    verify = composite.verify_composite_manifest(
+        deps=deps,
+        manifest_path=build.manifest,
+        min_coverage_percent=30,
+        require_overviews=False,
+    )
+
+    assert verify.ok
+    assert "dated composite STAC item buildable" in "\n".join(verify.checks)
+
+
+def test_verify_composite_manifest_rejects_low_coverage(tmp_path: Path) -> None:
+    deps = composite.require_raster_deps()
+    rasterio = deps["rasterio"]
+    Affine = deps["Affine"]
+    transform = Affine(24, 0, 799980, 0, -24, 1290288)
+    output = tmp_path / "composite"
+    output.mkdir()
+    profile = {
+        "driver": "GTiff",
+        "crs": "EPSG:32643",
+        "transform": transform,
+        "width": 2,
+        "height": 2,
+        "count": 4,
+        "dtype": "uint16",
+        "nodata": 0,
+    }
+    with rasterio.open(output / "analytic.tif", "w", **profile) as dst:
+        dst.write(np.ones((4, 2, 2), dtype="uint16") * 100)
+    with rasterio.open(
+        output / "mask.tif",
+        "w",
+        **dict(profile, count=1, dtype="uint8", nodata=0),
+    ) as dst:
+        dst.write(np.array([[1, 0], [0, 0]], dtype="uint8"), 1)
+    manifest = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "collection": "ResourceSat-2A_LISS3_BOA",
+        "product_id": "low-coverage",
+        "composite": True,
+        "aoi_id": "test-aoi",
+        "composite_date": "2026-03-19",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+        "period_start": "2026-03-01",
+        "period_end": "2026-03-31",
+        "bbox": [77.0, 11.0, 78.0, 12.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]],
+        },
+        "contributing_scenes": [{"id": "scene", "datetime": "2026-03-19T00:00:00Z"}],
+        "outputs": {
+            "analytic": {"path": "analytic.tif"},
+            "mask": {"path": "mask.tif"},
+        },
+        "properties": {"akasha:composite": True},
+    }
+    manifest_path = output / "prepare_manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    verify = composite.verify_composite_manifest(
+        deps=deps,
+        manifest_path=manifest_path,
+        min_coverage_percent=95,
+        require_overviews=False,
+    )
+
+    assert not verify.ok
+    assert any("coverage 25.0% below threshold" in problem for problem in verify.problems)
+
+
+def test_verify_composite_manifest_can_require_catalog_item(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    deps = composite.require_raster_deps()
+    rasterio = deps["rasterio"]
+    Affine = deps["Affine"]
+    output = tmp_path / "composite"
+    output.mkdir()
+    profile = {
+        "driver": "GTiff",
+        "crs": "EPSG:32643",
+        "transform": Affine(24, 0, 799980, 0, -24, 1290288),
+        "width": 2,
+        "height": 2,
+        "count": 4,
+        "dtype": "uint16",
+        "nodata": 0,
+    }
+    with rasterio.open(output / "analytic.tif", "w", **profile) as dst:
+        dst.write(np.ones((4, 2, 2), dtype="uint16") * 100)
+    with rasterio.open(
+        output / "mask.tif",
+        "w",
+        **dict(profile, count=1, dtype="uint8", nodata=0),
+    ) as dst:
+        dst.write(np.ones((2, 2), dtype="uint8"), 1)
+    manifest = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "collection": "ResourceSat-2A_LISS3_BOA",
+        "product_id": "catalog-present",
+        "composite": True,
+        "aoi_id": "test-aoi",
+        "composite_date": "2026-03-19",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+        "period_start": "2026-03-01",
+        "period_end": "2026-03-31",
+        "bbox": [77.0, 11.0, 78.0, 12.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]],
+        },
+        "contributing_scenes": [{"id": "scene", "datetime": "2026-03-19T00:00:00Z"}],
+        "outputs": {
+            "analytic": {"path": "analytic.tif"},
+            "mask": {"path": "mask.tif"},
+        },
+        "properties": {"akasha:composite": True},
+    }
+    manifest_path = output / "prepare_manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(
+        composite,
+        "_stac_item_exists",
+        lambda **_kwargs: (True, "catalog item present: item"),
+    )
+
+    verify = composite.verify_composite_manifest(
+        deps=deps,
+        manifest_path=manifest_path,
+        min_coverage_percent=95,
+        require_overviews=False,
+        require_catalog_item=True,
+        stac_api_url="http://stac-api",
+    )
+
+    assert verify.ok
+    assert "catalog item present: item" in verify.checks
+
+
+def test_verify_composite_manifest_reports_missing_catalog_item(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    deps = composite.require_raster_deps()
+    rasterio = deps["rasterio"]
+    Affine = deps["Affine"]
+    output = tmp_path / "composite"
+    output.mkdir()
+    profile = {
+        "driver": "GTiff",
+        "crs": "EPSG:32643",
+        "transform": Affine(24, 0, 799980, 0, -24, 1290288),
+        "width": 2,
+        "height": 2,
+        "count": 4,
+        "dtype": "uint16",
+        "nodata": 0,
+    }
+    with rasterio.open(output / "analytic.tif", "w", **profile) as dst:
+        dst.write(np.ones((4, 2, 2), dtype="uint16") * 100)
+    with rasterio.open(
+        output / "mask.tif",
+        "w",
+        **dict(profile, count=1, dtype="uint8", nodata=0),
+    ) as dst:
+        dst.write(np.ones((2, 2), dtype="uint8"), 1)
+    manifest = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "collection": "ResourceSat-2A_LISS3_BOA",
+        "product_id": "catalog-missing",
+        "composite": True,
+        "aoi_id": "test-aoi",
+        "composite_date": "2026-03-19",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+        "period_start": "2026-03-01",
+        "period_end": "2026-03-31",
+        "bbox": [77.0, 11.0, 78.0, 12.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]
+            ],
+        },
+        "contributing_scenes": [{"id": "scene", "datetime": "2026-03-19T00:00:00Z"}],
+        "outputs": {
+            "analytic": {"path": "analytic.tif"},
+            "mask": {"path": "mask.tif"},
+        },
+        "properties": {"akasha:composite": True},
+    }
+    manifest_path = output / "prepare_manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(
+        composite,
+        "_stac_item_exists",
+        lambda **_kwargs: (False, "catalog item missing: item"),
+    )
+
+    verify = composite.verify_composite_manifest(
+        deps=deps,
+        manifest_path=manifest_path,
+        min_coverage_percent=95,
+        require_overviews=False,
+        require_catalog_item=True,
+        stac_api_url="http://stac-api",
+    )
+
+    assert not verify.ok
+    assert "catalog item missing: item" in verify.problems
 
 
 def test_scene_manifest_paths_for_window_skips_composites_and_out_of_window(

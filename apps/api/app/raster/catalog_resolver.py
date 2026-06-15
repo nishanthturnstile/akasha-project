@@ -541,7 +541,8 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
         grouped.setdefault(acquisition_date, []).append(item)
 
     dates: list[dict[str, Any]] = []
-    for acquisition_date, date_items in grouped.items():
+    for acquisition_date, grouped_items in grouped.items():
+        date_items = _servable_items_for_date(source_id, grouped_items)
         datetimes = [
             item.get("properties", {}).get("datetime")
             for item in date_items
@@ -629,7 +630,7 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
 def items_for_date(source_id: str, acquisition_date: str) -> list[dict[str, Any]]:
     items = [item for item in list_items(source_id) if _acquisition_date(item) == acquisition_date]
     if items:
-        return items
+        return _servable_items_for_date(source_id, items)
     raise not_found(
         f"No scenes for source '{source_id}' on '{acquisition_date}'.",
         code="UNKNOWN_DATE",
@@ -650,6 +651,24 @@ def latest_items(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
 
 def latest_item(source_id: str = COLLECTION_ID) -> dict[str, Any]:
     return latest_items(source_id)[0]
+
+
+def _is_composite_item(item: dict[str, Any]) -> bool:
+    props = item.get("properties", {}) if isinstance(item.get("properties"), dict) else {}
+    return bool(item.get("akasha:composite") or props.get("akasha:composite"))
+
+
+def _servable_items_for_date(source_id: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return public/served items for a date.
+
+    ResourceSat keeps per-scene items for provenance, but once a dated
+    composite exists it is the single served analytic+mask pair for tiles and
+    statistics. Sentinel and SAR sources retain their same-date scene behavior.
+    """
+    if source_id != RESOURCESAT_LISS3_SOURCE_ID:
+        return items
+    composites = [item for item in items if _is_composite_item(item)]
+    return composites or items
 
 
 def _band_names_from_raster_bands(asset: dict[str, Any]) -> list[str]:

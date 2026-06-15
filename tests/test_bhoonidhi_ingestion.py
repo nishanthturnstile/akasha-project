@@ -7,12 +7,14 @@ import sys
 import urllib.error
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INGESTION_ROOT = REPO_ROOT / "services" / "ingestion"
 if str(INGESTION_ROOT) not in sys.path:
     sys.path.insert(0, str(INGESTION_ROOT))
 
-from akasha_ingest import bhoonidhi  # noqa: E402
+from akasha_ingest import bhoonidhi, sync  # noqa: E402
 
 WORKER_PATH = INGESTION_ROOT / "worker.py"
 spec = importlib.util.spec_from_file_location("akasha_worker_for_bhoonidhi_tests", WORKER_PATH)
@@ -264,3 +266,180 @@ def test_worker_bhoonidhi_download_updates_manifest(monkeypatch, tmp_path):
     assert result == 0
     assert download_manifest["downloaded"][0]["item_id"] == "RS2A_TEST"
     assert download_manifest["candidates"][0]["download_status"] == "downloaded"
+
+
+def test_sync_ledger_filters_terminal_product_statuses(tmp_path):
+    conn = sync.connect_ledger(tmp_path / "ledger.sqlite")
+    sync.record_product(
+        conn,
+        source_id="resourcesat-2a-liss3-boa",
+        product_id="RS_OLD",
+        status="prepared",
+    )
+    manifest = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "selection": {"selected_product_ids": ["RS_OLD", "RS_NEW"]},
+        "candidates": [
+            {"item_id": "RS_OLD", "download_status": "pending"},
+            {"item_id": "RS_NEW", "download_status": "pending"},
+        ],
+    }
+
+    selection = sync.filter_new_candidates(
+        manifest,
+        conn=conn,
+        source_id="resourcesat-2a-liss3-boa",
+    )
+
+    assert selection.selected_product_ids == ["RS_NEW"]
+    assert selection.skipped_product_ids == ["RS_OLD"]
+    assert selection.manifest["selection"]["selected_product_ids"] == ["RS_NEW"]
+    assert selection.manifest["sync"]["skipped_existing_product_ids"] == ["RS_OLD"]
+
+
+def test_sync_lock_rejects_second_instance_and_releases(tmp_path):
+    lock_path = tmp_path / "sync.lock"
+    lock = sync.acquire_lock(lock_path)
+    assert lock_path.exists()
+    with pytest.raises(sync.SyncLockError):
+        sync.acquire_lock(lock_path)
+
+    sync.release_lock(lock)
+    assert not lock_path.exists()
+
+    lock = sync.acquire_lock(lock_path)
+    sync.release_lock(lock)
+
+
+def test_sync_ledger_failed_status_increments_retries(tmp_path):
+    conn = sync.connect_ledger(tmp_path / "ledger.sqlite")
+
+    sync.record_product(
+        conn,
+        source_id="resourcesat-2a-liss3-boa",
+        product_id="RS_FAIL",
+        status="failed",
+        error="timeout",
+    )
+    sync.record_product(
+        conn,
+        source_id="resourcesat-2a-liss3-boa",
+        product_id="RS_FAIL",
+        status="failed",
+        error="rate limit",
+    )
+    sync.record_product(
+        conn,
+        source_id="resourcesat-2a-liss3-boa",
+        product_id="RS_FAIL",
+        status="downloaded",
+        bytes_count=123,
+    )
+
+    status, retries, bytes_count, error = conn.execute(
+        """
+        select status, retries, bytes, error
+        from ingestion_ledger
+        where product_id = 'RS_FAIL'
+        """
+    ).fetchone()
+    assert status == "downloaded"
+    assert retries == 2
+    assert bytes_count == 123
+    assert error is None
+
+
+def test_sync_cleanup_downloads_removes_raw_files_after_success(tmp_path):
+    first = tmp_path / "RS_A.zip"
+    second = tmp_path / "RS_B.zip"
+    first.write_bytes(b"scene-a")
+    second.write_bytes(b"scene-b")
+
+    retained = sync.cleanup_downloads(
+        [{"path": first.as_posix()}],
+        audit_retention=True,
+    )
+    deleted = sync.cleanup_downloads(
+        [{"path": first.as_posix()}, {"downloaded_path": second.as_posix()}],
+        audit_retention=False,
+    )
+
+    assert retained == []
+    assert [path.name for path in deleted] == ["RS_A.zip", "RS_B.zip"]
+    assert not first.exists()
+    assert not second.exists()
+
+
+def test_worker_bhoonidhi_sync_dry_run_writes_filtered_manifest(monkeypatch, tmp_path):
+    aoi_path = tmp_path / "aoi.geojson"
+    aoi_path.write_text(
+        json.dumps(
+            {
+                "type": "Feature",
+                "properties": {"id": "bangalore-60km", "name": "Bangalore"},
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+                "geometry": {"type": "Polygon", "coordinates": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    ledger_path = tmp_path / "ledger.sqlite"
+    conn = sync.connect_ledger(ledger_path)
+    sync.record_product(
+        conn,
+        source_id="resourcesat-2a-liss3-boa",
+        product_id="RS_OLD",
+        status="ingested",
+    )
+
+    class FakeClient:
+        def search(self, **kwargs):
+            assert kwargs["collection"] == bhoonidhi.RESOURCESAT_LISS3_BHOONIDHI_COLLECTION
+            return [
+                {
+                    "id": "RS_OLD",
+                    "bbox": [77.2, 12.2, 77.8, 12.8],
+                    "properties": {"Online": "Y", "datetime": "2026-03-05T00:00:00Z"},
+                },
+                {
+                    "id": "RS_NEW",
+                    "bbox": [77.3, 12.3, 77.9, 12.9],
+                    "properties": {"Online": "Y", "datetime": "2026-03-19T00:00:00Z"},
+                },
+            ]
+
+    monkeypatch.setattr(bhoonidhi, "BhoonidhiClient", lambda: FakeClient())
+
+    result = worker.main(
+        [
+            "bhoonidhi-sync",
+            "--source",
+            "resourcesat-2a-liss3-boa",
+            "--aoi-path",
+            str(aoi_path),
+            "--datetime",
+            "2026-03-01T00:00:00Z/2026-03-31T23:59:59Z",
+            "--window-start",
+            "2026-03-01",
+            "--window-end",
+            "2026-03-31",
+            "--out-dir",
+            str(tmp_path / "work"),
+            "--ledger-path",
+            str(ledger_path),
+            "--dry-run",
+        ]
+    )
+
+    filtered = json.loads(
+        (
+            tmp_path
+            / "work"
+            / "resourcesat-2a-liss3-boa"
+            / "coverage_manifest.new.json"
+        ).read_text()
+    )
+    assert result == 0
+    assert filtered["selection"]["selected_product_ids"] == ["RS_NEW"]
+    assert filtered["sync"]["skipped_existing_product_ids"] == ["RS_OLD"]
+    assert not (tmp_path / "ledger.sqlite.lock").exists()

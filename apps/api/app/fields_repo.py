@@ -91,8 +91,21 @@ def _validate_season_links(session: Any, user_id: str, season_ids: list[uuid.UUI
         raise not_found("Season not found.", code="SEASON_NOT_FOUND", seasonIds=missing)
 
 
-def _row_to_field(row: tuple[Any, ...]) -> dict[str, Any]:
-    field, season_ids = row
+def _field_season_data(session, season_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[str, Any]]:
+    if not season_ids:
+        return {}
+    rows = session.execute(
+        select(Season.season_id, Season.name, Season.can_delete).where(
+            Season.season_id.in_(season_ids)
+        )
+    ).all()
+    return {
+        row.season_id: {"name": row.name, "can_delete": row.can_delete}
+        for row in rows
+    }
+
+
+def _row_to_field(field: Any, season_data: dict[uuid.UUID, dict[str, Any]]) -> dict[str, Any]:
     return {
         "id": str(field.id),
         "userId": str(field.user_id),
@@ -100,7 +113,15 @@ def _row_to_field(row: tuple[Any, ...]) -> dict[str, Any]:
         "areaHa": field.area_ha,
         "geometry": _geometry_payload(field.geometry),
         "groupId": str(field.group_id) if field.group_id else None,
-        "seasonIds": [str(sid) for sid in season_ids],
+        "seasonIds": [str(sid) for sid in season_data],
+        "seasons": [
+            {
+                "seasonId": str(sid),
+                "name": v["name"],
+                "canDelete": v["can_delete"],
+            }
+            for sid, v in season_data.items()
+        ],
         "createdAt": (
             field.created_at.isoformat().replace("+00:00", "Z")
             if field.created_at
@@ -112,11 +133,6 @@ def _row_to_field(row: tuple[Any, ...]) -> dict[str, Any]:
             else None
         ),
     }
-
-
-def _field_season_ids(session, field_id: uuid.UUID) -> list[uuid.UUID]:
-    stmt = select(FieldSeason.season_id).where(FieldSeason.field_id == field_id)
-    return [row[0] for row in session.execute(stmt).all()]
 
 
 def _field_columns() -> tuple[Any, ...]:
@@ -153,18 +169,42 @@ def create_field(
                     FieldSeason(id=uuid.uuid4(), field_id=field.id, season_id=sid)
                 )
         session.refresh(field)
-        return _row_to_field((field, _field_season_ids(session, field.id)))
+        sids = [
+            row[0]
+            for row in session.execute(
+                select(FieldSeason.season_id).where(FieldSeason.field_id == field.id)
+            ).all()
+        ]
+        season_data = _field_season_data(session, sids)
+        return _row_to_field(field, season_data)
 
 
 def list_fields(user_id: str) -> list[dict[str, Any]]:
     stmt = select(Field).order_by(Field.name)
     with session_scope() as session:
         fields = session.execute(stmt).scalars().all()
+        user_uuid = _uuid(user_id)
+        all_season_ids: set[uuid.UUID] = set()
+        field_season_ids: dict[uuid.UUID, list[uuid.UUID]] = {}
+        for field in fields:
+            if field.user_id == user_uuid:
+                sids = [
+                    row[0]
+                    for row in session.execute(
+                        select(FieldSeason.season_id).where(
+                            FieldSeason.field_id == field.id
+                        )
+                    ).all()
+                ]
+                field_season_ids[field.id] = sids
+                all_season_ids.update(sids)
+        season_data = _field_season_data(session, list(all_season_ids))
         results = []
         for field in fields:
-            if field.user_id == _uuid(user_id):
-                season_ids = _field_season_ids(session, field.id)
-                results.append(_row_to_field((field, season_ids)))
+            if field.user_id == user_uuid:
+                sids = field_season_ids.get(field.id, [])
+                field_season_data = {sid: season_data[sid] for sid in sids if sid in season_data}
+                results.append(_row_to_field(field, field_season_data))
         return results
 
 
@@ -174,7 +214,14 @@ def get_field(field_id: str, user_id: str) -> dict[str, Any] | None:
         field = session.execute(stmt).scalar_one_or_none()
         if field is None or field.user_id != _uuid(user_id):
             return None
-        return _row_to_field((field, _field_season_ids(session, field.id)))
+        sids = [
+            row[0]
+            for row in session.execute(
+                select(FieldSeason.season_id).where(FieldSeason.field_id == field.id)
+            ).all()
+        ]
+        season_data = _field_season_data(session, sids)
+        return _row_to_field(field, season_data)
 
 
 def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] | None:
@@ -219,7 +266,14 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
                 )
             session.flush()
         session.refresh(field)
-        return _row_to_field((field, _field_season_ids(session, field.id)))
+        sids = [
+            row[0]
+            for row in session.execute(
+                select(FieldSeason.season_id).where(FieldSeason.field_id == field.id)
+            ).all()
+        ]
+        season_data = _field_season_data(session, sids)
+        return _row_to_field(field, season_data)
 
 
 def delete_field(field_id: str, user_id: str) -> bool:

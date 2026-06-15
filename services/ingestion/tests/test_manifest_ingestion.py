@@ -154,6 +154,34 @@ def _resourcesat_manifest() -> dict:
     }
 
 
+def _resourcesat_composite_manifest() -> dict:
+    manifest = _resourcesat_manifest()
+    manifest.pop("acquisition_datetime")
+    manifest.pop("path")
+    manifest.pop("row")
+    manifest.update(
+        {
+            "product_id": "resourcesat-2a-liss3-boa-composite-bangalore-60km-2026-03-19",
+            "composite": True,
+            "aoi_id": "bangalore-60km",
+            "product_level": "BOA-COMPOSITE",
+            "composite_date": "2026-03-19",
+            "period_start": "2026-03-05",
+            "period_end": "2026-03-19",
+            "properties": {
+                "akasha:coverage_percent": 98.5,
+                "akasha:usable_pixel_percent": 91.25,
+                "akasha:cloud_masked_percent": 7.25,
+            },
+            "contributing_scenes": [
+                {"id": "scene-a", "datetime": "2026-03-05T00:00:00Z"},
+                {"id": "scene-b", "datetime": "2026-03-19T00:00:00Z"},
+            ],
+        }
+    )
+    return manifest
+
+
 def _write_manifest(root: Path, manifest: dict) -> Path:
     scene = SceneIdentity.from_prepare_manifest(manifest)
     directory = root / scene.acquisition_date / scene.mgrs_tile
@@ -168,6 +196,17 @@ def _write_manifest(root: Path, manifest: dict) -> Path:
 def _write_resourcesat_manifest(root: Path, manifest: dict) -> Path:
     scene = SceneIdentity.from_prepare_manifest(manifest)
     directory = root / scene.source_id / "scene" / scene.acquisition_date / scene.scene_component
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "analytic.tif").write_bytes(b"analytic")
+    (directory / "mask.tif").write_bytes(b"mask")
+    path = directory / "prepare_manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
+def _write_resourcesat_composite_manifest(root: Path, manifest: dict) -> Path:
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+    directory = root / scene.source_id / "composite" / str(scene.aoi_id) / scene.acquisition_date
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "analytic.tif").write_bytes(b"analytic")
     (directory / "mask.tif").write_bytes(b"mask")
@@ -299,6 +338,22 @@ def test_resourcesat_scene_identity_uses_path_row_scene_keys() -> None:
     )
 
 
+def test_resourcesat_composite_identity_uses_composite_layout() -> None:
+    scene = SceneIdentity.from_prepare_manifest(_resourcesat_composite_manifest())
+
+    assert scene.composite is True
+    assert scene.scene_key == (
+        "resourcesat-2a-liss3-boa:composite:bangalore-60km:2026-03-19T00:00:00Z"
+    )
+    assert scene.item_id == "resourcesat-2a-liss3-boa_composite_bangalore-60km_2026-03-19"
+    assert scene.analytic_key == (
+        "resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/analytic.tif"
+    )
+    assert scene.mask_key == (
+        "resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/mask.tif"
+    )
+
+
 def test_resourcesat_scene_identity_accepts_bhoonidhi_collection_alias() -> None:
     manifest = _resourcesat_manifest()
     manifest.pop("source_id")
@@ -378,6 +433,28 @@ def test_build_resourcesat_stac_item_emits_liss3_mask_contract() -> None:
         4,
     ]
     assert "scl" not in item["assets"]
+
+
+def test_build_resourcesat_composite_stac_item_emits_composite_metadata() -> None:
+    item = catalog.build_stac_item_from_prepare_manifest(_resourcesat_composite_manifest())
+
+    assert item["id"] == "resourcesat-2a-liss3-boa_composite_bangalore-60km_2026-03-19"
+    assert item["properties"]["akasha:composite"] is True
+    assert item["properties"]["akasha:aoi_id"] == "bangalore-60km"
+    assert item["properties"]["akasha:period_start"] == "2026-03-05"
+    assert item["properties"]["akasha:period_end"] == "2026-03-19"
+    assert item["properties"]["akasha:coverage_percent"] == 98.5
+    assert item["properties"]["akasha:usable_pixel_percent"] == 91.25
+    assert item["properties"]["akasha:cloud_masked_percent"] == 7.25
+    assert item["properties"]["akasha:contributing_scenes"][1]["id"] == "scene-b"
+    assert "akasha:path" not in item["properties"]
+    assert "akasha:row" not in item["properties"]
+    assert item["assets"]["analytic"]["href"].endswith(
+        "resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/analytic.tif"
+    )
+    assert item["assets"]["mask"]["href"].endswith(
+        "resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/mask.tif"
+    )
 
 
 def test_build_sentinel1_stac_item_emits_sar_metadata_and_backscatter_asset() -> None:
@@ -503,6 +580,39 @@ def test_seed_manifest_cogs_uploads_resourcesat_analytic_and_mask(
     assert [call[3]["Metadata"]["akasha-asset"] for call in fake_client.uploads] == [
         "analytic",
         "mask",
+    ]
+    assert result[0].startswith("uploaded prepared COG")
+
+
+def test_seed_manifest_cogs_uploads_resourcesat_composite_layout(
+    monkeypatch: pytest.MonkeyPatch, scratch_dir: Path
+) -> None:
+    manifest_path = _write_resourcesat_composite_manifest(
+        scratch_dir,
+        _resourcesat_composite_manifest(),
+    )
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.uploads: list[tuple[str, str, str, dict]] = []
+
+        def upload_file(self, filename: str, bucket: str, key: str, ExtraArgs: dict) -> None:  # noqa: N803
+            self.uploads.append((filename, bucket, key, ExtraArgs))
+
+    fake_client = FakeClient()
+    monkeypatch.setattr(storage, "_client", lambda: fake_client)
+    monkeypatch.setattr(storage, "_object_exists", lambda _client, _key: False)
+
+    discovered = config.prepared_manifest_files(
+        root=scratch_dir,
+        source_id=config.RESOURCESAT_LISS3_COLLECTION_ID,
+    )
+    result = storage.seed_manifest_cogs(discovered)
+
+    assert discovered == [manifest_path.resolve()]
+    assert [call[2] for call in fake_client.uploads] == [
+        "resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/analytic.tif",
+        "resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/mask.tif",
     ]
     assert result[0].startswith("uploaded prepared COG")
 

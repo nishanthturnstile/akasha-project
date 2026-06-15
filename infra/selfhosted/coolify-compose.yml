@@ -8,6 +8,7 @@
 services:
   web:
     image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-web:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    pull_policy: always
     environment:
       SERVICE_FQDN_WEB: "/"
       PORT: "80"
@@ -32,6 +33,7 @@ services:
 
   api:
     image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-api:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    pull_policy: always
     environment:
       APP_ENV: "${APP_ENV:-production}"
       PORT: "8000"
@@ -195,6 +197,7 @@ services:
 
   ingestion-worker:
     image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-ingestion-worker:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    pull_policy: always
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD_URLENCODED}@postgis:5432/${POSTGRES_DB}"
       STAC_API_URL: "http://stac-api:8080"
@@ -229,6 +232,7 @@ services:
 
   ingestion-sar:
     image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-ingestion-sar:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
+    pull_policy: always
     platform: linux/amd64
     environment:
       PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

@@ -215,7 +215,15 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
         candidate["download_status"] = result["status"]
         candidate["downloaded_path"] = result["path"]
         candidate["downloaded_bytes"] = result["bytes"]
-        downloaded.append({"item_id": item_id, **result})
+        downloaded.append(
+            {
+                **candidate,
+                "item_id": item_id,
+                **result,
+                "downloaded_path": result["path"],
+                "downloaded_bytes": result["bytes"],
+            }
+        )
     output = dict(manifest)
     output["downloaded"] = downloaded
     output_path = manifest_path.parent / "download_manifest.json"
@@ -423,7 +431,15 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                 candidate["download_status"] = result["status"]
                 candidate["downloaded_path"] = result["path"]
                 candidate["downloaded_bytes"] = result["bytes"]
-                downloaded.append({"item_id": product_id, **result})
+                downloaded.append(
+                    {
+                        **candidate,
+                        "item_id": product_id,
+                        **result,
+                        "downloaded_path": result["path"],
+                        "downloaded_bytes": result["bytes"],
+                    }
+                )
                 sync.record_product(
                     conn,
                     source_id=args.source,

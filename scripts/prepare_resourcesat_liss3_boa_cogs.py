@@ -21,6 +21,7 @@ import shutil
 import sys
 import zipfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -144,17 +145,32 @@ def product_id_from_name(value: str | Path) -> str:
 
 def acquisition_datetime_from_text(value: str) -> str | None:
     text = value.upper()
-    iso = re.search(r"(\d{4})-?(\d{2})-?(\d{2})(?:T(\d{2}):?(\d{2}):?(\d{2}))?", text)
-    if iso:
-        year, month, day, hour, minute, second = iso.groups()
-        return f"{year}-{month}-{day}T{hour or '00'}:{minute or '00'}:{second or '00'}Z"
     bhoonidhi = re.search(
         r"(\d{1,2})[-_\s]?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_\s]?(\d{4})",
         text,
     )
     if bhoonidhi:
         day, month, year = bhoonidhi.groups()
-        return f"{year}-{MONTHS[month]}-{int(day):02d}T00:00:00Z"
+        try:
+            parsed = datetime(int(year), int(MONTHS[month]), int(day))
+        except ValueError:
+            return None
+        return parsed.strftime("%Y-%m-%dT00:00:00Z")
+    iso = re.search(r"(\d{4})-?(\d{2})-?(\d{2})(?:T(\d{2}):?(\d{2}):?(\d{2}))?", text)
+    if iso:
+        year, month, day, hour, minute, second = iso.groups()
+        try:
+            parsed = datetime(
+                int(year),
+                int(month),
+                int(day),
+                int(hour or "00"),
+                int(minute or "00"),
+                int(second or "00"),
+            )
+        except ValueError:
+            return None
+        return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
     return None
 
 
@@ -233,6 +249,17 @@ def _entry_value(entry: dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def _looks_like_source_path(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    lowered = value.lower()
+    return (
+        "/" in value
+        or "\\" in value
+        or lowered.endswith((".zip", ".safe", ".tif", ".tiff"))
+    )
+
+
 def source_path_from_manifest_entry(entry: dict[str, Any], product_id: str, raw_dir: Path) -> Path:
     value = _entry_value(
         entry,
@@ -243,11 +270,61 @@ def source_path_from_manifest_entry(entry: dict[str, Any], product_id: str, raw_
         "sourceZip",
         "local_path",
         "localPath",
-        "path",
     )
     if isinstance(value, str) and value:
         return resolve_repo_path(value)
+    path_value = _entry_value(entry, "path")
+    if _looks_like_source_path(path_value):
+        return resolve_repo_path(str(path_value))
     return raw_dir / f"{product_id}.zip"
+
+
+def path_row_from_manifest_entry(entry: dict[str, Any]) -> tuple[str | None, str | None]:
+    path = _entry_value(entry, "Path", "path_id", "pathId")
+    if path in (None, ""):
+        raw_path = _entry_value(entry, "path")
+        if not _looks_like_source_path(raw_path):
+            path = raw_path
+    row = _entry_value(entry, "Row", "row_id", "rowId")
+    if row in (None, ""):
+        row = _entry_value(entry, "row")
+    return (
+        str(path) if path not in (None, "") else None,
+        str(row) if row not in (None, "") else None,
+    )
+
+
+def merge_downloaded_entries_with_candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates_by_id: dict[str, dict[str, Any]] = {}
+    candidates = payload.get("candidates")
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            product_id = str(
+                _entry_value(candidate, "item_id", "product_id", "productId", "id", "name")
+                or ""
+            )
+            if product_id:
+                candidates_by_id[product_id_from_name(product_id)] = candidate
+
+    downloaded = payload.get("downloaded")
+    if not isinstance(downloaded, list) or not downloaded:
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for item in downloaded:
+        if not isinstance(item, dict):
+            continue
+        product_id = str(
+            _entry_value(item, "item_id", "product_id", "productId", "id", "name") or ""
+        )
+        base = dict(candidates_by_id.get(product_id_from_name(product_id), {}))
+        merged = {**base, **item}
+        if _looks_like_source_path(merged.get("path")) and "downloaded_path" not in merged:
+            merged["downloaded_path"] = merged["path"]
+        entries.append(merged)
+    return entries
 
 
 def selected_product_from_manifest_entry(
@@ -269,8 +346,7 @@ def selected_product_from_manifest_entry(
     acquisition_datetime = (
         acquisition_datetime_from_text(acquisition_datetime) or acquisition_datetime
     )
-    path = _entry_value(entry, "path", "Path", "path_id", "pathId")
-    row = _entry_value(entry, "row", "Row", "row_id", "rowId")
+    path, row = path_row_from_manifest_entry(entry)
     bbox = _entry_value(entry, "bbox")
     geometry = _entry_value(entry, "geometry")
     return SelectedProduct(
@@ -278,8 +354,8 @@ def selected_product_from_manifest_entry(
         source_path=source_path_from_manifest_entry(entry, product_id, raw_dir),
         acquisition_datetime=acquisition_datetime,
         acquisition_date=acquisition_date_from_datetime(acquisition_datetime),
-        path=str(path) if path not in (None, "") else None,
-        row=str(row) if row not in (None, "") else None,
+        path=path,
+        row=row,
         bbox=bbox if isinstance(bbox, list) and len(bbox) == 4 else None,
         geometry=geometry if isinstance(geometry, dict) else None,
     )
@@ -288,9 +364,7 @@ def selected_product_from_manifest_entry(
 def load_selected_products(selection_manifest: Path, *, raw_dir: Path) -> list[SelectedProduct]:
     payload = json.loads(selection_manifest.read_text(encoding="utf-8"))
     entries: list[dict[str, Any]] = []
-    downloaded = payload.get("downloaded")
-    if isinstance(downloaded, list) and downloaded:
-        entries.extend(item for item in downloaded if isinstance(item, dict))
+    entries.extend(merge_downloaded_entries_with_candidates(payload))
     for key in ("selected_products", "selectedProducts", "candidates"):
         value = payload.get(key)
         if not entries and isinstance(value, list):

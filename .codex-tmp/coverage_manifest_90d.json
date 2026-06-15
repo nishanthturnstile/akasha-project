@@ -1,0 +1,2424 @@
+{
+  "type": "bhoonidhi_search_manifest",
+  "version": 1,
+  "created": "2026-06-15T11:46:55.405595Z",
+  "source_id": "resourcesat-2a-liss3-boa",
+  "collection": "ResourceSat-2A_LISS3_BOA",
+  "aoi": {
+    "id": "bangalore-60km",
+    "name": "Bangalore 60 km",
+    "bbox": [
+      77.023647,
+      12.537266,
+      78.131561,
+      13.61645
+    ]
+  },
+  "search": {
+    "datetime": "2026-01-01T00:00:00Z/2026-03-31T23:59:59Z",
+    "filter": "Online=Y"
+  },
+  "selection": {
+    "selected_product_ids": [
+      "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+      "RA319MAR2026048153009900064PSANSTUCSRHTDF",
+      "RA319MAR2026048153009900063PSANSTUCSRHTDF",
+      "RA305MAR2026047954010100065PSANSTUCSRHTDF",
+      "RA305MAR2026047954010100064PSANSTUCSRHTDF",
+      "RA328FEB2026047883010000065PSANSTUCSRHTDF",
+      "RA328FEB2026047883010000064PSANSTUCSRHTDF",
+      "RA328FEB2026047883010000063PSANSTUCSRHTDF",
+      "RA323FEB2026047812009900065PSANSTUCSRHTDF",
+      "RA323FEB2026047812009900064PSANSTUCSRHTDF",
+      "RA323FEB2026047812009900063PSANSTUCSRHTDF",
+      "RA309FEB2026047613010100065PSANSTUCSRHTDF",
+      "RA304FEB2026047542010000065PSANSTUCSRHTDF",
+      "RA304FEB2026047542010000064PSANSTUCSRHTDF",
+      "RA304FEB2026047542010000063PSANSTUCSRHTDF",
+      "RA330JAN2026047471009900065PSANSTUCSRHTDF",
+      "RA330JAN2026047471009900064PSANSTUCSRHTDF",
+      "RA330JAN2026047471009900063PSANSTUCSRHTDF",
+      "RA316JAN2026047272010100065PSANSTUCSRHTDF",
+      "RA316JAN2026047272010100064PSANSTUCSRHTDF",
+      "RA311JAN2026047201010000065PSANSTUCSRHTDF",
+      "RA311JAN2026047201010000064PSANSTUCSRHTDF",
+      "RA311JAN2026047201010000063PSANSTUCSRHTDF",
+      "RA306JAN2026047130009900065PSANSTUCSRHTDF",
+      "RA306JAN2026047130009900064PSANSTUCSRHTDF",
+      "RA306JAN2026047130009900063PSANSTUCSRHTDF"
+    ]
+  },
+  "candidates": [
+    {
+      "item_id": "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-03-19T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.598123,
+        11.140278,
+        77.293455,
+        12.717257
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.293455,
+        12.717257
+      ],
+      "overlap_area": 0.04856301172799939,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.443385",
+          "11.929760"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "048153",
+        "Dumping_Date": "2026-03-19 00:00:00",
+        "LatLon": [
+          [
+            "75.601572",
+            "12.717257"
+          ],
+          [
+            "77.293455",
+            "12.708019"
+          ],
+          [
+            "77.280318",
+            "11.140278"
+          ],
+          [
+            "75.598123",
+            "11.148345"
+          ],
+          [
+            "75.601572",
+            "12.717257"
+          ]
+        ],
+        "datetime": "2026-03-19T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "048153",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.601572",
+            "12.717257"
+          ],
+          [
+            "77.293455",
+            "12.708019"
+          ],
+          [
+            "77.280318",
+            "11.140278"
+          ],
+          [
+            "75.598123",
+            "11.148345"
+          ],
+          [
+            "75.601572",
+            "12.717257"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-03-26 15:05:14",
+        "Scene_Identifier": "048153_048153_99_65",
+        "Imaging_Date": "2026-03-19 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA319MAR2026048153009900064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-03-19T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.871327,
+        12.332855,
+        77.574608,
+        13.911708
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.574608,
+        13.61645
+      ],
+      "overlap_area": 0.5945882958240009,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.720309",
+          "13.123346"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "048153",
+        "Dumping_Date": "2026-03-19 00:00:00",
+        "LatLon": [
+          [
+            "75.876872",
+            "13.911708"
+          ],
+          [
+            "77.574608",
+            "13.899699"
+          ],
+          [
+            "77.558346",
+            "12.332855"
+          ],
+          [
+            "75.871327",
+            "12.343467"
+          ],
+          [
+            "75.876872",
+            "13.911708"
+          ]
+        ],
+        "datetime": "2026-03-19T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "048153",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.876872",
+            "13.911708"
+          ],
+          [
+            "77.574608",
+            "13.899699"
+          ],
+          [
+            "77.558346",
+            "12.332855"
+          ],
+          [
+            "75.871327",
+            "12.343467"
+          ],
+          [
+            "75.876872",
+            "13.911708"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-03-26 15:05:02",
+        "Scene_Identifier": "048153_048153_99_64",
+        "Imaging_Date": "2026-03-19 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA319MAR2026048153009900063PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-03-19T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.144054,
+        13.524567,
+        77.85837,
+        15.10558
+      ],
+      "overlap_bbox": [
+        77.023647,
+        13.524567,
+        77.85837,
+        13.61645
+      ],
+      "overlap_area": 0.07669685340900058,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.998293",
+          "14.316213"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "048153",
+        "Dumping_Date": "2026-03-19 00:00:00",
+        "LatLon": [
+          [
+            "76.152024",
+            "15.105580"
+          ],
+          [
+            "77.858370",
+            "15.090460"
+          ],
+          [
+            "77.838622",
+            "13.524567"
+          ],
+          [
+            "76.144054",
+            "13.538057"
+          ],
+          [
+            "76.152024",
+            "15.105580"
+          ]
+        ],
+        "datetime": "2026-03-19T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "048153",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.152024",
+            "15.105580"
+          ],
+          [
+            "77.858370",
+            "15.090460"
+          ],
+          [
+            "77.838622",
+            "13.524567"
+          ],
+          [
+            "76.144054",
+            "13.538057"
+          ],
+          [
+            "76.152024",
+            "15.105580"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "63",
+        "Online": "Y",
+        "updated": "2026-03-26 14:55:02",
+        "Scene_Identifier": "048153_048153_99_63",
+        "Imaging_Date": "2026-03-19 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA305MAR2026047954010100065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-03-05T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.708756,
+        11.15147,
+        79.432729,
+        12.706528
+      ],
+      "overlap_bbox": [
+        77.708756,
+        12.537266,
+        78.131561,
+        12.706528
+      ],
+      "overlap_area": 0.07156481991000177,
+      "properties": {
+        "Path": "101",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.573104",
+          "11.929829"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047954",
+        "Dumping_Date": "2026-03-05 00:00:00",
+        "LatLon": [
+          [
+            "77.708756",
+            "12.690795"
+          ],
+          [
+            "79.423846",
+            "12.706528"
+          ],
+          [
+            "79.432729",
+            "11.165244"
+          ],
+          [
+            "77.727274",
+            "11.151470"
+          ],
+          [
+            "77.708756",
+            "12.690795"
+          ]
+        ],
+        "datetime": "2026-03-05T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047954",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.708756",
+            "12.690795"
+          ],
+          [
+            "79.423846",
+            "12.706528"
+          ],
+          [
+            "79.432729",
+            "11.165244"
+          ],
+          [
+            "77.727274",
+            "11.151470"
+          ],
+          [
+            "77.708756",
+            "12.690795"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-03-17 17:05:17",
+        "Scene_Identifier": "047954_047954_101_65",
+        "Imaging_Date": "2026-03-05 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA305MAR2026047954010100064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-03-05T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.981873,
+        12.343967,
+        79.712214,
+        13.899645
+      ],
+      "overlap_bbox": [
+        77.981873,
+        12.537266,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 0.1615408945920127,
+      "properties": {
+        "Path": "101",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.849673",
+          "13.122824"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047954",
+        "Dumping_Date": "2026-03-05 00:00:00",
+        "LatLon": [
+          [
+            "77.981873",
+            "13.884429"
+          ],
+          [
+            "79.704154",
+            "13.899645"
+          ],
+          [
+            "79.712214",
+            "12.357441"
+          ],
+          [
+            "78.000617",
+            "12.343967"
+          ],
+          [
+            "77.981873",
+            "13.884429"
+          ]
+        ],
+        "datetime": "2026-03-05T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047954",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.981873",
+            "13.884429"
+          ],
+          [
+            "79.704154",
+            "13.899645"
+          ],
+          [
+            "79.712214",
+            "12.357441"
+          ],
+          [
+            "78.000617",
+            "12.343967"
+          ],
+          [
+            "77.981873",
+            "13.884429"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-03-17 17:05:03",
+        "Scene_Identifier": "047954_047954_101_64",
+        "Imaging_Date": "2026-03-05 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA328FEB2026047883010000065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-28T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.684184,
+        11.136428,
+        78.37852,
+        12.723375
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        78.131561,
+        12.723375
+      ],
+      "overlap_area": 0.20619276662600158,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.528966",
+          "11.930665"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047883",
+        "Dumping_Date": "2026-02-28 00:00:00",
+        "LatLon": [
+          [
+            "76.693927",
+            "12.723375"
+          ],
+          [
+            "78.378520",
+            "12.707249"
+          ],
+          [
+            "78.359121",
+            "11.136428"
+          ],
+          [
+            "76.684184",
+            "11.150507"
+          ],
+          [
+            "76.693927",
+            "12.723375"
+          ]
+        ],
+        "datetime": "2026-02-28T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047883",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.693927",
+            "12.723375"
+          ],
+          [
+            "78.378520",
+            "12.707249"
+          ],
+          [
+            "78.359121",
+            "11.136428"
+          ],
+          [
+            "76.684184",
+            "11.150507"
+          ],
+          [
+            "76.693927",
+            "12.723375"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-03-10 14:27:23",
+        "Scene_Identifier": "047883_047883_100_65",
+        "Imaging_Date": "2026-02-28 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA328FEB2026047883010000064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-28T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.956449,
+        12.326458,
+        78.659674,
+        13.91922
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 1.1956430621760084,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.805415",
+          "13.123672"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047883",
+        "Dumping_Date": "2026-02-28 00:00:00",
+        "LatLon": [
+          [
+            "76.968965",
+            "13.919220"
+          ],
+          [
+            "78.659674",
+            "13.899701"
+          ],
+          [
+            "78.636454",
+            "12.326458"
+          ],
+          [
+            "76.956449",
+            "12.343696"
+          ],
+          [
+            "76.968965",
+            "13.919220"
+          ]
+        ],
+        "datetime": "2026-02-28T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047883",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.968965",
+            "13.919220"
+          ],
+          [
+            "78.659674",
+            "13.899701"
+          ],
+          [
+            "78.636454",
+            "12.326458"
+          ],
+          [
+            "76.956449",
+            "12.343696"
+          ],
+          [
+            "76.968965",
+            "13.919220"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-03-10 14:10:11",
+        "Scene_Identifier": "047883_047883_100_64",
+        "Imaging_Date": "2026-02-28 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA328FEB2026047883010000063PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-28T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.205252,
+        13.536757,
+        78.956786,
+        15.092439
+      ],
+      "overlap_bbox": [
+        77.205252,
+        13.536757,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 0.0738203431370009,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.083889",
+          "14.315606"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047883",
+        "Dumping_Date": "2026-02-28 00:00:00",
+        "LatLon": [
+          [
+            "77.205252",
+            "15.069985"
+          ],
+          [
+            "78.942836",
+            "15.092439"
+          ],
+          [
+            "78.956786",
+            "13.556837"
+          ],
+          [
+            "77.230932",
+            "13.536757"
+          ],
+          [
+            "77.205252",
+            "15.069985"
+          ]
+        ],
+        "datetime": "2026-02-28T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047883",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.205252",
+            "15.069985"
+          ],
+          [
+            "78.942836",
+            "15.092439"
+          ],
+          [
+            "78.956786",
+            "13.556837"
+          ],
+          [
+            "77.230932",
+            "13.536757"
+          ],
+          [
+            "77.205252",
+            "15.069985"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "63",
+        "Online": "Y",
+        "updated": "2026-03-10 14:00:23",
+        "Scene_Identifier": "047883_047883_100_63",
+        "Imaging_Date": "2026-02-28 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA323FEB2026047812009900065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-23T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.618558,
+        11.137731,
+        77.314676,
+        12.718945
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.314676,
+        12.718945
+      ],
+      "overlap_area": 0.05287385769100133,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.464205",
+          "11.929327"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047812",
+        "Dumping_Date": "2026-02-23 00:00:00",
+        "LatLon": [
+          [
+            "75.622135",
+            "12.718945"
+          ],
+          [
+            "77.314676",
+            "12.709570"
+          ],
+          [
+            "77.301383",
+            "11.137731"
+          ],
+          [
+            "75.618558",
+            "11.145916"
+          ],
+          [
+            "75.622135",
+            "12.718945"
+          ]
+        ],
+        "datetime": "2026-02-23T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047812",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.622135",
+            "12.718945"
+          ],
+          [
+            "77.314676",
+            "12.709570"
+          ],
+          [
+            "77.301383",
+            "11.137731"
+          ],
+          [
+            "75.618558",
+            "11.145916"
+          ],
+          [
+            "75.622135",
+            "12.718945"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-03-05 09:45:16",
+        "Scene_Identifier": "047812_047812_99_65",
+        "Imaging_Date": "2026-02-23 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA323FEB2026047812009900064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-23T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.892513,
+        12.331572,
+        77.595941,
+        13.914234
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.595941,
+        13.61645
+      ],
+      "overlap_area": 0.6176105280959991,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.741562",
+          "13.123963"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047812",
+        "Dumping_Date": "2026-02-23 00:00:00",
+        "LatLon": [
+          [
+            "75.898207",
+            "13.914234"
+          ],
+          [
+            "77.595941",
+            "13.902075"
+          ],
+          [
+            "77.579505",
+            "12.331572"
+          ],
+          [
+            "75.892513",
+            "12.342313"
+          ],
+          [
+            "75.898207",
+            "13.914234"
+          ]
+        ],
+        "datetime": "2026-02-23T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047812",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.898207",
+            "13.914234"
+          ],
+          [
+            "77.595941",
+            "13.902075"
+          ],
+          [
+            "77.579505",
+            "12.331572"
+          ],
+          [
+            "75.892513",
+            "12.342313"
+          ],
+          [
+            "75.898207",
+            "13.914234"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-03-05 11:15:13",
+        "Scene_Identifier": "047812_047812_99_64",
+        "Imaging_Date": "2026-02-23 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA323FEB2026047812009900063PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-23T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.166442,
+        13.522372,
+        77.880067,
+        15.11002
+      ],
+      "overlap_bbox": [
+        77.023647,
+        13.522372,
+        77.880067,
+        13.61645
+      ],
+      "overlap_area": 0.08057028075999971,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.020323",
+          "14.317328"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047812",
+        "Dumping_Date": "2026-02-23 00:00:00",
+        "LatLon": [
+          [
+            "76.174603",
+            "15.110020"
+          ],
+          [
+            "77.880067",
+            "15.094737"
+          ],
+          [
+            "77.860086",
+            "13.522372"
+          ],
+          [
+            "76.166442",
+            "13.536001"
+          ],
+          [
+            "76.174603",
+            "15.110020"
+          ]
+        ],
+        "datetime": "2026-02-23T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047812",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.174603",
+            "15.110020"
+          ],
+          [
+            "77.880067",
+            "15.094737"
+          ],
+          [
+            "77.860086",
+            "13.522372"
+          ],
+          [
+            "76.166442",
+            "13.536001"
+          ],
+          [
+            "76.174603",
+            "15.110020"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "63",
+        "Online": "Y",
+        "updated": "2026-03-05 09:45:02",
+        "Scene_Identifier": "047812_047812_99_63",
+        "Imaging_Date": "2026-02-23 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA309FEB2026047613010100065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-09T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.696384,
+        11.151335,
+        79.417567,
+        12.707522
+      ],
+      "overlap_bbox": [
+        77.696384,
+        12.537266,
+        78.131561,
+        12.707522
+      ],
+      "overlap_area": 0.0740914953120018,
+      "properties": {
+        "Path": "101",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.559336",
+          "11.930252"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047613",
+        "Dumping_Date": "2026-02-09 00:00:00",
+        "LatLon": [
+          [
+            "77.696384",
+            "12.691724"
+          ],
+          [
+            "79.408592",
+            "12.707522"
+          ],
+          [
+            "79.417567",
+            "11.165165"
+          ],
+          [
+            "77.714985",
+            "11.151335"
+          ],
+          [
+            "77.696384",
+            "12.691724"
+          ]
+        ],
+        "datetime": "2026-02-09T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047613",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.696384",
+            "12.691724"
+          ],
+          [
+            "79.408592",
+            "12.707522"
+          ],
+          [
+            "79.417567",
+            "11.165165"
+          ],
+          [
+            "77.714985",
+            "11.151335"
+          ],
+          [
+            "77.696384",
+            "12.691724"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-02-17 23:35:03",
+        "Scene_Identifier": "047613_047613_101_65",
+        "Imaging_Date": "2026-02-09 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA304FEB2026047542010000065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-04T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.654744,
+        11.136989,
+        78.34741,
+        12.723996
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        78.131561,
+        12.723996
+      ],
+      "overlap_area": 0.20688078122000034,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.498692",
+          "11.931260"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047542",
+        "Dumping_Date": "2026-02-04 00:00:00",
+        "LatLon": [
+          [
+            "76.664319",
+            "12.723996"
+          ],
+          [
+            "78.347410",
+            "12.708078"
+          ],
+          [
+            "78.328186",
+            "11.136989"
+          ],
+          [
+            "76.654744",
+            "11.150888"
+          ],
+          [
+            "76.664319",
+            "12.723996"
+          ]
+        ],
+        "datetime": "2026-02-04T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047542",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.664319",
+            "12.723996"
+          ],
+          [
+            "78.347410",
+            "12.708078"
+          ],
+          [
+            "78.328186",
+            "11.136989"
+          ],
+          [
+            "76.654744",
+            "11.150888"
+          ],
+          [
+            "76.664319",
+            "12.723996"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-02-14 01:25:02",
+        "Scene_Identifier": "047542_047542_100_65",
+        "Imaging_Date": "2026-02-04 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA304FEB2026047542010000064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-04T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.927758,
+        12.325568,
+        78.628633,
+        13.919234
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 1.1956430621760084,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.775549",
+          "13.123237"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047542",
+        "Dumping_Date": "2026-02-04 00:00:00",
+        "LatLon": [
+          [
+            "76.940099",
+            "13.919234"
+          ],
+          [
+            "78.628633",
+            "13.899948"
+          ],
+          [
+            "78.605595",
+            "12.325568"
+          ],
+          [
+            "76.927758",
+            "12.342599"
+          ],
+          [
+            "76.940099",
+            "13.919234"
+          ]
+        ],
+        "datetime": "2026-02-04T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047542",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.940099",
+            "13.919234"
+          ],
+          [
+            "78.628633",
+            "13.899948"
+          ],
+          [
+            "78.605595",
+            "12.325568"
+          ],
+          [
+            "76.927758",
+            "12.342599"
+          ],
+          [
+            "76.940099",
+            "13.919234"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-02-14 02:55:02",
+        "Scene_Identifier": "047542_047542_100_64",
+        "Imaging_Date": "2026-02-04 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA304FEB2026047542010000063PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-02-04T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.176059,
+        13.535235,
+        78.925982,
+        15.092371
+      ],
+      "overlap_bbox": [
+        77.176059,
+        13.535235,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 0.07760109493000104,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.053891",
+          "14.314802"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047542",
+        "Dumping_Date": "2026-02-04 00:00:00",
+        "LatLon": [
+          [
+            "77.176059",
+            "15.069710"
+          ],
+          [
+            "78.911810",
+            "15.092371"
+          ],
+          [
+            "78.925982",
+            "13.555499"
+          ],
+          [
+            "77.201957",
+            "13.535235"
+          ],
+          [
+            "77.176059",
+            "15.069710"
+          ]
+        ],
+        "datetime": "2026-02-04T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047542",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.176059",
+            "15.069710"
+          ],
+          [
+            "78.911810",
+            "15.092371"
+          ],
+          [
+            "78.925982",
+            "13.555499"
+          ],
+          [
+            "77.201957",
+            "13.535235"
+          ],
+          [
+            "77.176059",
+            "15.069710"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "63",
+        "Online": "Y",
+        "updated": "2026-02-14 01:35:02",
+        "Scene_Identifier": "047542_047542_100_63",
+        "Imaging_Date": "2026-02-04 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA330JAN2026047471009900065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-30T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.59659,
+        11.142908,
+        77.289706,
+        12.717911
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.289706,
+        12.717911
+      ],
+      "overlap_area": 0.048062228054999774,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.440749",
+          "11.931401"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047471",
+        "Dumping_Date": "2026-01-30 00:00:00",
+        "LatLon": [
+          [
+            "75.600026",
+            "12.717911"
+          ],
+          [
+            "77.289706",
+            "12.708702"
+          ],
+          [
+            "77.276605",
+            "11.142908"
+          ],
+          [
+            "75.596590",
+            "11.150953"
+          ],
+          [
+            "75.600026",
+            "12.717911"
+          ]
+        ],
+        "datetime": "2026-01-30T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047471",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.600026",
+            "12.717911"
+          ],
+          [
+            "77.289706",
+            "12.708702"
+          ],
+          [
+            "77.276605",
+            "11.142908"
+          ],
+          [
+            "75.596590",
+            "11.150953"
+          ],
+          [
+            "75.600026",
+            "12.717911"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-02-13 02:45:02",
+        "Scene_Identifier": "047471_047471_99_65",
+        "Imaging_Date": "2026-01-30 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA330JAN2026047471009900064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-30T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.870439,
+        12.33116,
+        77.570403,
+        13.912796
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.570403,
+        13.61645
+      ],
+      "overlap_area": 0.590050327104002,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.717762",
+          "13.123038"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047471",
+        "Dumping_Date": "2026-01-30 00:00:00",
+        "LatLon": [
+          [
+            "75.875988",
+            "13.912796"
+          ],
+          [
+            "77.570403",
+            "13.900827"
+          ],
+          [
+            "77.554139",
+            "12.331160"
+          ],
+          [
+            "75.870439",
+            "12.341734"
+          ],
+          [
+            "75.875988",
+            "13.912796"
+          ]
+        ],
+        "datetime": "2026-01-30T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047471",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.875988",
+            "13.912796"
+          ],
+          [
+            "77.570403",
+            "13.900827"
+          ],
+          [
+            "77.554139",
+            "12.331160"
+          ],
+          [
+            "75.870439",
+            "12.341734"
+          ],
+          [
+            "75.875988",
+            "13.912796"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-02-13 02:15:08",
+        "Scene_Identifier": "047471_047471_99_64",
+        "Imaging_Date": "2026-01-30 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA330JAN2026047471009900063PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-30T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.144042,
+        13.522017,
+        77.853943,
+        15.108183
+      ],
+      "overlap_bbox": [
+        77.023647,
+        13.522017,
+        77.853943,
+        13.61645
+      ],
+      "overlap_area": 0.07840734216800076,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.996068",
+          "14.316231"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047471",
+        "Dumping_Date": "2026-01-30 00:00:00",
+        "LatLon": [
+          [
+            "76.152038",
+            "15.108183"
+          ],
+          [
+            "77.853943",
+            "15.093117"
+          ],
+          [
+            "77.834161",
+            "13.522017"
+          ],
+          [
+            "76.144042",
+            "13.535453"
+          ],
+          [
+            "76.152038",
+            "15.108183"
+          ]
+        ],
+        "datetime": "2026-01-30T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047471",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.152038",
+            "15.108183"
+          ],
+          [
+            "77.853943",
+            "15.093117"
+          ],
+          [
+            "77.834161",
+            "13.522017"
+          ],
+          [
+            "76.144042",
+            "13.535453"
+          ],
+          [
+            "76.152038",
+            "15.108183"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "63",
+        "Online": "Y",
+        "updated": "2026-02-12 23:55:04",
+        "Scene_Identifier": "047471_047471_99_63",
+        "Imaging_Date": "2026-01-30 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA316JAN2026047272010100065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-16T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.699258,
+        11.1518,
+        79.42108,
+        12.707109
+      ],
+      "overlap_bbox": [
+        77.699258,
+        12.537266,
+        78.131561,
+        12.707109
+      ],
+      "overlap_area": 0.07342363842900085,
+      "properties": {
+        "Path": "101",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.562529",
+          "11.930280"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047272",
+        "Dumping_Date": "2026-01-16 00:00:00",
+        "LatLon": [
+          [
+            "77.699258",
+            "12.691327"
+          ],
+          [
+            "79.412130",
+            "12.707109"
+          ],
+          [
+            "79.421080",
+            "11.165617"
+          ],
+          [
+            "77.717833",
+            "11.151800"
+          ],
+          [
+            "77.699258",
+            "12.691327"
+          ]
+        ],
+        "datetime": "2026-01-16T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047272",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.699258",
+            "12.691327"
+          ],
+          [
+            "79.412130",
+            "12.707109"
+          ],
+          [
+            "79.421080",
+            "11.165617"
+          ],
+          [
+            "77.717833",
+            "11.151800"
+          ],
+          [
+            "77.699258",
+            "12.691327"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-02-02 17:25:06",
+        "Scene_Identifier": "047272_047272_101_65",
+        "Imaging_Date": "2026-01-16 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA316JAN2026047272010100064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-16T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.973657,
+        12.342794,
+        79.701184,
+        13.900237
+      ],
+      "overlap_bbox": [
+        77.973657,
+        12.537266,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 0.17040747033600215,
+      "properties": {
+        "Path": "101",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.840050",
+          "13.122527"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047272",
+        "Dumping_Date": "2026-01-16 00:00:00",
+        "LatLon": [
+          [
+            "77.973657",
+            "13.884977"
+          ],
+          [
+            "79.693046",
+            "13.900237"
+          ],
+          [
+            "79.701184",
+            "12.356303"
+          ],
+          [
+            "77.992473",
+            "12.342794"
+          ],
+          [
+            "77.973657",
+            "13.884977"
+          ]
+        ],
+        "datetime": "2026-01-16T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047272",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.973657",
+            "13.884977"
+          ],
+          [
+            "79.693046",
+            "13.900237"
+          ],
+          [
+            "79.701184",
+            "12.356303"
+          ],
+          [
+            "77.992473",
+            "12.342794"
+          ],
+          [
+            "77.973657",
+            "13.884977"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-02-02 18:45:02",
+        "Scene_Identifier": "047272_047272_101_64",
+        "Imaging_Date": "2026-01-16 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA311JAN2026047201010000065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-11T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.671889,
+        11.138109,
+        78.363744,
+        12.724104
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        78.131561,
+        12.724104
+      ],
+      "overlap_area": 0.20700043593200132,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.515434",
+          "11.931870"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047201",
+        "Dumping_Date": "2026-01-11 00:00:00",
+        "LatLon": [
+          [
+            "76.681557",
+            "12.724104"
+          ],
+          [
+            "78.363744",
+            "12.708087"
+          ],
+          [
+            "78.344438",
+            "11.138109"
+          ],
+          [
+            "76.671889",
+            "11.152095"
+          ],
+          [
+            "76.681557",
+            "12.724104"
+          ]
+        ],
+        "datetime": "2026-01-11T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047201",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.681557",
+            "12.724104"
+          ],
+          [
+            "78.363744",
+            "12.708087"
+          ],
+          [
+            "78.344438",
+            "11.138109"
+          ],
+          [
+            "76.671889",
+            "11.152095"
+          ],
+          [
+            "76.681557",
+            "12.724104"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-02-03 05:25:02",
+        "Scene_Identifier": "047201_047201_100_65",
+        "Imaging_Date": "2026-01-11 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA311JAN2026047201010000064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-11T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.946249,
+        12.31958,
+        78.655843,
+        13.929495
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 1.1956430621760084,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.798356",
+          "13.125374"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047201",
+        "Dumping_Date": "2026-01-11 00:00:00",
+        "LatLon": [
+          [
+            "76.958838",
+            "13.929495"
+          ],
+          [
+            "78.655843",
+            "13.909940"
+          ],
+          [
+            "78.632394",
+            "12.319580"
+          ],
+          [
+            "76.946249",
+            "12.336827"
+          ],
+          [
+            "76.958838",
+            "13.929495"
+          ]
+        ],
+        "datetime": "2026-01-11T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047201",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.958838",
+            "13.929495"
+          ],
+          [
+            "78.655843",
+            "13.909940"
+          ],
+          [
+            "78.632394",
+            "12.319580"
+          ],
+          [
+            "76.946249",
+            "12.336827"
+          ],
+          [
+            "76.958838",
+            "13.929495"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-02-03 08:45:22",
+        "Scene_Identifier": "047201_047201_100_64",
+        "Imaging_Date": "2026-01-11 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA311JAN2026047201010000063PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-11T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        77.192038,
+        13.516414,
+        78.938338,
+        15.071017
+      ],
+      "overlap_bbox": [
+        77.192038,
+        13.516414,
+        78.131561,
+        13.61645
+      ],
+      "overlap_area": 0.0939861228280019,
+      "properties": {
+        "Path": "100",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "78.068044",
+          "14.294711"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047201",
+        "Dumping_Date": "2026-01-11 00:00:00",
+        "LatLon": [
+          [
+            "77.192038",
+            "15.048539"
+          ],
+          [
+            "78.924294",
+            "15.071017"
+          ],
+          [
+            "78.938338",
+            "13.536515"
+          ],
+          [
+            "77.217750",
+            "13.516414"
+          ],
+          [
+            "77.192038",
+            "15.048539"
+          ]
+        ],
+        "datetime": "2026-01-11T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047201",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "77.192038",
+            "15.048539"
+          ],
+          [
+            "78.924294",
+            "15.071017"
+          ],
+          [
+            "78.938338",
+            "13.536515"
+          ],
+          [
+            "77.217750",
+            "13.516414"
+          ],
+          [
+            "77.192038",
+            "15.048539"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "63",
+        "Online": "Y",
+        "updated": "2026-02-03 08:45:17",
+        "Scene_Identifier": "047201_047201_100_63",
+        "Imaging_Date": "2026-01-11 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA306JAN2026047130009900065PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-06T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.62713,
+        11.137696,
+        77.319202,
+        12.706555
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.319202,
+        12.706555
+      ],
+      "overlap_area": 0.050034210395000986,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.470782",
+          "11.923109"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047130",
+        "Dumping_Date": "2026-01-06 00:00:00",
+        "LatLon": [
+          [
+            "75.630725",
+            "12.706555"
+          ],
+          [
+            "77.319202",
+            "12.697169"
+          ],
+          [
+            "77.305995",
+            "11.137696"
+          ],
+          [
+            "75.627130",
+            "11.145898"
+          ],
+          [
+            "75.630725",
+            "12.706555"
+          ]
+        ],
+        "datetime": "2026-01-06T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047130",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.630725",
+            "12.706555"
+          ],
+          [
+            "77.319202",
+            "12.697169"
+          ],
+          [
+            "77.305995",
+            "11.137696"
+          ],
+          [
+            "75.627130",
+            "11.145898"
+          ],
+          [
+            "75.630725",
+            "12.706555"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "65",
+        "Online": "Y",
+        "updated": "2026-01-30 23:24:02",
+        "Scene_Identifier": "047130_047130_99_65",
+        "Imaging_Date": "2026-01-06 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA306JAN2026047130009900064PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-06T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        75.902889,
+        12.331941,
+        77.602801,
+        13.91246
+      ],
+      "overlap_bbox": [
+        77.023647,
+        12.537266,
+        77.602801,
+        13.61645
+      ],
+      "overlap_area": 0.6250137303360026,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "76.750189",
+          "13.123254"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047130",
+        "Dumping_Date": "2026-01-06 00:00:00",
+        "LatLon": [
+          [
+            "75.908640",
+            "13.912460"
+          ],
+          [
+            "77.602801",
+            "13.900267"
+          ],
+          [
+            "77.586346",
+            "12.331941"
+          ],
+          [
+            "75.902889",
+            "12.342713"
+          ],
+          [
+            "75.908640",
+            "13.912460"
+          ]
+        ],
+        "datetime": "2026-01-06T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047130",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "75.908640",
+            "13.912460"
+          ],
+          [
+            "77.602801",
+            "13.900267"
+          ],
+          [
+            "77.586346",
+            "12.331941"
+          ],
+          [
+            "75.902889",
+            "12.342713"
+          ],
+          [
+            "75.908640",
+            "13.912460"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "64",
+        "Online": "Y",
+        "updated": "2026-01-30 23:15:02",
+        "Scene_Identifier": "047130_047130_99_64",
+        "Imaging_Date": "2026-01-06 00:00:00"
+      },
+      "download_status": "pending"
+    },
+    {
+      "item_id": "RA306JAN2026047130009900063PSANSTUCSRHTDF",
+      "collection": "ResourceSat-2A_LISS3_BOA",
+      "datetime": "2026-01-06T00:00:00Z",
+      "online": "Y",
+      "bbox": [
+        76.17664,
+        13.521643,
+        77.886914,
+        15.104976
+      ],
+      "overlap_bbox": [
+        77.023647,
+        13.521643,
+        77.886914,
+        13.61645
+      ],
+      "overlap_area": 0.08184375446900174,
+      "properties": {
+        "Path": "99",
+        "ItemStatus": "Available",
+        "Scene_Identifier_Scheme": "DumpingOrbit_ImagingOrbit_Path_Row",
+        "Platform": "R2A",
+        "ProductCode": "STUCSRHTD",
+        "CentreLatLon": [
+          "77.028860",
+          "14.314435"
+        ],
+        "Sat_Spec": "R2A_LIS3",
+        "Dumping_Orbit": "047130",
+        "Dumping_Date": "2026-01-06 00:00:00",
+        "LatLon": [
+          [
+            "76.184847",
+            "15.104976"
+          ],
+          [
+            "77.886914",
+            "15.089664"
+          ],
+          [
+            "77.866945",
+            "13.521643"
+          ],
+          [
+            "76.176640",
+            "13.535302"
+          ],
+          [
+            "76.184847",
+            "15.104976"
+          ]
+        ],
+        "datetime": "2026-01-06T00:00:00Z",
+        "Producer": "ISRO",
+        "Quality": "Unknown : (Q)",
+        "IsPartial": "F",
+        "Imaging_Orbit": "047130",
+        "Instrument": "LIS3",
+        "ProdLatLon": [
+          [
+            "76.184847",
+            "15.104976"
+          ],
+          [
+            "77.886914",
+            "15.089664"
+          ],
+          [
+            "77.866945",
+            "13.521643"
+          ],
+          [
+            "76.176640",
+            "13.535302"
+          ],
+          [
+            "76.184847",
+            "15.104976"
+          ]
+        ],
+        "Sat_Spec_Scheme": "Satellite_Sensor",
+        "Row": "63",
+        "Online": "Y",
+        "updated": "2026-01-30 23:05:02",
+        "Scene_Identifier": "047130_047130_99_63",
+        "Imaging_Date": "2026-01-06 00:00:00"
+      },
+      "download_status": "pending"
+    }
+  ],
+  "sync": {
+    "skipped_existing_product_ids": [],
+    "selected_new_product_ids": [
+      "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+      "RA319MAR2026048153009900064PSANSTUCSRHTDF",
+      "RA319MAR2026048153009900063PSANSTUCSRHTDF",
+      "RA305MAR2026047954010100065PSANSTUCSRHTDF",
+      "RA305MAR2026047954010100064PSANSTUCSRHTDF",
+      "RA328FEB2026047883010000065PSANSTUCSRHTDF",
+      "RA328FEB2026047883010000064PSANSTUCSRHTDF",
+      "RA328FEB2026047883010000063PSANSTUCSRHTDF",
+      "RA323FEB2026047812009900065PSANSTUCSRHTDF",
+      "RA323FEB2026047812009900064PSANSTUCSRHTDF",
+      "RA323FEB2026047812009900063PSANSTUCSRHTDF",
+      "RA309FEB2026047613010100065PSANSTUCSRHTDF",
+      "RA304FEB2026047542010000065PSANSTUCSRHTDF",
+      "RA304FEB2026047542010000064PSANSTUCSRHTDF",
+      "RA304FEB2026047542010000063PSANSTUCSRHTDF",
+      "RA330JAN2026047471009900065PSANSTUCSRHTDF",
+      "RA330JAN2026047471009900064PSANSTUCSRHTDF",
+      "RA330JAN2026047471009900063PSANSTUCSRHTDF",
+      "RA316JAN2026047272010100065PSANSTUCSRHTDF",
+      "RA316JAN2026047272010100064PSANSTUCSRHTDF",
+      "RA311JAN2026047201010000065PSANSTUCSRHTDF",
+      "RA311JAN2026047201010000064PSANSTUCSRHTDF",
+      "RA311JAN2026047201010000063PSANSTUCSRHTDF",
+      "RA306JAN2026047130009900065PSANSTUCSRHTDF",
+      "RA306JAN2026047130009900064PSANSTUCSRHTDF",
+      "RA306JAN2026047130009900063PSANSTUCSRHTDF"
+    ]
+  }
+}

@@ -67,6 +67,12 @@ class FieldUpdate(ApiModel):
         return cleaned
 
 
+class SeasonItem(ApiModel):
+    seasonId: str
+    name: str
+    canDelete: bool
+
+
 class FieldResponse(ApiModel):
     id: str
     userId: str
@@ -75,6 +81,7 @@ class FieldResponse(ApiModel):
     geometry: dict[str, Any]
     groupId: str | None = None
     seasonIds: list[str] = Field(default_factory=list)
+    seasons: list[SeasonItem] = Field(default_factory=list)
     createdAt: str | None = None
     updatedAt: str | None = None
 

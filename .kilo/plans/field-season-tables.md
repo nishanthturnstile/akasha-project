@@ -59,9 +59,7 @@ Create `apps/api/app/fields_repo.py`:
 - `get_field(field_id, user_id)` → dict | None
 - `update_field(field_id, user_id, **kwargs)` → dict | None (syncs season_ids)
 - `delete_field(field_id, user_id)` → bool (CASCADE removes field_seasons)
-- `list_fields_for_season(season_id, user_id)` → list[dict]
-- `add_field_to_season(season_id, field_id, user_id)` → dict
-- `remove_field_from_season(season_id, field_id, user_id)` → bool
+
 
 ### Step 4: Add API Routes
 Create `apps/api/app/fields.py`:

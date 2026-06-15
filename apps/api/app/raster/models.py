@@ -40,7 +40,7 @@ class PixelCounts(BaseModel):
     totalPixels: int = 0
     nodataPixels: int = 0
     coveragePixels: int = 0
-    sclExcludedPixels: int = 0
+    maskedPixels: int = 0
     validPixels: int = 0
 
 

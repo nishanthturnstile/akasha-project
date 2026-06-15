@@ -28,6 +28,7 @@ RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 COPY services/ingestion/worker.py ./
 COPY services/ingestion/akasha_ingest ./akasha_ingest
 COPY scripts/prepare_sentinel2_l2a_cogs.py ./scripts/prepare_sentinel2_l2a_cogs.py
+COPY scripts/prepare_resourcesat_liss3_boa_cogs.py ./scripts/prepare_resourcesat_liss3_boa_cogs.py
 COPY data/seed ./data/seed
 
 # Default command prints resolved config + sample scene, then exits.

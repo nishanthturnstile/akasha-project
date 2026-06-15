@@ -1,0 +1,906 @@
+"""Prepare ResourceSat-2A LISS-3 BOA analytic and mask COGs.
+
+Inputs are Bhoonidhi ResourceSat-2A LISS-3 BOA product ZIPs containing
+``BAND2.tif``, ``BAND3.tif``, ``BAND4.tif``, ``BAND5.tif`` and
+``BAND_META.txt``. Outputs are written under the source-scoped raster layout:
+
+    data/seed/rasters/resourcesat-2a-liss3-boa/scene/<date>/<sceneComponent>/analytic.tif
+    data/seed/rasters/resourcesat-2a-liss3-boa/scene/<date>/<sceneComponent>/mask.tif
+
+The generated mask is provisional because the validated BOA product did not
+include a native quality/cloud/shadow raster.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import sys
+import zipfile
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ID = "resourcesat-2a-liss3-boa"
+BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
+DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "bhoonidhi" / SOURCE_ID
+DEFAULT_WORK_DIR = REPO_ROOT / "data" / "work" / "bhoonidhi" / SOURCE_ID
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / "data" / "seed" / "rasters" / SOURCE_ID
+COG_BLOCKSIZE = 512
+NODATA_DN = 0
+REFLECTANCE_SCALE = 0.0001
+REFLECTANCE_OFFSET = 0.0
+MASK_METHOD = (
+    "Akasha threshold mask v1 (no native quality layer found in validated "
+    "LISS-3 BOA sample; provisional)."
+)
+
+ANALYTIC_BANDS: tuple[tuple[str, str, str], ...] = (
+    ("BAND2", "GREEN", "Green"),
+    ("BAND3", "RED", "Red"),
+    ("BAND4", "NIR", "Near infrared"),
+    ("BAND5", "SWIR1", "Short-wave infrared 1"),
+)
+
+MASK_CLASSES = [
+    {"value": 0, "name": "nodata", "description": "No data / all-band gap", "nodata": True},
+    {"value": 1, "name": "valid", "description": "Valid clear land or water pixel"},
+    {"value": 2, "name": "cloud", "description": "Akasha threshold-derived cloud"},
+    {"value": 3, "name": "shadow", "description": "Akasha threshold-derived shadow"},
+    {"value": 4, "name": "water", "description": "Akasha threshold-derived water"},
+]
+
+MONTHS = {
+    "JAN": "01",
+    "FEB": "02",
+    "MAR": "03",
+    "APR": "04",
+    "MAY": "05",
+    "JUN": "06",
+    "JUL": "07",
+    "AUG": "08",
+    "SEP": "09",
+    "OCT": "10",
+    "NOV": "11",
+    "DEC": "12",
+}
+
+
+@dataclass(frozen=True)
+class ResourceSatMeta:
+    raw: dict[str, str]
+    path: str | None = None
+    row: str | None = None
+    acquisition_datetime: str | None = None
+    background_values: dict[str, int] = field(default_factory=dict)
+    scale: float = REFLECTANCE_SCALE
+    offset: float = REFLECTANCE_OFFSET
+
+
+@dataclass(frozen=True)
+class SelectedProduct:
+    product_id: str
+    source_path: Path
+    acquisition_datetime: str
+    acquisition_date: str
+    path: str | None
+    row: str | None
+    bbox: list[float] | None = None
+    geometry: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class PreparedPaths:
+    product: SelectedProduct
+    product_dir: Path
+    output_dir: Path
+    analytic_cog: Path
+    mask_cog: Path
+    manifest: Path
+
+
+def require_raster_deps() -> dict[str, Any]:
+    try:
+        import numpy as np
+        import rasterio
+        from rasterio.enums import Resampling
+        from rasterio.warp import reproject, transform_bounds
+        from rio_cogeo.cogeo import cog_translate, cog_validate
+        from rio_cogeo.profiles import cog_profiles
+    except ModuleNotFoundError as exc:
+        missing = exc.name or "raster dependency"
+        raise SystemExit(
+            f"Missing {missing}. Run this via the ingestion container, or install "
+            "services/ingestion/requirements.txt in a Python 3.11 environment."
+        ) from exc
+    return {
+        "np": np,
+        "rasterio": rasterio,
+        "Resampling": Resampling,
+        "reproject": reproject,
+        "transform_bounds": transform_bounds,
+        "cog_translate": cog_translate,
+        "cog_validate": cog_validate,
+        "cog_profiles": cog_profiles,
+    }
+
+
+def resolve_repo_path(value: str | Path) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
+
+
+def product_id_from_name(value: str | Path) -> str:
+    name = Path(value).name
+    for suffix in (".SAFE.zip", ".zip", ".SAFE"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return Path(name).stem
+
+
+def acquisition_datetime_from_text(value: str) -> str | None:
+    text = value.upper()
+    iso = re.search(r"(\d{4})-?(\d{2})-?(\d{2})(?:T(\d{2}):?(\d{2}):?(\d{2}))?", text)
+    if iso:
+        year, month, day, hour, minute, second = iso.groups()
+        return f"{year}-{month}-{day}T{hour or '00'}:{minute or '00'}:{second or '00'}Z"
+    bhoonidhi = re.search(
+        r"(\d{1,2})[-_\s]?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_\s]?(\d{4})",
+        text,
+    )
+    if bhoonidhi:
+        day, month, year = bhoonidhi.groups()
+        return f"{year}-{MONTHS[month]}-{int(day):02d}T00:00:00Z"
+    return None
+
+
+def acquisition_date_from_datetime(value: str) -> str:
+    return value[:10]
+
+
+def parse_band_meta(path: Path) -> ResourceSatMeta:
+    raw: dict[str, str] = {}
+    background_values: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" in stripped:
+            key, value = stripped.split("=", 1)
+        elif ":" in stripped:
+            key, value = stripped.split(":", 1)
+        else:
+            continue
+        normalized_key = re.sub(r"[^A-Z0-9]+", "_", key.strip().upper()).strip("_")
+        raw[normalized_key] = value.strip()
+
+    for band, _role, _description in ANALYTIC_BANDS:
+        for suffix in ("BACKGROUND", "BACKGROUND_VALUE", "FILL", "FILL_VALUE", "NODATA"):
+            value = raw.get(f"{band}_{suffix}") or raw.get(f"{suffix}_{band}")
+            if value is not None:
+                try:
+                    background_values[band] = int(float(value))
+                except ValueError:
+                    pass
+
+    scale = _float_meta(raw, "SCALE", "REFLECTANCE_SCALE", "MULTIPLIER") or REFLECTANCE_SCALE
+    offset = _float_meta(raw, "OFFSET", "REFLECTANCE_OFFSET", "ADD_OFFSET") or REFLECTANCE_OFFSET
+    acquisition_datetime = _first_meta(raw, "ACQUISITION_DATETIME", "DATETIME", "DATE")
+    if acquisition_datetime:
+        acquisition_datetime = acquisition_datetime_from_text(acquisition_datetime)
+    return ResourceSatMeta(
+        raw=raw,
+        path=_first_meta(raw, "PATH", "PATH_NO", "PATH_NUMBER"),
+        row=_first_meta(raw, "ROW", "ROW_NO", "ROW_NUMBER"),
+        acquisition_datetime=acquisition_datetime,
+        background_values=background_values,
+        scale=float(scale),
+        offset=float(offset),
+    )
+
+
+def _first_meta(raw: dict[str, str], *keys: str) -> str | None:
+    for key in keys:
+        value = raw.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _float_meta(raw: dict[str, str], *keys: str) -> float | None:
+    value = _first_meta(raw, *keys)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _entry_value(entry: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in entry and entry[key] not in (None, ""):
+            return entry[key]
+    props = entry.get("properties")
+    if isinstance(props, dict):
+        for key in keys:
+            if key in props and props[key] not in (None, ""):
+                return props[key]
+    return None
+
+
+def source_path_from_manifest_entry(entry: dict[str, Any], product_id: str, raw_dir: Path) -> Path:
+    value = _entry_value(
+        entry,
+        "downloaded_path",
+        "download_path",
+        "downloadPath",
+        "source_zip",
+        "sourceZip",
+        "local_path",
+        "localPath",
+        "path",
+    )
+    if isinstance(value, str) and value:
+        return resolve_repo_path(value)
+    return raw_dir / f"{product_id}.zip"
+
+
+def selected_product_from_manifest_entry(
+    entry: dict[str, Any],
+    *,
+    raw_dir: Path,
+) -> SelectedProduct:
+    product_id = product_id_from_name(
+        str(_entry_value(entry, "item_id", "product_id", "productId", "id", "name") or "")
+    )
+    if not product_id:
+        raise SystemExit(f"Selected ResourceSat entry is missing product id: {entry}")
+    acquisition_datetime = (
+        _entry_value(entry, "acquisition_datetime", "acquisitionDatetime", "datetime")
+        or acquisition_datetime_from_text(product_id)
+    )
+    if not isinstance(acquisition_datetime, str) or not acquisition_datetime:
+        raise SystemExit(f"Could not infer acquisition datetime for {product_id}")
+    acquisition_datetime = (
+        acquisition_datetime_from_text(acquisition_datetime) or acquisition_datetime
+    )
+    path = _entry_value(entry, "path", "path_id", "pathId")
+    row = _entry_value(entry, "row", "row_id", "rowId")
+    bbox = _entry_value(entry, "bbox")
+    geometry = _entry_value(entry, "geometry")
+    return SelectedProduct(
+        product_id=product_id,
+        source_path=source_path_from_manifest_entry(entry, product_id, raw_dir),
+        acquisition_datetime=acquisition_datetime,
+        acquisition_date=acquisition_date_from_datetime(acquisition_datetime),
+        path=str(path) if path not in (None, "") else None,
+        row=str(row) if row not in (None, "") else None,
+        bbox=bbox if isinstance(bbox, list) and len(bbox) == 4 else None,
+        geometry=geometry if isinstance(geometry, dict) else None,
+    )
+
+
+def load_selected_products(selection_manifest: Path, *, raw_dir: Path) -> list[SelectedProduct]:
+    payload = json.loads(selection_manifest.read_text(encoding="utf-8"))
+    entries: list[dict[str, Any]] = []
+    downloaded = payload.get("downloaded")
+    if isinstance(downloaded, list) and downloaded:
+        entries.extend(item for item in downloaded if isinstance(item, dict))
+    for key in ("selected_products", "selectedProducts", "candidates"):
+        value = payload.get(key)
+        if not entries and isinstance(value, list):
+            entries.extend(item for item in value if isinstance(item, dict))
+    if not entries:
+        selection = payload.get("selection")
+        selected_ids = selection.get("selected_product_ids") if isinstance(selection, dict) else []
+        entries = [{"item_id": item_id} for item_id in selected_ids or []]
+    if not entries:
+        raise SystemExit(
+            f"Selection manifest contains no ResourceSat products: {selection_manifest}"
+        )
+    return [
+        selected_product_from_manifest_entry(entry, raw_dir=raw_dir)
+        for entry in entries
+        if str(entry.get("download_status", "downloaded")) != "failed"
+    ]
+
+
+def extract_product(source_path: Path, work_dir: Path, *, overwrite: bool) -> Path:
+    if source_path.is_dir():
+        return source_path
+    if not source_path.exists():
+        raise SystemExit(f"ResourceSat ZIP not found: {source_path}")
+    product_id = product_id_from_name(source_path)
+    target = work_dir / product_id
+    if target.exists() and overwrite:
+        shutil.rmtree(target)
+    if target.exists():
+        return target
+    target.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(source_path) as archive:
+        bad_file = archive.testzip()
+        if bad_file is not None:
+            raise SystemExit(f"ZIP integrity check failed at {bad_file}")
+        archive.extractall(target)
+    return target
+
+
+def find_band_asset(product_dir: Path, band_name: str) -> Path:
+    matches = sorted(
+        path
+        for pattern in (f"*{band_name}*.tif", f"*{band_name}*.TIF")
+        for path in product_dir.rglob(pattern)
+        if path.is_file()
+    )
+    if len(matches) != 1:
+        found = "none" if not matches else ", ".join(path.as_posix() for path in matches[:10])
+        raise SystemExit(
+            f"Expected exactly one {band_name} GeoTIFF under {product_dir}; found {found}"
+        )
+    return matches[0]
+
+
+def find_band_meta(product_dir: Path) -> Path:
+    matches = sorted(product_dir.rglob("BAND_META.txt"))
+    if len(matches) != 1:
+        found = "none" if not matches else ", ".join(path.as_posix() for path in matches[:10])
+        raise SystemExit(f"Expected exactly one BAND_META.txt under {product_dir}; found {found}")
+    return matches[0]
+
+
+def same_grid(src: Any, reference: Any) -> bool:
+    return (
+        src.crs == reference.crs
+        and src.transform == reference.transform
+        and src.width == reference.width
+        and src.height == reference.height
+    )
+
+
+def build_mask_array(
+    np: Any,
+    analytic: Any,
+    *,
+    background_values: dict[str, int] | None = None,
+    scale: float = REFLECTANCE_SCALE,
+    offset: float = REFLECTANCE_OFFSET,
+    cloud_brightness_threshold: float = 0.32,
+    cloud_swir_threshold: float = 0.20,
+    shadow_nir_threshold: float = 0.08,
+    shadow_swir_threshold: float = 0.08,
+    water_ndwi_threshold: float = 0.20,
+    water_nir_max: float = 0.20,
+) -> Any:
+    """Return ResourceSat mask codes: 0 gap, 1 valid, 2 cloud, 3 shadow, 4 water."""
+    background_values = background_values or {}
+    data = np.asarray(analytic)
+    if data.shape[0] != len(ANALYTIC_BANDS):
+        raise ValueError(f"expected {len(ANALYTIC_BANDS)} analytic bands, got {data.shape[0]}")
+    gap_parts = []
+    for index, (band_name, _role, _description) in enumerate(ANALYTIC_BANDS):
+        gap_parts.append(data[index] == background_values.get(band_name, NODATA_DN))
+    gap = np.logical_and.reduce(gap_parts)
+
+    reflectance = data.astype("float32") * float(scale) + float(offset)
+    green, red, nir, swir = reflectance
+    denominator = green + nir
+    ndwi = np.zeros_like(green, dtype="float32")
+    np.divide(green - nir, denominator, out=ndwi, where=np.abs(denominator) > 1e-6)
+
+    brightness = (green + red + nir) / 3.0
+    water = (ndwi >= water_ndwi_threshold) & (nir <= water_nir_max) & ~gap
+    cloud = (brightness >= cloud_brightness_threshold) & (swir >= cloud_swir_threshold) & ~gap
+    shadow = (
+        (nir <= shadow_nir_threshold)
+        & (swir <= shadow_swir_threshold)
+        & (red <= shadow_nir_threshold)
+        & ~gap
+        & ~water
+    )
+
+    mask = np.ones(data.shape[1:], dtype="uint8")
+    mask[gap] = 0
+    mask[cloud] = 2
+    mask[shadow] = 3
+    mask[water] = 4
+    return mask
+
+
+def build_analytic_intermediate(
+    *,
+    deps: dict[str, Any],
+    product_dir: Path,
+    output_path: Path,
+    overwrite: bool,
+) -> Path:
+    np = deps["np"]
+    rasterio = deps["rasterio"]
+    Resampling = deps["Resampling"]
+    reproject = deps["reproject"]
+
+    if output_path.exists() and not overwrite:
+        return output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        output_path.unlink()
+
+    reference_path = find_band_asset(product_dir, "BAND2")
+    with rasterio.open(reference_path) as reference:
+        profile = reference.profile.copy()
+        profile.update(
+            driver="GTiff",
+            count=len(ANALYTIC_BANDS),
+            dtype="uint16",
+            nodata=NODATA_DN,
+            tiled=True,
+            blockxsize=COG_BLOCKSIZE,
+            blockysize=COG_BLOCKSIZE,
+            compress="DEFLATE",
+            predictor=2,
+            BIGTIFF="IF_SAFER",
+        )
+        with rasterio.open(output_path, "w", **profile) as dst:
+            for band_index, (band_name, role, description) in enumerate(ANALYTIC_BANDS, start=1):
+                source_path = find_band_asset(product_dir, band_name)
+                with rasterio.open(source_path) as src:
+                    if same_grid(src, reference):
+                        data = src.read(1)
+                    else:
+                        data = np.zeros((reference.height, reference.width), dtype="uint16")
+                        reproject(
+                            source=rasterio.band(src, 1),
+                            destination=data,
+                            src_transform=src.transform,
+                            src_crs=src.crs,
+                            src_nodata=NODATA_DN,
+                            dst_transform=reference.transform,
+                            dst_crs=reference.crs,
+                            dst_nodata=NODATA_DN,
+                            resampling=Resampling.bilinear,
+                        )
+                    dst.write(data, band_index)
+                    dst.set_band_description(band_index, band_name)
+                    dst.update_tags(
+                        band_index,
+                        name=band_name,
+                        role=role,
+                        description=description,
+                        source_asset=band_name,
+                    )
+            dst.update_tags(
+                AKASHA_SOURCE_ID=SOURCE_ID,
+                AKASHA_BAND_ORDER=",".join(band for band, _role, _desc in ANALYTIC_BANDS),
+                AKASHA_REFLECTANCE_SCALE=str(REFLECTANCE_SCALE),
+                AKASHA_REFLECTANCE_OFFSET=str(REFLECTANCE_OFFSET),
+                AREA_OR_POINT="Area",
+            )
+    return output_path
+
+
+def build_mask_intermediate(
+    *,
+    deps: dict[str, Any],
+    analytic_path: Path,
+    output_path: Path,
+    meta: ResourceSatMeta,
+    overwrite: bool,
+) -> Path:
+    np = deps["np"]
+    rasterio = deps["rasterio"]
+    if output_path.exists() and not overwrite:
+        return output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        output_path.unlink()
+
+    with rasterio.open(analytic_path) as src:
+        analytic = src.read()
+        mask = build_mask_array(
+            np,
+            analytic,
+            background_values=meta.background_values,
+            scale=meta.scale,
+            offset=meta.offset,
+        )
+        profile = src.profile.copy()
+        profile.update(
+            driver="GTiff",
+            count=1,
+            dtype="uint8",
+            nodata=0,
+            tiled=True,
+            blockxsize=COG_BLOCKSIZE,
+            blockysize=COG_BLOCKSIZE,
+            compress="DEFLATE",
+            predictor=1,
+            BIGTIFF="IF_SAFER",
+        )
+        with rasterio.open(output_path, "w", **profile) as dst:
+            dst.write(mask, 1)
+            dst.set_band_description(1, "mask")
+            dst.update_tags(
+                1,
+                name="mask",
+                description=MASK_METHOD,
+                classes=json.dumps(MASK_CLASSES),
+            )
+            dst.update_tags(AKASHA_MASK_METHOD=MASK_METHOD, AREA_OR_POINT="Area")
+    return output_path
+
+
+def translate_to_cog(
+    *,
+    deps: dict[str, Any],
+    source_path: Path,
+    output_path: Path,
+    overview_resampling: str,
+    overwrite: bool,
+) -> None:
+    if output_path.exists() and not overwrite:
+        print(f"keep existing {output_path}")
+        return
+    if output_path.exists():
+        output_path.unlink()
+    profile = deps["cog_profiles"].get("deflate")
+    profile.update(
+        {
+            "blocksize": COG_BLOCKSIZE,
+            "BIGTIFF": "IF_SAFER",
+            "overview_resampling": overview_resampling,
+        }
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    deps["cog_translate"](
+        str(source_path),
+        str(output_path),
+        profile,
+        nodata=NODATA_DN,
+        overview_resampling=overview_resampling,
+        quiet=False,
+    )
+
+
+def validate_cog(deps: dict[str, Any], path: Path) -> None:
+    is_valid, errors, warnings = deps["cog_validate"](str(path), strict=True)
+    for warning in warnings:
+        print(f"warning {path.name}: {warning}")
+    if not is_valid:
+        for error in errors:
+            print(f"error {path.name}: {error}")
+        raise SystemExit(f"COG validation failed for {path}")
+
+
+def geometry_from_bbox(bbox: list[float]) -> dict[str, Any]:
+    west, south, east, north = bbox
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [[west, south], [east, south], [east, north], [west, north], [west, south]]
+        ],
+    }
+
+
+def wgs84_bbox_from_dataset(deps: dict[str, Any], dataset: Any) -> list[float] | None:
+    if not dataset.crs:
+        return None
+    west, south, east, north = deps["transform_bounds"](
+        dataset.crs,
+        "EPSG:4326",
+        *dataset.bounds,
+        densify_pts=21,
+    )
+    return [float(west), float(south), float(east), float(north)]
+
+
+def raster_summary(deps: dict[str, Any], path: Path) -> dict[str, Any]:
+    with deps["rasterio"].open(path) as dataset:
+        summary = {
+            "path": path.as_posix(),
+            "crs": dataset.crs.to_string() if dataset.crs else None,
+            "transform": [float(value) for value in dataset.transform],
+            "bounds": [float(value) for value in dataset.bounds],
+            "resolution": [float(value) for value in dataset.res],
+            "width": dataset.width,
+            "height": dataset.height,
+            "dimensions": [dataset.width, dataset.height],
+            "dtype": dataset.dtypes[0] if dataset.dtypes else None,
+            "band_count": dataset.count,
+            "nodata": dataset.nodata,
+            "descriptions": list(dataset.descriptions),
+            "band_descriptions": list(dataset.descriptions),
+            "overviews": dataset.overviews(1) if dataset.count else [],
+        }
+        wgs84_bbox = wgs84_bbox_from_dataset(deps, dataset)
+        if wgs84_bbox:
+            summary["wgs84_bbox"] = wgs84_bbox
+            summary["wgs84_bounds"] = wgs84_bbox
+            summary["wgs84_geometry"] = geometry_from_bbox(wgs84_bbox)
+        return summary
+
+
+def write_manifest(
+    *,
+    deps: dict[str, Any],
+    paths: PreparedPaths,
+    meta: ResourceSatMeta,
+    analytic_intermediate: Path,
+    mask_intermediate: Path,
+) -> None:
+    analytic_summary = raster_summary(deps, paths.analytic_cog)
+    mask_summary = raster_summary(deps, paths.mask_cog)
+    payload: dict[str, Any] = {
+        "source_id": SOURCE_ID,
+        "collection": BHOONIDHI_COLLECTION,
+        "product_id": paths.product.product_id,
+        "platform": "resourcesat-2a",
+        "product_level": "BOA",
+        "acquisition_datetime": paths.product.acquisition_datetime,
+        "acquisition_date": paths.product.acquisition_date,
+        "path": paths.product.path,
+        "row": paths.product.row,
+        "source_zip": paths.product.source_path.as_posix(),
+        "product_dir": paths.product_dir.as_posix(),
+        "analytic_band_order": [band for band, _role, _description in ANALYTIC_BANDS],
+        "band_role_mapping": {role: band for band, role, _description in ANALYTIC_BANDS},
+        "mask_method": MASK_METHOD,
+        "classification_classes": MASK_CLASSES,
+        "akasha:metrics_provisional": True,
+        "intermediates": {
+            "analytic": analytic_intermediate.as_posix(),
+            "mask": mask_intermediate.as_posix(),
+        },
+        "band_meta": {
+            "path": find_band_meta(paths.product_dir).as_posix(),
+            "background_values": meta.background_values,
+            "scale": meta.scale,
+            "offset": meta.offset,
+            "raw": meta.raw,
+        },
+        "outputs": {
+            "analytic": analytic_summary,
+            "mask": mask_summary,
+        },
+        "properties": {
+            "akasha:mask_method": MASK_METHOD,
+            "akasha:metrics_provisional": True,
+            "akasha:band_role_mapping": {
+                role: band for band, role, _description in ANALYTIC_BANDS
+            },
+        },
+    }
+    if paths.product.bbox:
+        payload["bbox"] = paths.product.bbox
+        payload["geometry"] = paths.product.geometry or geometry_from_bbox(paths.product.bbox)
+    elif analytic_summary.get("wgs84_bbox"):
+        payload["bbox"] = analytic_summary["wgs84_bbox"]
+        payload["geometry"] = analytic_summary.get("wgs84_geometry") or geometry_from_bbox(
+            analytic_summary["wgs84_bbox"]
+        )
+    paths.manifest.parent.mkdir(parents=True, exist_ok=True)
+    paths.manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"manifest: {paths.manifest}")
+
+
+def selected_product_from_args(args: argparse.Namespace, source_path: Path) -> SelectedProduct:
+    product_id = product_id_from_name(args.product_id or source_path)
+    acquisition_datetime = args.acquisition_datetime or acquisition_datetime_from_text(product_id)
+    if not acquisition_datetime:
+        raise SystemExit("--acquisition-datetime is required when it cannot be inferred")
+    path = args.path
+    row = args.row
+    return SelectedProduct(
+        product_id=product_id,
+        source_path=source_path,
+        acquisition_datetime=acquisition_datetime,
+        acquisition_date=args.date or acquisition_date_from_datetime(acquisition_datetime),
+        path=path,
+        row=row,
+    )
+
+
+def output_dir_for_product(output_root: Path, product: SelectedProduct) -> Path:
+    return output_root / "scene" / product.acquisition_date / scene_component(product)
+
+
+def safe_component(value: str, default: str = "unknown") -> str:
+    cleaned = re.sub(r"[^0-9A-Za-z]+", "-", str(value).strip()).strip("-")
+    return cleaned or default
+
+
+def compact_datetime(value: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]+", "", value)
+
+
+def product_id_hash(product_id: str) -> str:
+    return hashlib.sha1(product_id.encode("utf-8")).hexdigest()[:12]
+
+
+def scene_component(product: SelectedProduct) -> str:
+    return (
+        f"{compact_datetime(product.acquisition_datetime)}_"
+        f"path-{safe_component(product.path or 'unknown')}_"
+        f"row-{safe_component(product.row or 'unknown')}_{product_id_hash(product.product_id)}"
+    )
+
+
+def prepared_paths(
+    product: SelectedProduct,
+    product_dir: Path,
+    output_root: Path,
+) -> PreparedPaths:
+    output_dir = output_dir_for_product(output_root, product)
+    return PreparedPaths(
+        product=product,
+        product_dir=product_dir,
+        output_dir=output_dir,
+        analytic_cog=output_dir / "analytic.tif",
+        mask_cog=output_dir / "mask.tif",
+        manifest=output_dir / "prepare_manifest.json",
+    )
+
+
+def prepare_one(
+    *,
+    product: SelectedProduct,
+    args: argparse.Namespace,
+    deps: dict[str, Any],
+) -> PreparedPaths:
+    product_dir = extract_product(
+        product.source_path,
+        resolve_repo_path(args.work_dir),
+        overwrite=args.reextract,
+    )
+    meta = parse_band_meta(find_band_meta(product_dir))
+    path_value = product.path or meta.path
+    row_value = product.row or meta.row
+    if not path_value or not row_value:
+        raise SystemExit(f"ResourceSat product {product.product_id} is missing path/row")
+    product = SelectedProduct(
+        product_id=product.product_id,
+        source_path=product.source_path,
+        acquisition_datetime=product.acquisition_datetime,
+        acquisition_date=product.acquisition_date,
+        path=path_value,
+        row=row_value,
+        bbox=product.bbox,
+        geometry=product.geometry,
+    )
+    paths = prepared_paths(product, product_dir, resolve_repo_path(args.output_root))
+    temp_dir = paths.output_dir / "_tmp"
+    analytic_intermediate = temp_dir / "analytic_intermediate.tif"
+    mask_intermediate = temp_dir / "mask_intermediate.tif"
+
+    build_analytic_intermediate(
+        deps=deps,
+        product_dir=product_dir,
+        output_path=analytic_intermediate,
+        overwrite=args.overwrite,
+    )
+    build_mask_intermediate(
+        deps=deps,
+        analytic_path=analytic_intermediate,
+        output_path=mask_intermediate,
+        meta=meta,
+        overwrite=args.overwrite,
+    )
+    translate_to_cog(
+        deps=deps,
+        source_path=analytic_intermediate,
+        output_path=paths.analytic_cog,
+        overview_resampling="average",
+        overwrite=args.overwrite,
+    )
+    translate_to_cog(
+        deps=deps,
+        source_path=mask_intermediate,
+        output_path=paths.mask_cog,
+        overview_resampling="nearest",
+        overwrite=args.overwrite,
+    )
+    if not args.skip_validation:
+        validate_cog(deps, paths.analytic_cog)
+        validate_cog(deps, paths.mask_cog)
+    write_manifest(
+        deps=deps,
+        paths=paths,
+        meta=meta,
+        analytic_intermediate=analytic_intermediate,
+        mask_intermediate=mask_intermediate,
+    )
+    if not args.keep_intermediate and temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    return paths
+
+
+def write_batch_manifest(
+    *,
+    output_root: Path,
+    selection_manifest: Path,
+    prepared: list[PreparedPaths],
+) -> Path:
+    path = output_root / "resourcesat_liss3_batch_prepare_manifest.json"
+    payload = {
+        "source_id": SOURCE_ID,
+        "selection_manifest": selection_manifest.as_posix(),
+        "product_count": len(prepared),
+        "products": [
+            {
+                "product_id": item.product.product_id,
+                "path": item.product.path,
+                "row": item.product.row,
+                "acquisition_datetime": item.product.acquisition_datetime,
+                "acquisition_date": item.product.acquisition_date,
+                "source_zip": item.product.source_path.as_posix(),
+                "output_dir": item.output_dir.as_posix(),
+                "analytic": item.analytic_cog.as_posix(),
+                "mask": item.mask_cog.as_posix(),
+                "prepare_manifest": item.manifest.as_posix(),
+            }
+            for item in prepared
+        ],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"batch manifest: {path}")
+    return path
+
+
+def latest_source_path(raw_dir: Path) -> Path:
+    candidates = sorted(
+        [*raw_dir.rglob("*.zip"), *raw_dir.rglob("*.SAFE")],
+        key=lambda p: p.stat().st_mtime,
+    )
+    if not candidates:
+        raise SystemExit(f"No ResourceSat ZIP/directory found under {raw_dir}. Pass --zip-path.")
+    return candidates[-1]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--zip-path", help="Path to Bhoonidhi ResourceSat ZIP")
+    parser.add_argument("--selection-manifest", help="Bhoonidhi download manifest")
+    parser.add_argument("--raw-dir", default=str(DEFAULT_RAW_DIR.relative_to(REPO_ROOT)))
+    parser.add_argument("--work-dir", default=str(DEFAULT_WORK_DIR.relative_to(REPO_ROOT)))
+    parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT.relative_to(REPO_ROOT)))
+    parser.add_argument("--product-id", help="Override product id in single-product mode")
+    parser.add_argument("--date", help="Acquisition date, e.g. 2026-03-19")
+    parser.add_argument("--acquisition-datetime", help="Acquisition datetime")
+    parser.add_argument("--path", help="ResourceSat path number")
+    parser.add_argument("--row", help="ResourceSat row number")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs")
+    parser.add_argument("--reextract", action="store_true", help="Re-extract source ZIP")
+    parser.add_argument("--keep-intermediate", action="store_true", help="Keep intermediate GTiffs")
+    parser.add_argument("--skip-validation", action="store_true", help="Skip rio-cogeo validation")
+    args = parser.parse_args(argv)
+
+    if args.selection_manifest and args.zip_path:
+        raise SystemExit("--zip-path cannot be combined with --selection-manifest")
+    deps = require_raster_deps()
+    raw_dir = resolve_repo_path(args.raw_dir)
+    output_root = resolve_repo_path(args.output_root)
+    if args.selection_manifest:
+        selection_manifest = resolve_repo_path(args.selection_manifest)
+        products = load_selected_products(selection_manifest, raw_dir=raw_dir)
+        prepared = [prepare_one(product=product, args=args, deps=deps) for product in products]
+        write_batch_manifest(
+            output_root=output_root,
+            selection_manifest=selection_manifest,
+            prepared=prepared,
+        )
+    else:
+        source_path = (
+            resolve_repo_path(args.zip_path) if args.zip_path else latest_source_path(raw_dir)
+        )
+        product = selected_product_from_args(args, source_path)
+        prepare_one(product=product, args=args, deps=deps)
+    print("ResourceSat LISS-3 BOA COG preparation complete")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -109,12 +109,68 @@ def _s1_manifest() -> dict:
     }
 
 
+def _resourcesat_manifest() -> dict:
+    return {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "product_id": "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+        "platform": "resourcesat-2a",
+        "product_level": "BOA",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+        "path": "99",
+        "row": "65",
+        "gsd": 24,
+        "eo:cloud_cover": 12.5,
+        "bbox": [77.0, 11.0, 78.0, 12.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]
+            ],
+        },
+        "outputs": {
+            "analytic": {
+                "path": "analytic.tif",
+                "crs": "EPSG:32643",
+                "bounds": [799980, 1290240, 909780, 1400040],
+                "resolution": [24, 24],
+                "width": 4575,
+                "height": 4575,
+                "dtype": "uint16",
+                "band_count": 4,
+                "nodata": 0,
+            },
+            "mask": {
+                "path": "mask.tif",
+                "crs": "EPSG:32643",
+                "bounds": [799980, 1290240, 909780, 1400040],
+                "resolution": [24, 24],
+                "width": 4575,
+                "height": 4575,
+                "dtype": "uint8",
+                "band_count": 1,
+                "nodata": 0,
+            },
+        },
+    }
+
+
 def _write_manifest(root: Path, manifest: dict) -> Path:
     scene = SceneIdentity.from_prepare_manifest(manifest)
     directory = root / scene.acquisition_date / scene.mgrs_tile
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "analytic.tif").write_bytes(b"analytic")
     (directory / "scl.tif").write_bytes(b"scl")
+    path = directory / "prepare_manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
+def _write_resourcesat_manifest(root: Path, manifest: dict) -> Path:
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+    directory = root / scene.source_id / "scene" / scene.acquisition_date / scene.scene_component
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "analytic.tif").write_bytes(b"analytic")
+    (directory / "mask.tif").write_bytes(b"mask")
     path = directory / "prepare_manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
     return path
@@ -220,6 +276,40 @@ def test_sentinel1_product_name_parser_handles_s1a_and_s1c_without_orbit_fields(
         assert scene.acquisition_datetime == "2026-04-27T00:20:15Z"
 
 
+def test_resourcesat_scene_identity_uses_path_row_scene_keys() -> None:
+    scene = SceneIdentity.from_prepare_manifest(_resourcesat_manifest())
+
+    assert scene.source_id == "resourcesat-2a-liss3-boa"
+    assert scene.path_or_unknown == "99"
+    assert scene.row_or_unknown == "65"
+    assert (
+        scene.scene_key
+        == "resourcesat-2a-liss3-boa:BOA:99:65:2026-03-19T00:00:00Z"
+    )
+    assert scene.scene_component.startswith("20260319T000000Z_path-99_row-65_")
+    assert scene.product_id_hash in scene.scene_component
+    assert scene.item_id == f"resourcesat-2a-liss3-boa_{scene.scene_component}"
+    assert scene.analytic_key == (
+        "resourcesat-2a-liss3-boa/scene/2026-03-19/"
+        f"{scene.scene_component}/analytic.tif"
+    )
+    assert scene.mask_key == (
+        "resourcesat-2a-liss3-boa/scene/2026-03-19/"
+        f"{scene.scene_component}/mask.tif"
+    )
+
+
+def test_resourcesat_scene_identity_accepts_bhoonidhi_collection_alias() -> None:
+    manifest = _resourcesat_manifest()
+    manifest.pop("source_id")
+    manifest["collection"] = "ResourceSat-2A_LISS3_BOA"
+
+    scene = SceneIdentity.from_prepare_manifest(manifest)
+
+    assert scene.source_id == "resourcesat-2a-liss3-boa"
+    assert scene.scene_key == "resourcesat-2a-liss3-boa:BOA:99:65:2026-03-19T00:00:00Z"
+
+
 def test_build_stac_item_from_prepare_manifest_uses_dynamic_asset_hrefs() -> None:
     item = catalog.build_stac_item_from_prepare_manifest(_manifest(tile="43PHP"))
 
@@ -238,6 +328,56 @@ def test_build_stac_item_from_prepare_manifest_uses_dynamic_asset_hrefs() -> Non
     )
     assert len(item["assets"]["analytic"]["eo:bands"]) == 9
     assert len(item["assets"]["analytic"]["raster:bands"]) == 9
+
+
+def test_build_resourcesat_stac_item_emits_liss3_mask_contract() -> None:
+    item = catalog.build_stac_item_from_prepare_manifest(_resourcesat_manifest())
+
+    scene = SceneIdentity.from_prepare_manifest(_resourcesat_manifest())
+    assert item["id"] == f"resourcesat-2a-liss3-boa_{scene.scene_component}"
+    assert item["collection"] == "resourcesat-2a-liss3-boa"
+    assert item["properties"]["constellation"] == "resourcesat"
+    assert item["properties"]["instruments"] == ["liss-3"]
+    assert item["properties"]["product:type"] == "BOA"
+    assert item["properties"]["akasha:path"] == "99"
+    assert item["properties"]["akasha:row"] == "65"
+    assert item["properties"]["akasha:metrics_provisional"] is True
+    assert item["properties"]["akasha:band_role_mapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+        "SWIR1": "BAND5",
+    }
+    assert "Akasha threshold mask v1" in item["properties"]["akasha:mask_method"]
+    assert list(item["assets"]) == ["analytic", "mask"]
+    assert item["assets"]["analytic"]["href"].endswith("/analytic.tif")
+    assert item["assets"]["mask"]["href"].endswith("/mask.tif")
+    assert [band["name"] for band in item["assets"]["analytic"]["eo:bands"]] == [
+        "BAND2",
+        "BAND3",
+        "BAND4",
+        "BAND5",
+    ]
+    assert [band["offset"] for band in item["assets"]["analytic"]["raster:bands"]] == [
+        0,
+        0,
+        0,
+        0,
+    ]
+    assert [band["scale"] for band in item["assets"]["analytic"]["raster:bands"]] == [
+        0.0001,
+        0.0001,
+        0.0001,
+        0.0001,
+    ]
+    assert [klass["value"] for klass in item["assets"]["mask"]["classification:classes"]] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+    ]
+    assert "scl" not in item["assets"]
 
 
 def test_build_sentinel1_stac_item_emits_sar_metadata_and_backscatter_asset() -> None:
@@ -333,6 +473,37 @@ def test_seed_manifest_cogs_uploads_sentinel1_backscatter_only(
     assert uploaded_keys[0].startswith("sentinel-1-grd/2026-04-27/42/")
     assert uploaded_keys[0].endswith("/backscatter.tif")
     assert fake_client.uploads[0][3]["Metadata"]["akasha-asset"] == "backscatter"
+    assert result[0].startswith("uploaded prepared COG")
+
+
+def test_seed_manifest_cogs_uploads_resourcesat_analytic_and_mask(
+    monkeypatch: pytest.MonkeyPatch, scratch_dir: Path
+) -> None:
+    manifest_path = _write_resourcesat_manifest(scratch_dir, _resourcesat_manifest())
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.uploads: list[tuple[str, str, str, dict]] = []
+
+        def upload_file(self, filename: str, bucket: str, key: str, ExtraArgs: dict) -> None:  # noqa: N803
+            self.uploads.append((filename, bucket, key, ExtraArgs))
+
+    fake_client = FakeClient()
+    monkeypatch.setattr(storage, "_client", lambda: fake_client)
+    monkeypatch.setattr(storage, "_object_exists", lambda _client, _key: False)
+
+    result = storage.seed_manifest_cogs([manifest_path])
+
+    uploaded_keys = [call[2] for call in fake_client.uploads]
+    assert len(uploaded_keys) == 2
+    assert uploaded_keys[0].startswith("resourcesat-2a-liss3-boa/scene/2026-03-19/")
+    assert uploaded_keys[0].endswith("/analytic.tif")
+    assert uploaded_keys[1].startswith("resourcesat-2a-liss3-boa/scene/2026-03-19/")
+    assert uploaded_keys[1].endswith("/mask.tif")
+    assert [call[3]["Metadata"]["akasha-asset"] for call in fake_client.uploads] == [
+        "analytic",
+        "mask",
+    ]
     assert result[0].startswith("uploaded prepared COG")
 
 

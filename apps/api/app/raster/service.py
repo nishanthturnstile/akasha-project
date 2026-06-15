@@ -4,6 +4,7 @@ Glues catalog resolution + geometry validation + the rasterio window reader +
 the pure-numpy statistics engine into one normalized response. This is the only
 place that wires the pieces together; each piece stays independently testable.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 from . import catalog_resolver as catalog
 from .errors import bad_request, invalid_geometry, multi_scene_statistics_unavailable
 from .geo_validate import validate_polygon
-from .indices import band_name_to_position, get_index
+from .indices import get_index, index_band_positions
 from .raster_reader import read_index_windows
 from .statistics_core import compute_index_statistics
 
@@ -24,7 +25,7 @@ def compute_statistics(
     index_type: str,
     max_area_ha: float | None = None,
     max_vertices: int | None = None,
-    excluded_scl_classes: tuple[int, ...] | None = None,
+    excluded_mask_classes: tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
     """Compute masked, offset-corrected index statistics for a polygon.
 
@@ -45,15 +46,11 @@ def compute_statistics(
     index_def = get_index(index_type)
 
     # Validate geometry early (422/413/400 before any raster I/O).
-    geom_facts = validate_polygon(
-        geometry, max_area_ha=max_area_ha, max_vertices=max_vertices
-    )
+    geom_facts = validate_polygon(geometry, max_area_ha=max_area_ha, max_vertices=max_vertices)
 
     # Resolve all scene/date assets (latest usable date if no date supplied).
     if not acquisition_date:
-        acquisition_date = catalog.latest_item(source_id)["properties"][
-            "akasha:acquisition_date"
-        ]
+        acquisition_date = catalog.latest_item(source_id)["properties"]["akasha:acquisition_date"]
     assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
     candidate_assets = _candidate_assets_for_geometry(
         assets_for_date=assets_for_date,
@@ -66,23 +63,23 @@ def compute_statistics(
             acquisitionDate=acquisition_date,
         )
 
-    excluded = excluded_scl_classes
+    excluded = excluded_mask_classes
     if excluded is None:
         from .indices import DEFAULT_EXCLUDED_SCL_CLASSES
 
         excluded = DEFAULT_EXCLUDED_SCL_CLASSES
 
-    intersecting_results: list[tuple[dict[str, Any], Any, int, int]] = []
+    intersecting_results: list[tuple[dict[str, Any], Any, int, int, tuple[str, str]]] = []
     for assets in candidate_assets:
-        pos_a, pos_b = _index_band_positions(assets, index_def, index_type)
+        pos_a, pos_b, resolved_bands = _index_band_positions(assets, index_def, index_type)
         read = read_index_windows(
             analytic_href=assets["analyticHref"],
-            scl_href=assets["sclHref"],
+            mask_href=assets["maskHref"],
             geometry=geometry,
             positions=[pos_a, pos_b],
         )
         if read.intersects:
-            intersecting_results.append((assets, read, pos_a, pos_b))
+            intersecting_results.append((assets, read, pos_a, pos_b, resolved_bands))
 
     if not intersecting_results:
         raise invalid_geometry(
@@ -100,18 +97,18 @@ def compute_statistics(
             supportedSceneCount=1,
         )
 
-    assets, read, pos_a, pos_b = intersecting_results[0]
+    assets, read, pos_a, pos_b, resolved_bands = intersecting_results[0]
 
     stats = compute_index_statistics(
         index_type=index_type,
         band_a_dn=read.band_arrays[pos_a],
         band_b_dn=read.band_arrays[pos_b],
-        scl=read.scl,
+        mask=read.mask,
         geometry_mask=read.geometry_mask,
         scale=assets["scale"],
         offset=assets["offset"],
         nodata=read.nodata,
-        excluded_scl_classes=tuple(excluded),
+        excluded_mask_classes=tuple(excluded),
     )
 
     return build_response(
@@ -122,6 +119,7 @@ def compute_statistics(
         assets=assets,
         geom_facts=geom_facts,
         excluded=tuple(excluded),
+        resolved_bands=resolved_bands,
     )
 
 
@@ -129,26 +127,32 @@ def _index_band_positions(
     assets: dict[str, Any],
     index_def: Any,
     index_type: str,
-) -> tuple[int, int]:
+) -> tuple[int, int, tuple[str, str]]:
     band_names: list[str] = assets["bandNames"]
-    name_to_pos = band_name_to_position(band_names)
-    required_bands = tuple(index_def.required_bands)
-    for band in required_bands:
-        if band not in name_to_pos:
+    band_role_mapping: dict[str, str] = assets.get("bandRoleMapping", {})
+    required_roles = tuple(index_def.required_roles)
+    for role in required_roles:
+        band = band_role_mapping.get(role)
+        if not band or band not in band_names:
             raise bad_request(
-                f"Band '{band}' required by {index_type} is not present in the analytic asset.",
+                (
+                    f"Spectral role '{role}' required by {index_type} is not present "
+                    "in the analytic asset."
+                ),
                 code="BAND_NOT_AVAILABLE",
+                role=role,
                 band=band,
                 available=band_names,
+                bandRoleMapping=band_role_mapping,
             )
-    if len(required_bands) != 2:  # pragma: no cover - current registry is two-band only
+    if len(required_roles) != 2:  # pragma: no cover - current registry is two-band only
         raise bad_request(
             f"Index '{index_type}' requires an unsupported number of bands.",
             code="UNSUPPORTED_INDEX_FORMULA",
             indexType=index_type,
-            requiredBands=list(required_bands),
+            requiredRoles=list(required_roles),
         )
-    return name_to_pos[required_bands[0]], name_to_pos[required_bands[1]]
+    return index_band_positions(band_names, band_role_mapping, index_def)
 
 
 def _candidate_assets_for_geometry(
@@ -175,17 +179,10 @@ def _bbox_intersects_geometry(
         return True
     try:
         minx, miny, maxx, maxy = (float(value) for value in bbox)
-        geom_minx, geom_miny, geom_maxx, geom_maxy = (
-            float(value) for value in geometry_bounds
-        )
+        geom_minx, geom_miny, geom_maxx, geom_maxy = (float(value) for value in geometry_bounds)
     except (TypeError, ValueError):
         return True
-    return not (
-        maxx < geom_minx
-        or geom_maxx < minx
-        or maxy < geom_miny
-        or geom_maxy < miny
-    )
+    return not (maxx < geom_minx or geom_maxx < minx or maxy < geom_miny or geom_maxy < miny)
 
 
 def build_response(
@@ -197,6 +194,7 @@ def build_response(
     assets: dict[str, Any],
     geom_facts: dict[str, Any],
     excluded: tuple[int, ...],
+    resolved_bands: tuple[str, str],
 ) -> dict[str, Any]:
     """Assemble the normalized statistics response (architecture contract shape)."""
     return {
@@ -216,16 +214,15 @@ def build_response(
             "totalPixels": stats["totalPixels"],
             "nodataPixels": stats["nodataPixels"],
             "coveragePixels": stats["coveragePixels"],
-            "sclExcludedPixels": stats["sclExcludedPixels"],
+            "maskedPixels": stats["maskedPixels"],
             "validPixels": stats["validPixels"],
         },
         "metadata": {
             "formula": index_def.formula,
-            "bands": list(index_def.required_bands),
-            "cloudMask": f"SCL classes excluded: {list(excluded)}",
-            "reflectanceCorrection": (
-                f"corrected = dn * {assets['scale']} + ({assets['offset']})"
-            ),
+            "bands": list(resolved_bands),
+            "spectralRoles": list(index_def.required_roles),
+            "maskMethod": assets.get("maskMethod") or f"Mask classes excluded: {list(excluded)}",
+            "reflectanceCorrection": (f"corrected = dn * {assets['scale']} + ({assets['offset']})"),
             "itemId": assets.get("itemId"),
             "areaHa": geom_facts.get("areaHa"),
             "vertices": geom_facts.get("vertices"),

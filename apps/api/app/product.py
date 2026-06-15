@@ -22,6 +22,7 @@ import anyio
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import Response
 
+from .aoi import load_aoi_config
 from .auth import get_current_team
 from .config import settings
 from .raster import catalog_resolver as catalog
@@ -33,19 +34,12 @@ from .raster.errors import (
     rate_limited,
     upstream_error,
 )
-from .raster.indices import DEFAULT_INDEX, SUPPORTED_INDICES, rgb_band_positions
+from .raster.indices import DEFAULT_INDEX, SUPPORTED_INDICES, fcc_band_positions, rgb_band_positions
 from .raster.models import StatisticsRequest
 from .raster.service import compute_statistics
 
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
 
-_AOI = {
-    "id": "bangalore",
-    "name": "Bangalore",
-    "center": [77.59, 12.97],
-    "zoom": 11,
-    "bounds": [77.4, 12.8, 77.8, 13.2],
-}
 _RATE_BUCKETS: dict[str, list[float]] = {}
 
 
@@ -89,7 +83,7 @@ async def get_config() -> dict[str, Any]:
     """App configuration: AOI, map defaults, limits, and global optical index defaults."""
     return {
         "appName": os.environ.get("PUBLIC_APP_NAME", "Akasha"),
-        "aoi": _AOI,
+        "aoi": load_aoi_config(),
         "basemapStyleUrl": "",
         "basemap": _basemap_config(),
         "maxPolygonAreaHa": settings.max_polygon_area_ha,
@@ -122,6 +116,27 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     dates = catalog.list_dates(source_id)
     selectable_dates = [d for d in dates if bool(d.get("tileAvailable", True))]
     date_pool = selectable_dates or dates
+    if not date_pool:
+        display_mode = source["defaultDisplayMode"]
+        return {
+            "sourceId": source_id,
+            "acquisitionDate": None,
+            "displayMode": display_mode,
+            "displayModes": source["displayModes"],
+            "kind": source["kind"],
+            "tileUrlTemplate": None,
+            "bounds": None,
+            "minzoom": 8,
+            "maxzoom": 14,
+            "attribution": source["attribution"],
+            "sceneCount": 0,
+            "usablePixelPercent": None,
+            "cloudMaskedPercent": None,
+            "coveragePercent": None,
+            "metricsProvisional": bool(source.get("metricsProvisional", False)),
+            "tileAvailable": False,
+            "unavailableReason": source.get("gatedReason") or "No catalog dates are available.",
+        }
     date = next((d for d in date_pool if d["isLatestUsable"]), date_pool[0])
     acquisition_date = date["acquisitionDate"]
     items = catalog.items_for_date(source_id, acquisition_date)
@@ -217,6 +232,61 @@ async def _render_sentinel1_vv_tile(
     return Response(content=body, media_type=content_type)
 
 
+async def _render_fcc_tile(
+    source_id: str, acquisition_date: str, z: int, x: int, y: int
+) -> Response:
+    source = catalog.get_source(source_id)
+    if "FCC" not in source["displayModes"]:
+        raise bad_request(
+            f"Display mode 'FCC' is not supported for source '{source_id}'.",
+            code="UNSUPPORTED_DISPLAY_MODE",
+            sourceId=source_id,
+            displayMode="FCC",
+            supportedDisplayModes=source["displayModes"],
+        )
+
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    assets = assets_for_date[0]
+    try:
+        positions = fcc_band_positions(assets["bandNames"], assets.get("bandRoleMapping", {}))
+        for item_assets in assets_for_date[1:]:
+            item_positions = fcc_band_positions(
+                item_assets["bandNames"], item_assets.get("bandRoleMapping", {})
+            )
+            if item_positions != positions:
+                raise upstream_error(
+                    "Same-date STAC items use inconsistent FCC band positions.",
+                    code="INCONSISTENT_FCC_BANDS",
+                )
+    except KeyError as exc:
+        raise upstream_error(
+            "STAC analytic asset is missing a required false-colour composite role.",
+            code="MISSING_FCC_BANDS",
+            missingRole=str(exc).strip("'"),
+            availableBands=assets.get("bandNames", []),
+            bandRoleMapping=assets.get("bandRoleMapping", {}),
+        ) from exc
+
+    if len(assets_for_date) == 1:
+        url = tiles.build_rgb_tile_url(
+            analytic_href=assets["analyticHref"],
+            rgb_positions=positions,
+            z=z,
+            x=x,
+            y=y,
+        )
+    else:
+        url = tiles.build_mosaic_rgb_tile_url(
+            analytic_hrefs=[item_assets["analyticHref"] for item_assets in assets_for_date],
+            rgb_positions=positions,
+            z=z,
+            x=x,
+            y=y,
+        )
+    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+    return Response(content=body, media_type=content_type)
+
+
 @router.get("/tiles/{source_id}/{acquisition_date}/rgb/{z}/{x}/{y}.png")
 async def get_rgb_tile(source_id: str, acquisition_date: str, z: int, x: int, y: int) -> Response:
     """Legacy same-origin RGB tile route preserved for Sentinel-2 compatibility."""
@@ -240,6 +310,8 @@ async def get_display_mode_tile(
         )
     if normalized_mode == "RGB":
         return await _render_rgb_tile(source_id, acquisition_date, z, x, y)
+    if normalized_mode == "FCC":
+        return await _render_fcc_tile(source_id, acquisition_date, z, x, y)
     if normalized_mode == "VV_GRAYSCALE":
         return await _render_sentinel1_vv_tile(source_id, acquisition_date, z, x, y)
     raise bad_request(

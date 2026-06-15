@@ -99,7 +99,7 @@ export interface CloudMaskOptions {
 }
 
 export interface CloudMaskMapping {
-  nativeExcludedSclClasses: number[];
+  nativeExcludedMaskClasses: number[];
   warnings: string[];
 }
 
@@ -184,7 +184,7 @@ export interface PixelCounts {
   totalPixels: number;
   nodataPixels: number;
   coveragePixels: number;
-  sclExcludedPixels: number;
+  maskedPixels: number;
   validPixels: number;
 }
 
@@ -208,7 +208,7 @@ export interface FieldStatisticsResponse {
   metadata: {
     formula?: string;
     bands?: string[];
-    cloudMask?: string;
+    maskMethod?: string;
     cloudMaskOptions?: CloudMaskOptions;
     cloudMaskMapping?: CloudMaskMapping;
     reflectanceCorrection?: string;

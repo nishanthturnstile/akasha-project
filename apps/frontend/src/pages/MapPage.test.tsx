@@ -102,7 +102,7 @@ function makeFieldStatistics(overrides: Partial<FieldStatisticsResponse> = {}): 
       totalPixels: 100,
       nodataPixels: 3,
       coveragePixels: 97,
-      sclExcludedPixels: 6,
+      maskedPixels: 6,
       validPixels: 91,
     },
     metadata: {

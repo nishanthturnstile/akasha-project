@@ -2,6 +2,7 @@
 
 Stdlib only — safe to import without pypgstac/boto3 installed.
 """
+
 from __future__ import annotations
 
 import glob as globlib
@@ -10,6 +11,7 @@ from pathlib import Path
 
 SENTINEL2_COLLECTION_ID = "sentinel-2-l2a"
 SENTINEL1_COLLECTION_ID = "sentinel-1-grd"
+RESOURCESAT_LISS3_COLLECTION_ID = "resourcesat-2a-liss3-boa"
 COLLECTION_ID = os.environ.get("AKASHA_COLLECTION_ID", SENTINEL2_COLLECTION_ID)
 
 # Object storage (MinIO / S3-compatible). Internal-only; placeholders in env.
@@ -22,6 +24,21 @@ S3_REGION = os.environ.get("S3_REGION", "us-east-1")
 # Database (pgSTAC) + STAC API.
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 STAC_API_URL = os.environ.get("STAC_API_URL", "")
+
+# AOI and Bhoonidhi ingestion settings. Bhoonidhi credentials are worker/API
+# server-side only; never expose them through the browser.
+AOI_CONFIG_PATH = os.environ.get("AOI_CONFIG_PATH", "/app/data/seed/bangalore-60km-aoi.geojson")
+BHOONIDHI_API_BASE = os.environ.get("BHOONIDHI_API_BASE", "https://bhoonidhi-api.nrsc.gov.in")
+BHOONIDHI_USER_ID = os.environ.get("BHOONIDHI_USER_ID", "")
+BHOONIDHI_PASSWORD = os.environ.get("BHOONIDHI_PASSWORD", "")
+BHOONIDHI_SEARCH_RPS = os.environ.get("BHOONIDHI_SEARCH_RPS", "3")
+BHOONIDHI_DOWNLOAD_CONCURRENCY = os.environ.get("BHOONIDHI_DOWNLOAD_CONCURRENCY", "3")
+BHOONIDHI_RAW_ROOT = os.environ.get("BHOONIDHI_RAW_ROOT", "/srv/akasha/data/raw/bhoonidhi")
+BHOONIDHI_TEMP_ROOT = os.environ.get("BHOONIDHI_TEMP_ROOT", "/srv/akasha/data/work/bhoonidhi")
+BHOONIDHI_LEDGER_PATH = os.environ.get(
+    "BHOONIDHI_LEDGER_PATH",
+    "/srv/akasha/ingestion/ledger.sqlite",
+)
 
 # Prepared COG manifest discovery.
 PREPARED_MANIFEST_GLOB_ENV = "AKASHA_PREPARED_MANIFEST_GLOB"

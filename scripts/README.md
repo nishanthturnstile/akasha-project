@@ -8,6 +8,7 @@
 | `smoke-test.py` | Hits the live health/skeleton + Phase 2 product endpoints in order. The RGB-tile and statistics steps are reported as BLOCKED (not failed) when real COGs/MinIO/TiTiler are unavailable. | No (needs a running gateway/api) |
 | `download_sentinel2_l2a_product.py` | Searches CDSE `sentinel-2-l2a`, writes dry-run coverage manifests, and downloads complete native L2A SAFE ZIPs containing the bands/SCL needed for COG preparation. | No |
 | `prepare_sentinel2_l2a_cogs.py` | Converts downloaded Sentinel-2 L2A SAFE ZIPs into Akasha `analytic.tif` and `scl.tif` COGs; manifest mode writes `data/seed/rasters/{date}/{mgrsTile}/`. | No, but run via ingestion Docker image to avoid local GDAL setup |
+| `prepare_resourcesat_liss3_boa_cogs.py` | Converts Bhoonidhi ResourceSat-2A LISS-3 BOA ZIPs into Akasha `analytic.tif` and provisional `mask.tif` COGs; manifest mode writes `data/seed/rasters/resourcesat-2a-liss3-boa/scene/{date}/{sceneComponent}/`. | No, but run via ingestion Docker image to avoid local GDAL setup |
 
 See [`../docs/sentinel-2-l2a-cog-prep-runbook.md`](../docs/sentinel-2-l2a-cog-prep-runbook.md) for the full SAFE ZIP → analytic/SCL COG runbook, validation checks, and cleanup steps.
 
@@ -36,6 +37,9 @@ python scripts/download_sentinel2_l2a_product.py --bbox-preset south-india-targe
 # Recommended on Windows: run inside the ingestion image with pinned raster deps.
 docker compose -f infra/docker/docker-compose.yml build ingestion-worker
 docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker python scripts/prepare_sentinel2_l2a_cogs.py --selection-manifest data/raw/sentinel-2-l2a/coverage_manifest.json --overwrite
+
+# Build ResourceSat LISS-3 analytic + provisional mask COGs from a Bhoonidhi download manifest.
+docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker python scripts/prepare_resourcesat_liss3_boa_cogs.py --selection-manifest data/work/bhoonidhi/resourcesat-2a-liss3-boa/download_manifest.json --overwrite
 
 # Upload/register prepared COGs and verify object-store metadata.
 docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker python worker.py ingest-manifest --method upsert

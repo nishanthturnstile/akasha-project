@@ -77,6 +77,7 @@ services:
       AKASHA_S1_VV_RESCALE: "-25,5"
       DEFAULT_SOURCE_ID: "sentinel-2-l2a"
       DEFAULT_AOI_ID: "bangalore"
+      AOI_CONFIG_PATH: "/app/data/seed/bangalore-60km-aoi.geojson"
       USABLE_PIXEL_THRESHOLD_PERCENT: "70"
       MAX_POLYGON_AREA_HA: "50"
       MAX_POLYGON_VERTICES: "5000"
@@ -95,6 +96,8 @@ services:
       AUTH_COOKIE_SECURE: "false"
     expose:
       - "8000"
+    volumes:
+      - ../../data/seed:/app/data/seed:ro
     depends_on:
       postgis:
         condition: service_healthy
@@ -236,7 +239,15 @@ services:
       S3_REGION: "us-east-1"
       AKASHA_COG_BUCKET: "akasha-cogs"
       SEED_DATA_DIR: "/app/data/seed"
-      AOI_CONFIG_PATH: "/app/data/seed/bangalore-aoi.geojson"
+      AOI_CONFIG_PATH: "/app/data/seed/bangalore-60km-aoi.geojson"
+      BHOONIDHI_API_BASE: "https://bhoonidhi-api.nrsc.gov.in"
+      BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
+      BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
+      BHOONIDHI_SEARCH_RPS: "${BHOONIDHI_SEARCH_RPS:-3}"
+      BHOONIDHI_DOWNLOAD_CONCURRENCY: "${BHOONIDHI_DOWNLOAD_CONCURRENCY:-3}"
+      BHOONIDHI_RAW_ROOT: "/app/data/raw/bhoonidhi"
+      BHOONIDHI_TEMP_ROOT: "/app/data/work/bhoonidhi"
+      BHOONIDHI_LEDGER_PATH: "/app/data/work/bhoonidhi/ledger.sqlite"
     volumes:
       # Local Slice 2 raster prep needs ignored raw SAFE ZIPs and writes ignored COGs.
       - ../../data:/app/data

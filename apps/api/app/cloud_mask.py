@@ -1,4 +1,5 @@
 """Cloud-mask mapping for Akasha native Sentinel-2 SCL statistics."""
+
 from __future__ import annotations
 
 from .api_models import CloudMaskMapping, CloudMaskOptions
@@ -23,5 +24,5 @@ def native_scl_excluded_classes(mask: CloudMaskOptions) -> tuple[int, ...]:
 
 def cloud_mask_mapping(mask: CloudMaskOptions) -> CloudMaskMapping:
     return CloudMaskMapping(
-        native_excluded_scl_classes=list(native_scl_excluded_classes(mask)),
+        native_excluded_mask_classes=list(native_scl_excluded_classes(mask)),
     )

@@ -102,6 +102,53 @@ SCL_CLASSES = [
     {"value": 11, "name": "snow_ice", "description": "Snow or ice"},
 ]
 
+RESOURCESAT_LISS3_EO_BANDS = [
+    {
+        "name": "BAND2",
+        "common_name": "green",
+        "center_wavelength": 0.555,
+        "full_width_half_max": 0.07,
+    },
+    {
+        "name": "BAND3",
+        "common_name": "red",
+        "center_wavelength": 0.655,
+        "full_width_half_max": 0.07,
+    },
+    {
+        "name": "BAND4",
+        "common_name": "nir",
+        "center_wavelength": 0.815,
+        "full_width_half_max": 0.11,
+    },
+    {
+        "name": "BAND5",
+        "common_name": "swir16",
+        "center_wavelength": 1.650,
+        "full_width_half_max": 0.20,
+    },
+]
+
+RESOURCESAT_MASK_CLASSES = [
+    {"value": 0, "name": "nodata", "description": "No data / outside scene", "nodata": True},
+    {"value": 1, "name": "valid", "description": "Valid clear land or water pixel"},
+    {"value": 2, "name": "cloud", "description": "Akasha threshold-derived cloud"},
+    {"value": 3, "name": "cloud_shadow", "description": "Akasha threshold-derived shadow"},
+    {"value": 4, "name": "all_band_gap", "description": "All analytic bands are empty or invalid"},
+]
+
+RESOURCESAT_BAND_ROLE_MAPPING = {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4",
+    "SWIR1": "BAND5",
+}
+
+RESOURCESAT_MASK_METHOD = (
+    "Akasha threshold mask v1 (no native quality layer found in validated "
+    "LISS-3 BOA sample; provisional)."
+)
+
 
 def _require_dsn() -> str:
     if not config.DATABASE_URL:
@@ -383,6 +430,8 @@ def build_stac_item_from_prepare_manifest(manifest: dict[str, Any]) -> dict:
     scene = SceneIdentity.from_prepare_manifest(manifest)
     if scene.source_id == config.SENTINEL1_COLLECTION_ID:
         return _build_sentinel1_stac_item(manifest, scene)
+    if scene.source_id == config.RESOURCESAT_LISS3_COLLECTION_ID:
+        return _build_resourcesat_liss3_stac_item(manifest, scene)
     return _build_sentinel2_stac_item(manifest, scene)
 
 
@@ -474,6 +523,162 @@ def _build_sentinel2_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -
         "geometry": geometry,
         "properties": item_props,
         "assets": {"analytic": analytic_asset, "scl": scl_asset},
+        "links": [
+            {
+                "rel": "collection",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "parent",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "root",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+        ],
+    }
+
+
+def _resourcesat_raster_bands(
+    meta: dict[str, Any],
+    default_count: int,
+    asset: str,
+) -> list[dict[str, Any]]:
+    existing = _first(meta.get("raster:bands"), meta.get("raster_bands"))
+    if existing:
+        return list(existing)
+    resolution = meta.get("resolution") or [24]
+    spatial_resolution = resolution[0] if isinstance(resolution, list) and resolution else 24
+    if asset == "analytic":
+        return [
+            {
+                "data_type": meta.get("dtype") or "uint16",
+                "nodata": meta.get("nodata", 0),
+                "bits_per_sample": 16,
+                "unit": "reflectance",
+                "scale": 0.0001,
+                "offset": 0,
+                "spatial_resolution": spatial_resolution,
+            }
+            for _ in range(int(meta.get("band_count") or default_count))
+        ]
+    return [
+        {
+            "data_type": meta.get("dtype") or "uint8",
+            "nodata": meta.get("nodata", 0),
+            "spatial_resolution": spatial_resolution,
+        }
+        for _ in range(int(meta.get("band_count") or default_count))
+    ]
+
+
+def _build_resourcesat_liss3_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+    props = _properties(manifest)
+    analytic = _output_meta(manifest, "analytic")
+    mask = _output_meta(manifest, "mask")
+    bbox = _bbox_from_manifest(manifest, analytic)
+    geometry = _geometry_from_manifest(manifest, analytic, bbox)
+    epsg = _epsg(_first(analytic.get("crs"), manifest.get("crs"), props.get("proj:epsg")))
+    shape = _shape(analytic)
+    transform = _transform(analytic)
+    proj_bbox = list(_first(analytic.get("proj:bbox"), analytic.get("bounds"), bbox))
+    gsd = _first(manifest.get("gsd"), props.get("gsd"), analytic.get("gsd"), 24)
+    cloud_cover = _first(manifest.get("eo:cloud_cover"), props.get("eo:cloud_cover"))
+
+    item_props: dict[str, Any] = {
+        "datetime": scene.acquisition_datetime,
+        "platform": scene.platform or "resourcesat-2a",
+        "constellation": "resourcesat",
+        "instruments": ["liss-3"],
+        "gsd": gsd,
+        "product:type": scene.product_type or "BOA",
+        "akasha:scene_key": scene.scene_key,
+        "akasha:source_id": scene.source_id,
+        "akasha:acquisition_date": scene.acquisition_date,
+        "akasha:scene_component": scene.scene_component,
+        "akasha:product_id_hash": scene.product_id_hash,
+        "akasha:path": scene.path_or_unknown,
+        "akasha:row": scene.row_or_unknown,
+        "akasha:band_role_mapping": dict(RESOURCESAT_BAND_ROLE_MAPPING),
+        "akasha:mask_asset": "mask",
+        "akasha:mask_method": RESOURCESAT_MASK_METHOD,
+        "akasha:date_metrics_kind": "optical",
+        "akasha:usable_pixel_percent": _first(
+            props.get("akasha:usable_pixel_percent"),
+            100 - float(cloud_cover) if cloud_cover is not None else None,
+        ),
+        "akasha:cloud_masked_percent": _first(
+            props.get("akasha:cloud_masked_percent"),
+            cloud_cover,
+        ),
+        "akasha:coverage_percent": _first(props.get("akasha:coverage_percent"), 100.0),
+        "akasha:is_latest_usable": _first(props.get("akasha:is_latest_usable"), True),
+        "akasha:metrics_provisional": _first(props.get("akasha:metrics_provisional"), True),
+    }
+    if cloud_cover is not None:
+        item_props["eo:cloud_cover"] = cloud_cover
+    if epsg is not None:
+        item_props["proj:epsg"] = epsg
+    if shape:
+        item_props["proj:shape"] = shape
+    if transform:
+        item_props["proj:transform"] = transform
+    if proj_bbox:
+        item_props["proj:bbox"] = proj_bbox
+    if manifest.get("created") or props.get("created"):
+        item_props["created"] = manifest.get("created") or props.get("created")
+    item_props = {key: value for key, value in item_props.items() if value is not None}
+
+    analytic_asset: dict[str, Any] = {
+        "href": f"s3://{config.BUCKET}/{scene.analytic_key}",
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "ResourceSat-2A LISS-3 BOA analytic COG (BAND2/BAND3/BAND4/BAND5)",
+        "roles": ["data", "reflectance"],
+        "gsd": gsd,
+        "eo:bands": (
+            manifest.get("eo_bands")
+            or analytic.get("eo:bands")
+            or RESOURCESAT_LISS3_EO_BANDS
+        ),
+        "raster:bands": _resourcesat_raster_bands(analytic, 4, "analytic"),
+    }
+    mask_asset: dict[str, Any] = {
+        "href": f"s3://{config.BUCKET}/{scene.mask_key}",
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "Akasha-generated provisional ResourceSat mask COG",
+        "roles": ["metadata", "data-mask"],
+        "gsd": gsd,
+        "raster:bands": _resourcesat_raster_bands(mask, 1, "mask"),
+        "classification:classes": (
+            manifest.get("classification_classes")
+            or mask.get("classification:classes")
+            or RESOURCESAT_MASK_CLASSES
+        ),
+    }
+    for asset in (analytic_asset, mask_asset):
+        if epsg is not None:
+            asset["proj:epsg"] = epsg
+        if shape:
+            asset["proj:shape"] = shape
+        if transform:
+            asset["proj:transform"] = transform
+        if proj_bbox:
+            asset["proj:bbox"] = proj_bbox
+
+    return {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "stac_extensions": STAC_EXTENSIONS,
+        "id": scene.item_id,
+        "collection": scene.source_id,
+        "bbox": bbox,
+        "geometry": geometry,
+        "properties": item_props,
+        "assets": {"analytic": analytic_asset, "mask": mask_asset},
         "links": [
             {
                 "rel": "collection",

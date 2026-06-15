@@ -1,4 +1,5 @@
 """Selected-field native analytics routes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -110,7 +111,7 @@ def _field_statistics(
         index_type=index_type,
         max_area_ha=settings.max_polygon_area_ha,
         max_vertices=settings.max_polygon_vertices,
-        excluded_scl_classes=native_scl_excluded_classes(cloud_mask),
+        excluded_mask_classes=native_scl_excluded_classes(cloud_mask),
     )
     metadata = dict(computed["metadata"])
     metadata.update(
@@ -207,7 +208,7 @@ def _native_trend_response(
         fallback_reason=reason,
         metadata={
             "formula": index_def.formula,
-            "bands": list(index_def.required_bands),
+            "spectralRoles": list(index_def.required_roles),
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
             "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
             "rangeLimitDays": MAX_TREND_DAYS,

@@ -117,7 +117,7 @@ def _index_csv_content(stats) -> str:
             "coverage_percent",
             "total_pixels",
             "valid_pixels",
-            "scl_excluded_pixels",
+            "masked_pixels",
         ],
     )
     writer.writeheader()
@@ -136,7 +136,7 @@ def _index_csv_content(stats) -> str:
             "coverage_percent": stats.statistics.coveragePercent,
             "total_pixels": stats.pixel_counts.totalPixels,
             "valid_pixels": stats.pixel_counts.validPixels,
-            "scl_excluded_pixels": stats.pixel_counts.sclExcludedPixels,
+            "masked_pixels": stats.pixel_counts.maskedPixels,
         }
     )
     return output.getvalue()
@@ -160,7 +160,7 @@ def _geojson_payload(plot: dict[str, Any], stats, cloud_mask: CloudMaskOptions) 
             "validPixelPercent": stats.statistics.validPixelPercent,
             "cloudMaskedPercent": stats.statistics.cloudMaskedPercent,
             "coveragePercent": stats.statistics.coveragePercent,
-            "cloudMask": cloud_mask.model_dump(by_alias=True),
+            "maskOptions": cloud_mask.model_dump(by_alias=True),
             "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
         },
     }

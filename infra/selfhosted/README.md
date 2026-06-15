@@ -94,6 +94,13 @@ The staging workflow builds and pushes these images from the client repository o
 
 It then renders `coolify-compose.yml` with `IMAGE_TAG=<git-sha>`, patches the Coolify staging service stack, and triggers a Coolify deployment.
 
+Important: the staging workflow patches the **Coolify Compose definition** with the immutable Git
+SHA. It may not update the separate `IMAGE_TAG` row shown in Coolify's environment-variable UI.
+When checking what is actually deployed, trust the service image tag shown under the stack's
+Services list (for example `akasha-api:<git-sha>`) or the image label, not only the env-var row.
+If you manually redeploy from the Coolify UI without running the workflow, then the env-var row
+matters only if the stored Compose still references `${IMAGE_TAG}`.
+
 ## First staging deployment checklist
 
 1. Confirm `IMAGE_TAG` exists in GHCR for all four Akasha images.

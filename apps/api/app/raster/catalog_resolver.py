@@ -6,6 +6,7 @@ Resolution order:
 
 No heavy deps: uses stdlib ``urllib``/``json`` only.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,6 +21,7 @@ from .indices import DEFAULT_INDEX, SUPPORTED_INDICES
 
 SENTINEL_2_SOURCE_ID = "sentinel-2-l2a"
 SENTINEL_1_SOURCE_ID = "sentinel-1-grd"
+RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
 COLLECTION_ID = SENTINEL_2_SOURCE_ID
 SOURCE_LABEL = "Sentinel-2 L2A"
 SOURCE_PROVIDER = "Copernicus"
@@ -33,6 +35,17 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         "collectionId": SENTINEL_2_SOURCE_ID,
         "expectedAssets": ["analytic", "scl"],
         "supportedIndices": SUPPORTED_INDICES,
+        "bandRoleMapping": {
+            "BLUE": "B02",
+            "GREEN": "B03",
+            "RED": "B04",
+            "NIR": "B08",
+            "RED_EDGE": "B05",
+            "SWIR1": "B11",
+            "SWIR2": "B12",
+        },
+        "maskAsset": "scl",
+        "maskMethod": "Sentinel-2 Scene Classification Layer (SCL).",
         "displayModes": ["RGB"],
         "defaultDisplayMode": "RGB",
         "description": "Optical Sentinel-2 L2A surface reflectance with cloud/SCL masking.",
@@ -40,6 +53,46 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         "dateMetricsKind": "optical",
         "defaultRescale": "0,3000",
         "tileRouteMode": "rgb",
+    },
+    RESOURCESAT_LISS3_SOURCE_ID: {
+        "id": RESOURCESAT_LISS3_SOURCE_ID,
+        "label": "ResourceSat-2A LISS-3 BOA",
+        "provider": "ISRO/NRSC Bhoonidhi",
+        "kind": "optical",
+        "collectionId": RESOURCESAT_LISS3_SOURCE_ID,
+        "expectedAssets": ["analytic", "mask"],
+        "supportedIndices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+        "bandRoleMapping": {
+            "GREEN": "BAND2",
+            "RED": "BAND3",
+            "NIR": "BAND4",
+            "SWIR1": "BAND5",
+        },
+        "maskAsset": "mask",
+        "displayModes": ["FCC"],
+        "defaultDisplayMode": "FCC",
+        "description": (
+            "ResourceSat-2A LISS-3 BOA crop analytics source with Akasha-generated "
+            "provisional cloud/validity mask."
+        ),
+        "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+        "dateMetricsKind": "optical",
+        "defaultRescale": "0,3000",
+        "tileRouteMode": "fcc",
+        "resolutionMeters": 24,
+        "analysisLevel": "field",
+        "refreshPolicy": "Daily Bhoonidhi search; BOA products lag acquisition by about 5 days.",
+        "limitations": [
+            "False-colour composite only; LISS-3 has no blue band.",
+            "NDRE/RECI unsupported because LISS-3 has no true red-edge band.",
+            "Mask is Akasha threshold-derived and provisional until a native quality layer exists.",
+        ],
+        "maskMethod": (
+            "Akasha threshold mask v1 (no native quality layer found in validated "
+            "LISS-3 BOA sample; provisional)."
+        ),
+        "availableMaskOptions": ["clouds", "cloudShadows"],
+        "metricsProvisional": True,
     },
     SENTINEL_1_SOURCE_ID: {
         "id": SENTINEL_1_SOURCE_ID,
@@ -49,6 +102,7 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         "collectionId": SENTINEL_1_SOURCE_ID,
         "expectedAssets": ["backscatter"],
         "supportedIndices": [],
+        "bandRoleMapping": {},
         "displayModes": ["VV_GRAYSCALE"],
         "defaultDisplayMode": "VV_GRAYSCALE",
         "description": "Radar layer · cloud-penetrating · not true colour.",
@@ -58,6 +112,198 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         "tileRouteMode": "display-mode",
     },
 }
+
+_SOURCE_REGISTRY.update(
+    {
+        "resourcesat-2a-awifs-boa": {
+            "id": "resourcesat-2a-awifs-boa",
+            "label": "ResourceSat-2A AWiFS BOA",
+            "provider": "ISRO/NRSC Bhoonidhi",
+            "kind": "optical",
+            "collectionId": "ResourceSat-2A_AWIFS_BOA",
+            "expectedAssets": ["analytic", "mask"],
+            "supportedIndices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+            "bandRoleMapping": {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5"},
+            "maskAsset": "mask",
+            "displayModes": ["FCC"],
+            "defaultDisplayMode": "FCC",
+            "description": "Gated regional ResourceSat-2A AWiFS BOA context source.",
+            "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+            "dateMetricsKind": "optical",
+            "defaultRescale": "0,3000",
+            "tileRouteMode": "fcc",
+            "resolutionMeters": 56,
+            "analysisLevel": "regional",
+            "refreshPolicy": "Gated until AWiFS BOA download and COG prep are validated.",
+            "limitations": ["Registered for roadmap visibility; no composites are loaded yet."],
+            "maskMethod": "Pending Akasha mask validation.",
+            "availableMaskOptions": ["clouds", "cloudShadows"],
+            "metricsProvisional": True,
+            "availabilityStatus": "gated",
+            "gatedReason": "No validated AWiFS BOA composite has been ingested.",
+        },
+        "resourcesat-2a-liss4-mx70-l2": {
+            "id": "resourcesat-2a-liss4-mx70-l2",
+            "label": "ResourceSat-2A LISS-4 MX70 L2",
+            "provider": "ISRO/NRSC Bhoonidhi",
+            "kind": "optical",
+            "collectionId": "ResourceSat-2A_LISS4-MX70_L2",
+            "expectedAssets": ["analytic", "mask"],
+            "supportedIndices": ["NDVI", "MSAVI"],
+            "bandRoleMapping": {"RED": "BAND3", "NIR": "BAND4"},
+            "maskAsset": "mask",
+            "displayModes": ["FCC"],
+            "defaultDisplayMode": "FCC",
+            "description": "Gated higher-resolution ResourceSat-2A LISS-4 context source.",
+            "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+            "dateMetricsKind": "optical",
+            "defaultRescale": "0,3000",
+            "tileRouteMode": "fcc",
+            "resolutionMeters": 5.8,
+            "analysisLevel": "context",
+            "refreshPolicy": "Gated until access, calibration, and band metadata are validated.",
+            "limitations": ["FCC/indices depend on downloaded product band metadata."],
+            "maskMethod": "Pending Akasha mask validation.",
+            "availableMaskOptions": ["clouds", "cloudShadows"],
+            "metricsProvisional": True,
+            "availabilityStatus": "gated",
+            "gatedReason": "No validated LISS-4 MX70 product has been ingested.",
+        },
+        "eos-06-ocm-lac-ndvi-8day-360m": {
+            "id": "eos-06-ocm-lac-ndvi-8day-360m",
+            "label": "EOS-06 OCM-LAC NDVI 8-day 360m",
+            "provider": "ISRO/NRSC Bhoonidhi",
+            "kind": "optical",
+            "collectionId": "EOS-06_OCM-LAC_NDVI_8day_360m",
+            "expectedAssets": ["ndvi"],
+            "supportedIndices": [],
+            "bandRoleMapping": {},
+            "maskAsset": None,
+            "displayModes": ["NDVI_CONTEXT"],
+            "defaultDisplayMode": "NDVI_CONTEXT",
+            "description": "Gated coarse regional precomputed NDVI context source.",
+            "attribution": "ISRO/NRSC, Bhoonidhi",
+            "dateMetricsKind": "optical",
+            "defaultRescale": "0,1",
+            "tileRouteMode": "context",
+            "resolutionMeters": 360,
+            "analysisLevel": "regional",
+            "refreshPolicy": "Gated; context only, not field-level analytics.",
+            "limitations": ["Precomputed NDVI only; not raw reflectance for plot statistics."],
+            "maskMethod": None,
+            "metricsProvisional": True,
+            "availabilityStatus": "gated",
+            "gatedReason": "Context product support is not implemented yet.",
+        },
+        "eos-04-sar-mrs-l2b": {
+            "id": "eos-04-sar-mrs-l2b",
+            "label": "EOS-04 SAR MRS L2B",
+            "provider": "ISRO/NRSC Bhoonidhi",
+            "kind": "sar",
+            "collectionId": "EOS-04_SAR-MRS_L2B",
+            "expectedAssets": ["backscatter"],
+            "supportedIndices": [],
+            "bandRoleMapping": {},
+            "maskAsset": None,
+            "displayModes": ["VV_GRAYSCALE"],
+            "defaultDisplayMode": "VV_GRAYSCALE",
+            "description": "Gated ISRO SAR context source.",
+            "attribution": "ISRO/NRSC, Bhoonidhi",
+            "dateMetricsKind": "radar",
+            "defaultRescale": "-25,5",
+            "tileRouteMode": "vv_grayscale",
+            "resolutionMeters": None,
+            "analysisLevel": "context",
+            "refreshPolicy": "Gated until SAR product structure is validated.",
+            "limitations": ["Not an optical vegetation-index source."],
+            "maskMethod": None,
+            "metricsProvisional": True,
+            "availabilityStatus": "gated",
+            "gatedReason": "No validated EOS-04 SAR COG has been ingested.",
+        },
+        "nisar-ssar-beta-gcov": {
+            "id": "nisar-ssar-beta-gcov",
+            "label": "NISAR SSAR Beta GCOV",
+            "provider": "ISRO/NRSC Bhoonidhi",
+            "kind": "sar",
+            "collectionId": "NISAR_SSAR-Beta_GCOV",
+            "expectedAssets": ["backscatter"],
+            "supportedIndices": [],
+            "bandRoleMapping": {},
+            "maskAsset": None,
+            "displayModes": ["VV_GRAYSCALE"],
+            "defaultDisplayMode": "VV_GRAYSCALE",
+            "description": "Gated NISAR SAR context source.",
+            "attribution": "ISRO/NRSC, Bhoonidhi",
+            "dateMetricsKind": "radar",
+            "defaultRescale": "-25,5",
+            "tileRouteMode": "vv_grayscale",
+            "resolutionMeters": None,
+            "analysisLevel": "context",
+            "refreshPolicy": "Gated until NISAR product support is validated.",
+            "limitations": ["Not an optical vegetation-index source."],
+            "maskMethod": None,
+            "metricsProvisional": True,
+            "availabilityStatus": "gated",
+            "gatedReason": "No validated NISAR COG has been ingested.",
+        },
+        "cartosat-3-gated": {
+            "id": "cartosat-3-gated",
+            "label": "Cartosat-3 (gated)",
+            "provider": "ISRO/NRSC Bhoonidhi",
+            "kind": "optical",
+            "collectionId": "cartosat-3-gated",
+            "expectedAssets": [],
+            "supportedIndices": [],
+            "bandRoleMapping": {},
+            "maskAsset": None,
+            "displayModes": ["CONTEXT"],
+            "defaultDisplayMode": "CONTEXT",
+            "description": "Gated high-resolution visual/context source.",
+            "attribution": "ISRO/NRSC, Bhoonidhi",
+            "dateMetricsKind": "optical",
+            "defaultRescale": "0,3000",
+            "tileRouteMode": "context",
+            "resolutionMeters": None,
+            "analysisLevel": "context",
+            "refreshPolicy": (
+                "Gated until direct API availability or manual order workflow is confirmed."
+            ),
+            "limitations": ["Cartosat-3 is not present in the validated Bhoonidhi API catalog."],
+            "maskMethod": None,
+            "metricsProvisional": True,
+            "availabilityStatus": "gated",
+            "gatedReason": "No Bhoonidhi API collection was found for Cartosat-3.",
+        },
+        "irs-1c-liss3-archive": {
+            "id": "irs-1c-liss3-archive",
+            "label": "IRS-1C LISS-3 archive",
+            "provider": "ISRO/NRSC Bhoonidhi",
+            "kind": "optical",
+            "collectionId": "irs-1c-liss3-archive",
+            "expectedAssets": ["analytic", "mask"],
+            "supportedIndices": [],
+            "bandRoleMapping": {},
+            "maskAsset": "mask",
+            "displayModes": ["FCC"],
+            "defaultDisplayMode": "FCC",
+            "description": "Gated historical archive source.",
+            "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+            "dateMetricsKind": "optical",
+            "defaultRescale": "0,3000",
+            "tileRouteMode": "fcc",
+            "resolutionMeters": 23.5,
+            "analysisLevel": "archive",
+            "refreshPolicy": "Archive only; no scheduled current-monitoring refresh.",
+            "limitations": ["Calibration and metadata must be validated before analytics."],
+            "maskMethod": "Pending archive mask validation.",
+            "availableMaskOptions": ["clouds", "cloudShadows"],
+            "metricsProvisional": True,
+            "availabilityStatus": "gated",
+            "gatedReason": "No validated IRS-1C archive product has been ingested.",
+        },
+    }
+)
 
 
 def _stac_api_url() -> str:
@@ -109,6 +355,8 @@ def _collection_from_registry(source_id: str) -> dict[str, Any]:
         "providers": [{"name": source["provider"]}],
         "akasha:kind": source["kind"],
         "akasha:supported_indices": list(source["supportedIndices"]),
+        "akasha:band_role_mapping": dict(source.get("bandRoleMapping", {})),
+        "akasha:mask_asset": source.get("maskAsset"),
         "akasha:display_modes": list(source["displayModes"]),
         "akasha:default_display_mode": source["defaultDisplayMode"],
         "akasha:date_metrics_kind": source["dateMetricsKind"],
@@ -125,6 +373,8 @@ def source_payload(source_id: str) -> dict[str, Any]:
         "collectionId": source["collectionId"],
         "expectedAssets": list(source["expectedAssets"]),
         "supportedIndices": supported_indices(source_id),
+        "bandRoleMapping": dict(source.get("bandRoleMapping", {})),
+        "maskAsset": source.get("maskAsset"),
         "displayModes": list(source["displayModes"]),
         "defaultDisplayMode": source["defaultDisplayMode"],
         "description": source["description"],
@@ -132,6 +382,20 @@ def source_payload(source_id: str) -> dict[str, Any]:
         "dateMetricsKind": source["dateMetricsKind"],
         "defaultRescale": source["defaultRescale"],
         "tileRouteMode": source["tileRouteMode"],
+        "resolutionMeters": source.get("resolutionMeters"),
+        "analysisLevel": source.get("analysisLevel"),
+        "refreshPolicy": source.get("refreshPolicy"),
+        "limitations": list(source.get("limitations", [])),
+        "maskMethod": source.get("maskMethod"),
+        "availableMaskOptions": list(
+            source.get("availableMaskOptions", ["clouds", "cloudShadows", "cirrus"])
+            if source.get("kind") == "optical" and source.get("maskAsset")
+            else []
+        ),
+        "displayRescale": source.get("defaultRescale"),
+        "availabilityStatus": source.get("availabilityStatus", "active"),
+        "gatedReason": source.get("gatedReason"),
+        "metricsProvisional": bool(source.get("metricsProvisional", False)),
     }
 
 
@@ -235,8 +499,9 @@ def _has_tile_assets(item: dict[str, Any], source_id: str) -> bool:
         backscatter = assets.get("backscatter") or {}
         return bool(backscatter.get("href"))
     analytic = assets.get("analytic") or {}
-    scl = assets.get("scl") or {}
-    return bool(analytic.get("href") and scl.get("href"))
+    mask_asset = str(source.get("maskAsset") or "scl")
+    mask = assets.get(mask_asset) or {}
+    return bool(analytic.get("href") and mask.get("href"))
 
 
 def merged_bbox(items: list[dict[str, Any]]) -> list[float] | None:
@@ -265,14 +530,10 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
     source = get_source(source_id)
     items = list_items(source_id)
     if not items:
-        raise not_found(
-            f"No catalog items for source '{source_id}'.", code="NO_ITEMS", sourceId=source_id
-        )
+        return []
 
     grouped: dict[str, list[dict[str, Any]]] = {}
-    explicit_latest = any(
-        "akasha:is_latest_usable" in item.get("properties", {}) for item in items
-    )
+    explicit_latest = any("akasha:is_latest_usable" in item.get("properties", {}) for item in items)
     for item in items:
         acquisition_date = _acquisition_date(item)
         if not acquisition_date:
@@ -310,9 +571,7 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
                         or metrics_missing
                         or any(
                             bool(
-                                item.get("properties", {}).get(
-                                    "akasha:metrics_provisional", False
-                                )
+                                item.get("properties", {}).get("akasha:metrics_provisional", False)
                             )
                             for item in date_items
                         )
@@ -338,12 +597,8 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
                 "datetime": max(datetimes) if datetimes else None,
                 "sceneCount": scene_count,
                 "bounds": merged_bbox(date_items),
-                "usablePixelPercent": _average_available(
-                    date_items, "akasha:usable_pixel_percent"
-                ),
-                "cloudMaskedPercent": _average_available(
-                    date_items, "akasha:cloud_masked_percent"
-                ),
+                "usablePixelPercent": _average_available(date_items, "akasha:usable_pixel_percent"),
+                "cloudMaskedPercent": _average_available(date_items, "akasha:cloud_masked_percent"),
                 "coveragePercent": coverage_percent,
                 "isLatestUsable": is_explicit_latest,
                 "metricsProvisional": (
@@ -358,8 +613,10 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
             }
         )
     dates.sort(key=lambda d: d.get("acquisitionDate") or "", reverse=True)
-    if source["dateMetricsKind"] == "radar" and dates and not any(
-        bool(date["isLatestUsable"]) for date in dates
+    if (
+        source["dateMetricsKind"] == "radar"
+        and dates
+        and not any(bool(date["isLatestUsable"]) for date in dates)
     ):
         latest_selectable = next(
             (date for date in dates if bool(date.get("tileAvailable"))),
@@ -434,28 +691,50 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
         }
 
     analytic = assets.get("analytic")
-    scl = assets.get("scl")
-    if not analytic or not scl:
+    mask_asset = str(source.get("maskAsset") or "scl")
+    mask = assets.get(mask_asset)
+    if not analytic or not mask:
         raise upstream_error(
-            "STAC item is missing analytic/scl assets.",
+            "STAC item is missing analytic/mask assets.",
             code="INCOMPLETE_ITEM",
             itemId=item.get("id"),
             sourceId=source_id,
+            maskAsset=mask_asset,
         )
-    band_names = [b.get("name") for b in analytic.get("eo:bands", [])]
+    band_names = [str(b.get("name")) for b in analytic.get("eo:bands", []) if b.get("name")]
     raster_bands = analytic.get("raster:bands", [])
     first = raster_bands[0] if raster_bands else {}
+    band_role_mapping = _band_role_mapping_for_item(source_id, item)
     return {
         "itemId": item.get("id"),
         "analyticHref": analytic.get("href"),
-        "sclHref": scl.get("href"),
+        "sclHref": mask.get("href"),
+        "maskHref": mask.get("href"),
+        "maskAsset": mask_asset,
         "bandNames": band_names,
+        "bandRoleMapping": band_role_mapping,
+        "maskMethod": source.get("maskMethod"),
         "scale": float(first.get("scale", 0.0001)),
         "offset": float(first.get("offset", -0.1)),
         "nodata": first.get("nodata", 0),
         "epsg": analytic.get("proj:epsg") or item.get("properties", {}).get("proj:epsg"),
         "bbox": item.get("bbox"),
     }
+
+
+def _band_role_mapping_for_item(source_id: str, item: dict[str, Any]) -> dict[str, str]:
+    source = get_source(source_id)
+    mapping: Any = source.get("bandRoleMapping", {})
+    try:
+        collection_mapping = get_collection(source_id).get("akasha:band_role_mapping")
+        if isinstance(collection_mapping, dict) and collection_mapping:
+            mapping = collection_mapping
+    except Exception:  # noqa: BLE001
+        pass
+    item_mapping = item.get("properties", {}).get("akasha:band_role_mapping")
+    if isinstance(item_mapping, dict) and item_mapping:
+        mapping = item_mapping
+    return {str(role): str(name) for role, name in dict(mapping).items()}
 
 
 def resolve_assets(source_id: str, acquisition_date: str) -> dict[str, Any]:

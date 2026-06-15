@@ -1,4 +1,5 @@
 """Shared API DTO helpers for Akasha-owned BFF contracts."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -23,7 +24,7 @@ class CloudMaskOptions(ApiModel):
 
 
 class CloudMaskMapping(ApiModel):
-    native_excluded_scl_classes: list[int]
+    native_excluded_mask_classes: list[int]
     warnings: list[str] = Field(default_factory=list)
 
 

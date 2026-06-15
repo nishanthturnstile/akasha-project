@@ -51,6 +51,7 @@ services:
       AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
       DEFAULT_SOURCE_ID: "${DEFAULT_SOURCE_ID:-sentinel-2-l2a}"
       DEFAULT_AOI_ID: "${DEFAULT_AOI_ID:-bangalore}"
+      AOI_CONFIG_PATH: "${AOI_CONFIG_PATH:-/app/data/seed/bangalore-60km-aoi.geojson}"
       USABLE_PIXEL_THRESHOLD_PERCENT: "${USABLE_PIXEL_THRESHOLD_PERCENT:-70}"
       MAX_POLYGON_AREA_HA: "${MAX_POLYGON_AREA_HA:-50}"
       MAX_POLYGON_VERTICES: "${MAX_POLYGON_VERTICES:-5000}"
@@ -80,6 +81,7 @@ services:
       - "8000"
     volumes:
       - /srv/akasha/bhoonidhi-diagnostics:/srv/akasha/bhoonidhi-diagnostics
+      - /srv/akasha/data/seed:/app/data/seed:ro
     depends_on:
       postgis:
         condition: service_healthy
@@ -202,10 +204,21 @@ services:
       S3_REGION: "${AWS_REGION:-us-east-1}"
       AKASHA_COG_BUCKET: "${AKASHA_COG_BUCKET:-akasha-cogs}"
       SEED_DATA_DIR: "/app/data/seed"
-      AOI_CONFIG_PATH: "/app/data/seed/bangalore-aoi.geojson"
+      AOI_CONFIG_PATH: "${AOI_CONFIG_PATH:-/app/data/seed/bangalore-60km-aoi.geojson}"
+      BHOONIDHI_API_BASE: "${BHOONIDHI_API_BASE:-https://bhoonidhi-api.nrsc.gov.in}"
+      BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
+      BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
+      BHOONIDHI_SEARCH_RPS: "${BHOONIDHI_SEARCH_RPS:-3}"
+      BHOONIDHI_DOWNLOAD_CONCURRENCY: "${BHOONIDHI_DOWNLOAD_CONCURRENCY:-3}"
+      BHOONIDHI_RAW_ROOT: "${BHOONIDHI_RAW_ROOT:-/srv/akasha/data/raw/bhoonidhi}"
+      BHOONIDHI_TEMP_ROOT: "${BHOONIDHI_TEMP_ROOT:-/srv/akasha/data/work/bhoonidhi}"
+      BHOONIDHI_LEDGER_PATH: "${BHOONIDHI_LEDGER_PATH:-/srv/akasha/ingestion/ledger.sqlite}"
     volumes:
       - /srv/akasha/data/raw:/app/data/raw
       - /srv/akasha/data/work:/app/data/work
+      - /srv/akasha/data/raw:/srv/akasha/data/raw
+      - /srv/akasha/data/work:/srv/akasha/data/work
+      - /srv/akasha/ingestion:/srv/akasha/ingestion
       - /srv/akasha/data/seed/rasters:/app/data/seed/rasters
     depends_on:
       postgis:

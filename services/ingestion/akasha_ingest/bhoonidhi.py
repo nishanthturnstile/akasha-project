@@ -215,7 +215,8 @@ class BhoonidhiClient:
             "collections": [collection],
             "datetime": datetime_range,
             "intersects": intersects,
-            "filter": {"op": "=", "args": [{"property": "Online"}, "Y"]},
+            "filter": {"op": "eq", "args": [{"property": "Online"}, "Y"]},
+            "filter-lang": "cql2-json",
             "limit": min(max(int(limit), 1), 500),
             "sortby": sortby or [{"field": "datetime", "direction": "desc"}],
         }
@@ -344,7 +345,8 @@ def _bbox_area(bbox: list[float] | None) -> float:
 
 
 def candidate_from_item(item: dict[str, Any], aoi_bbox: list[float] | None) -> dict[str, Any]:
-    props = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    raw_props = item.get("properties")
+    props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
     bbox = item.get("bbox") if isinstance(item.get("bbox"), list) else None
     overlap_bbox = _bbox_intersection(bbox, aoi_bbox) if bbox and aoi_bbox else None
     item_id = str(item.get("id") or props.get("id") or "")

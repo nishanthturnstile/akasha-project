@@ -284,11 +284,11 @@ function stubAkashaFetch({
         return Promise.resolve(jsonResponse(fieldTrend));
       }
 
-      if (path === '/api/sources/sentinel-2-l2a/dates') {
+      if (path.startsWith('/api/sources/sentinel-2-l2a/dates')) {
         return Promise.resolve(jsonResponse(sentinel2Dates));
       }
 
-      if (path === '/api/sources/sentinel-1-grd/dates') {
+      if (path.startsWith('/api/sources/sentinel-1-grd/dates')) {
         return Promise.resolve(jsonResponse(sentinel1Dates));
       }
 

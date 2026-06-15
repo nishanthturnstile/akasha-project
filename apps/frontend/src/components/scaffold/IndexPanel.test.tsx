@@ -129,6 +129,30 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.getByTestId('analytics-weather-overlay')).toBeTruthy();
     });
 
+    it('labels ResourceSat statistics with provisional mask provenance', () => {
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-03-19"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="FCC"
+                supportedIndices={ ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'] }
+                cloudMask={ { clouds: true, cloudShadows: true, cirrus: false } }
+                sourceMaskMethod="Akasha threshold mask v1"
+                sourceMetricsProvisional
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        expect(screen.getByText('Akasha provisional-mask analytics')).toBeTruthy();
+        expect(screen.getByTestId('analytics-mask-method').textContent).toContain(
+            'Provisional mask: Akasha threshold mask v1',
+        );
+        expect(screen.getByTestId('analytics-index-NDVI')).toBeTruthy();
+        expect(screen.queryByTestId('analytics-index-NDRE')).toBeNull();
+    });
+
     it('switches to Activities tab and shows the empty state with a disabled add button', () => {
         renderPanel(
             <IndexPanel

@@ -586,6 +586,64 @@ def test_dates_endpoint_deduplicates_same_date_scenes_with_merged_bounds(monkeyp
     assert dates[0]["usablePixelPercent"] == pytest.approx(85.0)
 
 
+def test_source_dates_can_be_windowed_by_lookback_days(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-2-l2a": [
+            _stac_item(
+                "older",
+                "2026-01-01",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://older",
+                "s3://older-scl",
+                90.0,
+            ),
+            _stac_item(
+                "latest",
+                "2026-03-15",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://latest",
+                "s3://latest-scl",
+                90.0,
+            ),
+        ],
+    )
+
+    r = client.get("/api/sources/sentinel-2-l2a/dates?lookbackDays=30")
+
+    assert r.status_code == 200
+    assert [entry["acquisitionDate"] for entry in r.json()] == ["2026-03-15"]
+
+
+def test_source_dates_reject_invalid_window(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="sentinel-2-l2a": [
+            _stac_item(
+                "scene",
+                "2026-03-15",
+                [77.0, 12.0, 78.0, 13.0],
+                "s3://scene",
+                "s3://scene-scl",
+                90.0,
+            )
+        ],
+    )
+
+    r = client.get(
+        "/api/sources/sentinel-2-l2a/dates?startDate=2026-04-01&endDate=2026-03-01"
+    )
+
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_DATE_RANGE"
+
+
 def test_resourcesat_dates_prefer_composite_when_scene_items_coexist(monkeypatch):
     from app.raster import catalog_resolver as catalog
 

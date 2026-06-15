@@ -16,6 +16,8 @@ interface IndexPanelProps {
   displayMode: string;
   supportedIndices: string[];
   cloudMask: CloudMaskOptions;
+  sourceMaskMethod?: string | null;
+  sourceMetricsProvisional?: boolean;
   /** Inclusive lower bound (YYYY-MM-DD) carried from the timeline calendar range. */
   periodFrom?: string | null;
   /** Inclusive upper bound (YYYY-MM-DD) carried from the timeline calendar range. */
@@ -56,6 +58,8 @@ export function IndexPanel({
   displayMode,
   supportedIndices,
   cloudMask,
+  sourceMaskMethod,
+  sourceMetricsProvisional = false,
   periodFrom,
   periodTo,
 }: IndexPanelProps) {
@@ -88,7 +92,9 @@ export function IndexPanel({
 
   const stats = statisticsQ.data?.statistics;
   const warnings = statisticsQ.data?.metadata.warnings ?? [];
-  const analyticsCopy = 'Akasha masked-raster analytics';
+  const analyticsCopy = sourceMetricsProvisional
+    ? 'Akasha provisional-mask analytics'
+    : 'Akasha masked-raster analytics';
 
   return (
     <section
@@ -180,6 +186,8 @@ export function IndexPanel({
                 warnings={ warnings }
                 periodFrom={ trendStart ?? null }
                 periodTo={ trendEnd ?? null }
+                sourceMaskMethod={ sourceMaskMethod }
+                sourceMetricsProvisional={ sourceMetricsProvisional }
               />
             </TabsContent>
 
@@ -349,6 +357,8 @@ interface ChartTabProps {
   warnings: string[];
   periodFrom: string | null;
   periodTo: string | null;
+  sourceMaskMethod?: string | null;
+  sourceMetricsProvisional?: boolean;
 }
 
 function ChartTab({
@@ -369,7 +379,12 @@ function ChartTab({
   warnings,
   periodFrom,
   periodTo,
+  sourceMaskMethod,
+  sourceMetricsProvisional = false,
 }: ChartTabProps) {
+  const maskMethod = sourceMaskMethod ?? null;
+  const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud';
+
   return (
     <div className="space-y-3 pt-1">
       <div className="flex flex-wrap gap-1.5" aria-label="Analytics index">
@@ -420,7 +435,7 @@ function ChartTab({
             </div>
             <div className="mt-3 grid grid-cols-3 gap-1.5">
               <Metric label="Valid" value={ fmt(stats.validPixelPercent, '%') } compact />
-              <Metric label="Cloud" value={ fmt(stats.cloudMaskedPercent, '%') } compact />
+              <Metric label={ maskMetricLabel } value={ fmt(stats.cloudMaskedPercent, '%') } compact />
               <Metric label="Cover" value={ fmt(stats.coveragePercent, '%') } compact />
             </div>
           </>
@@ -497,6 +512,11 @@ function ChartTab({
       <div className="space-y-1 text-[11px] leading-4 text-muted-foreground">
         <p>{ formula ?? `${activeIndex} formula unavailable` }</p>
         <p>Bands: { bands && bands.length > 0 ? bands.join(', ') : 'n/a' }</p>
+        { maskMethod && (
+          <p data-testid="analytics-mask-method">
+            { sourceMetricsProvisional ? 'Provisional mask' : 'Mask' }: { maskMethod }
+          </p>
+        ) }
         { warnings.map((warning) => (
           <p key={ warning } className="text-amber-300">{ warning }</p>
         )) }

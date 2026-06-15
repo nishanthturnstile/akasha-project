@@ -939,6 +939,7 @@ def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypat
                 "scale": 0.0001,
                 "offset": -0.1,
                 "nodata": 0,
+                "metricsProvisional": True,
                 "bbox": [78.0, 12.0, 79.0, 13.0],
             },
         ],
@@ -979,6 +980,7 @@ def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypat
 
     assert read_hrefs == ["s3://secret-bucket/b/analytic.tif"]
     assert resp["metadata"]["itemId"] == "scene-b"
+    assert resp["metadata"]["metricsProvisional"] is True
     assert resp["statistics"]["mean"] == pytest.approx(0.5)
 
 

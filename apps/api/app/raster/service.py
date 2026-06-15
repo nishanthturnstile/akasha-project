@@ -222,6 +222,7 @@ def build_response(
             "bands": list(resolved_bands),
             "spectralRoles": list(index_def.required_roles),
             "maskMethod": assets.get("maskMethod") or f"Mask classes excluded: {list(excluded)}",
+            "metricsProvisional": bool(assets.get("metricsProvisional", False)),
             "reflectanceCorrection": (f"corrected = dn * {assets['scale']} + ({assets['offset']})"),
             "itemId": assets.get("itemId"),
             "areaHa": geom_facts.get("areaHa"),

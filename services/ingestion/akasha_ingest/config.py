@@ -81,7 +81,10 @@ def item_files(collection_id: str | None = None) -> list[Path]:
     stac_dir = find_seed_dir() / "stac"
     files: list[Path] = []
     sample = item_file(source_id)
-    if sample.is_file():
+    # ResourceSat's sample item is a schema/contract scaffold only. Loading it
+    # into pgSTAC creates a placeholder same-date item that can mask real
+    # manifest-ingested scenes during date resolution.
+    if sample.is_file() and source_id == SENTINEL2_COLLECTION_ID:
         files.append(sample)
     item_dir = stac_dir / "items" / source_id
     if item_dir.is_dir():

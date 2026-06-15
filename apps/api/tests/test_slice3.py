@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from app import plots_repo
+from app.repositories import plots_repo
 from app.main import app
 from fastapi.testclient import TestClient
 

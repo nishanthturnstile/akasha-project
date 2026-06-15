@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from app import risk
+from app.routers import risk_router as risk
 from app.config import settings
 from app.main import app
 from fastapi.testclient import TestClient

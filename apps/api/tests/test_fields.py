@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from app import fields_repo
+from app.repositories import fields_repo
 from app.auth import DEV_USER_ID
 from app.main import app
 from fastapi.testclient import TestClient
@@ -83,7 +83,8 @@ class FakeSeasonStore:
 
     def list_fields(self, user_id: str) -> list[dict]:
         ordered = sorted(self.rows.values(), key=lambda r: r["_seq"], reverse=True)
-        return [{k: v for k, v in r.items() if not k.startswith("_")} for r in ordered if r["userId"] == user_id]
+        return [{k: v for k, v in r.items() if not k.startswith("_")}
+                 for r in ordered if r["userId"] == user_id]
 
     def get_field(self, field_id: str, user_id: str) -> dict | None:
         row = self.rows.get(field_id)

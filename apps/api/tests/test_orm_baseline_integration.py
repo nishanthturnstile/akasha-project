@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from app import account_repo, auth_repo, phase10_repo, plots_repo, reports_repo
+from app.repositories import account_repo, auth_repo, phase10_repo, plots_repo, reports_repo
 from app.auth import DEV_TEAM_ID, DEV_USER_ID
 from app.db import get_engine, reset_engine_for_tests, session_scope
 from app.models import AKASHA_SCHEMA, Notification

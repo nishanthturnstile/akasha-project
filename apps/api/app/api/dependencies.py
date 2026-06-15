@@ -11,8 +11,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, Request, Response
 
-from .config import settings
-from .raster.errors import AkashaError
+from ..config import settings
+from ..raster.errors import AkashaError
 
 DEV_USER_ID = "00000000-0000-4000-8000-000000000001"
 DEV_TEAM_ID = "00000000-0000-4000-8000-000000000010"
@@ -191,7 +191,7 @@ def get_current_user(request: Request) -> CurrentUser:
         raise unauthorized()
     token_hash = hash_token(raw_token)
     try:
-        from .repositories import auth_repo  # noqa: PLC0415
+        from ..repositories import auth_repo  # noqa: PLC0415
 
         context = auth_repo.get_session_context(token_hash)
     except AkashaError:

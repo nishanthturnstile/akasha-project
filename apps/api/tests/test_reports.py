@@ -4,7 +4,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from app import reports
+from app.routers import report_router as reports
 from app.config import settings
 from app.main import app
 from fastapi.testclient import TestClient

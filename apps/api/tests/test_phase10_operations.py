@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app import data_manager, field_groups, operations, scout_tasks
+from app.routers import data_manager_router as data_manager, field_group_router as field_groups, operation_router as operations, scout_task_router as scout_tasks
 from app.main import app
 from fastapi.testclient import TestClient
 

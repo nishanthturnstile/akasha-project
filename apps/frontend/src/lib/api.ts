@@ -30,6 +30,7 @@ import type {
   NotificationItem,
   AssistantStatus,
   CloudMaskOptions,
+  ImagerySourceMonitoringResponse,
   Plot,
   PlotCreatePayload,
   PlotGeometry,
@@ -37,6 +38,12 @@ import type {
   PlotUpdatePayload,
   SceneDate,
   Source,
+  Season,
+  SeasonCreatePayload,
+  SeasonUpdatePayload,
+  Field,
+  FieldCreatePayload,
+  FieldUpdatePayload,
 } from '@/types/api';
 
 /**
@@ -217,8 +224,15 @@ export const getConfig = (): Promise<AppConfig> => request<AppConfig>('/api/conf
 
 export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sources');
 
+const SOURCE_DATE_LOOKBACK_DAYS = 92;
+
 export const getDates = (sourceId: string): Promise<SceneDate[]> =>
-  request<SceneDate[]>(`/api/sources/${encodeURIComponent(sourceId)}/dates`);
+  request<SceneDate[]>(
+    `/api/sources/${encodeURIComponent(sourceId)}/dates?lookbackDays=${SOURCE_DATE_LOOKBACK_DAYS}`,
+  );
+
+export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringResponse> =>
+  request<ImagerySourceMonitoringResponse>('/api/monitoring/imagery-sources');
 
 export const getDefaultLayer = (): Promise<DefaultLayer> =>
   request<DefaultLayer>('/api/layers/default');
@@ -244,6 +258,40 @@ export const exportAllPlotsGeoJson = (): Promise<Blob> =>
 
 export const exportPlotGeoJson = (plotId: string): Promise<Blob> =>
   requestBlob(`/api/plots/${encodeURIComponent(plotId)}/export.geojson`);
+
+// --------------------------------------------------------------------------
+// Seasons API
+// --------------------------------------------------------------------------
+export const listSeasons = (): Promise<Season[]> => request<Season[]>('/api/seasons');
+
+export const createSeason = (payload: SeasonCreatePayload): Promise<Season> =>
+  request<Season>('/api/seasons', { method: 'POST', body: payload });
+
+export const getSeason = (seasonId: string): Promise<Season> =>
+  request<Season>(`/api/seasons/${encodeURIComponent(seasonId)}`);
+
+export const updateSeason = (seasonId: string, payload: SeasonUpdatePayload): Promise<Season> =>
+  request<Season>(`/api/seasons/${encodeURIComponent(seasonId)}`, { method: 'PATCH', body: payload });
+
+export const deleteSeason = (seasonId: string): Promise<void> =>
+  request<void>(`/api/seasons/${encodeURIComponent(seasonId)}`, { method: 'DELETE' });
+
+// --------------------------------------------------------------------------
+// Fields API
+// --------------------------------------------------------------------------
+export const listFields = (): Promise<Field[]> => request<Field[]>('/api/fields');
+
+export const createField = (payload: FieldCreatePayload): Promise<Field> =>
+  request<Field>('/api/fields', { method: 'POST', body: payload });
+
+export const getField = (fieldId: string): Promise<Field> =>
+  request<Field>(`/api/fields/${encodeURIComponent(fieldId)}`);
+
+export const updateField = (fieldId: string, payload: FieldUpdatePayload): Promise<Field> =>
+  request<Field>(`/api/fields/${encodeURIComponent(fieldId)}`, { method: 'PATCH', body: payload });
+
+export const deleteField = (fieldId: string): Promise<void> =>
+  request<void>(`/api/fields/${encodeURIComponent(fieldId)}`, { method: 'DELETE' });
 
 export const getFieldStatistics = (
   plotId: string,
@@ -536,7 +584,7 @@ export const exportFieldReportCsv = (
 export function composeTileTemplate(
   sourceId: string,
   acquisitionDate: string,
-  displayMode = 'RGB',
+  displayMode = 'FCC',
 ): string {
   return `/api/tiles/${encodeURIComponent(sourceId)}/${encodeURIComponent(
     acquisitionDate,

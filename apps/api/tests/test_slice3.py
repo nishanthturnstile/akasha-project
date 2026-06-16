@@ -525,7 +525,7 @@ def test_export_all_plots_feature_collection(store):
 # --------------------------------------------------------------------------
 def test_no_secret_or_internal_leakage_in_503(monkeypatch, caplog):
     # Simulate a DB driver failure whose message embeds a DSN-like secret.
-    secret_dsn = "postgresql://akasha:s3cr3t@postgis.railway.internal:5432/akasha"
+    secret_dsn = "postgresql://akasha:s3cr3t@postgis.internal:5432/akasha"
 
     def boom(*_args, **_kwargs):
         raise RuntimeError(f"connection failed: {secret_dsn}")
@@ -537,9 +537,9 @@ def test_no_secret_or_internal_leakage_in_503(monkeypatch, caplog):
     body = r.json()
     assert body["error"]["code"] == "PLOTS_BACKEND_UNAVAILABLE"
     text = r.text
-    for leak in ["postgresql://", "s3cr3t", "railway.internal", "Traceback", "RuntimeError"]:
+    for leak in ["postgresql://", "s3cr3t", "postgis.internal", "Traceback", "RuntimeError"]:
         assert leak not in text, f"leaked '{leak}' in 503 body"
-    for leak in ["postgresql://", "s3cr3t", "railway.internal"]:
+    for leak in ["postgresql://", "s3cr3t", "postgis.internal"]:
         assert leak not in caplog.text, f"leaked '{leak}' in plots warning log"
 
 

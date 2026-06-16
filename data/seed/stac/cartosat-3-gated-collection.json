@@ -1,0 +1,57 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json"
+  ],
+  "id": "cartosat-3-gated",
+  "title": "Cartosat-3 visual context (gated)",
+  "description": "Gated high-resolution visual/context source. Cartosat-3 is not present in the validated Bhoonidhi API catalog; use remains manual/order-only until API access, licensing, pricing, redistribution rights, and product format are confirmed.",
+  "license": "proprietary",
+  "keywords": ["isro", "nrsc", "bhoonidhi", "cartosat-3", "visual", "context", "manual-import", "gated"],
+  "providers": [
+    { "name": "ISRO/NRSC", "roles": ["producer", "licensor"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Bhoonidhi", "roles": ["host"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[77.023647, 12.537266, 78.131561, 13.61645]] },
+    "temporal": { "interval": [[null, null]] }
+  },
+  "summaries": {
+    "platform": ["cartosat-3"],
+    "instruments": ["mx"],
+    "gsd": [1.1]
+  },
+  "akasha:provider": "ISRO/NRSC Bhoonidhi",
+  "akasha:source_kind": "context",
+  "akasha:analysis_level": "context",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "No Bhoonidhi API collection was found for Cartosat-3.",
+  "akasha:refresh_policy": "Manual/order workflow only until direct API availability is confirmed.",
+  "akasha:supported_indices": [],
+  "akasha:display_modes": ["CONTEXT"],
+  "akasha:default_display_mode": "CONTEXT",
+  "akasha:expected_assets": ["visual"],
+  "akasha:mask_asset": null,
+  "akasha:metrics_provisional": true,
+  "akasha:manual_import_status": "blocked pending licensing, pricing, redistribution rights, and product format confirmation",
+  "akasha:crop_indices_enabled": false,
+  "item_assets": {
+    "visual": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Cartosat-3 visual context COG",
+      "roles": ["data", "visual"],
+      "raster:bands": [
+        { "data_type": "uint16", "nodata": 0, "unit": "dn" }
+      ]
+    }
+  },
+  "links": [
+    { "rel": "root", "href": "./cartosat-3-gated-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./cartosat-3-gated-collection.json", "type": "application/json" },
+    { "rel": "license", "href": "https://bhoonidhi.nrsc.gov.in", "title": "Bhoonidhi" }
+  ]
+}

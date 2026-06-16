@@ -4,8 +4,6 @@ import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
 import {
   ApiError,
   composeTileTemplate,
-  exportAllPlotsGeoJson,
-  exportPlotGeoJson,
   type PlotGeoJsonImportPayload,
 } from '@/lib/api';
 import {
@@ -41,7 +39,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/mapViewContext';
 import { useMapUrlState } from '@/hooks/useMapUrlState';
-import type { Plot, PlotGeometry, Source } from '@/types/api';
+import type { CloudMaskOptions, Plot, PlotGeometry, Source } from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -116,34 +114,30 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
   );
 }
 
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
-
-function geoJsonFilename(plot: Plot | null): string {
-  if (!plot) return 'fields.geojson';
-  const safeName = plot.name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  return `${safeName || 'field'}.geojson`;
-}
-
 /** Map an Akasha {@link Source} to a short sensor badge (for example `S2`, `S1`). */
 function sensorBadgeForSource(source: Source | null | undefined): string | null {
   if (!source) return null;
   const haystack = `${source.id} ${source.label}`.toLowerCase();
+  if (haystack.includes('resourcesat-2a')) return 'RS2A';
   if (haystack.includes('sentinel-2') || haystack.includes('sentinel 2')) return 'S2';
   if (haystack.includes('sentinel-1') || haystack.includes('sentinel 1')) return 'S1';
   return null;
+}
+
+function maskOptionsForSource(source: Source | null | undefined): Array<keyof CloudMaskOptions> {
+  return source?.availableMaskOptions ?? ['clouds', 'cloudShadows', 'cirrus'];
+}
+
+function sanitizeCloudMaskForSource(
+  value: CloudMaskOptions,
+  source: Source | null | undefined,
+): CloudMaskOptions {
+  const available = new Set(maskOptionsForSource(source));
+  return {
+    clouds: available.has('clouds') ? value.clouds : false,
+    cloudShadows: available.has('cloudShadows') ? value.cloudShadows : false,
+    cirrus: available.has('cirrus') ? value.cirrus : false,
+  };
 }
 
 export default function MapPage() {
@@ -177,6 +171,7 @@ export default function MapPage() {
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [allFieldsOpen, setAllFieldsOpen] = useState(false);
+  const [draftGeometry, setDraftGeometry] = useState<PlotGeometry | null>(null);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
@@ -204,6 +199,18 @@ export default function MapPage() {
     }
   }, [plotsQ.data, plotsQ.isLoading, selectedPlotId, view]);
 
+  // Focus the last-selected field on first load so a refresh keeps the map
+  // centred on the user's context instead of the default AOI.
+  const initialFocusDone = useRef(false);
+  useEffect(() => {
+    if (initialFocusDone.current) return;
+    if (!map || plotsQ.isLoading) return;
+    if (selectedPlot) {
+      focusPlot(map, selectedPlot);
+      initialFocusDone.current = true;
+    }
+  }, [map, plotsQ.isLoading, selectedPlot]);
+
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -218,6 +225,10 @@ export default function MapPage() {
 
   const activeTimelineDates = datesQ.data;
   const activeSourceKind = selectedSource?.kind;
+  const effectiveCloudMask = useMemo(
+    () => sanitizeCloudMaskForSource(cloudMask, selectedSource),
+    [cloudMask, selectedSource],
+  );
 
   // Effective acquisition date: keep a still-valid user choice, otherwise the
   // computed default (latest usable -> threshold -> newest). Derived, not stored,
@@ -247,7 +258,7 @@ export default function MapPage() {
     [activeTimelineDates, selectedDate],
   );
 
-  const sourceDisplayModes = selectedSource?.displayModes ?? ['RGB'];
+  const sourceDisplayModes = selectedSource?.displayModes ?? ['FCC'];
   const selectedDisplayMode =
     displayModeOverride ??
     selectedSource?.displayMode ??
@@ -256,7 +267,7 @@ export default function MapPage() {
     (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
       ? defaultLayerQ.data.displayMode
       : undefined) ??
-    'RGB';
+    'FCC';
 
   const scene = useMemo<SatelliteScene | null>(() => {
     if (!selectedDate || !effectiveSourceId) return null;
@@ -265,9 +276,9 @@ export default function MapPage() {
       dl &&
       dl.sourceId === effectiveSourceId &&
       dl.acquisitionDate === selectedDate &&
-      (dl.displayMode ?? 'RGB') === selectedDisplayMode;
+      (dl.displayMode ?? 'FCC') === selectedDisplayMode;
     const dateBounds = selectedDateMetadata?.bounds;
-    if (isDefault) {
+    if (isDefault && dl.tileUrlTemplate) {
       return {
         tileUrlTemplate: dl.tileUrlTemplate,
         bounds: dl.bounds ?? dateBounds,
@@ -348,14 +359,24 @@ export default function MapPage() {
   // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
   const nearestPassNote = useMemo<string | null>(() => {
     if (selectedSource?.kind !== 'sar') return null;
-    if (effectiveSourceId !== 'sentinel-1-grd') return null;
-    if (!selectedDate || selectedDate === '2026-04-27') return null;
+    if (!selectedDate) return null;
     return `Nearest radar pass: ${selectedDate}.`;
-  }, [selectedSource?.kind, effectiveSourceId, selectedDate]);
+  }, [selectedSource?.kind, selectedDate]);
 
   const requestMapTool = (owner: MapToolOwner): boolean => {
     setActiveMapTool(owner);
     return true;
+  };
+
+  // Wrapper to request tool ownership and start drawing a field
+  const handleAddField = () => {
+    if (!map) {
+      // Map not ready – do nothing or could show a warning
+      return;
+    }
+    // Ensure we have ownership of the field-draw tool before activating draw mode
+    requestMapTool('field-draw');
+    setFieldMode('draw');
   };
 
   const releaseMapTool = (owner: MapToolOwner) => {
@@ -376,13 +397,6 @@ export default function MapPage() {
       view.setSelectedPlotId(first.id);
       focusPlot(map, first);
     }
-  };
-
-  const exportGeoJson = async () => {
-    const blob = selectedPlot
-      ? await exportPlotGeoJson(selectedPlot.id)
-      : await exportAllPlotsGeoJson();
-    downloadBlob(blob, geoJsonFilename(selectedPlot));
   };
 
   const deleteSelectedField = async () => {
@@ -437,11 +451,15 @@ export default function MapPage() {
   const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
   const analyticsSupportedIndices = sourceSupportedIndices;
+  const sourceAnalysisLevel = selectedSource?.analysisLevel ?? 'field';
+  const analyticsEnabled =
+    selectedSource?.kind !== 'sar' &&
+    sourceAnalysisLevel === 'field' &&
+    sourceSupportedIndices.length > 0;
   const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
     ? selectedDisplayMode
     : analyticsSupportedIndices[0] ?? config.defaultIndex ?? 'NDVI';
-  const showIndexPanel =
-    selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0;
+  const showIndexPanel = analyticsEnabled;
 
   return (
     <div className="relative h-full min-h-[640px] w-full overflow-hidden bg-background" data-testid="map-page">
@@ -464,7 +482,13 @@ export default function MapPage() {
         onBasemapError={ setBasemapRuntimeError }
         onMapReady={ setMap }
       />
-      <FieldBoundaryLayer map={ map } plot={ selectedPlot } />
+      <FieldBoundaryLayer
+        map={ map }
+        plot={ selectedPlot }
+        geometry={ draftGeometry }
+        featureId="draft-field"
+        name="Draft field"
+      />
       <FieldDrawController
         activeTool={ activeMapTool }
         map={ map }
@@ -485,7 +509,8 @@ export default function MapPage() {
         } }
         onRequestTool={ requestMapTool }
         onReleaseTool={ releaseMapTool }
-        className="absolute left-[392px] top-[112px] z-popover max-[760px]:left-4 max-[760px]:top-[37.5rem]"
+        onPolygonComplete={(geometry) => setDraftGeometry(geometry)}
+        className="absolute right-4 top-[280px] z-popover max-[760px]:right-4 max-[760px]:top-[37.5rem]"
       />
 
       {/* Top chrome: field context · layers · search · theme · all-fields trigger */ }
@@ -531,27 +556,26 @@ export default function MapPage() {
       {/* Left: field tools */ }
       <div className="absolute left-4 top-[68px] z-toolbar">
         <PlotToolbar
-          activeAction={ fieldMode }
-          disabledActions={ {
-            draw: !map ? 'The map must finish loading before drawing a field.' : undefined,
-            edit:
-              selectedPlot && selectedPlot.geometry.type !== 'Polygon'
-                ? 'Multi-part field editing is not available in this first field workflow.'
-                : undefined,
-          } }
-          hasSelectedField={ Boolean(selectedPlot) }
+          activeAction={ fieldMode === 'draw' ? 'draw' : null }
           isMapAvailable={ Boolean(map) }
-          selectedFieldName={ selectedPlot?.name }
-          onDrawField={ () => setFieldMode((current) => (current === 'draw' ? null : 'draw')) }
-          onEditSelectedField={ () => setFieldMode((current) => (current === 'edit' ? null : 'edit')) }
-          onImportGeoJSON={ () => fileInputRef.current?.click() }
+          // Request ownership of the field-draw tool before toggling draw mode
+          onDrawField={ () => {
+            requestMapTool('field-draw');
+            setFieldMode((current) => (current === 'draw' ? null : 'draw'));
+          } }
+          // Request ownership of the field-edit tool before toggling edit mode
+          onEditSelectedField={ () => {
+            requestMapTool('field-edit');
+            setFieldMode((current) => (current === 'edit' ? null : 'edit'));
+          } }
+          onImportGeoJSON={ () => undefined }
           onExportGeoJSON={ () => void exportGeoJson() }
           onDeleteSelectedField={ () => void deleteSelectedField() }
         />
       </div>
 
-      {/* Layers surface — left drawer (≥md) / bottom sheet (<md) */ }
-      <div className="absolute left-4 top-[112px] z-panel" id="all-fields-panel">
+      {/* Right: stacked panels — All Fields dropdown above, field details below */ }
+      <div className="absolute right-4 top-[68px] z-panel flex max-w-[360px] flex-col gap-3">
         { allFieldsOpen && (
           <AllFieldsPanel
             plots={ plotsQ.data }
@@ -561,31 +585,47 @@ export default function MapPage() {
             selectedPlotId={ selectedPlotId }
             onSelect={ (plot) => {
               view.setSelectedPlotId(plot.id);
-              setAllFieldsOpen(false);
-            } }
-            onFocus={ (plot) => {
               selectAndFocusPlot(plot);
               setAllFieldsOpen(false);
             } }
-            onAdd={ map ? () => setFieldMode('draw') : undefined }
+            onEdit={ (plot) => {
+              view.setSelectedPlotId(plot.id);
+              setFieldMode('edit');
+              setAllFieldsOpen(false);
+            } }
+            onDelete={ (plot) => {
+              const confirmed = window.confirm(`Delete field "${plot.name}"?`);
+              if (!confirmed) return;
+              deletePlotMutation.mutateAsync(plot.id).then(() => {
+                view.clearSelectedPlot();
+                if (map && config) {
+                  map.flyTo({
+                    center: config.aoi.center,
+                    zoom: config.aoi.zoom,
+                    duration: 800,
+                  });
+                }
+              });
+            } }
+            onAdd={ map ? handleAddField : undefined }
             onImport={ () => fileInputRef.current?.click() }
           />
         ) }
-      </div>
-
-      {/* Right: native selected-field analytics panel. */ }
-      <div className="absolute right-4 top-[68px] z-toolbar hidden max-w-[320px] flex-col gap-2 xl:flex">
         { showIndexPanel && (
-          <IndexPanel
-            selectedPlot={ selectedPlot }
-            selectedDate={ selectedDate }
-            sourceId={ effectiveSourceId }
-            displayMode={ selectedDisplayMode }
-            supportedIndices={ analyticsSupportedIndices }
-            cloudMask={ cloudMask }
-            periodFrom={ periodFrom }
-            periodTo={ periodTo }
-          />
+          <div className="hidden xl:block">
+            <IndexPanel
+              selectedPlot={ selectedPlot }
+              selectedDate={ selectedDate }
+              sourceId={ effectiveSourceId }
+              displayMode={ selectedDisplayMode }
+              supportedIndices={ analyticsSupportedIndices }
+              cloudMask={ effectiveCloudMask }
+              sourceMaskMethod={ selectedSource?.maskMethod ?? null }
+              sourceMetricsProvisional={ Boolean(selectedSource?.metricsProvisional) }
+              periodFrom={ periodFrom }
+              periodTo={ periodTo }
+            />
+          </div>
         ) }
       </div>
 
@@ -607,7 +647,7 @@ export default function MapPage() {
           onDisplayModeChange={ view.setDisplayMode }
           cloudMask={ cloudMask }
           onCloudMaskChange={ view.setCloudMask }
-          cloudMaskDisabled={ selectedSource?.kind === 'sar' }
+          cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
           compareEnabled={ compareEnabled }
           onCompareEnabledChange={ view.setCompareEnabled }
           comparableDates={ comparableDates }
@@ -620,6 +660,8 @@ export default function MapPage() {
           selectedDate={ selectedDate }
           exportSourceId={ effectiveSourceId }
           exportIndexType={ exportIndexType }
+          exportCloudMask={ effectiveCloudMask }
+          analyticsEnabled={ analyticsEnabled }
           collapsed={ view.layerBarCollapsed }
           onCollapsedChange={ view.setLayerBarCollapsed }
         />

@@ -1,0 +1,72 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/sar/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/sat/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json"
+  ],
+  "id": "eos-04-sar-mrs-l2b",
+  "title": "EOS-04 SAR-MRS L2B (gated)",
+  "description": "Gated ISRO EOS-04 SAR-MRS L2B context source. It is a radar/backscatter source, not an optical vegetation-index source. Product format, polarization metadata, and calibrated backscatter conversion must be validated before activation.",
+  "license": "proprietary",
+  "keywords": ["isro", "nrsc", "bhoonidhi", "eos-04", "sar", "radar", "backscatter", "gated"],
+  "providers": [
+    { "name": "ISRO/NRSC", "roles": ["producer", "licensor"] },
+    { "name": "Bhoonidhi", "roles": ["host"] },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[68.0, 6.0, 98.0, 38.0]] },
+    "temporal": { "interval": [[null, null]] }
+  },
+  "summaries": {
+    "platform": ["eos-04"],
+    "constellation": ["eos-04"],
+    "instruments": ["sar"],
+    "sar:instrument_mode": ["MRS"],
+    "sar:frequency_band": ["C"],
+    "sar:polarizations": [],
+    "product:type": ["EOS-04_SAR-MRS_L2B"],
+    "raster:bands": [
+      {
+        "data_type": "float32",
+        "unit": "dB"
+      }
+    ]
+  },
+  "akasha:source_kind": "sar",
+  "akasha:kind": "sar",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "EOS-04 product format and polarization metadata have not been validated.",
+  "akasha:supported_indices": [],
+  "akasha:display_modes": ["VV_GRAYSCALE"],
+  "akasha:default_display_mode": "VV_GRAYSCALE",
+  "akasha:date_metrics_kind": "radar",
+  "akasha:analysis_level": "context",
+  "akasha:refresh_policy": "Gated until SAR product structure is validated.",
+  "akasha:limitations": [
+    "Not an optical vegetation-index source.",
+    "Backscatter conversion is disabled until product structure and polarization metadata are validated."
+  ],
+  "item_assets": {
+    "backscatter": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "EOS-04 SAR backscatter COG (dB)",
+      "description": "Backscatter asset for validated EOS-04 SAR COG imports. Polarization band order must be declared per item.",
+      "roles": ["data", "backscatter"],
+      "raster:bands": [
+        {
+          "data_type": "float32",
+          "unit": "dB"
+        }
+      ]
+    }
+  },
+  "links": [
+    { "rel": "root", "href": "./eos-04-sar-mrs-l2b-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./eos-04-sar-mrs-l2b-collection.json", "type": "application/json" }
+  ]
+}

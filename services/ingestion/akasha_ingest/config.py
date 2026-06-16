@@ -11,8 +11,30 @@ from pathlib import Path
 
 SENTINEL2_COLLECTION_ID = "sentinel-2-l2a"
 SENTINEL1_COLLECTION_ID = "sentinel-1-grd"
+EOS04_SAR_COLLECTION_ID = "eos-04-sar-mrs-l2b"
+NISAR_GCOV_COLLECTION_ID = "nisar-ssar-beta-gcov"
+SAR_COLLECTION_IDS = {
+    SENTINEL1_COLLECTION_ID,
+    EOS04_SAR_COLLECTION_ID,
+    NISAR_GCOV_COLLECTION_ID,
+}
+CARTOSAT3_CONTEXT_COLLECTION_ID = "cartosat-3-gated"
+EOS06_CONTEXT_COLLECTION_ID = "eos-06-ocm-lac-ndvi-8day-360m"
+CONTEXT_COLLECTION_IDS = {
+    CARTOSAT3_CONTEXT_COLLECTION_ID,
+    EOS06_CONTEXT_COLLECTION_ID,
+}
+IRS1C_ARCHIVE_COLLECTION_ID = "irs-1c-liss3-archive"
+ARCHIVE_COLLECTION_IDS = {
+    IRS1C_ARCHIVE_COLLECTION_ID,
+}
 RESOURCESAT_LISS3_COLLECTION_ID = "resourcesat-2a-liss3-boa"
-COLLECTION_ID = os.environ.get("AKASHA_COLLECTION_ID", SENTINEL2_COLLECTION_ID)
+RESOURCESAT_AWIFS_COLLECTION_ID = "resourcesat-2a-awifs-boa"
+RESOURCESAT_BOA_COLLECTION_IDS = {
+    RESOURCESAT_LISS3_COLLECTION_ID,
+    RESOURCESAT_AWIFS_COLLECTION_ID,
+}
+COLLECTION_ID = os.environ.get("AKASHA_COLLECTION_ID", RESOURCESAT_LISS3_COLLECTION_ID)
 
 # Object storage (MinIO / S3-compatible). Internal-only; placeholders in env.
 BUCKET = os.environ.get("AKASHA_COG_BUCKET", "akasha-cogs")
@@ -28,11 +50,13 @@ STAC_API_URL = os.environ.get("STAC_API_URL", "")
 # AOI and Bhoonidhi ingestion settings. Bhoonidhi credentials are worker/API
 # server-side only; never expose them through the browser.
 AOI_CONFIG_PATH = os.environ.get("AOI_CONFIG_PATH", "/app/data/seed/bangalore-60km-aoi.geojson")
+AOI_CONFIG_DIR = os.environ.get("AOI_CONFIG_DIR", "")
 BHOONIDHI_API_BASE = os.environ.get("BHOONIDHI_API_BASE", "https://bhoonidhi-api.nrsc.gov.in")
 BHOONIDHI_USER_ID = os.environ.get("BHOONIDHI_USER_ID", "")
 BHOONIDHI_PASSWORD = os.environ.get("BHOONIDHI_PASSWORD", "")
 BHOONIDHI_SEARCH_RPS = os.environ.get("BHOONIDHI_SEARCH_RPS", "3")
 BHOONIDHI_DOWNLOAD_CONCURRENCY = os.environ.get("BHOONIDHI_DOWNLOAD_CONCURRENCY", "3")
+BHOONIDHI_MAX_DOWNLOADS_PER_SYNC = os.environ.get("BHOONIDHI_MAX_DOWNLOADS_PER_SYNC", "3")
 BHOONIDHI_RAW_ROOT = os.environ.get("BHOONIDHI_RAW_ROOT", "/srv/akasha/data/raw/bhoonidhi")
 BHOONIDHI_TEMP_ROOT = os.environ.get("BHOONIDHI_TEMP_ROOT", "/srv/akasha/data/work/bhoonidhi")
 BHOONIDHI_LEDGER_PATH = os.environ.get(

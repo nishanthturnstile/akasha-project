@@ -9,16 +9,20 @@ import type { CloudMaskOptions, Plot, SceneDate, Source } from '@/types/api';
 
 const sources: Source[] = [
     {
-        id: 'sentinel-2-l2a',
-        label: 'Sentinel-2 L2A',
-        provider: 'Copernicus',
+        id: 'resourcesat-2a-liss3-boa',
+        label: 'ResourceSat-2A LISS-3 BOA',
+        provider: 'ISRO/NRSC Bhoonidhi',
         kind: 'optical',
-        supportedIndices: ['NDVI', 'NDRE', 'NDMI'],
+        displayModes: ['FCC'],
+        defaultDisplayMode: 'FCC',
+        supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        availableMaskOptions: ['clouds', 'cloudShadows'],
+        metricsProvisional: true,
     },
     {
-        id: 'sentinel-1-grd',
-        label: 'Sentinel-1 GRD',
-        provider: 'Copernicus',
+        id: 'eos-04-sar-mrs-l2b',
+        label: 'EOS-04 SAR MRS L2B',
+        provider: 'ISRO/NRSC Bhoonidhi',
         kind: 'sar',
         displayModes: ['VV_GRAYSCALE'],
         defaultDisplayMode: 'VV_GRAYSCALE',
@@ -46,7 +50,7 @@ const plot: Plot = {
     updatedAt: null,
 };
 
-const cloudMask: CloudMaskOptions = { clouds: true, cloudShadows: true, cirrus: true };
+const cloudMask: CloudMaskOptions = { clouds: true, cloudShadows: true, cirrus: false };
 
 const comparableDates: SceneDate[] = [
     {
@@ -85,10 +89,10 @@ function renderBar(ui: ReactElement) {
 function baseProps(overrides: Partial<Parameters<typeof LayerControlBar>[0]> = {}) {
     return {
         sources,
-        activeSourceId: 'sentinel-2-l2a',
+        activeSourceId: 'resourcesat-2a-liss3-boa',
         onSelectSource: vi.fn(),
-        displayModes: ['RGB', 'NDVI', 'NDRE'],
-        displayMode: 'RGB',
+        displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI'],
+        displayMode: 'FCC',
         onDisplayModeChange: vi.fn(),
         cloudMask,
         onCloudMaskChange: vi.fn(),
@@ -102,7 +106,7 @@ function baseProps(overrides: Partial<Parameters<typeof LayerControlBar>[0]> = {
         onBlendChange: vi.fn(),
         selectedPlot: plot,
         selectedDate: '2026-04-27',
-        exportSourceId: 'sentinel-2-l2a',
+        exportSourceId: 'resourcesat-2a-liss3-boa',
         exportIndexType: 'NDVI',
         collapsed: false,
         onCollapsedChange: vi.fn(),
@@ -130,8 +134,10 @@ describe('LayerControlBar', () => {
         const bar = screen.getByTestId('layer-control-bar');
         expect(bar.getAttribute('data-collapsed')).toBe('false');
 
-        expect(screen.getByTestId('layer-source-trigger').textContent).toContain('Sentinel-2 L2A');
-        expect(screen.getByTestId('layer-display-trigger').textContent).toContain('RGB');
+        expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
+            'ResourceSat-2A LISS-3 BOA',
+        );
+        expect(screen.getByTestId('layer-display-trigger').textContent).toContain('FCC');
         expect(screen.getByTestId('layer-cloud-mask-trigger')).toBeTruthy();
         expect(screen.getByTestId('layer-bar-cluster')).toBeTruthy();
         expect(screen.getByTestId('layer-bar-collapse')).toBeTruthy();
@@ -143,9 +149,9 @@ describe('LayerControlBar', () => {
 
         fireEvent.click(screen.getByTestId('layer-source-trigger'));
         // SourceSelector renders one tab per source inside the popover.
-        const sarTab = screen.getByTestId('source-tab-sentinel-1-grd');
+        const sarTab = screen.getByTestId('source-tab-eos-04-sar-mrs-l2b');
         fireEvent.click(sarTab);
-        expect(props.onSelectSource).toHaveBeenCalledWith('sentinel-1-grd');
+        expect(props.onSelectSource).toHaveBeenCalledWith('eos-04-sar-mrs-l2b');
     });
 
     it('collapses the bar via the explicit collapse trigger', () => {
@@ -165,5 +171,26 @@ describe('LayerControlBar', () => {
 
         const layerTrigger = screen.getByTestId('layer-display-trigger') as HTMLButtonElement;
         expect(layerTrigger.disabled).toBe(true);
+    });
+
+    it('hides unsupported cirrus masking for ResourceSat sources', () => {
+        renderBar(
+            <LayerControlBar
+                { ...baseProps({
+                    activeSourceId: 'resourcesat-2a-liss3-boa',
+                    displayModes: ['FCC'],
+                    displayMode: 'FCC',
+                    exportSourceId: 'resourcesat-2a-liss3-boa',
+                    exportCloudMask: { clouds: true, cloudShadows: true, cirrus: false },
+                }) }
+            />,
+        );
+
+        fireEvent.click(screen.getByTestId('layer-cloud-mask-trigger'));
+
+        expect(screen.getByText('Provisional mask')).toBeTruthy();
+        expect(screen.getByTestId('cloud-mask-clouds')).toBeTruthy();
+        expect(screen.getByTestId('cloud-mask-cloudShadows')).toBeTruthy();
+        expect(screen.queryByTestId('cloud-mask-cirrus')).toBeNull();
     });
 });

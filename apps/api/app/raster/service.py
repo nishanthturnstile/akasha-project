@@ -63,12 +63,6 @@ def compute_statistics(
             acquisitionDate=acquisition_date,
         )
 
-    excluded = excluded_mask_classes
-    if excluded is None:
-        from .indices import DEFAULT_EXCLUDED_SCL_CLASSES
-
-        excluded = DEFAULT_EXCLUDED_SCL_CLASSES
-
     intersecting_results: list[tuple[dict[str, Any], Any, int, int, tuple[str, str]]] = []
     for assets in candidate_assets:
         pos_a, pos_b, resolved_bands = _index_band_positions(assets, index_def, index_type)
@@ -98,6 +92,10 @@ def compute_statistics(
         )
 
     assets, read, pos_a, pos_b, resolved_bands = intersecting_results[0]
+    excluded = _excluded_mask_classes_for_assets(
+        assets=assets,
+        override=excluded_mask_classes,
+    )
 
     stats = compute_index_statistics(
         index_type=index_type,
@@ -185,6 +183,24 @@ def _bbox_intersects_geometry(
     return not (maxx < geom_minx or geom_maxx < minx or maxy < geom_miny or geom_maxy < miny)
 
 
+def _excluded_mask_classes_for_assets(
+    *,
+    assets: dict[str, Any],
+    override: tuple[int, ...] | None,
+) -> tuple[int, ...]:
+    if override is not None:
+        return tuple(override)
+    configured = assets.get("excludedMaskClasses")
+    if isinstance(configured, (list, tuple)):
+        try:
+            return tuple(int(value) for value in configured)
+        except (TypeError, ValueError):
+            pass
+    from .indices import DEFAULT_EXCLUDED_SCL_CLASSES
+
+    return DEFAULT_EXCLUDED_SCL_CLASSES
+
+
 def build_response(
     *,
     stats: dict[str, Any],
@@ -222,6 +238,7 @@ def build_response(
             "bands": list(resolved_bands),
             "spectralRoles": list(index_def.required_roles),
             "maskMethod": assets.get("maskMethod") or f"Mask classes excluded: {list(excluded)}",
+            "nativeExcludedMaskClasses": list(excluded),
             "metricsProvisional": bool(assets.get("metricsProvisional", False)),
             "reflectanceCorrection": (f"corrected = dn * {assets['scale']} + ({assets['offset']})"),
             "itemId": assets.get("itemId"),

@@ -1,0 +1,71 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/sar/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/sat/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json"
+  ],
+  "id": "nisar-ssar-beta-gcov",
+  "title": "NISAR S-SAR Beta GCOV (gated)",
+  "description": "Gated NISAR S-SAR GCOV context source. It is a radar/backscatter source, not an optical vegetation-index source. Routine product availability, HDF5/GeoTIFF layer structure, and polarization metadata must be validated before activation.",
+  "license": "proprietary",
+  "keywords": ["isro", "nasa", "nisar", "s-sar", "gcov", "radar", "backscatter", "gated"],
+  "providers": [
+    { "name": "NASA/ISRO", "roles": ["producer", "licensor"] },
+    { "name": "Bhoonidhi", "roles": ["host"] },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[68.0, 6.0, 98.0, 38.0]] },
+    "temporal": { "interval": [[null, null]] }
+  },
+  "summaries": {
+    "platform": ["nisar"],
+    "constellation": ["nisar"],
+    "instruments": ["s-sar"],
+    "sar:frequency_band": ["S"],
+    "sar:polarizations": [],
+    "product:type": ["NISAR_SSAR-Beta_GCOV"],
+    "raster:bands": [
+      {
+        "data_type": "float32",
+        "unit": "dB"
+      }
+    ]
+  },
+  "akasha:source_kind": "sar",
+  "akasha:kind": "sar",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "NISAR product availability and layer structure have not been validated.",
+  "akasha:supported_indices": [],
+  "akasha:display_modes": ["VV_GRAYSCALE"],
+  "akasha:default_display_mode": "VV_GRAYSCALE",
+  "akasha:date_metrics_kind": "radar",
+  "akasha:analysis_level": "context",
+  "akasha:refresh_policy": "Gated until NISAR product support is validated.",
+  "akasha:limitations": [
+    "Not an optical vegetation-index source.",
+    "Backscatter conversion is disabled until routine product availability and layer metadata are validated."
+  ],
+  "item_assets": {
+    "backscatter": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "NISAR S-SAR GCOV backscatter COG (dB)",
+      "description": "Backscatter asset for validated NISAR GCOV imports. Polarization band order must be declared per item.",
+      "roles": ["data", "backscatter"],
+      "raster:bands": [
+        {
+          "data_type": "float32",
+          "unit": "dB"
+        }
+      ]
+    }
+  },
+  "links": [
+    { "rel": "root", "href": "./nisar-ssar-beta-gcov-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./nisar-ssar-beta-gcov-collection.json", "type": "application/json" }
+  ]
+}

@@ -39,7 +39,7 @@ You are working in the Akasha repository. Implement **Phase 3 — BFF API implem
 
 ### Current project context
 
-Akasha is a Railway-first satellite imagery visualization MVP for Indian agriculture. The public browser talks only to the `web` gateway; all backend services stay private. The FastAPI BFF owns app-specific APIs and must never expose MinIO URLs, raw COG paths, STAC internals, database URLs, credentials, or private service hostnames to the browser.
+Akasha is a satellite imagery visualization MVP for Indian agriculture. The public browser talks only to the `web` gateway; all backend services stay private. The FastAPI BFF owns app-specific APIs and must never expose MinIO URLs, raw COG paths, STAC internals, database URLs, credentials, or private service hostnames to the browser.
 
 Relevant source-of-truth docs:
 
@@ -223,7 +223,7 @@ Use existing project patterns:
 13. Keep `psycopg` imports lazy if you create helper modules.
 14. Do not introduce SQLAlchemy or another ORM for Phase 3.
 15. Do not add frontend work in this phase.
-16. Do not deploy to Railway in this phase.
+16. Do not deploy in this phase.
 
 ### Error handling requirements
 
@@ -284,7 +284,7 @@ Do not modify unrelated frontend files.
 
 Add `apps/api/tests/test_slice3.py`.
 
-Tests must run without Docker, MinIO, PostGIS, or Railway. Monkeypatch the persistence layer for API contract tests where needed.
+Tests must run without Docker, MinIO, PostGIS, or a live deployment. Monkeypatch the persistence layer for API contract tests where needed.
 
 Required test coverage:
 
@@ -336,7 +336,7 @@ Do not implement:
 
 - Frontend plot drawing UI.
 - Terra Draw integration.
-- Railway deployment changes.
+- Deployment changes.
 - Authentication/user accounts.
 - Wave 2 analytics or time-series.
 - KML/shapefile import.

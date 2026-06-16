@@ -47,13 +47,18 @@ class CurrentTeam:
 
 
 def deployment_auth_required() -> bool:
+    # Independent "we are really deployed" signal that auth cannot be disabled
+    # on a hosted deployment even if APP_ENV is misconfigured. The Coolify
+    # control plane (self-hosted Azure VM) injects COOLIFY_* runtime variables;
+    # operators on a bare Docker host can set AKASHA_DEPLOYMENT explicitly.
     return any(
         os.environ.get(name)
         for name in (
-            "RAILWAY_ENVIRONMENT",
-            "RAILWAY_PROJECT_ID",
-            "RAILWAY_SERVICE_ID",
-            "RAILWAY_PUBLIC_DOMAIN",
+            "AKASHA_DEPLOYMENT",
+            "COOLIFY_URL",
+            "COOLIFY_FQDN",
+            "COOLIFY_RESOURCE_UUID",
+            "COOLIFY_CONTAINER_NAME",
         )
     )
 

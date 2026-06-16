@@ -1,4 +1,4 @@
-import { CalendarDays, Info } from 'lucide-react';
+import { CalendarDays, Info, Lock } from 'lucide-react';
 import type { Source } from '@/types/api';
 import { cn } from '@/lib/utils';
 import { OpacitySlider } from './OpacitySlider';
@@ -40,7 +40,9 @@ export function SourceCard({
     onPrefetch,
 }: SourceCardProps) {
     const isSar = source.kind === 'sar';
+    const isGated = source.availabilityStatus === 'gated';
     const modes = source.displayModes ?? [];
+    const limitations = source.limitations ?? [];
     const showModeToggle = active && modes.length > 1;
 
     return (
@@ -96,6 +98,33 @@ export function SourceCard({
                         >
                             <Info className="mt-0.5 size-3.5 shrink-0" strokeWidth={ 1.75 } />
                             <span>Radar layer · cloud-penetrating · not true colour</span>
+                        </div>
+                    ) }
+
+                    { isGated && (
+                        <div
+                            className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-2.5 py-2 text-[12px] text-warning"
+                            data-testid="source-gated-note"
+                        >
+                            <Lock className="mt-0.5 size-3.5 shrink-0" strokeWidth={ 1.75 } />
+                            <span>{ source.gatedReason ?? 'This source is gated pending validation.' }</span>
+                        </div>
+                    ) }
+
+                    { limitations.length > 0 && (
+                        <div
+                            className="flex flex-col gap-1.5 rounded-md border border-border/60 bg-card/35 px-2.5 py-2"
+                            data-testid="source-limitations"
+                        >
+                            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-foreground">
+                                <Info className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } />
+                                Limitations
+                            </div>
+                            <ul className="flex list-disc flex-col gap-1 pl-4 text-[12px] leading-4 text-muted-foreground">
+                                { limitations.map((limitation) => (
+                                    <li key={ limitation }>{ limitation }</li>
+                                )) }
+                            </ul>
                         </div>
                     ) }
 

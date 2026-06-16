@@ -4,7 +4,7 @@
 
 Akasha is a satellite imagery visualization platform for Indian agriculture. The MVP lets users inspect recent usable satellite imagery over a map, browse source/date combinations, draw or import farm plot boundaries, and compute vegetation/moisture index statistics only when requested.
 
-The first build is a Railway-hosted MVP for fast iteration and demonstration. The architecture remains portable to an on-prem/customer-controlled deployment later by using Dockerized services, S3-compatible object storage, and STAC-based catalog abstractions.
+The first build is a self-hosted (Coolify/Azure VM) MVP for fast iteration and demonstration. The architecture remains portable to an on-prem/customer-controlled deployment later by using Dockerized services, S3-compatible object storage, and STAC-based catalog abstractions.
 
 ## Product metadata
 
@@ -14,7 +14,7 @@ The first build is a Railway-hosted MVP for fast iteration and demonstration. Th
 | Market | Indian agriculture |
 | Initial AOI | Bangalore region |
 | MVP imagery source | Sentinel-2 L2A |
-| MVP hosting | Railway multi-service project |
+| MVP hosting | Self-hosted Coolify (Azure VM) multi-service stack |
 | User access model | No in-app accounts/roles in Wave 1; protect deployment with gateway rate limits and optional `GATEWAY_BASIC_AUTH` shared-secret gate; customer data requires the gate |
 | Primary index outputs | NDVI, NDRE, NDMI (vegetation moisture), NDWI_GREEN_NIR / Water NDWI (McFeeters) statistics for selected plots |
 | Default display | Basemap + latest usable Sentinel-2 true-colour imagery |
@@ -50,7 +50,7 @@ The first build is a Railway-hosted MVP for fast iteration and demonstration. Th
 - Let users draw, edit, name, and delete polygons.
 - Persist named plots in PostGIS for Wave 1.
 - Import and export GeoJSON.
-- Geometry contract: GeoJSON Polygon/MultiPolygon, EPSG:4326, max area 50 ha, max 5000 vertices; full rules in architecture/railway.
+- Geometry contract: GeoJSON Polygon/MultiPolygon, EPSG:4326, max area 50 ha, max 5000 vertices; full rules in architecture docs.
 - Treat KML and shapefile import as fast-follow unless implementation is trivial.
 
 ### Index statistics
@@ -111,7 +111,7 @@ The first build is a Railway-hosted MVP for fast iteration and demonstration. Th
 | Tile performance | Warm satellite tiles should feel interactive; target ~300 ms for common AOI views after caching. |
 | Index latency | Typical field polygon ≤ 50 ha should return statistics in roughly 3–5 seconds after data is warm. |
 | Polygon limits | Enforce configurable max polygon area and request timeouts. |
-| Availability | Railway services expose health checks and restart policies. |
+| Availability | Deployed services expose health checks and restart policies. |
 | Data quality | Index values must be cloud-masked and Sentinel-2 offset/scale corrected. |
 | Portability | Services should remain Docker-compatible for future Docker Compose/on-prem deployment. |
 | Security | Only the `web` (gateway) service is publicly reachable; browser calls `/api/*` and `/tiles/*` on the same public origin, and FastAPI, TiTiler, STAC API, PostGIS, and MinIO are never given a public domain. Gateway rate limits always apply; `GATEWAY_BASIC_AUTH` gates real/customer data. |
@@ -126,7 +126,7 @@ The first build is a Railway-hosted MVP for fast iteration and demonstration. Th
 - Statistics include valid-pixel and cloud-masked percentages.
 - Exact denominators for `validPixelPercent` and `cloudMaskedPercent` are defined in data-ingestion "Pixel accounting and percentages".
 - Index calculations are verified against an independent reference workflow such as QGIS or a notebook.
-- Railway deployment has health checks green for public web/API and private backing services.
+- Deployment has health checks green for public web/API and private backing services.
 - MinIO, PostgreSQL/PostGIS, TiTiler, and STAC internals are not directly exposed to end users.
 
 ## Appendix (not for MVP prompts)
@@ -141,7 +141,7 @@ The first build is a Railway-hosted MVP for fast iteration and demonstration. Th
 
 ### Roadmap
 
-#### Wave 1 — Railway MVP
+#### Wave 1 — MVP
 
 - Manual Sentinel-2 ingestion for Bangalore.
 - STAC-backed source/date catalog.
@@ -150,7 +150,7 @@ The first build is a Railway-hosted MVP for fast iteration and demonstration. Th
 - Terra Draw plot tooling.
 - Plot persistence in PostGIS.
 - On-demand cloud-masked index statistics.
-- Railway deployment with private service networking, volumes, variables, health checks, and rate limits.
+- Deployment with private service networking, volumes, variables, health checks, and rate limits.
 
 #### Wave 2 — Data and analytics expansion
 

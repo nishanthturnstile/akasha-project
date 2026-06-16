@@ -1,11 +1,12 @@
-"""Prepare ResourceSat-2A LISS-3 BOA analytic and mask COGs.
+"""Prepare ResourceSat-2A BOA analytic and mask COGs.
 
-Inputs are Bhoonidhi ResourceSat-2A LISS-3 BOA product ZIPs containing
+Inputs are Bhoonidhi ResourceSat-2A LISS-3/AWiFS BOA product ZIPs containing
 ``BAND2.tif``, ``BAND3.tif``, ``BAND4.tif``, ``BAND5.tif`` and
-``BAND_META.txt``. Outputs are written under the source-scoped raster layout:
+``BAND_META.txt``. Use ``--source`` to select the target source. Outputs are
+written under the source-scoped raster layout:
 
-    data/seed/rasters/resourcesat-2a-liss3-boa/scene/<date>/<sceneComponent>/analytic.tif
-    data/seed/rasters/resourcesat-2a-liss3-boa/scene/<date>/<sceneComponent>/mask.tif
+    data/seed/rasters/<source>/scene/<date>/<sceneComponent>/analytic.tif
+    data/seed/rasters/<source>/scene/<date>/<sceneComponent>/mask.tif
 
 The generated mask is provisional because the validated BOA product did not
 include a native quality/cloud/shadow raster.
@@ -21,12 +22,35 @@ import shutil
 import sys
 import zipfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ID = "resourcesat-2a-liss3-boa"
 BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
+AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
+AWIFS_BHOONIDHI_COLLECTION = "ResourceSat-2A_AWIFS_BOA"
+SOURCE_PROFILES = {
+    SOURCE_ID: {
+        "collection": BHOONIDHI_COLLECTION,
+        "label": "LISS-3",
+        "resolution_meters": 24,
+        "mask_method": (
+            "Akasha threshold mask v1 (no native quality layer found in validated "
+            "LISS-3 BOA sample; provisional)."
+        ),
+    },
+    AWIFS_SOURCE_ID: {
+        "collection": AWIFS_BHOONIDHI_COLLECTION,
+        "label": "AWiFS",
+        "resolution_meters": 56,
+        "mask_method": (
+            "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
+            "(pending AWiFS-specific native quality-layer validation; provisional)."
+        ),
+    },
+}
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "bhoonidhi" / SOURCE_ID
 DEFAULT_WORK_DIR = REPO_ROOT / "data" / "work" / "bhoonidhi" / SOURCE_ID
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "data" / "seed" / "rasters" / SOURCE_ID
@@ -38,6 +62,22 @@ MASK_METHOD = (
     "Akasha threshold mask v1 (no native quality layer found in validated "
     "LISS-3 BOA sample; provisional)."
 )
+
+
+def source_profile(source_id: str) -> dict[str, Any]:
+    try:
+        return SOURCE_PROFILES[source_id]
+    except KeyError as exc:
+        supported = ", ".join(sorted(SOURCE_PROFILES))
+        raise SystemExit(
+            f"Unsupported ResourceSat BOA source '{source_id}'. Supported: {supported}"
+        ) from exc
+
+
+def mask_method_for_source(source_id: str) -> str:
+    method = source_profile(source_id).get("mask_method")
+    return str(method or MASK_METHOD)
+
 
 ANALYTIC_BANDS: tuple[tuple[str, str, str], ...] = (
     ("BAND2", "GREEN", "Green"),
@@ -77,6 +117,7 @@ class ResourceSatMeta:
     row: str | None = None
     acquisition_datetime: str | None = None
     background_values: dict[str, int] = field(default_factory=dict)
+    valid_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
     scale: float = REFLECTANCE_SCALE
     offset: float = REFLECTANCE_OFFSET
 
@@ -144,17 +185,32 @@ def product_id_from_name(value: str | Path) -> str:
 
 def acquisition_datetime_from_text(value: str) -> str | None:
     text = value.upper()
-    iso = re.search(r"(\d{4})-?(\d{2})-?(\d{2})(?:T(\d{2}):?(\d{2}):?(\d{2}))?", text)
-    if iso:
-        year, month, day, hour, minute, second = iso.groups()
-        return f"{year}-{month}-{day}T{hour or '00'}:{minute or '00'}:{second or '00'}Z"
     bhoonidhi = re.search(
         r"(\d{1,2})[-_\s]?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-_\s]?(\d{4})",
         text,
     )
     if bhoonidhi:
         day, month, year = bhoonidhi.groups()
-        return f"{year}-{MONTHS[month]}-{int(day):02d}T00:00:00Z"
+        try:
+            parsed = datetime(int(year), int(MONTHS[month]), int(day))
+        except ValueError:
+            return None
+        return parsed.strftime("%Y-%m-%dT00:00:00Z")
+    iso = re.search(r"(\d{4})-?(\d{2})-?(\d{2})(?:T(\d{2}):?(\d{2}):?(\d{2}))?", text)
+    if iso:
+        year, month, day, hour, minute, second = iso.groups()
+        try:
+            parsed = datetime(
+                int(year),
+                int(month),
+                int(day),
+                int(hour or "00"),
+                int(minute or "00"),
+                int(second or "00"),
+            )
+        except ValueError:
+            return None
+        return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
     return None
 
 
@@ -165,6 +221,7 @@ def acquisition_date_from_datetime(value: str) -> str:
 def parse_band_meta(path: Path) -> ResourceSatMeta:
     raw: dict[str, str] = {}
     background_values: dict[str, int] = {}
+    valid_ranges: dict[str, tuple[float, float]] = {}
     for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -186,9 +243,33 @@ def parse_band_meta(path: Path) -> ResourceSatMeta:
                     background_values[band] = int(float(value))
                 except ValueError:
                     pass
+        valid_range = _range_meta(
+            raw,
+            f"{band}_VALID_RANGE",
+            f"{band}_RANGE",
+            f"{band}_DN_RANGE",
+        )
+        if valid_range is None:
+            valid_range = _paired_range_meta(
+                raw,
+                (f"{band}_VALID_MIN", f"{band}_MIN", f"{band}_DN_MIN"),
+                (f"{band}_VALID_MAX", f"{band}_MAX", f"{band}_DN_MAX"),
+            )
+        if valid_range is not None:
+            valid_ranges[band] = valid_range
 
     scale = _float_meta(raw, "SCALE", "REFLECTANCE_SCALE", "MULTIPLIER") or REFLECTANCE_SCALE
     offset = _float_meta(raw, "OFFSET", "REFLECTANCE_OFFSET", "ADD_OFFSET") or REFLECTANCE_OFFSET
+    default_valid_range = _range_meta(raw, "VALID_RANGE", "RANGE", "DN_RANGE")
+    if default_valid_range is None:
+        default_valid_range = _paired_range_meta(
+            raw,
+            ("VALID_MIN", "MIN", "DN_MIN"),
+            ("VALID_MAX", "MAX", "DN_MAX"),
+        )
+    if default_valid_range is not None:
+        for band, _role, _description in ANALYTIC_BANDS:
+            valid_ranges.setdefault(band, default_valid_range)
     acquisition_datetime = _first_meta(raw, "ACQUISITION_DATETIME", "DATETIME", "DATE")
     if acquisition_datetime:
         acquisition_datetime = acquisition_datetime_from_text(acquisition_datetime)
@@ -198,6 +279,7 @@ def parse_band_meta(path: Path) -> ResourceSatMeta:
         row=_first_meta(raw, "ROW", "ROW_NO", "ROW_NUMBER"),
         acquisition_datetime=acquisition_datetime,
         background_values=background_values,
+        valid_ranges=valid_ranges,
         scale=float(scale),
         offset=float(offset),
     )
@@ -221,6 +303,37 @@ def _float_meta(raw: dict[str, str], *keys: str) -> float | None:
         return None
 
 
+def _range_meta(raw: dict[str, str], *keys: str) -> tuple[float, float] | None:
+    value = _first_meta(raw, *keys)
+    if value is None:
+        return None
+    match = re.match(
+        r"^\s*([-+]?\d+(?:\.\d+)?)\s*(?:-|,|:|\.\.|\bto\b)\s*([-+]?\d+(?:\.\d+)?)\s*$",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    lower, upper = float(match.group(1)), float(match.group(2))
+    if lower > upper:
+        lower, upper = upper, lower
+    return (lower, upper)
+
+
+def _paired_range_meta(
+    raw: dict[str, str],
+    lower_keys: tuple[str, ...],
+    upper_keys: tuple[str, ...],
+) -> tuple[float, float] | None:
+    lower = _float_meta(raw, *lower_keys)
+    upper = _float_meta(raw, *upper_keys)
+    if lower is None or upper is None:
+        return None
+    if lower > upper:
+        lower, upper = upper, lower
+    return (lower, upper)
+
+
 def _entry_value(entry: dict[str, Any], *keys: str) -> Any:
     for key in keys:
         if key in entry and entry[key] not in (None, ""):
@@ -233,6 +346,13 @@ def _entry_value(entry: dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def _looks_like_source_path(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    lowered = value.lower()
+    return "/" in value or "\\" in value or lowered.endswith((".zip", ".safe", ".tif", ".tiff"))
+
+
 def source_path_from_manifest_entry(entry: dict[str, Any], product_id: str, raw_dir: Path) -> Path:
     value = _entry_value(
         entry,
@@ -243,11 +363,60 @@ def source_path_from_manifest_entry(entry: dict[str, Any], product_id: str, raw_
         "sourceZip",
         "local_path",
         "localPath",
-        "path",
     )
     if isinstance(value, str) and value:
         return resolve_repo_path(value)
+    path_value = _entry_value(entry, "path")
+    if _looks_like_source_path(path_value):
+        return resolve_repo_path(str(path_value))
     return raw_dir / f"{product_id}.zip"
+
+
+def path_row_from_manifest_entry(entry: dict[str, Any]) -> tuple[str | None, str | None]:
+    path = _entry_value(entry, "Path", "path_id", "pathId")
+    if path in (None, ""):
+        raw_path = _entry_value(entry, "path")
+        if not _looks_like_source_path(raw_path):
+            path = raw_path
+    row = _entry_value(entry, "Row", "row_id", "rowId")
+    if row in (None, ""):
+        row = _entry_value(entry, "row")
+    return (
+        str(path) if path not in (None, "") else None,
+        str(row) if row not in (None, "") else None,
+    )
+
+
+def merge_downloaded_entries_with_candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates_by_id: dict[str, dict[str, Any]] = {}
+    candidates = payload.get("candidates")
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            product_id = str(
+                _entry_value(candidate, "item_id", "product_id", "productId", "id", "name") or ""
+            )
+            if product_id:
+                candidates_by_id[product_id_from_name(product_id)] = candidate
+
+    downloaded = payload.get("downloaded")
+    if not isinstance(downloaded, list) or not downloaded:
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for item in downloaded:
+        if not isinstance(item, dict):
+            continue
+        product_id = str(
+            _entry_value(item, "item_id", "product_id", "productId", "id", "name") or ""
+        )
+        base = dict(candidates_by_id.get(product_id_from_name(product_id), {}))
+        merged = {**base, **item}
+        if _looks_like_source_path(merged.get("path")) and "downloaded_path" not in merged:
+            merged["downloaded_path"] = merged["path"]
+        entries.append(merged)
+    return entries
 
 
 def selected_product_from_manifest_entry(
@@ -260,17 +429,15 @@ def selected_product_from_manifest_entry(
     )
     if not product_id:
         raise SystemExit(f"Selected ResourceSat entry is missing product id: {entry}")
-    acquisition_datetime = (
-        _entry_value(entry, "acquisition_datetime", "acquisitionDatetime", "datetime")
-        or acquisition_datetime_from_text(product_id)
-    )
+    acquisition_datetime = _entry_value(
+        entry, "acquisition_datetime", "acquisitionDatetime", "datetime"
+    ) or acquisition_datetime_from_text(product_id)
     if not isinstance(acquisition_datetime, str) or not acquisition_datetime:
         raise SystemExit(f"Could not infer acquisition datetime for {product_id}")
     acquisition_datetime = (
         acquisition_datetime_from_text(acquisition_datetime) or acquisition_datetime
     )
-    path = _entry_value(entry, "path", "Path", "path_id", "pathId")
-    row = _entry_value(entry, "row", "Row", "row_id", "rowId")
+    path, row = path_row_from_manifest_entry(entry)
     bbox = _entry_value(entry, "bbox")
     geometry = _entry_value(entry, "geometry")
     return SelectedProduct(
@@ -278,8 +445,8 @@ def selected_product_from_manifest_entry(
         source_path=source_path_from_manifest_entry(entry, product_id, raw_dir),
         acquisition_datetime=acquisition_datetime,
         acquisition_date=acquisition_date_from_datetime(acquisition_datetime),
-        path=str(path) if path not in (None, "") else None,
-        row=str(row) if row not in (None, "") else None,
+        path=path,
+        row=row,
         bbox=bbox if isinstance(bbox, list) and len(bbox) == 4 else None,
         geometry=geometry if isinstance(geometry, dict) else None,
     )
@@ -288,9 +455,7 @@ def selected_product_from_manifest_entry(
 def load_selected_products(selection_manifest: Path, *, raw_dir: Path) -> list[SelectedProduct]:
     payload = json.loads(selection_manifest.read_text(encoding="utf-8"))
     entries: list[dict[str, Any]] = []
-    downloaded = payload.get("downloaded")
-    if isinstance(downloaded, list) and downloaded:
-        entries.extend(item for item in downloaded if isinstance(item, dict))
+    entries.extend(merge_downloaded_entries_with_candidates(payload))
     for key in ("selected_products", "selectedProducts", "candidates"):
         value = payload.get(key)
         if not entries and isinstance(value, list):
@@ -367,6 +532,7 @@ def build_mask_array(
     analytic: Any,
     *,
     background_values: dict[str, int] | None = None,
+    valid_ranges: dict[str, tuple[float, float]] | None = None,
     scale: float = REFLECTANCE_SCALE,
     offset: float = REFLECTANCE_OFFSET,
     cloud_brightness_threshold: float = 0.32,
@@ -378,12 +544,18 @@ def build_mask_array(
 ) -> Any:
     """Return ResourceSat mask codes: 0 gap, 1 valid, 2 cloud, 3 shadow, 4 water."""
     background_values = background_values or {}
+    valid_ranges = valid_ranges or {}
     data = np.asarray(analytic)
     if data.shape[0] != len(ANALYTIC_BANDS):
         raise ValueError(f"expected {len(ANALYTIC_BANDS)} analytic bands, got {data.shape[0]}")
     gap_parts = []
     for index, (band_name, _role, _description) in enumerate(ANALYTIC_BANDS):
-        gap_parts.append(data[index] == background_values.get(band_name, NODATA_DN))
+        band_gap = data[index] == background_values.get(band_name, NODATA_DN)
+        valid_range = valid_ranges.get(band_name)
+        if valid_range is not None:
+            lower, upper = valid_range
+            band_gap = band_gap | (data[index] < lower) | (data[index] > upper)
+        gap_parts.append(band_gap)
     gap = np.logical_and.reduce(gap_parts)
 
     reflectance = data.astype("float32") * float(scale) + float(offset)
@@ -416,6 +588,7 @@ def build_analytic_intermediate(
     deps: dict[str, Any],
     product_dir: Path,
     output_path: Path,
+    source_id: str,
     overwrite: bool,
 ) -> Path:
     np = deps["np"]
@@ -473,7 +646,7 @@ def build_analytic_intermediate(
                         source_asset=band_name,
                     )
             dst.update_tags(
-                AKASHA_SOURCE_ID=SOURCE_ID,
+                AKASHA_SOURCE_ID=source_id,
                 AKASHA_BAND_ORDER=",".join(band for band, _role, _desc in ANALYTIC_BANDS),
                 AKASHA_REFLECTANCE_SCALE=str(REFLECTANCE_SCALE),
                 AKASHA_REFLECTANCE_OFFSET=str(REFLECTANCE_OFFSET),
@@ -488,6 +661,7 @@ def build_mask_intermediate(
     analytic_path: Path,
     output_path: Path,
     meta: ResourceSatMeta,
+    source_id: str,
     overwrite: bool,
 ) -> Path:
     np = deps["np"]
@@ -504,6 +678,7 @@ def build_mask_intermediate(
             np,
             analytic,
             background_values=meta.background_values,
+            valid_ranges=meta.valid_ranges,
             scale=meta.scale,
             offset=meta.offset,
         )
@@ -523,13 +698,14 @@ def build_mask_intermediate(
         with rasterio.open(output_path, "w", **profile) as dst:
             dst.write(mask, 1)
             dst.set_band_description(1, "mask")
+            mask_method = mask_method_for_source(source_id)
             dst.update_tags(
                 1,
                 name="mask",
-                description=MASK_METHOD,
+                description=mask_method,
                 classes=json.dumps(MASK_CLASSES),
             )
-            dst.update_tags(AKASHA_MASK_METHOD=MASK_METHOD, AREA_OR_POINT="Area")
+            dst.update_tags(AKASHA_MASK_METHOD=mask_method, AREA_OR_POINT="Area")
     return output_path
 
 
@@ -630,12 +806,15 @@ def write_manifest(
     meta: ResourceSatMeta,
     analytic_intermediate: Path,
     mask_intermediate: Path,
+    source_id: str = SOURCE_ID,
+    collection: str = BHOONIDHI_COLLECTION,
 ) -> None:
     analytic_summary = raster_summary(deps, paths.analytic_cog)
     mask_summary = raster_summary(deps, paths.mask_cog)
+    mask_method = mask_method_for_source(source_id)
     payload: dict[str, Any] = {
-        "source_id": SOURCE_ID,
-        "collection": BHOONIDHI_COLLECTION,
+        "source_id": source_id,
+        "collection": collection,
         "product_id": paths.product.product_id,
         "platform": "resourcesat-2a",
         "product_level": "BOA",
@@ -647,7 +826,7 @@ def write_manifest(
         "product_dir": paths.product_dir.as_posix(),
         "analytic_band_order": [band for band, _role, _description in ANALYTIC_BANDS],
         "band_role_mapping": {role: band for band, role, _description in ANALYTIC_BANDS},
-        "mask_method": MASK_METHOD,
+        "mask_method": mask_method,
         "classification_classes": MASK_CLASSES,
         "akasha:metrics_provisional": True,
         "intermediates": {
@@ -657,6 +836,7 @@ def write_manifest(
         "band_meta": {
             "path": find_band_meta(paths.product_dir).as_posix(),
             "background_values": meta.background_values,
+            "valid_ranges": meta.valid_ranges,
             "scale": meta.scale,
             "offset": meta.offset,
             "raw": meta.raw,
@@ -666,11 +846,9 @@ def write_manifest(
             "mask": mask_summary,
         },
         "properties": {
-            "akasha:mask_method": MASK_METHOD,
+            "akasha:mask_method": mask_method,
             "akasha:metrics_provisional": True,
-            "akasha:band_role_mapping": {
-                role: band for band, role, _description in ANALYTIC_BANDS
-            },
+            "akasha:band_role_mapping": {role: band for band, role, _description in ANALYTIC_BANDS},
         },
     }
     if paths.product.bbox:
@@ -779,6 +957,7 @@ def prepare_one(
         deps=deps,
         product_dir=product_dir,
         output_path=analytic_intermediate,
+        source_id=args.source,
         overwrite=args.overwrite,
     )
     build_mask_intermediate(
@@ -786,6 +965,7 @@ def prepare_one(
         analytic_path=analytic_intermediate,
         output_path=mask_intermediate,
         meta=meta,
+        source_id=args.source,
         overwrite=args.overwrite,
     )
     translate_to_cog(
@@ -811,6 +991,8 @@ def prepare_one(
         meta=meta,
         analytic_intermediate=analytic_intermediate,
         mask_intermediate=mask_intermediate,
+        source_id=args.source,
+        collection=source_profile(args.source)["collection"],
     )
     if not args.keep_intermediate and temp_dir.exists():
         shutil.rmtree(temp_dir)
@@ -822,10 +1004,11 @@ def write_batch_manifest(
     output_root: Path,
     selection_manifest: Path,
     prepared: list[PreparedPaths],
+    source_id: str,
 ) -> Path:
-    path = output_root / "resourcesat_liss3_batch_prepare_manifest.json"
+    path = output_root / f"{source_id}_batch_prepare_manifest.json"
     payload = {
-        "source_id": SOURCE_ID,
+        "source_id": source_id,
         "selection_manifest": selection_manifest.as_posix(),
         "product_count": len(prepared),
         "products": [
@@ -862,11 +1045,17 @@ def latest_source_path(raw_dir: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--source",
+        default=SOURCE_ID,
+        choices=sorted(SOURCE_PROFILES),
+        help="ResourceSat BOA source id to prepare.",
+    )
     parser.add_argument("--zip-path", help="Path to Bhoonidhi ResourceSat ZIP")
     parser.add_argument("--selection-manifest", help="Bhoonidhi download manifest")
-    parser.add_argument("--raw-dir", default=str(DEFAULT_RAW_DIR.relative_to(REPO_ROOT)))
-    parser.add_argument("--work-dir", default=str(DEFAULT_WORK_DIR.relative_to(REPO_ROOT)))
-    parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT.relative_to(REPO_ROOT)))
+    parser.add_argument("--raw-dir", default=None)
+    parser.add_argument("--work-dir", default=None)
+    parser.add_argument("--output-root", default=None)
     parser.add_argument("--product-id", help="Override product id in single-product mode")
     parser.add_argument("--date", help="Acquisition date, e.g. 2026-03-19")
     parser.add_argument("--acquisition-datetime", help="Acquisition datetime")
@@ -880,6 +1069,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.selection_manifest and args.zip_path:
         raise SystemExit("--zip-path cannot be combined with --selection-manifest")
+    profile = source_profile(args.source)
+    if args.raw_dir is None:
+        args.raw_dir = str(
+            (REPO_ROOT / "data" / "raw" / "bhoonidhi" / args.source).relative_to(REPO_ROOT)
+        )
+    if args.work_dir is None:
+        args.work_dir = str(
+            (REPO_ROOT / "data" / "work" / "bhoonidhi" / args.source).relative_to(REPO_ROOT)
+        )
+    if args.output_root is None:
+        args.output_root = str(
+            (REPO_ROOT / "data" / "seed" / "rasters" / args.source).relative_to(REPO_ROOT)
+        )
     deps = require_raster_deps()
     raw_dir = resolve_repo_path(args.raw_dir)
     output_root = resolve_repo_path(args.output_root)
@@ -891,6 +1093,7 @@ def main(argv: list[str] | None = None) -> int:
             output_root=output_root,
             selection_manifest=selection_manifest,
             prepared=prepared,
+            source_id=args.source,
         )
     else:
         source_path = (
@@ -898,7 +1101,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         product = selected_product_from_args(args, source_path)
         prepare_one(product=product, args=args, deps=deps)
-    print("ResourceSat LISS-3 BOA COG preparation complete")
+    print(f"ResourceSat {profile['label']} BOA COG preparation complete")
     return 0
 
 

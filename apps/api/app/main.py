@@ -56,6 +56,11 @@ from .routers.report_router import router as reports_router
 from .routers.risk_router import router as risk_router
 from .routers.scout_task_router import router as scout_tasks_router
 from .routers.season_router import router as seasons_router
+from .reports import router as reports_router
+from .risk import router as risk_router
+from .scout_tasks import router as scout_tasks_router
+from .seasons import router as seasons_router
+from .source_monitoring import router as source_monitoring_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,7 +87,7 @@ app = FastAPI(
     title="Akasha BFF",
     version=APP_VERSION,
     description=(
-        "Akasha Railway MVP BFF. Serves health, skeleton visibility, product, "
+        "Akasha BFF. Serves health, skeleton visibility, product, "
         "plot, auth, operations, reporting, and raster-statistics APIs."
     ),
     lifespan=lifespan,
@@ -121,7 +126,7 @@ async def enforce_max_request_body(request: Request, call_next):
     return await call_next(request)
 
 # --- Health (root) ---------------------------------------------------------
-# Railway/Compose health checks hit `/health` directly on the api container.
+# Container/Compose health checks hit `/health` directly on the api container.
 
 
 def _health_payload() -> dict[str, Any]:
@@ -176,7 +181,7 @@ async def get_env_matrix() -> dict[str, Any]:
     return {
         "note": (
             "Placeholders only. Do not add aliases beyond this matrix "
-            "(railway-deployment-guide.md)."
+            "(infra/selfhosted/env.example)."
         ),
         "services": skeleton.ENV_MATRIX,
     }
@@ -266,6 +271,7 @@ app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
 app.include_router(fields_router)
+app.include_router(source_monitoring_router)
 
 # --- Temporary staging diagnostics ----------------------------------------
 app.include_router(bhoonidhi_diagnostics_router)

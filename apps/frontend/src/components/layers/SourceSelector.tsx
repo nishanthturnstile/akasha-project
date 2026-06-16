@@ -18,7 +18,14 @@ export function SourceSelector({ sources, value, onChange }: SourceSelectorProps
     >
       {sources.map((s) => {
         const active = s.id === value;
-        const sourceKind = s.kind === 'sar' ? 'Radar' : 'Optical';
+        const sourceKind =
+          s.kind === 'sar'
+            ? 'Radar'
+            : s.kind === 'context'
+              ? 'Context'
+              : s.kind === 'archive'
+                ? 'Archive'
+                : 'Optical';
         return (
           <button
             key={s.id}

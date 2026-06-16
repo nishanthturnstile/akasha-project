@@ -13,7 +13,7 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 
 from ..api_models import CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
 from ..auth import CurrentTeam, get_current_team
-from ..cloud_mask import cloud_mask_mapping, native_scl_excluded_classes
+from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
 from ..raster import catalog_resolver as catalog
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
@@ -33,6 +33,26 @@ router = APIRouter(
 )
 
 MAX_TREND_DAYS = 365
+
+
+class FieldStatisticsRequest(ApiModel):
+    source_id: str = settings.default_source_id
+    acquisition_date: str | None = None
+    index_type: str = DEFAULT_INDEX
+    cloud_mask: CloudMaskOptions = Field(default_factory=CloudMaskOptions)
+
+
+class FieldStatisticsResponse(ApiModel):
+    plot_id: str
+    provider: Literal["native"] = "native"
+    scope: Literal["field"] = "field"
+    index_type: str
+    source_id: str
+    acquisition_date: str
+    cloud_mask: CloudMaskOptions
+    statistics: IndexStatisticsModel
+    pixel_counts: PixelCounts
+    metadata: dict[str, Any]
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -84,6 +104,8 @@ def _field_statistics(
     index_type: str,
     cloud_mask: CloudMaskOptions,
 ) -> FieldStatisticsResponse:
+    source = catalog.get_source(source_id)
+    mask_mapping = source_cloud_mask_mapping(source, cloud_mask)
     computed = compute_statistics(
         geometry=plot["geometry"],
         source_id=source_id,
@@ -91,7 +113,7 @@ def _field_statistics(
         index_type=index_type,
         max_area_ha=settings.max_polygon_area_ha,
         max_vertices=settings.max_polygon_vertices,
-        excluded_mask_classes=native_scl_excluded_classes(cloud_mask),
+        excluded_mask_classes=source_excluded_mask_classes(source, cloud_mask),
     )
     metadata = dict(computed["metadata"])
     metadata.update(
@@ -99,7 +121,7 @@ def _field_statistics(
             "provider": "native",
             "scope": "field",
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
-            "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
+            "cloudMaskMapping": mask_mapping.model_dump(by_alias=True),
         }
     )
     return FieldStatisticsResponse(
@@ -178,6 +200,7 @@ def _native_trend_response(
             )
 
     index_def = get_index(index_type)
+    source = catalog.get_source(source_id)
     return FieldTrendResponse(
         plot_id=plot_id,
         source_id=source_id,
@@ -190,7 +213,9 @@ def _native_trend_response(
             "formula": index_def.formula,
             "spectralRoles": list(index_def.required_roles),
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
-            "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
+            "cloudMaskMapping": source_cloud_mask_mapping(source, cloud_mask).model_dump(
+                by_alias=True
+            ),
             "rangeLimitDays": MAX_TREND_DAYS,
         },
     )
@@ -245,7 +270,7 @@ async def get_field_analytics_trend(
     indexType: str = Query(default=DEFAULT_INDEX),
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
-    sourceId: str = Query(default="sentinel-2-l2a"),
+    sourceId: str = Query(default=settings.default_source_id),
     clouds: bool = True,
     cloudShadows: bool = True,
     cirrus: bool = True,

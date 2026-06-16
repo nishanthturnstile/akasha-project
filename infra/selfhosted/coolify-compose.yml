@@ -10,7 +10,7 @@ services:
     image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-web:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
     pull_policy: always
     environment:
-      SERVICE_FQDN_WEB: "/"
+      SERVICE_FQDN_WEB: "${SERVICE_FQDN_WEB:?SERVICE_FQDN_WEB must be set to the public web URL}"
       PORT: "80"
       API_UPSTREAM_URL: "http://api:8000"
       TITILER_UPSTREAM_URL: "http://titiler:8000"
@@ -41,6 +41,7 @@ services:
       STAC_API_URL: "http://stac-api:8080"
       TITILER_URL: "http://titiler:8000"
       S3_ENDPOINT_URL: "http://minio:9000"
+      AKASHA_COG_BUCKET: "${AKASHA_COG_BUCKET:-akasha-cogs}"
       AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
       AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
       AWS_S3_ENDPOINT: "minio:9000"
@@ -51,14 +52,15 @@ services:
       CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
       AKASHA_RGB_RESCALE: "${AKASHA_RGB_RESCALE:-0,3000}"
       AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
-      DEFAULT_SOURCE_ID: "${DEFAULT_SOURCE_ID:-sentinel-2-l2a}"
-      DEFAULT_AOI_ID: "${DEFAULT_AOI_ID:-bangalore}"
+      DEFAULT_SOURCE_ID: "${DEFAULT_SOURCE_ID:-resourcesat-2a-liss3-boa}"
+      DEFAULT_AOI_ID: "${DEFAULT_AOI_ID:-}"
       AOI_CONFIG_PATH: "${AOI_CONFIG_PATH:-/app/data/seed/bangalore-60km-aoi.geojson}"
       USABLE_PIXEL_THRESHOLD_PERCENT: "${USABLE_PIXEL_THRESHOLD_PERCENT:-70}"
       MAX_POLYGON_AREA_HA: "${MAX_POLYGON_AREA_HA:-50}"
       MAX_POLYGON_VERTICES: "${MAX_POLYGON_VERTICES:-5000}"
       INDEX_REQUEST_TIMEOUT_SECONDS: "${INDEX_REQUEST_TIMEOUT_SECONDS:-30}"
       RATE_LIMIT_INDEX_PER_MINUTE: "${RATE_LIMIT_INDEX_PER_MINUTE:-30}"
+      SOURCE_FRESHNESS_STALE_DAYS: "${SOURCE_FRESHNESS_STALE_DAYS:-45}"
       MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1048576}"
       BHOONIDHI_DIAGNOSTICS_ENABLED: "${BHOONIDHI_DIAGNOSTICS_ENABLED:-false}"
       BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
@@ -67,6 +69,7 @@ services:
       BHOONIDHI_DOWNLOAD_ROOT: "${BHOONIDHI_DOWNLOAD_ROOT:-/srv/akasha/bhoonidhi-diagnostics}"
       BHOONIDHI_DOWNLOAD_TIMEOUT_SECONDS: "${BHOONIDHI_DOWNLOAD_TIMEOUT_SECONDS:-300}"
       BHOONIDHI_MAX_DOWNLOAD_BYTES: "${BHOONIDHI_MAX_DOWNLOAD_BYTES:-5368709120}"
+      BHOONIDHI_LEDGER_PATH: "${BHOONIDHI_LEDGER_PATH:-/srv/akasha/ingestion/ledger.sqlite}"
       CORS_ALLOWED_ORIGINS: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN must be set to the exact public web origin}"
       AUTH_MODE: "${AUTH_MODE:-enabled}"
       AUTH_ALLOW_DISABLED: "${AUTH_ALLOW_DISABLED:-false}"
@@ -83,6 +86,7 @@ services:
       - "8000"
     volumes:
       - /srv/akasha/bhoonidhi-diagnostics:/srv/akasha/bhoonidhi-diagnostics
+      - /srv/akasha/ingestion:/srv/akasha/ingestion:ro
       - /srv/akasha/data/seed:/app/data/seed:ro
     depends_on:
       postgis:
@@ -206,13 +210,16 @@ services:
       S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
       S3_REGION: "${AWS_REGION:-us-east-1}"
       AKASHA_COG_BUCKET: "${AKASHA_COG_BUCKET:-akasha-cogs}"
+      AKASHA_COLLECTION_ID: "${AKASHA_COLLECTION_ID:-resourcesat-2a-liss3-boa}"
       SEED_DATA_DIR: "/app/data/seed"
       AOI_CONFIG_PATH: "${AOI_CONFIG_PATH:-/app/data/seed/bangalore-60km-aoi.geojson}"
+      AOI_CONFIG_DIR: "${AOI_CONFIG_DIR:-}"
       BHOONIDHI_API_BASE: "${BHOONIDHI_API_BASE:-https://bhoonidhi-api.nrsc.gov.in}"
       BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
       BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
       BHOONIDHI_SEARCH_RPS: "${BHOONIDHI_SEARCH_RPS:-3}"
       BHOONIDHI_DOWNLOAD_CONCURRENCY: "${BHOONIDHI_DOWNLOAD_CONCURRENCY:-3}"
+      BHOONIDHI_MAX_DOWNLOADS_PER_SYNC: "${BHOONIDHI_MAX_DOWNLOADS_PER_SYNC:-3}"
       BHOONIDHI_RAW_ROOT: "${BHOONIDHI_RAW_ROOT:-/srv/akasha/data/raw/bhoonidhi}"
       BHOONIDHI_TEMP_ROOT: "${BHOONIDHI_TEMP_ROOT:-/srv/akasha/data/work/bhoonidhi}"
       BHOONIDHI_LEDGER_PATH: "${BHOONIDHI_LEDGER_PATH:-/srv/akasha/ingestion/ledger.sqlite}"
@@ -228,6 +235,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    healthcheck:
+      disable: true
     restart: "no"
 
   ingestion-sar:
@@ -249,4 +258,6 @@ services:
     volumes:
       - /srv/akasha/data:/app/data
       - /srv/akasha/snap-cache:/snap-cache
+    healthcheck:
+      disable: true
     restart: "no"

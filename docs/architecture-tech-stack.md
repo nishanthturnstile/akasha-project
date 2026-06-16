@@ -2,7 +2,7 @@
 
 ## Architecture goal
 
-Build a Railway-first MVP that keeps clean service boundaries and remains portable to Docker Compose/on-prem deployments. The frontend must never know object-storage paths directly. It asks the backend-for-frontend for source/date/layer information, and raster work stays behind TiTiler/rio-tiler.
+Build a clean multi-service MVP that keeps clean service boundaries and remains portable across self-hosted Coolify (Azure VM), Docker Compose, and on-prem deployments. The frontend must never know object-storage paths directly. It asks the backend-for-frontend for source/date/layer information, and raster work stays behind TiTiler/rio-tiler.
 
 ## High-level architecture
 
@@ -22,7 +22,7 @@ flowchart LR
     Worker --> DB
 ```
 
-The public `web` service is a single container = built React static assets + a reverse proxy (Caddy) that serves the SPA and proxies `/api`→`api` and `/tiles`→`titiler`. Source stays in `apps/frontend` and `infra/gateway` but is deployed as one Railway public service.
+The public `web` service is a single container = built React static assets + a reverse proxy (Caddy) that serves the SPA and proxies `/api`→`api` and `/tiles`→`titiler`. Source stays in `apps/frontend` and `infra/gateway` but is deployed as one public web service.
 
 ## Component responsibilities
 
@@ -31,7 +31,7 @@ The public `web` service is a single container = built React static assets + a r
 | Frontend | Map UI, layer panel, plot drawing/import/export, index result display. | Yes, through web gateway. |
 | Web gateway | Serves frontend and routes `/api` and `/tiles` requests to internal services. Handles TLS/CORS/rate limits where applicable. | Yes; only the `web` gateway is publicly reachable. |
 | FastAPI BFF | App configuration, catalog queries, plot CRUD, index request orchestration, formula/band mapping, and masked statistics using rasterio/rio-tiler. Browser calls arrive only through same-origin `/api/*` on the gateway. | No. |
-| TiTiler | RGB display tile serving and optional index display overlays. Reads COGs from MinIO via GDAL S3 config. Browser tile calls arrive only through same-origin `/tiles/*` on the gateway. | No. |
+| TiTiler | Display tile serving and optional index display overlays. Reads COGs from MinIO via GDAL S3 config. Browser tile calls arrive only through same-origin `/api/tiles/*` or gateway `/tiles/*` routes. | No. |
 | STAC API / pgSTAC | Catalog collections/items, date/source discovery, asset metadata. | No. |
 | PostgreSQL/PostGIS | Stored plots, pgSTAC catalog, app metadata. | No. |
 | MinIO | S3-compatible COG object storage. | No. |
@@ -41,20 +41,20 @@ The public `web` service is a single container = built React static assets + a r
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | React + TypeScript + Vite | Fast build, strong ecosystem, Railway-friendly Docker build. |
+| Frontend | React + TypeScript + Vite | Fast build, strong ecosystem, container-friendly Docker build. |
 | Map renderer | MapLibre GL JS | Open-source map rendering without Mapbox token lock-in. |
 | Plot drawing | Terra Draw + MapLibre adapter | MapLibre-native polygon drawing/editing. |
 | Server state | TanStack Query or equivalent | Cache source/date/config/index API responses cleanly. |
 | Backend | FastAPI + Python | Thin BFF for orchestration, validation, and app-specific APIs. |
-| Raster tiling/statistics | TiTiler component packages + rio-tiler/rasterio/GDAL | TiTiler serves RGB/display tiles; the BFF computes masked polygon statistics with rasterio/rio-tiler. |
+| Raster tiling/statistics | TiTiler component packages + rio-tiler/rasterio/GDAL | TiTiler serves display tiles; the BFF computes masked polygon statistics with rasterio/rio-tiler. |
 | Catalog | STAC + pgSTAC via stac-fastapi-pgstac | One collection per satellite/source family; one item per scene/date/mosaic. |
 | Database | PostgreSQL + PostGIS | Plot persistence and STAC catalog backend. |
-| Object storage | MinIO | S3-compatible COG storage; portable between Railway and on-prem. |
+| Object storage | MinIO | S3-compatible COG storage; portable across hosting and on-prem. |
 | COG creation | GDAL + rio-cogeo | SAFE/JP2/TIF inputs to validated COGs with overviews. |
-| Deployment | Railway multi-service project | Separate services, private networking, volumes, variables, and health checks. |
+| Deployment | Self-hosted Coolify (Azure VM) multi-service stack | Separate services, private networking, volumes, variables, and health checks. |
 | Local runtime | Docker / Docker Compose | Required for local development and future on-prem portability. |
 | Reverse proxy | Caddy, Nginx, or equivalent | Public gateway for frontend/API/tile routes. |
-| Observability | Railway logs/metrics first; structured app logs | Add Prometheus/Grafana later if needed. |
+| Observability | Coolify/host logs/metrics first; structured app logs | Add Prometheus/Grafana later if needed. |
 
 ## Frontend architecture
 
@@ -104,8 +104,8 @@ Codes: 400 bad request / validation, 422 invalid geometry, 413 (or 400) polygon 
 
 ```text
 Tile route (same public origin):
-  GET /tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png
-  (Wave 2 optional) GET /tiles/{sourceId}/{acquisitionDate}/index/{indexType}/{z}/{x}/{y}.png
+  GET /api/tiles/{sourceId}/{acquisitionDate}/{displayMode}/{z}/{x}/{y}.png
+  legacy RGB route: GET /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png
 The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative same-origin tile URLs.
 ```
 
@@ -113,14 +113,14 @@ The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative sa
 
 ```json
 {
-  "sourceId": "sentinel-2-l2a",
-  "acquisitionDate": "2026-01-15",
-  "tileUrlTemplate": "/tiles/sentinel-2-l2a/2026-01-15/rgb/{z}/{x}/{y}.png",
-  "bounds": [77.4, 12.8, 77.8, 13.2],
+  "sourceId": "resourcesat-2a-liss3-boa",
+  "acquisitionDate": "2026-03-19",
+  "tileUrlTemplate": "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png",
+  "bounds": [77.023647, 12.537266, 78.131561, 13.61645],
   "minzoom": 8,
   "maxzoom": 14,
-  "attribution": "Copernicus Sentinel-2",
-  "usablePixelPercent": 87.4
+  "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+  "usablePixelPercent": 38.96
 }
 ```
 
@@ -131,8 +131,8 @@ The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative sa
 ```json
 {
   "appName": "Akasha",
-  "aoi": { "id": "bangalore", "name": "Bangalore", "center": [77.59, 12.97], "zoom": 11,
-           "bounds": [77.4, 12.8, 77.8, 13.2] },
+  "aoi": { "id": "bangalore-60km", "name": "Bangalore 60 km", "center": [77.5776, 13.0769], "zoom": 9,
+           "bounds": [77.023647, 12.537266, 78.131561, 13.61645] },
   "basemapStyleUrl": "",
   "basemap": {
     "provider": "esri",
@@ -153,15 +153,19 @@ The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative sa
 `GET /api/sources`:
 
 ```json
-[ { "id": "sentinel-2-l2a", "label": "Sentinel-2 L2A", "provider": "Copernicus",
-    "supportedIndices": ["NDVI","NDRE","NDMI","NDWI_GREEN_NIR"] } ]
+[ { "id": "resourcesat-2a-liss3-boa", "label": "ResourceSat-2A LISS-3 BOA",
+    "provider": "ISRO/NRSC Bhoonidhi",
+    "displayModes": ["FCC"],
+    "defaultDisplayMode": "FCC",
+    "supportedIndices": ["NDVI","MSAVI","NDMI","NDWI_GREEN_NIR"],
+    "metricsProvisional": true } ]
 ```
 
 `GET /api/sources/{sourceId}/dates`:
 
 ```json
-[ { "acquisitionDate": "2026-01-15", "datetime": "2026-01-15T05:20:00Z",
-    "usablePixelPercent": 87.4, "cloudMaskedPercent": 12.6,
+[ { "acquisitionDate": "2026-03-19", "datetime": "2026-03-19T00:00:00Z",
+    "usablePixelPercent": 38.96, "cloudMaskedPercent": 60.96,
     "isLatestUsable": true, "tileAvailable": true } ]
 ```
 
@@ -183,21 +187,22 @@ Request shape:
 ```json
 {
   "geometry": { "type": "Polygon", "coordinates": [] },
-  "sourceId": "sentinel-2-l2a",
-  "acquisitionDate": "2026-01-15",
+  "sourceId": "resourcesat-2a-liss3-boa",
+  "acquisitionDate": "2026-03-19",
   "indexType": "NDVI"
 }
 ```
 
-`indexType` is one of `NDVI`, `NDRE`, `NDMI`, `NDWI_GREEN_NIR`.
+`indexType` must be supported by the selected source. ResourceSat LISS-3 supports
+`NDVI`, `MSAVI`, `NDMI`, and `NDWI_GREEN_NIR`; it rejects NDRE/RECI.
 
 Response shape:
 
 ```json
 {
   "indexType": "NDVI",
-  "sourceId": "sentinel-2-l2a",
-  "acquisitionDate": "2026-01-15",
+  "sourceId": "resourcesat-2a-liss3-boa",
+  "acquisitionDate": "2026-03-19",
   "statistics": {
     "min": 0.12,
     "max": 0.81,
@@ -208,9 +213,10 @@ Response shape:
     "coveragePercent": 100.0
   },
   "metadata": {
-    "formula": "(B08 - B04) / (B08 + B04)",
-    "cloudMask": "SCL classes excluded",
-    "reflectanceCorrection": "Sentinel-2 L2A scale/offset applied"
+    "formula": "(NIR - RED) / (NIR + RED)",
+    "maskMethod": "Akasha threshold mask v1",
+    "reflectanceCorrection": "ResourceSat LISS-3 scale/offset applied",
+    "metricsProvisional": true
   }
 }
 ```
@@ -240,7 +246,7 @@ No vegetation index math runs in the default tile path.
 
 ## Data flow: on-demand index statistics
 
-Cloud-masked index statistics are computed in the **BFF (FastAPI) using rasterio/rio-tiler**, not by plain TiTiler `/cog/statistics`. The BFF reads the analytic COG window and the SCL COG window for the request polygon, applies per-band scale/offset, applies the SCL mask, then computes min/max/mean/stddev and the pixel-percentage fields. **TiTiler serves RGB display tiles (and optional index *display* overlays) only — it is not used for masked statistics**, because vanilla TiTiler `/cog/statistics` takes a single `url` and cannot apply a categorical mask from a second COG.
+Mask-aware index statistics are computed in the **BFF (FastAPI) using rasterio/rio-tiler**, not by plain TiTiler `/cog/statistics`. The BFF reads the analytic COG window and the source mask COG window for the request polygon, applies source-specific scale/offset and mask rules, then computes min/max/mean/stddev and the pixel-percentage fields. **TiTiler serves display tiles only — it is not used for masked statistics**, because vanilla TiTiler `/cog/statistics` takes a single `url` and cannot apply a categorical mask from a second COG.
 
 ```mermaid
 sequenceDiagram
@@ -250,9 +256,9 @@ sequenceDiagram
     participant MinIO
     Browser->>BFF: POST /api/indices/statistics
     BFF->>STAC: resolve source/date assets and band metadata
-    STAC-->>BFF: analytic COG + SCL COG metadata
+    STAC-->>BFF: analytic COG + source mask COG metadata
     BFF->>BFF: validate polygon, map index to band positions, apply correction/mask rules
-    BFF->>MinIO: read analytic COG and SCL COG windows using rasterio/rio-tiler
+    BFF->>MinIO: read analytic COG and mask COG windows using rasterio/rio-tiler
     MinIO-->>BFF: COG byte ranges
     BFF->>BFF: compute masked raster stats and pixel percentages
     BFF-->>Browser: normalized statistics response
@@ -272,7 +278,7 @@ STAC/pgSTAC owns satellite collections, items, asset URLs, acquisition timestamp
 
 ## Runtime design decisions
 
-- Use one STAC collection per satellite/product family, for example `sentinel-2-l2a`.
+- Use one STAC collection per satellite/product family, for example `resourcesat-2a-liss3-boa`.
 - Use one STAC item per acquisition date/scene or date mosaic.
 - Use MosaicJSON or pgSTAC-backed mosaics when a date/source covers multiple scenes.
 - Use positional TiTiler band expressions built from STAC metadata; do not assume hard-coded band positions outside the BFF/index module.
@@ -285,7 +291,7 @@ STAC/pgSTAC owns satellite collections, items, asset URLs, acquisition timestamp
 - Do not use floating `latest` container tags for raster services.
 - Keep frontend dependencies locked.
 - Prefer explicit Dockerfiles for each deployable service.
-- Add `/health` endpoints before configuring Railway health checks.
+- Add `/health` endpoints before configuring deployment health checks.
 
 ## Native capability roadmap
 
@@ -296,7 +302,7 @@ by Akasha-owned data sources remain disabled or placeholder-only until native se
 |---|---|---|
 | Field management | Native `akasha.plots` + field AOI metadata | Add grouping, metadata, and import/export workflows without external mirrors. |
 | Scene timeline | pgSTAC/STAC query and seed fallback | Filter by field AOI, scene coverage, and cloud/valid-pixel metrics. |
-| True-colour and index display tiles | COG/TiTiler-backed same-origin `/api/tiles/*` routes | Keep true-colour `[1,8,9]` default and add optional native index overlays. |
+| Source-native and index display tiles | COG/TiTiler-backed same-origin `/api/tiles/*` routes | Keep ResourceSat FCC (`NIR,RED,GREEN`, `bidx=3,2,1`) as the production default and add optional native index overlays. |
 | Field analytics trend | BFF rasterio/rio-tiler statistics over STAC/COG assets | Broaden trend coverage as catalog density increases. |
 | Imagery export | BFF native CSV/GeoJSON selected-field exports | Add server-side GeoTIFF/vector exports without signed storage URLs in the browser. |
 | Weather forecast/history | Placeholder / unavailable in risk scoring | Add an Akasha-selected weather adapter normalized behind BFF routes. |

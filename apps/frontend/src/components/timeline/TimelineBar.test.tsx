@@ -92,6 +92,18 @@ describe('TimelineBar — date navigation behavior', () => {
         expect(next.textContent).toContain('May 17, 2026');
     });
 
+    it('projects the next image using an 8-day cadence for context sources', () => {
+        renderBar({ sourceKind: 'context' });
+        const next = screen.getByTestId('timeline-next-image');
+        // 2026-05-11 -> +8d -> May 19, 2026.
+        expect(next.textContent).toContain('May 19, 2026');
+    });
+
+    it('does not project a next image for archive sources', () => {
+        renderBar({ sourceKind: 'archive' });
+        expect(screen.queryByTestId('timeline-next-image')).toBeNull();
+    });
+
     it('opens the calendar popover and emits the chosen range', () => {
         const onPeriodChange = vi.fn();
         renderBar({ onPeriodChange });

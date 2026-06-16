@@ -8,7 +8,7 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 
 ### Do
 
-- Do show true-colour satellite imagery by default; indices are requested after plot selection/drawing.
+- Do show the source-native satellite display by default (ResourceSat FCC in production); indices are requested after plot selection/drawing.
 - Do keep source/date selection visible and show AOI cloud/usable-pixel percentages.
 - Do report valid-pixel and cloud-masked percentages with every index result.
 - Do provide clear empty/error messages when no usable optical image exists.
@@ -46,7 +46,7 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 - Do enforce max polygon area, max vertices, request timeouts, rate limits, and useful error responses before raster work.
 - Do keep index formula mapping centralized in the BFF using `NDVI`, `NDRE`, `NDMI`, and `NDWI_GREEN_NIR`.
 - Do log index request duration, source/date/index type, and failure reason.
-- Do compute cloud-masked index statistics in the BFF using rasterio/rio-tiler; TiTiler serves RGB display tiles only.
+- Do compute cloud-masked index statistics in the BFF using rasterio/rio-tiler; TiTiler serves display tiles only.
 
 ### Don't
 
@@ -60,36 +60,35 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 
 ### Do
 
-- Do keep analytic reflectance COG and SCL COG as separate assets.
-- Do freeze and document the Sentinel-2 analytic band order; true-colour RGB uses bands `[1, 8, 9]`, not `[1, 2, 3]`.
-- Do build TiTiler expressions from STAC band metadata.
-- Do apply Sentinel-2 per-band scale/offset before index math: raw `BOA_ADD_OFFSET=-1000`, STAC `raster:bands` offset `-0.1`, not `-1000`.
-- Do exclude SCL classes `0, 1, 2, 3, 7, 8, 9, 10, 11` plus nodata/out-of-coverage pixels from default statistics.
-- Do keep SCL class `6` water included by default.
-- Do use nearest-neighbour resampling for SCL base data and SCL COG internal overviews; continuous reflectance overviews use bilinear/cubic.
+- Do keep analytic reflectance COGs and source-specific mask COGs as separate assets.
+- Do freeze and document each source's analytic band order. ResourceSat LISS-3 BOA is `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`.
+- Do build TiTiler band selections from STAC band metadata and source role mapping. ResourceSat FCC uses role order `NIR, RED, GREEN` -> positions `[3, 2, 1]`.
+- Do apply source-specific scale/offset before index math. ResourceSat LISS-3 BOA uses scale `0.0001` and offset `0.0`; legacy Sentinel-2 L2A uses offset `-0.1`.
+- Do exclude ResourceSat provisional mask classes `0, 2, 3` plus nodata/out-of-coverage pixels from default statistics, while keeping class `4` water included by default.
+- Do use nearest-neighbour resampling for categorical masks and overviews; continuous reflectance overviews use bilinear/cubic.
 - Do validate COGs and STAC items before marking scenes available.
+- Do keep unsupported indices source-specific: ResourceSat LISS-3 does not expose NDRE/RECI because it has no red-edge band.
 
 ### Don't
 
 - Don't assume band names can be used directly in TiTiler expressions; expressions are positional.
-- Don't bilinear-resample categorical SCL data or nearest-resample continuous reflectance without a specific reason.
+- Don't bilinear-resample categorical mask data or nearest-resample continuous reflectance without a specific reason.
 - Don't blindly set `nodata=0`; valid reflectance can be zero.
-- Don't ignore Sentinel-2 processing baseline offset metadata; offsets may be band-specific and must be read per band.
+- Don't reuse Sentinel-2 RGB positions, SCL rules, or offset assumptions for ResourceSat.
 - Don't treat SAR sources as NDVI/NDRE/NDMI/NDWI_GREEN_NIR sources.
 
-## Railway and deployment
+## Deployment
 
 ### Do
 
-- Do deploy as separate Railway services with persistent volumes attached to MinIO and PostGIS.
+- Do deploy as separate services with persistent volumes attached to MinIO and PostGIS.
 - Do expose only the `web` gateway publicly; `/api/*` and `/tiles/*` share the same public origin and proxy to internal services.
-- Do use Railway private networking/reference variables for internal service calls.
+- Do use the private Docker/Coolify network for internal service calls.
 - Do configure health checks for HTTP services and keep Docker Compose for local development/future on-prem portability.
 - Do pin container/dependency versions, especially GDAL/rasterio/rio-tiler/TiTiler.
 
 ### Don't
 
-- Don't rely on one production Docker Compose appliance as the Railway runtime model.
 - Don't expose FastAPI, TiTiler, STAC API, PostGIS, MinIO console/API, or MinIO publicly.
 - Don't use default MinIO/Postgres credentials.
 - Don't store persistent raster/database data in ephemeral containers.
@@ -116,8 +115,7 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 
 ### Do
 
-- Do start with open Sentinel-2 data.
-- Do confirm Bhoonidhi/API/licensing details before building ISRO automation.
+- Do treat Bhoonidhi/API/licensing and redistribution constraints as source-specific release gates.
 - Do add new satellite sources as STAC collections.
 - Do keep source-specific quirks behind ingestion/catalog metadata.
 

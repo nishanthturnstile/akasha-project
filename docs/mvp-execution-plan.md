@@ -2,7 +2,7 @@
 
 ## Execution strategy
 
-Build the MVP from the inside out: data/raster proof first, then API contracts, then frontend UX, then Railway hardening. Do not spend time polishing the map UI until one COG tile and one cloud-masked index statistic are proven end to end.
+Build the MVP from the inside out: data/raster proof first, then API contracts, then frontend UX, then deployment hardening. Do not spend time polishing the map UI until one COG tile and one cloud-masked index statistic are proven end to end.
 
 ## Phase 0 — Repository and service skeleton
 
@@ -11,11 +11,11 @@ Deliverables:
 - Monorepo structure with `apps/frontend`, `apps/api`, `services/titiler`, `services/stac-api`, `services/ingestion`, and `infra` folders.
 - Dockerfile per deployable service.
 - Local Docker Compose for development.
-- Railway-ready service configuration examples.
+- Deployment-ready service configuration examples.
 - `.env.example` files with placeholders only.
 - Shared formatting/linting conventions.
 
-Prompt inputs — Include: emergent-context; architecture: architecture goal/component responsibilities/tech choices/repo layout; railway: local dev + env names; execution Phase 0
+Prompt inputs — Include: emergent-context; architecture: architecture goal/component responsibilities/tech choices/repo layout; deployment: local dev + env names; execution Phase 0
 Slice mapping: Phase 0 → Slice 0
 Prompt inputs — Exclude: formulas, STAC depth, frontend UX, Wave 2
 Validation: services start locally; `/health` works for frontend/gateway, API, TiTiler, and STAC API where applicable.
@@ -36,7 +36,7 @@ Deliverables:
 - Seed script for Sentinel-2 collection metadata.
 - Internal service variables for MinIO/PostGIS/STAC.
 
-Prompt inputs — Include: architecture: data model boundaries; data-ingestion: STAC metadata + seed layout; railway: PostGIS/MinIO env; execution Phase 1
+Prompt inputs — Include: architecture: data model boundaries; data-ingestion: STAC metadata + seed layout; deployment: PostGIS/MinIO env; execution Phase 1
 Slice mapping: Phase 1 → Slice 1
 Prompt inputs — Exclude: frontend, plot drawing, Wave 2 ingestion
 Validation: PostGIS is verified; STAC API can return the Sentinel-2 collection; MinIO bucket is reachable from API/ingestion containers.
@@ -55,20 +55,20 @@ Deliverables:
 - Convert or place first analytic COG and SCL COG.
 - Register one STAC item with correct asset metadata.
 - Configure TiTiler to read MinIO via S3-compatible GDAL settings.
-- Render one true-colour tile through TiTiler.
+- Render one source-appropriate display tile through TiTiler.
 - Compute one cloud-masked NDVI statistic for a known polygon.
 > Cloud-masked index statistics are computed in the **BFF (FastAPI) using rasterio/rio-tiler**, not by
-> plain TiTiler `/cog/statistics`. The BFF reads the analytic COG window and the SCL COG window for the
-> request polygon, applies per-band scale/offset, applies the SCL mask, then computes
-> min/max/mean/stddev and the pixel-percentage fields. **TiTiler serves RGB display tiles (and
+> plain TiTiler `/cog/statistics`. The BFF reads the analytic COG window and the source-specific mask
+> COG window for the request polygon, applies per-band scale/offset, applies the mask, then computes
+> min/max/mean/stddev and the pixel-percentage fields. **TiTiler serves source display tiles (and
 > optional index *display* overlays) only — it is not used for masked statistics**, because vanilla
 > TiTiler `/cog/statistics` takes a single `url` and cannot apply a categorical mask from a second COG.
 
-Prompt inputs — Include: data-ingestion: COG layout/band order/RGB bands/formulas/reflectance correction/SCL masking/stats engine; architecture: raster flows/runtime decisions; execution Phase 2
+Prompt inputs — Include: data-ingestion: COG layout/source band order/display bands/formulas/reflectance correction/mask handling/stats engine; architecture: raster flows/runtime decisions; execution Phase 2
 Slice mapping: Phase 2 → Slice 2
 Prompt inputs — Exclude: full frontend UX, auth, custom domains, future sources
-Validation: one RGB tile returns a PNG; one `/api/indices/statistics` returns valid JSON with NDVI stats; result is compared against QGIS/notebook reference.
-Do not proceed until: Tile renders with sensible RGB rescale, statistics are offset-corrected and SCL-masked, and result is compared against QGIS/notebook reference.
+Validation: one source display tile returns a PNG; one `/api/indices/statistics` returns valid JSON with NDVI stats; result is compared against QGIS/notebook reference.
+Do not proceed until: Tile renders with sensible source display rescale, statistics are offset-corrected and source-mask-aware, and result is compared against QGIS/notebook reference.
 
 Exit criteria:
 
@@ -102,7 +102,7 @@ DELIVERED & validated (no Docker required):
   a **full synthetic dual-COG read→reproject→mask→stat pipeline** in
   `scripts/validate_slice2.py` and `apps/api/tests/test_slice2.py`.
 
-BLOCKED until operator COGs are uploaded to MinIO on Railway / local Docker
+BLOCKED until operator COGs are uploaded to MinIO on the deployment / local Docker
 (the live Emergent container has neither Docker, MinIO, nor the 2.24 GiB COGs):
 
 - Render a real RGB PNG tile through TiTiler/gateway.
@@ -128,7 +128,7 @@ Deliverables:
 
 Prompt inputs — Include: architecture: BFF API contracts; product: acceptance; backend engineering guardrails
 Slice mapping: Phase 3 → Slice 3
-Prompt inputs — Exclude: full Railway deploy, Wave 2
+Prompt inputs — Exclude: full deploy, Wave 2
 Validation: API returns typed, frontend-ready payloads; invalid polygons and oversized polygons fail with clear errors; API never exposes raw MinIO credentials or direct internal service details.
 Do not proceed until: API returns typed, frontend-ready payloads; invalid polygons and oversized polygons fail with clear errors; API never exposes raw MinIO credentials or direct internal service details.
 
@@ -182,28 +182,28 @@ Exit criteria:
 - Index request uses selected source/date.
 - User sees clear cloud/no-data messaging.
 
-## Phase 6 — Railway deployment hardening
+## Phase 6 — Deployment hardening
 
 Deliverables:
 
-- Railway services configured separately.
+- Services configured separately.
 - Persistent volumes attached to PostGIS and MinIO.
 - Only web/gateway public.
 - Health checks configured.
-- Internal service URLs use Railway private networking.
+- Internal service URLs use the private Docker/Coolify network.
 - Rate limits and request-size limits configured.
 - Seed data loaded in production environment.
 - A repo `scripts/smoke-test` (cross-platform Python or ps1) must check, in order: `/health` of web+api+titiler+stac-api → `/api/config` → `/api/sources` → `/api/sources/{id}/dates` → `/api/layers/default` → one RGB tile returns a PNG → one `/api/indices/statistics` returns valid JSON with NDVI stats. Plus unit tests: index formula/band-position mapping, geometry validation, error shape; and a frontend component smoke test.
 
-Prompt inputs — Include: railway full; architecture topology; execution Phase 6
+Prompt inputs — Include: deployment full; architecture topology; execution Phase 6
 Slice mapping: Phase 6 → Slice 6
 Prompt inputs — Exclude: product roadmap
-Validation: Railway deployment is green; smoke test passes from public web URL; internal services are not directly reachable publicly; smoke-test checks pass.
-Do not proceed until: Railway deployment is green, smoke test passes from public web URL, and internal services are not directly reachable publicly.
+Validation: deployment is green; smoke test passes from public web URL; internal services are not directly reachable publicly; smoke-test checks pass.
+Do not proceed until: deployment is green, smoke test passes from public web URL, and internal services are not directly reachable publicly.
 
 Exit criteria:
 
-- Railway deployment is green.
+- Deployment is green.
 - Smoke test passes from public web URL.
 - Internal services are not directly reachable publicly.
 

@@ -17,6 +17,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: akasha-techcatalyst
   COMPOSE_TEMPLATE: infra/selfhosted/coolify-compose.yml
   # Opt JavaScript actions into Node.js 24 ahead of the June 2026 runner default.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -36,6 +38,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Log in to GHCR for image verification
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Validate production deployment configuration
         run: |
           test -n "$COOLIFY_API_URL" || { echo "COOLIFY_API_URL secret is required, including /api/v1."; exit 1; }
@@ -49,6 +58,15 @@ jobs:
             echo "Mutable image tags are not allowed for production."
             exit 1
           fi
+
+      - name: Verify immutable image tags exist
+        run: |
+          set -euo pipefail
+          for image in akasha-web akasha-api akasha-ingestion-worker akasha-ingestion-sar; do
+            ref="${REGISTRY}/${IMAGE_NAMESPACE}/${image}:${IMAGE_TAG}"
+            echo "Checking ${ref}"
+            docker manifest inspect "${ref}" >/dev/null
+          done
 
       - name: Render Compose with approved image tag
         run: |

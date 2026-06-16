@@ -106,11 +106,12 @@ export function TimelineBar({
         return (latestUsable ?? selectable[selectable.length - 1]).acquisitionDate;
     }, [selectable]);
 
-    /** Project the next expected acquisition from the newest scene + sensor revisit cadence. */
+    /** Project the next expected acquisition from the newest scene + source revisit cadence. */
     const nextImage = useMemo<{ iso: string; label: string } | null>(() => {
         if (ordered.length === 0) return null;
+        if (sourceKind === 'archive') return null;
         const newest = ordered[ordered.length - 1].acquisitionDate;
-        const cadenceDays = sourceKind === 'sar' ? 6 : 5;
+        const cadenceDays = sourceKind === 'sar' ? 6 : sourceKind === 'context' ? 8 : 5;
         const base = new Date(`${newest}T00:00:00Z`);
         if (Number.isNaN(base.getTime())) return null;
         base.setUTCDate(base.getUTCDate() + cadenceDays);
@@ -271,7 +272,11 @@ export function TimelineBar({
                                 </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                                Projected next acquisition · { sourceKind === 'sar' ? 'Sentinel-1 revisit ≈ 6 days' : 'Sentinel-2 revisit ≈ 5 days' }
+                                Projected next acquisition · { sourceKind === 'sar'
+                                    ? 'SAR revisit cadence varies by mission'
+                                    : sourceKind === 'context'
+                                      ? 'Context product cadence varies by source'
+                                      : 'Optical revisit cadence varies by source' }
                             </TooltipContent>
                         </Tooltip>
                     ) }

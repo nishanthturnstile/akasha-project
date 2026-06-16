@@ -101,7 +101,7 @@ def _verify_cog_metadata(scene: SceneIdentity) -> tuple[bool, str]:
     try:
         import rasterio  # lazy
 
-        if scene.source_id == config.SENTINEL1_COLLECTION_ID:
+        if scene.source_id in config.SAR_COLLECTION_IDS:
             backscatter_path = f"/vsis3/{config.BUCKET}/{scene.backscatter_key}"
             with rasterio.Env(_rasterio_aws_session(), **_gdal_s3_options()):
                 with rasterio.open(backscatter_path) as backscatter:
@@ -114,7 +114,56 @@ def _verify_cog_metadata(scene: SceneIdentity) -> tuple[bool, str]:
                         return False, "; ".join(problems)
                     return True, f"rasterio metadata OK: backscatter={backscatter.count} band(s)"
 
-        if scene.source_id == config.RESOURCESAT_LISS3_COLLECTION_ID:
+        if scene.source_id in config.CONTEXT_COLLECTION_IDS:
+            context_path = f"/vsis3/{config.BUCKET}/{scene.context_key}"
+            with rasterio.Env(_rasterio_aws_session(), **_gdal_s3_options()):
+                with rasterio.open(context_path) as context:
+                    problems: list[str] = []
+                    if context.count < 1:
+                        problems.append(f"{scene.context_asset_key} band count < 1")
+                    if not context.overviews(1):
+                        problems.append(f"{scene.context_asset_key} COG has no band-1 overviews")
+                    if problems:
+                        return False, "; ".join(problems)
+                    return (
+                        True,
+                        f"rasterio metadata OK: {scene.context_asset_key}="
+                        f"{context.count} band(s)",
+                    )
+
+        if scene.source_id in config.ARCHIVE_COLLECTION_IDS:
+            analytic_path = f"/vsis3/{config.BUCKET}/{scene.analytic_key}"
+            mask_path = f"/vsis3/{config.BUCKET}/{scene.mask_key}"
+            with rasterio.Env(_rasterio_aws_session(), **_gdal_s3_options()):
+                with rasterio.open(analytic_path) as analytic, rasterio.open(mask_path) as mask:
+                    problems: list[str] = []
+                    if analytic.count < 1:
+                        problems.append("archive analytic band count < 1")
+                    if mask.count != 1:
+                        problems.append(f"archive mask band count {mask.count} != 1")
+                    if analytic.crs != mask.crs:
+                        problems.append(f"CRS mismatch analytic={analytic.crs} mask={mask.crs}")
+                    if analytic.transform != mask.transform:
+                        problems.append("transform mismatch")
+                    if (analytic.width, analytic.height) != (mask.width, mask.height):
+                        problems.append(
+                            "shape mismatch "
+                            f"analytic={analytic.width}x{analytic.height} "
+                            f"mask={mask.width}x{mask.height}"
+                        )
+                    if not analytic.overviews(1):
+                        problems.append("archive analytic COG has no band-1 overviews")
+                    if not mask.overviews(1):
+                        problems.append("archive mask COG has no band-1 overviews")
+                    if problems:
+                        return False, "; ".join(problems)
+                    return (
+                        True,
+                        "rasterio metadata OK: archive analytic/mask aligned, "
+                        "overviews present",
+                    )
+
+        if scene.source_id in config.RESOURCESAT_BOA_COLLECTION_IDS:
             analytic_path = f"/vsis3/{config.BUCKET}/{scene.analytic_key}"
             mask_path = f"/vsis3/{config.BUCKET}/{scene.mask_key}"
             with rasterio.Env(_rasterio_aws_session(), **_gdal_s3_options()):
@@ -198,9 +247,13 @@ def _manifest_asset_path(manifest_path: Path, manifest: dict[str, Any], asset: s
 
 
 def _scene_assets(scene: SceneIdentity) -> list[tuple[str, str]]:
-    if scene.source_id == config.SENTINEL1_COLLECTION_ID:
+    if scene.source_id in config.SAR_COLLECTION_IDS:
         return [("backscatter", scene.backscatter_key)]
-    if scene.source_id == config.RESOURCESAT_LISS3_COLLECTION_ID:
+    if scene.source_id in config.CONTEXT_COLLECTION_IDS:
+        return [(scene.context_asset_key, scene.context_key)]
+    if scene.source_id in config.ARCHIVE_COLLECTION_IDS:
+        return [("analytic", scene.analytic_key), ("mask", scene.mask_key)]
+    if scene.source_id in config.RESOURCESAT_BOA_COLLECTION_IDS:
         return [("analytic", scene.analytic_key), ("mask", scene.mask_key)]
     return [("analytic", scene.analytic_key), ("scl", scene.scl_key)]
 

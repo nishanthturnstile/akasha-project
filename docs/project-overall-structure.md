@@ -4,7 +4,7 @@ This document summarizes the repository layout, architecture, local development 
 
 ## High-level summary
 
-- Purpose: Browser-based geospatial MVP for viewing Sentinel imagery and computing cloud-masked vegetation-index statistics (NDVI, NDRE, NDMI, NDWI) over user-drawn plots.
+- Purpose: Browser-based geospatial MVP for viewing ISRO ResourceSat FCC composites and computing cloud-masked vegetation-index statistics (NDVI, NDMI, NDWI, MSAVI) over user-drawn plots.
 - Top-level approach: Multi-service Docker Compose stack for local development. The canonical code lives under `apps/` (the BFF and frontend). Supporting services live under `services/` and `infra/` contains Docker and gateway configuration.
 
 ## Architecture overview
@@ -13,7 +13,7 @@ Services and responsibilities:
 
 - `apps/api` — FastAPI BFF (backend-for-frontend). Implements plot CRUD, raster index/statistics endpoints, and orchestration of raster reading, STAC catalog resolving, and statistics computation.
 - `apps/frontend` — React + Vite SPA. Map UI, plot drawing, requests to the BFF, and UI for index/time-series visualization.
-- `services/titiler` — Tile service for RGB display tiles (TiTiler). The BFF computes cloud-masked index statistics; TiTiler only serves tiles.
+- `services/titiler` — Tile service for source display tiles (TiTiler). The BFF computes cloud-masked index statistics; TiTiler only serves tiles.
 - `services/minio`, `services/stac-api`, `services/postgis` — Storage and catalog services used by stack (MinIO S3-compatible storage, pgSTAC/PostGIS catalog).
 - `services/ingestion`, `services/ingestion-sar` — Ingestion workers and tooling for preparing and uploading COGs and SAR processing.
 
@@ -21,12 +21,12 @@ Network and access: Browser → `web` gateway (Caddy) → proxied `/api/*` to `a
 
 ## Key design principles & guardrails
 
-- Frozen analytic band order: `[B04, B08, B05, B06, B07, B11, B12, B03, B02]`. Band name→position mapping is centralized in `apps/api/app/raster/indices.py`.
-- True-colour RGB uses bands `[1, 8, 9]` (B04 red, B03 green, B02 blue).
-- Reflectance correction: apply `corrected = dn * 0.0001 + (-0.1)` using STAC band offsets.
-- Cloud mask rules: exclude SCL classes `{0,1,2,3,7,8,9,10,11}` and nodata; keep class 6 (water) by default.
-- Resampling: nearest for categorical SCL, bilinear/cubic for continuous reflectance.
-- Index formulas: normalized difference `(a-b)/(a+b)` (NDVI: B08-B04, NDRE: B08-B05, NDMI: B08-B11, NDWI (green): B03-B08).
+- ResourceSat LISS-3 production analytic band order: `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`. Band role→position mapping is centralized in `apps/api/app/raster/indices.py`.
+- ResourceSat display uses FCC (`NIR, RED, GREEN`) because LISS-3 has no blue band. Legacy Sentinel true-colour support remains opt-in for regression/migration checks only.
+- Reflectance correction is source-specific. ResourceSat uses `corrected = dn * 0.0001 + 0.0`; legacy Sentinel-2 uses `-0.1`.
+- Mask rules are source-specific. ResourceSat uses the provisional Akasha threshold mask; legacy Sentinel-2 uses SCL only when explicitly enabled.
+- Resampling: nearest for categorical masks, bilinear/cubic for continuous reflectance.
+- Index formulas: normalized difference `(a-b)/(a+b)` where supported (ResourceSat NDVI, NDMI, NDWI) plus MSAVI. Red-edge indices remain disabled unless the source provides a real red-edge band.
 
 ## Repository layout (important paths)
 

@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { Cloud } from 'lucide-react';
+import { CircleSlash, Cloud } from 'lucide-react';
 import type { SceneDate, SourceKind } from '@/types/api';
 import { CloudUsabilityChip } from '@/components/layers/CloudUsabilityChip';
 import { cn } from '@/lib/utils';
@@ -37,18 +37,32 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
     ref,
 ) {
     const disabled = !date.tileAvailable;
+    const unavailableReason = disabled
+        ? date.unavailableReason ?? 'Tiles unavailable for this date.'
+        : null;
     const { month, day } = shortLabel(date.acquisitionDate);
-    const latestLabel = sourceKind === 'sar' ? 'Latest radar pass' : 'Latest usable scene';
+    const latestLabel =
+        sourceKind === 'sar'
+            ? 'Latest radar pass'
+            : sourceKind === 'context'
+              ? 'Latest context layer'
+              : sourceKind === 'archive'
+                ? 'Latest archive scene'
+                : 'Latest usable scene';
     const badge = (sensorBadge ?? date.sensor ?? '').trim() || null;
     const showCloudIcon =
         sourceKind !== 'sar' &&
+        sourceKind !== 'context' &&
+        sourceKind !== 'archive' &&
         date.cloudMaskedPercent != null &&
         !Number.isNaN(date.cloudMaskedPercent) &&
-        date.cloudMaskedPercent > CLOUDY_THRESHOLD_PERCENT;
+        date.cloudMaskedPercent > CLOUDY_THRESHOLD_PERCENT &&
+        !unavailableReason;
     const ariaParts = [date.acquisitionDate];
     if (badge) ariaParts.push(badge);
     if (date.isLatestUsable) ariaParts.push(latestLabel);
     if (showCloudIcon) ariaParts.push('cloudy');
+    if (unavailableReason) ariaParts.push(unavailableReason);
 
     return (
         <button
@@ -58,6 +72,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
             aria-selected={ selected }
             aria-current={ selected }
             aria-label={ ariaParts.join(' · ') }
+            title={ unavailableReason ?? undefined }
             disabled={ disabled }
             data-testid={ `date-chip-${date.acquisitionDate}` }
             data-selected={ selected }
@@ -92,6 +107,14 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                     data-testid={ `date-chip-cloud-${date.acquisitionDate}` }
                 />
             ) }
+            { unavailableReason && (
+                <CircleSlash
+                    className="absolute left-1 top-1 size-2.5 text-warning"
+                    strokeWidth={ 1.75 }
+                    aria-hidden="true"
+                    data-testid={ `date-chip-unavailable-${date.acquisitionDate}` }
+                />
+            ) }
             <span className="leading-tight">
                 <span className="block text-[9px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                     { month }
@@ -100,7 +123,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                     { day }
                 </span>
             </span>
-            { badge && sourceKind !== 'sar' ? (
+            { badge && sourceKind !== 'sar' && sourceKind !== 'context' && sourceKind !== 'archive' ? (
                 <span
                     className="font-mono tnum mt-0.5 inline-flex h-3 items-center rounded-pill border border-border/60 bg-card/40 px-1 text-[8px] leading-none tracking-[0.04em] text-muted-foreground"
                     data-testid={ `date-chip-sensor-${date.acquisitionDate}` }

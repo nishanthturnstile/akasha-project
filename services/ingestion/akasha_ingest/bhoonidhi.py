@@ -22,13 +22,26 @@ from . import config
 
 RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
 RESOURCESAT_LISS3_BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
+RESOURCESAT_AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
+RESOURCESAT_AWIFS_BHOONIDHI_COLLECTION = "ResourceSat-2A_AWIFS_BOA"
+EOS04_SAR_SOURCE_ID = "eos-04-sar-mrs-l2b"
+EOS04_SAR_BHOONIDHI_COLLECTION = "EOS-04_SAR-MRS_L2B"
+NISAR_GCOV_SOURCE_ID = "nisar-ssar-beta-gcov"
+NISAR_GCOV_BHOONIDHI_COLLECTION = "NISAR_SSAR-Beta_GCOV"
+EOS06_CONTEXT_SOURCE_ID = "eos-06-ocm-lac-ndvi-8day-360m"
+EOS06_CONTEXT_BHOONIDHI_COLLECTION = "EOS-06_OCM-LAC_NDVI_8day_360m"
 
 SOURCE_COLLECTIONS: dict[str, str] = {
     RESOURCESAT_LISS3_SOURCE_ID: RESOURCESAT_LISS3_BHOONIDHI_COLLECTION,
+    RESOURCESAT_AWIFS_SOURCE_ID: RESOURCESAT_AWIFS_BHOONIDHI_COLLECTION,
+    EOS04_SAR_SOURCE_ID: EOS04_SAR_BHOONIDHI_COLLECTION,
+    NISAR_GCOV_SOURCE_ID: NISAR_GCOV_BHOONIDHI_COLLECTION,
+    EOS06_CONTEXT_SOURCE_ID: EOS06_CONTEXT_BHOONIDHI_COLLECTION,
 }
 
 RETRYABLE_SEARCH_STATUS = {429, 500, 502, 503, 504}
 RETRYABLE_DOWNLOAD_STATUS = {412, 500, 502, 503, 504}
+AUTH_RETRY_STATUS = {401}
 
 
 class BhoonidhiError(RuntimeError):
@@ -70,23 +83,93 @@ def lookback_datetime_range(days: int, now: datetime | None = None) -> str:
     return f"{start:%Y-%m-%dT00:00:00Z}/{end:%Y-%m-%dT23:59:59Z}"
 
 
-def load_aoi(path: str | Path | None = None) -> dict[str, Any]:
-    aoi_path = Path(path or config.AOI_CONFIG_PATH)
-    doc = json.loads(aoi_path.read_text(encoding="utf-8"))
-    if doc.get("type") == "Feature":
-        props = doc.get("properties") if isinstance(doc.get("properties"), dict) else {}
-        return {
-            "id": props.get("id") or aoi_path.stem,
-            "name": props.get("name") or props.get("id") or aoi_path.stem,
-            "bbox": doc.get("bbox"),
-            "geometry": doc.get("geometry"),
-        }
+def _feature_aoi(feature: dict[str, Any], fallback_id: str) -> dict[str, Any]:
+    props = dict(feature.get("properties")) if isinstance(feature.get("properties"), dict) else {}
+    for key in ("compositeGridCrs", "composite_grid_crs", "akasha:composite_grid_crs"):
+        if key in feature and key not in props:
+            props[key] = feature[key]
     return {
-        "id": aoi_path.stem,
-        "name": aoi_path.stem,
+        "id": props.get("id") or fallback_id,
+        "name": props.get("name") or props.get("id") or fallback_id,
+        "bbox": feature.get("bbox"),
+        "geometry": feature.get("geometry"),
+        "properties": props,
+    }
+
+
+def _load_aoi_file(path: Path, *, aoi_id: str | None = None) -> dict[str, Any]:
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    if doc.get("type") == "Feature":
+        aoi = _feature_aoi(doc, path.stem)
+        if aoi_id and aoi_id != aoi.get("id"):
+            raise ValueError(f"AOI '{aoi_id}' not found; loaded '{aoi.get('id')}'")
+        return aoi
+    if doc.get("type") == "FeatureCollection":
+        features = [item for item in doc.get("features", []) if isinstance(item, dict)]
+        aois = [
+            _feature_aoi(feature, f"{path.stem}-{index + 1}")
+            for index, feature in enumerate(features)
+        ]
+        if aoi_id:
+            match = next((item for item in aois if item.get("id") == aoi_id), None)
+            if match:
+                return match
+            available = ", ".join(str(item.get("id")) for item in aois)
+            raise ValueError(f"AOI '{aoi_id}' not found in {path}; available: {available}")
+        if len(aois) == 1:
+            return aois[0]
+        raise ValueError(f"{path} contains multiple AOIs; pass --aoi to select one.")
+    props = dict(doc.get("properties", {})) if isinstance(doc.get("properties"), dict) else {}
+    for key in ("compositeGridCrs", "composite_grid_crs", "akasha:composite_grid_crs"):
+        if key in doc and key not in props:
+            props[key] = doc[key]
+    aoi = {
+        "id": doc.get("id") or path.stem,
+        "name": doc.get("name") or doc.get("id") or path.stem,
         "bbox": doc.get("bbox"),
         "geometry": doc.get("geometry") if isinstance(doc, dict) else None,
+        "properties": props,
     }
+    if aoi_id and aoi_id != aoi.get("id"):
+        raise ValueError(f"AOI '{aoi_id}' not found; loaded '{aoi.get('id')}'")
+    return aoi
+
+
+def _aoi_file_candidates(directory: Path, aoi_id: str) -> list[Path]:
+    return [
+        directory / f"{aoi_id}.geojson",
+        directory / f"{aoi_id}-aoi.geojson",
+        directory / f"{aoi_id}.json",
+    ]
+
+
+def load_aoi(
+    path: str | Path | None = None,
+    *,
+    aoi_id: str | None = None,
+    aoi_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Load one AOI from a file, FeatureCollection, or AOI directory."""
+    if path:
+        aoi_path = Path(path)
+        if aoi_path.is_dir():
+            if not aoi_id:
+                raise ValueError(f"{aoi_path} is an AOI directory; pass --aoi to select one.")
+            for candidate in _aoi_file_candidates(aoi_path, aoi_id):
+                if candidate.is_file():
+                    return _load_aoi_file(candidate, aoi_id=aoi_id)
+            raise ValueError(f"AOI '{aoi_id}' not found under {aoi_path}")
+        return _load_aoi_file(aoi_path, aoi_id=aoi_id)
+
+    configured_dir = (
+        Path(aoi_dir or config.AOI_CONFIG_DIR) if (aoi_dir or config.AOI_CONFIG_DIR) else None
+    )
+    if configured_dir and aoi_id:
+        for candidate in _aoi_file_candidates(configured_dir, aoi_id):
+            if candidate.is_file():
+                return _load_aoi_file(candidate, aoi_id=aoi_id)
+
+    return _load_aoi_file(Path(config.AOI_CONFIG_PATH), aoi_id=aoi_id)
 
 
 def _json_bytes(payload: dict[str, Any]) -> bytes:
@@ -131,7 +214,9 @@ class BhoonidhiClient:
         if self.session and self.session.refresh_token:
             try:
                 return self._refresh_token()
-            except BhoonidhiAuthError:
+            except (BhoonidhiAuthError, urllib.error.HTTPError) as exc:
+                if isinstance(exc, urllib.error.HTTPError) and exc.code not in {401, 403}:
+                    raise
                 self.session = None
         return self._password_token()
 
@@ -221,8 +306,17 @@ class BhoonidhiClient:
             "sortby": sortby or [{"field": "datetime", "direction": "desc"}],
         }
         data = self._retry_json("POST", "/data/search", payload, RETRYABLE_SEARCH_STATUS)
-        features = data.get("features") if isinstance(data, dict) else []
-        return features if isinstance(features, list) else []
+        features = _features(data)
+        while True:
+            next_link = _next_link(data)
+            if not next_link:
+                break
+            delay = _search_page_delay_seconds()
+            if delay > 0:
+                self.sleep(delay)
+            data = self._retry_link_json(next_link, RETRYABLE_SEARCH_STATUS)
+            features.extend(_features(data))
+        return features
 
     def download_product(
         self,
@@ -242,9 +336,9 @@ class BhoonidhiClient:
 
         part_path = destination.with_suffix(destination.suffix + ".part")
         params = urllib.parse.urlencode({"id": product_id, "collection": collection})
-        req = self._request(f"/download?{params}", method="GET", auth=True)
         for attempt in range(self.max_retries + 1):
             try:
+                req = self._request(f"/download?{params}", method="GET", auth=True)
                 with self.opener.open(req, timeout=120) as resp:
                     total = 0
                     with part_path.open("wb") as fh:
@@ -261,8 +355,13 @@ class BhoonidhiClient:
                     raise BhoonidhiDownloadUnavailable(
                         f"Bhoonidhi product is not online: {product_id}"
                     ) from exc
-                if exc.code not in RETRYABLE_DOWNLOAD_STATUS or attempt >= self.max_retries:
+                if (
+                    exc.code not in RETRYABLE_DOWNLOAD_STATUS
+                    and exc.code not in AUTH_RETRY_STATUS
+                ) or attempt >= self.max_retries:
                     raise
+                if exc.code in AUTH_RETRY_STATUS:
+                    self.session = None
                 self.sleep(_backoff_seconds(attempt, exc.code))
         raise BhoonidhiDownloadUnavailable(f"Bhoonidhi product download failed: {product_id}")
 
@@ -273,15 +372,45 @@ class BhoonidhiClient:
         payload: dict[str, Any],
         retry_statuses: set[int],
     ) -> dict[str, Any]:
+        url = urllib.parse.urljoin(self.base_url + "/", path.lstrip("/"))
+        return self._retry_url_json(method, url, payload, retry_statuses)
+
+    def _retry_link_json(
+        self,
+        link: dict[str, Any],
+        retry_statuses: set[int],
+    ) -> dict[str, Any]:
+        href = str(link.get("href") or "")
+        if not href:
+            raise BhoonidhiError("Bhoonidhi next link is missing href.")
+        method = str(link.get("method") or "GET").upper()
+        body = link.get("body") if isinstance(link.get("body"), dict) else None
+        url = urllib.parse.urljoin(self.base_url + "/", href)
+        return self._retry_url_json(method, url, body, retry_statuses)
+
+    def _retry_url_json(
+        self,
+        method: str,
+        url: str,
+        payload: dict[str, Any] | None,
+        retry_statuses: set[int],
+    ) -> dict[str, Any]:
         for attempt in range(self.max_retries + 1):
             try:
-                return self._request_json(method, path, payload, auth=True)
+                return self._request_json_url(method, url, payload, auth=True)
             except urllib.error.HTTPError as exc:
-                if exc.code not in retry_statuses or attempt >= self.max_retries:
-                    detail = _parse_error_body(exc)
+                detail = _parse_error_body(exc)
+                if _is_search_no_results(url, exc.code, detail):
+                    return {"features": []}
+                if (
+                    exc.code not in retry_statuses
+                    and exc.code not in AUTH_RETRY_STATUS
+                ) or attempt >= self.max_retries:
                     raise BhoonidhiError(
                         f"Bhoonidhi request failed with HTTP {exc.code}: {detail or exc.reason}"
                     ) from exc
+                if exc.code in AUTH_RETRY_STATUS:
+                    self.session = None
                 self.sleep(_backoff_seconds(attempt, exc.code))
         raise BhoonidhiError("Bhoonidhi request failed after retries.")
 
@@ -293,9 +422,22 @@ class BhoonidhiClient:
         *,
         auth: bool,
     ) -> dict[str, Any]:
-        body = _json_bytes(payload)
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        req = self._request(path, method=method, body=body, headers=headers, auth=auth)
+        url = urllib.parse.urljoin(self.base_url + "/", path.lstrip("/"))
+        return self._request_json_url(method, url, payload, auth=auth)
+
+    def _request_json_url(
+        self,
+        method: str,
+        url: str,
+        payload: dict[str, Any] | None,
+        *,
+        auth: bool,
+    ) -> dict[str, Any]:
+        body = _json_bytes(payload) if payload is not None else None
+        headers = {"Accept": "application/json"}
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        req = self._request_url(url, method=method, body=body, headers=headers, auth=auth)
         with self.opener.open(req, timeout=30) as resp:
             raw = resp.read()
         if not raw:
@@ -312,20 +454,65 @@ class BhoonidhiClient:
         headers: dict[str, str] | None = None,
         auth: bool,
     ) -> urllib.request.Request:
+        url = urllib.parse.urljoin(self.base_url + "/", path.lstrip("/"))
+        return self._request_url(url, method=method, body=body, headers=headers, auth=auth)
+
+    def _request_url(
+        self,
+        url: str,
+        *,
+        method: str,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        auth: bool,
+    ) -> urllib.request.Request:
         req_headers = dict(headers or {})
         if auth:
             req_headers["Authorization"] = f"Bearer {self.token()}"
-        return urllib.request.Request(
-            self.base_url + path,
-            data=body,
-            headers=req_headers,
-            method=method,
-        )
+        return urllib.request.Request(url, data=body, headers=req_headers, method=method)
 
 
 def _backoff_seconds(attempt: int, status_code: int) -> float:
     base = 10.0 if status_code in {412, 429} else 2.0
     return min(base * (2**attempt), 120.0)
+
+
+def _search_page_delay_seconds() -> float:
+    try:
+        rps = float(config.BHOONIDHI_SEARCH_RPS)
+    except ValueError:
+        return 0.0
+    return 1.0 / rps if rps > 0 else 0.0
+
+
+def _features(data: dict[str, Any]) -> list[dict[str, Any]]:
+    features = data.get("features") if isinstance(data, dict) else []
+    return [feature for feature in features if isinstance(feature, dict)]
+
+
+def _next_link(data: dict[str, Any]) -> dict[str, Any] | None:
+    links = data.get("links") if isinstance(data, dict) else []
+    if not isinstance(links, list):
+        return None
+    return next(
+        (
+            link
+            for link in links
+            if isinstance(link, dict)
+            and str(link.get("rel") or "").lower() == "next"
+            and link.get("href")
+        ),
+        None,
+    )
+
+
+def _is_search_no_results(url: str, status_code: int, detail: dict[str, Any]) -> bool:
+    if status_code != 404:
+        return False
+    if urllib.parse.urlparse(url).path.rstrip("/") != "/data/search":
+        return False
+    haystack = " ".join(str(detail.get(key, "")) for key in ("ErrorCode", "Description"))
+    return "no results" in haystack.lower()
 
 
 def _bbox_intersection(a: list[float], b: list[float]) -> list[float] | None:

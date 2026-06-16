@@ -1,0 +1,56 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json"
+  ],
+  "id": "eos-06-ocm-lac-ndvi-8day-360m",
+  "title": "EOS-06 OCM-LAC NDVI 8-day 360m (context)",
+  "description": "Gated coarse precomputed NDVI context source. This is not a raw reflectance source and must not use field-level two-band vegetation-index statistics.",
+  "license": "proprietary",
+  "keywords": ["isro", "nrsc", "bhoonidhi", "eos-06", "ocm", "ndvi", "context", "gated"],
+  "providers": [
+    { "name": "ISRO/NRSC", "roles": ["producer", "licensor"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Bhoonidhi", "roles": ["host"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[77.023647, 12.537266, 78.131561, 13.61645]] },
+    "temporal": { "interval": [[null, null]] }
+  },
+  "summaries": {
+    "platform": ["eos-06"],
+    "instruments": ["ocm"],
+    "gsd": [360]
+  },
+  "akasha:provider": "ISRO/NRSC Bhoonidhi",
+  "akasha:bhoonidhi_collection_id": "EOS-06_OCM-LAC_NDVI_8day_360m",
+  "akasha:source_kind": "context",
+  "akasha:analysis_level": "regional",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "No validated EOS-06 NDVI context COG has been ingested.",
+  "akasha:supported_indices": [],
+  "akasha:display_modes": ["NDVI_CONTEXT"],
+  "akasha:default_display_mode": "NDVI_CONTEXT",
+  "akasha:expected_assets": ["ndvi"],
+  "akasha:mask_asset": null,
+  "akasha:metrics_provisional": true,
+  "item_assets": {
+    "ndvi": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Precomputed EOS-06 OCM NDVI context COG",
+      "roles": ["data", "index", "context"],
+      "gsd": 360,
+      "raster:bands": [
+        { "data_type": "float32", "nodata": -9999, "spatial_resolution": 360, "unit": "ndvi" }
+      ]
+    }
+  },
+  "links": [
+    { "rel": "root", "href": "./eos-06-ocm-lac-ndvi-8day-360m-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./eos-06-ocm-lac-ndvi-8day-360m-collection.json", "type": "application/json" },
+    { "rel": "license", "href": "https://bhoonidhi.nrsc.gov.in", "title": "Bhoonidhi" }
+  ]
+}

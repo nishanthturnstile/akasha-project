@@ -1,4 +1,4 @@
-# Akasha ingestion worker — Slice 1 dependencies (pinned for Railway).
+# Akasha ingestion worker — Slice 1 dependencies (pinned for reproducible builds).
 # pypgstac MUST match the running stac-fastapi-pgstac:5.0.2 schema (>=0.8,<0.10).
 python-dotenv==1.0.1
 pypgstac[psycopg]>=0.9,<0.10

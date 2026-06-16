@@ -14,7 +14,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def native_settings(monkeypatch):
-    monkeypatch.setattr(settings, "default_source_id", "sentinel-2-l2a")
+    monkeypatch.setattr(settings, "default_source_id", "resourcesat-2a-liss3-boa")
 
 
 def _plot(**overrides: Any) -> dict[str, Any]:
@@ -37,7 +37,7 @@ def _stats_response(
 ) -> dict[str, Any]:
     return {
         "indexType": index_type,
-        "sourceId": "sentinel-2-l2a",
+        "sourceId": "resourcesat-2a-liss3-boa",
         "acquisitionDate": acquisition_date,
         "statistics": {
             "min": 0.1,
@@ -56,8 +56,8 @@ def _stats_response(
             "validPixels": 83,
         },
         "metadata": {
-            "formula": "(B08 - B04) / (B08 + B04)",
-            "bands": ["B08", "B04"],
+            "formula": "(NIR - RED) / (NIR + RED)",
+            "bands": ["BAND4", "BAND3"],
             "itemId": f"item-{acquisition_date}",
             "warnings": [],
         },
@@ -80,7 +80,7 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
     r = client.post(
         "/api/fields/plot-1/indices/statistics",
         json={
-            "sourceId": "sentinel-2-l2a",
+            "sourceId": "resourcesat-2a-liss3-boa",
             "acquisitionDate": "2026-01-15",
             "indexType": "NDVI",
             "cloudMask": {"clouds": True, "cloudShadows": False, "cirrus": True},
@@ -90,11 +90,14 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert calls[0]["geometry"] == plot["geometry"]
-    assert 3 not in calls[0]["excluded_mask_classes"]
+    assert calls[0]["source_id"] == "resourcesat-2a-liss3-boa"
+    assert calls[0]["excluded_mask_classes"] == (0, 2)
     assert body["plotId"] == "plot-1"
     assert body["provider"] == "native"
     assert body["scope"] == "field"
     assert body["statistics"]["mean"] == pytest.approx(0.55)
+    assert body["metadata"]["cloudMaskMapping"]["nativeExcludedMaskClasses"] == [0, 2]
+    assert body["metadata"]["cloudMaskMapping"]["warnings"]
 
 
 def test_field_statistics_missing_field(monkeypatch):

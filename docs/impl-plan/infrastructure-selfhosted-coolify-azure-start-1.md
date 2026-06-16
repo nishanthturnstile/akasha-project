@@ -352,7 +352,6 @@ Phase 8 pre-deployment notes:
 - `docs/platform-plan.md`
 - `docs/architecture-tech-stack.md`
 - `docs/engineering-dos-donts.md`
-- `docs/railway-deployment-guide.md`
 - `infra/docker/docker-compose.yml`
 - Coolify installation: <https://coolify.io/docs/get-started/installation>
 - Coolify Docker Compose behavior: <https://coolify.io/docs/knowledge-base/docker/compose>

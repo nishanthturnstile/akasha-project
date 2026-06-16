@@ -16,13 +16,14 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from datetime import date, timedelta
 from typing import Any
 
 import anyio
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
-from ..aoi import load_aoi_config
+from ..aoi import load_aoi_configs, select_default_aoi
 from ..auth import get_current_team
 from ..config import settings
 from ..raster import catalog_resolver as catalog
@@ -40,7 +41,7 @@ from ..raster.indices import (
     fcc_band_positions,
     rgb_band_positions,
 )
-from ..raster.models import StatisticsRequest
+from ..raster.models import StatisticsRequest, StatisticsResponse
 from ..raster.service import compute_statistics
 
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
@@ -86,9 +87,11 @@ def _enforce_index_rate_limit(request: Request) -> None:
 @router.get("/config")
 async def get_config() -> dict[str, Any]:
     """App configuration: AOI, map defaults, limits, and global optical index defaults."""
+    aois = load_aoi_configs()
     return {
         "appName": os.environ.get("PUBLIC_APP_NAME", "Akasha"),
-        "aoi": load_aoi_config(),
+        "aoi": select_default_aoi(aois),
+        "aois": aois,
         "basemapStyleUrl": "",
         "basemap": _basemap_config(),
         "maxPolygonAreaHa": settings.max_polygon_area_ha,
@@ -107,10 +110,64 @@ async def get_sources() -> list[dict[str, Any]]:
     return catalog.list_sources()
 
 
+def _filter_source_dates(
+    dates: list[dict[str, Any]],
+    *,
+    start_date: date | None,
+    end_date: date | None,
+    lookback_days: int | None,
+) -> list[dict[str, Any]]:
+    """Optionally window source dates while preserving the newest-first contract."""
+    if not dates or (start_date is None and end_date is None and lookback_days is None):
+        return dates
+
+    parsed: list[tuple[date, dict[str, Any]]] = []
+    for entry in dates:
+        raw = entry.get("acquisitionDate")
+        if not isinstance(raw, str):
+            continue
+        try:
+            parsed.append((date.fromisoformat(raw), entry))
+        except ValueError:
+            continue
+
+    if not parsed:
+        return []
+
+    window_end = end_date or max(item_date for item_date, _entry in parsed)
+    window_start = start_date
+    if window_start is None and lookback_days is not None:
+        window_start = window_end - timedelta(days=lookback_days - 1)
+
+    if window_start and window_start > window_end:
+        raise bad_request(
+            "startDate must be on or before endDate.",
+            code="INVALID_DATE_RANGE",
+            startDate=window_start.isoformat(),
+            endDate=window_end.isoformat(),
+        )
+
+    return [
+        entry
+        for item_date, entry in parsed
+        if (window_start is None or item_date >= window_start) and item_date <= window_end
+    ]
+
+
 @router.get("/sources/{source_id}/dates")
-async def get_source_dates(source_id: str) -> list[dict[str, Any]]:
+async def get_source_dates(
+    source_id: str,
+    startDate: date | None = Query(default=None),
+    endDate: date | None = Query(default=None),
+    lookbackDays: int | None = Query(default=None, ge=1, le=366),
+) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
-    return catalog.list_dates(source_id)
+    return _filter_source_dates(
+        catalog.list_dates(source_id),
+        start_date=startDate,
+        end_date=endDate,
+        lookback_days=lookbackDays,
+    )
 
 
 @router.get("/layers/default")
@@ -163,6 +220,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         "coveragePercent": date.get("coveragePercent"),
         "metricsProvisional": bool(date.get("metricsProvisional", False)),
         "tileAvailable": bool(date.get("tileAvailable", True)),
+        "unavailableReason": date.get("unavailableReason"),
     }
 
 
@@ -217,21 +275,77 @@ async def _render_rgb_tile(
     return Response(content=body, media_type=content_type)
 
 
-async def _render_sentinel1_vv_tile(
+async def _render_sar_vv_grayscale_tile(
     source_id: str, acquisition_date: str, z: int, x: int, y: int
 ) -> Response:
     assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
     if len(assets_for_date) != 1:
         raise mosaic_tiles_unavailable(
-            "Date-level Sentinel-1 tiles for multiple scenes require a configured mosaic backend.",
+            "Date-level SAR tiles for multiple scenes require a configured mosaic backend.",
             sceneCount=len(assets_for_date),
             supportedSceneCount=1,
         )
-    url = tiles.build_sentinel1_vv_tile_url(
-        backscatter_href=assets_for_date[0]["backscatterHref"],
+    assets = assets_for_date[0]
+    vv_position = _vv_band_position(
+        assets,
+        source_id=source_id,
+        acquisition_date=acquisition_date,
+    )
+    url = tiles.build_sar_vv_grayscale_tile_url(
+        backscatter_href=assets["backscatterHref"],
+        vv_position=vv_position,
         z=z,
         x=x,
         y=y,
+    )
+    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+    return Response(content=body, media_type=content_type)
+
+
+def _vv_band_position(
+    assets: dict[str, Any], *, source_id: str, acquisition_date: str
+) -> int:
+    band_names = [str(name) for name in assets.get("bandNames", [])]
+    for index, name in enumerate(band_names, start=1):
+        normalized = name.strip().upper()
+        if normalized == "VV" or normalized.startswith("VV_") or normalized.startswith("VV-"):
+            return index
+    raise bad_request(
+        "Display mode 'VV_GRAYSCALE' requires a VV backscatter polarization.",
+        code="MISSING_VV_POLARIZATION",
+        sourceId=source_id,
+        acquisitionDate=acquisition_date,
+        itemId=assets.get("itemId"),
+        availablePolarizations=band_names,
+    )
+
+
+async def _render_context_tile(
+    source_id: str, acquisition_date: str, display_mode: str, z: int, x: int, y: int
+) -> Response:
+    source = catalog.get_source(source_id)
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    if len(assets_for_date) != 1:
+        raise mosaic_tiles_unavailable(
+            (
+                f"Date-level {display_mode} tiles for multiple scenes require a configured "
+                "mosaic backend."
+            ),
+            sceneCount=len(assets_for_date),
+            supportedSceneCount=1,
+        )
+    assets = assets_for_date[0]
+    mode = display_mode.upper()
+    bidx = [1] if mode == "NDVI_CONTEXT" else None
+    colormap_name = "rdylgn" if mode == "NDVI_CONTEXT" else None
+    url = tiles.build_context_tile_url(
+        asset_href=assets["contextHref"],
+        z=z,
+        x=x,
+        y=y,
+        rescale=source.get("defaultRescale"),
+        bidx=bidx,
+        colormap_name=colormap_name,
     )
     body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
@@ -318,7 +432,9 @@ async def get_display_mode_tile(
     if normalized_mode == "FCC":
         return await _render_fcc_tile(source_id, acquisition_date, z, x, y)
     if normalized_mode == "VV_GRAYSCALE":
-        return await _render_sentinel1_vv_tile(source_id, acquisition_date, z, x, y)
+        return await _render_sar_vv_grayscale_tile(source_id, acquisition_date, z, x, y)
+    if normalized_mode in {"CONTEXT", "NDVI_CONTEXT"}:
+        return await _render_context_tile(source_id, acquisition_date, normalized_mode, z, x, y)
     raise bad_request(
         f"Display mode '{display_mode}' is not implemented for source '{source_id}'.",
         code="UNSUPPORTED_DISPLAY_MODE",
@@ -328,11 +444,11 @@ async def get_display_mode_tile(
     )
 
 
-@router.post("/indices/statistics")
+@router.post("/indices/statistics", response_model=StatisticsResponse)
 async def post_index_statistics(
     request: Request, payload: StatisticsRequest = Body(...)
 ) -> dict[str, Any]:
-    """Compute cloud/SCL-masked, offset-corrected optical index statistics."""
+    """Compute source-mask-aware, offset-corrected optical index statistics."""
     geometry = payload.geometry.model_dump()
     if not payload.sourceId:
         raise bad_request("sourceId is required.", code="MISSING_SOURCE")

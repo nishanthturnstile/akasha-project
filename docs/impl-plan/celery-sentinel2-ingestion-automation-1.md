@@ -687,7 +687,7 @@ docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker pyth
 1. Refactor existing downloader and prep scripts into importable functions while preserving CLI behavior.
 2. Add ingestion run persistence and API enqueue route.
 3. Add Celery app and top-level Sentinel-2 task.
-4. Add broker and Celery worker runtime configuration for Docker Compose and Railway.
+4. Add broker and Celery worker runtime configuration for Docker Compose and the deployment stack.
 5. Add tests for run tracking, task orchestration, manifests, and idempotency.
 6. Run one small bounded Bangalore ingestion manually through the API.
 7. Verify MinIO, pgSTAC, BFF date metadata, tile serving, and statistics.

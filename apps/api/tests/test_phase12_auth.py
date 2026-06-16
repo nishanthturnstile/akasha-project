@@ -20,10 +20,11 @@ def test_dev_auth_me_and_api_keys_do_not_leak_hash(monkeypatch):
     monkeypatch.setattr(settings, "auth_allow_disabled", True)
     monkeypatch.setattr(settings, "app_env", "development")
     for key in (
-        "RAILWAY_ENVIRONMENT",
-        "RAILWAY_PROJECT_ID",
-        "RAILWAY_SERVICE_ID",
-        "RAILWAY_PUBLIC_DOMAIN",
+        "AKASHA_DEPLOYMENT",
+        "COOLIFY_URL",
+        "COOLIFY_FQDN",
+        "COOLIFY_RESOURCE_UUID",
+        "COOLIFY_CONTAINER_NAME",
     ):
         monkeypatch.delenv(key, raising=False)
     account._api_keys.clear()
@@ -42,11 +43,11 @@ def test_dev_auth_me_and_api_keys_do_not_leak_hash(monkeypatch):
     assert "keyHash" not in listed.text
 
 
-def test_disabled_auth_fails_closed_on_railway(monkeypatch):
+def test_disabled_auth_fails_closed_on_deployment(monkeypatch):
     monkeypatch.setattr(settings, "auth_mode", "disabled")
     monkeypatch.setattr(settings, "auth_allow_disabled", True)
     monkeypatch.setattr(settings, "app_env", "development")
-    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    monkeypatch.setenv("AKASHA_DEPLOYMENT", "production")
 
     try:
         get_current_user(None)
@@ -58,11 +59,11 @@ def test_disabled_auth_fails_closed_on_railway(monkeypatch):
         raise AssertionError("expected auth failure")
 
 
-def test_protected_domain_routes_fail_closed_on_railway(monkeypatch):
+def test_protected_domain_routes_fail_closed_on_deployment(monkeypatch):
     monkeypatch.setattr(settings, "auth_mode", "disabled")
     monkeypatch.setattr(settings, "auth_allow_disabled", True)
     monkeypatch.setattr(settings, "app_env", "development")
-    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    monkeypatch.setenv("AKASHA_DEPLOYMENT", "production")
 
     r = client.get("/api/field-groups")
 
@@ -70,11 +71,11 @@ def test_protected_domain_routes_fail_closed_on_railway(monkeypatch):
     assert r.json()["error"]["code"] == "AUTH_NOT_CONFIGURED"
 
 
-def test_product_routes_fail_closed_on_railway(monkeypatch):
+def test_product_routes_fail_closed_on_deployment(monkeypatch):
     monkeypatch.setattr(settings, "auth_mode", "disabled")
     monkeypatch.setattr(settings, "auth_allow_disabled", True)
     monkeypatch.setattr(settings, "app_env", "development")
-    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    monkeypatch.setenv("AKASHA_DEPLOYMENT", "production")
 
     r = client.get("/api/config")
 

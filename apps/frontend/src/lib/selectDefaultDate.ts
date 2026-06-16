@@ -28,7 +28,13 @@ export function selectDefaultDate(
   const latestUsable = newestFirst.find((d) => d.isLatestUsable);
   if (latestUsable) return latestUsable;
 
-  if (options.sourceKind === 'sar') return newestFirst[0];
+  if (
+    options.sourceKind === 'sar' ||
+    options.sourceKind === 'context' ||
+    options.sourceKind === 'archive'
+  ) {
+    return newestFirst[0];
+  }
 
   const overThreshold = newestFirst.find(
     (d) => d.usablePixelPercent != null && d.usablePixelPercent >= thresholdPercent,

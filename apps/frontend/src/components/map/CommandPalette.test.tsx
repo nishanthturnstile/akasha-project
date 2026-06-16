@@ -4,8 +4,18 @@ import { CommandPalette } from '@/components/map/CommandPalette';
 import type { SceneDate, Source } from '@/types/api';
 
 const sources: Source[] = [
-    { id: 'sentinel-2-l2a', label: 'Sentinel-2 L2A', provider: 'ESA', kind: 'optical' },
-    { id: 'sentinel-1-grd', label: 'Sentinel-1 GRD', provider: 'ESA', kind: 'sar' },
+    {
+        id: 'resourcesat-2a-liss3-boa',
+        label: 'ResourceSat-2A LISS-3 BOA',
+        provider: 'ISRO/NRSC Bhoonidhi',
+        kind: 'optical',
+    },
+    {
+        id: 'eos-04-sar-mrs-l2b',
+        label: 'EOS-04 SAR MRS L2B',
+        provider: 'ISRO/NRSC Bhoonidhi',
+        kind: 'sar',
+    },
 ];
 
 const dates: SceneDate[] = [
@@ -50,7 +60,7 @@ function renderPalette(overrides: Partial<React.ComponentProps<typeof CommandPal
             open
             onOpenChange={ onOpenChange }
             sources={ sources }
-            activeSourceId="sentinel-2-l2a"
+            activeSourceId="resourcesat-2a-liss3-boa"
             dates={ dates }
             onSelectSource={ onSelectSource }
             onSelectDate={ onSelectDate }
@@ -65,16 +75,16 @@ describe('CommandPalette', () => {
     it('lists sources and only tile-available dates when open', () => {
         renderPalette();
         expect(screen.getByTestId('command-palette')).toBeTruthy();
-        expect(screen.getByTestId('command-source-sentinel-2-l2a')).toBeTruthy();
-        expect(screen.getByTestId('command-source-sentinel-1-grd')).toBeTruthy();
+        expect(screen.getByTestId('command-source-resourcesat-2a-liss3-boa')).toBeTruthy();
+        expect(screen.getByTestId('command-source-eos-04-sar-mrs-l2b')).toBeTruthy();
         expect(screen.getByTestId('command-date-2026-05-31')).toBeTruthy();
         expect(screen.queryByTestId('command-date-2026-05-21')).toBeNull();
     });
 
     it('selecting a source notifies and closes', () => {
         const { onSelectSource, onOpenChange } = renderPalette();
-        fireEvent.click(screen.getByTestId('command-source-sentinel-1-grd'));
-        expect(onSelectSource).toHaveBeenCalledWith('sentinel-1-grd');
+        fireEvent.click(screen.getByTestId('command-source-eos-04-sar-mrs-l2b'));
+        expect(onSelectSource).toHaveBeenCalledWith('eos-04-sar-mrs-l2b');
         expect(onOpenChange).toHaveBeenCalledWith(false);
     });
 

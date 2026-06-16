@@ -1,0 +1,66 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/classification/v1.1.0/schema.json"
+  ],
+  "id": "irs-1c-liss3-archive",
+  "title": "IRS-1C LISS-3 archive (gated)",
+  "description": "Historical IRS-1C archive source for one-time imports only. It is not part of scheduled monitoring, and analytics stay disabled until calibration and mask metadata are validated.",
+  "license": "proprietary",
+  "keywords": ["isro", "nrsc", "bhoonidhi", "irs-1c", "liss-3", "archive", "historical", "gated"],
+  "providers": [
+    { "name": "ISRO/NRSC", "roles": ["producer", "licensor"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Bhoonidhi", "roles": ["host"], "url": "https://bhoonidhi.nrsc.gov.in" },
+    { "name": "Akasha", "roles": ["processor"] }
+  ],
+  "extent": {
+    "spatial": { "bbox": [[77.023647, 12.537266, 78.131561, 13.61645]] },
+    "temporal": { "interval": [[null, null]] }
+  },
+  "summaries": {
+    "platform": ["irs-1c"],
+    "instruments": ["liss-3"],
+    "gsd": [23.5, 70.5]
+  },
+  "akasha:provider": "ISRO/NRSC Bhoonidhi",
+  "akasha:source_kind": "archive",
+  "akasha:analysis_level": "archive",
+  "akasha:availability_status": "gated",
+  "akasha:gated_reason": "No validated IRS-1C archive product has been ingested.",
+  "akasha:refresh_policy": "Archive only; no scheduled refresh.",
+  "akasha:supported_indices": [],
+  "akasha:display_modes": ["FCC"],
+  "akasha:default_display_mode": "FCC",
+  "akasha:expected_assets": ["analytic", "mask"],
+  "akasha:mask_asset": "mask",
+  "akasha:mask_method": "Pending archive mask validation.",
+  "akasha:metrics_provisional": true,
+  "item_assets": {
+    "analytic": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "IRS-1C LISS-3 archive analytic COG",
+      "roles": ["data", "reflectance", "archive"],
+      "raster:bands": [
+        { "data_type": "uint16", "spatial_resolution": 23.5, "unit": "reflectance" }
+      ]
+    },
+    "mask": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "IRS-1C archive validity mask COG",
+      "roles": ["metadata", "data-mask", "archive"],
+      "raster:bands": [
+        { "data_type": "uint8", "nodata": 0, "spatial_resolution": 23.5 }
+      ]
+    }
+  },
+  "links": [
+    { "rel": "root", "href": "./irs-1c-liss3-archive-collection.json", "type": "application/json" },
+    { "rel": "self", "href": "./irs-1c-liss3-archive-collection.json", "type": "application/json" },
+    { "rel": "license", "href": "https://bhoonidhi.nrsc.gov.in", "title": "Bhoonidhi" }
+  ]
+}

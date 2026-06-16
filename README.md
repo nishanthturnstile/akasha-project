@@ -1,13 +1,19 @@
-# Akasha — Railway MVP
+# Akasha
 
-Geospatial MVP for browsing true-colour Sentinel-2 imagery over an Area of
-Interest (Bangalore) and computing cloud-masked vegetation-index statistics for
-user-drawn plots. Railway-first, but fully portable to Docker Compose / on-prem.
+Geospatial platform for browsing ISRO ResourceSat LISS-3 FCC composites over
+the Bangalore 60 km Area of Interest and computing cloud-masked
+vegetation-index statistics (NDVI/NDMI/NDWI/MSAVI) for user-drawn plots and
+fields. Deployed on self-hosted Coolify (Azure VM), and fully portable to local
+Docker Compose / on-prem. Legacy Sentinel support remains for explicit
+regression or migration work, but it is not production-selectable by default.
 
 > **Status: Slice 4 implementation in progress.** Slice 0 (skeleton), Slice 1
 > (storage/catalog), Slice 2 (raster de-risk), and Slice 3 (BFF product + plot
-> contracts) are implemented. The canonical frontend map/product shell now lives
-> in `apps/frontend`. Railway/local Docker still run the same multi-service
+> contracts) are implemented. On top of the raster core, a farm-management
+> product layer (auth/teams, fields/seasons, field operations, scouting,
+> reports/risk) and a second imagery source (ISRO Bhoonidhi / ResourceSat
+> LISS-3) have been added. The canonical frontend map/product shell lives in
+> `apps/frontend`. Coolify/local Docker run the same multi-service
 > topology described below.
 
 ## Architecture (one public service)
@@ -18,7 +24,7 @@ Browser ──> web (Caddy + React SPA)  ── /api/*  ──> api (FastAPI BFF
                   │
    api ──> stac-api (pgSTAC) ──> postgis (PostgreSQL + PostGIS)
    api ──> titiler ──> minio (S3-compatible COG storage)
-   ingestion-worker ──> minio / stac-api / postgis
+   ingestion-worker ──> minio / stac-api / postgis / Bhoonidhi (ISRO)
 ```
 
 Only the **`web`** gateway is publicly reachable. The browser calls `/api/*`
@@ -31,18 +37,18 @@ are never given a public domain.
 ```text
 apps/
   frontend/          Canonical React + Vite + TypeScript SPA
-  api/               Canonical FastAPI BFF (/api product, plot, auth, ops APIs)
+  api/               Canonical FastAPI BFF (/api product, plot, auth, fields/seasons, ops APIs)
 services/
-  titiler/           TiTiler image/config (RGB display tiles)
+  titiler/           TiTiler image/config (source display tiles)
   stac-api/          stac-fastapi-pgstac wrapper/config
-  ingestion/         Python ingestion worker and STAC/MinIO seed loader
-  ingestion-sar/     Sentinel-1/SAR preprocessing runtime
+  ingestion/         Python ingestion worker + STAC/MinIO seed loader + Bhoonidhi (ISRO) client
+  ingestion-sar/     SAR preprocessing runtime; Sentinel-1 path is legacy-only
 infra/
   gateway/           Caddy reverse proxy + multi-stage web Dockerfile
-  railway/           Per-service Railway config + env matrix + deploy notes
+  selfhosted/        Coolify compose + env template + setup notes (self-hosted)
   docker/            Local docker-compose.yml (dev / on-prem portability)
 docs/                Source-of-truth product/architecture/deploy docs
-scripts/             validate_slice0.py + smoke-test.py
+scripts/             Imagery download/prepare scripts + slice validators + smoke test
 ```
 
 When changing application behavior, edit `apps/api` and `apps/frontend`.
@@ -212,19 +218,21 @@ python scripts/validate_slice1.py
 python scripts/validate_slice2.py
 ```
 
-Domain invariants seeded by this flow: frozen analytic band order
-`[B04,B08,B05,B06,B07,B11,B12,B03,B02]`; true-colour RGB = bands `[1,8,9]`;
-reflectance `scale 0.0001` / `offset -0.1`. See
+Domain invariants seeded by this flow: ResourceSat LISS-3 analytic band order
+`[BAND2,BAND3,BAND4,BAND5]`; FCC display = `NIR,RED,GREEN` (`bidx=3,2,1`);
+reflectance `scale 0.0001` / `offset 0.0`; Akasha provisional mask keeps
+classes `{1,4}`. See
 [`data/seed/README.md`](data/seed/README.md) and
-[`infra/railway/README.md`](infra/railway/README.md) for the seed layout and the
-Railway equivalents of these commands.
+[`infra/selfhosted/README.md`](infra/selfhosted/README.md) for the seed layout
+and the deployment equivalents of these commands.
 
-## Deploy to Railway
+## Deploy self-hosted (Coolify / Azure)
 
-Each service is a **separate** Railway service. See
-[`infra/railway/README.md`](infra/railway/README.md) for the service→config
-matrix, environment variables ([`ENV_MATRIX.md`](infra/railway/ENV_MATRIX.md)),
-and the deployment sequence.
+For on-prem / dedicated-server hosting, deploy the prebuilt GHCR images via
+Coolify. See [`infra/selfhosted/README.md`](infra/selfhosted/README.md) for the
+compose source of truth, host directory layout, env template, and the
+SHA-tagged image deployment workflow. The one-public-service rule still holds:
+only `web` gets a public FQDN.
 
 ## Slice roadmap
 
@@ -236,7 +244,7 @@ and the deployment sequence.
 | 3 | BFF API implementation | **done** |
 | 4 | Frontend map & layer UX | **implemented; active hardening** |
 | 5 | Plot & index UX | planned |
-| 6 | Railway deployment hardening | planned |
+| 6 | Deployment hardening | planned |
 | 7 | Acceptance & QA | planned |
 
 Engineering guardrails: [`docs/engineering-dos-donts.md`](docs/engineering-dos-donts.md).

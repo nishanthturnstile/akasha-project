@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
-"""Akasha Slice 2 (Phase 2 — raster de-risk) static + synthetic validator.
+"""Akasha Slice 2 raster de-risk static + synthetic validator.
 
-No Docker / MinIO / TiTiler required. This script statically validates the
-Phase 2 artifacts (scene/catalog metadata, BFF raster package, deps, infra)
-AND genuinely de-risks the index math:
+No Docker / MinIO / TiTiler required. This script validates the ResourceSat
+LISS-3 catalog contract, BFF raster package, deps/infra, source-aware index
+math, in-process product endpoints, and a synthetic dual-COG read-to-stat
+pipeline when rasterio is installed.
 
-  * pure-numpy NDVI reference (offset/scale + SCL masking + pixel accounting)
-  * in-process FastAPI TestClient contract checks for the product endpoints
-  * (if rasterio is importable) a full synthetic dual-COG read -> mask -> stat
-    pipeline proving NDVI end-to-end without the real 2.24 GiB scene
-
-Runtime checks that DO require operator COGs in MinIO + a running TiTiler
-(real RGB tile PNG, real masked NDVI vs a QGIS/notebook reference) are listed
-at the end as BLOCKED and must be validated on Railway / local Docker.
+Runtime checks that require operator COGs in MinIO plus a running TiTiler are
+listed at the end as blocked and must be validated on staging or local Docker.
 
 Usage:  python scripts/validate_slice2.py
 """
@@ -20,7 +15,6 @@ Usage:  python scripts/validate_slice2.py
 from __future__ import annotations
 
 import json
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -28,6 +22,25 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "apps" / "api"))
 sys.path.insert(0, str(REPO / "services" / "ingestion"))
+
+SOURCE_ID = "resourcesat-2a-liss3-boa"
+AOI_ID = "bangalore-60km"
+BANDS = ["BAND2", "BAND3", "BAND4", "BAND5"]
+BAND_ROLE_MAPPING = {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4",
+    "SWIR1": "BAND5",
+}
+SUPPORTED_RESOURCE_INDICES = ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+EXCLUDED_MASK_CLASSES = [0, 2, 3]
+VALID_MASK_CLASS = 1
+SCALE = 0.0001
+OFFSET = 0.0
+SAMPLE_DATE = "2026-03-19"
+ITEM_ID = f"{SOURCE_ID}_{AOI_ID}_{SAMPLE_DATE}_composite"
+ANALYTIC_HREF = f"s3://akasha-cogs/{SOURCE_ID}/composite/{AOI_ID}/{SAMPLE_DATE}/analytic.tif"
+MASK_HREF = f"s3://akasha-cogs/{SOURCE_ID}/composite/{AOI_ID}/{SAMPLE_DATE}/mask.tif"
 
 passed = failed = 0
 
@@ -50,68 +63,86 @@ def read(path: str) -> str:
 
 
 print("=" * 64)
-print(" Akasha Slice 2 (Phase 2) — raster de-risk validation")
+print(" Akasha Slice 2 - raster de-risk validation")
 print("=" * 64)
 
-# ---------------------------------------------------------------- scene
-section("Scene identity (real 2025-09-14 / 43PHP scene)")
-from akasha_ingest.scene import SAMPLE_SCENE as SC  # noqa: E402
-
-check(SC.mgrs_tile == "43PHP", f"mgrs_tile == {SC.mgrs_tile}")
-check(SC.processing_baseline == "05.11", f"processing_baseline == {SC.processing_baseline}")
-check(SC.acquisition_date == "2025-09-14", f"acquisition_date == {SC.acquisition_date}")
-check(
-    SC.scene_key == "sentinel-2-l2a:L2A:43PHP:2025-09-14T05:06:49.024000Z:05.11",
-    f"scene_key == {SC.scene_key}",
-)
-check(SC.item_id == "sentinel-2-l2a_43PHP_20250914_0511", f"item_id == {SC.item_id}")
-check(SC.analytic_key == "sentinel-2-l2a/2025-09-14/analytic.tif", "analytic_key layout")
-check(SC.scl_key == "sentinel-2-l2a/2025-09-14/scl.tif", "scl_key layout")
-
 # ---------------------------------------------------------------- STAC item
-section("STAC sample item metadata")
-item = json.loads(read("data/seed/stac/sentinel-2-l2a-sample-item.json"))
+section("ResourceSat sample composite metadata")
+item = json.loads(read("data/seed/stac/resourcesat-2a-liss3-boa-sample-item.json"))
 props = item["properties"]
-check(item["id"] == SC.item_id, "item id matches scene")
-check(props["datetime"] == "2025-09-14T05:06:49.024000Z", "datetime")
-check(props["platform"] == "sentinel-2b", "platform sentinel-2b")
-check(abs(props["eo:cloud_cover"] - 17.153746) < 1e-6, "eo:cloud_cover 17.153746")
+check(item["id"] == ITEM_ID, "item id matches ResourceSat sample composite")
+check(item["collection"] == SOURCE_ID, f"item collection == {SOURCE_ID}")
+check(props["datetime"] == f"{SAMPLE_DATE}T00:00:00Z", "datetime")
+check(props["platform"] == "resourcesat-2a", "platform resourcesat-2a")
+check(props["akasha:aoi_id"] == AOI_ID, f"AOI id == {AOI_ID}")
+check(props["akasha:item_kind"] == "composite", "item kind == composite")
+check(bool(props["akasha:composite"]), "item marked composite")
+check(props.get("akasha:composite_grid_crs") == "EPSG:32643", "item composite grid CRS EPSG:32643")
+check(props.get("akasha:composite_resolution_meters") == 24, "item composite resolution 24m")
 check(props["proj:epsg"] == 32643, "proj:epsg 32643")
-check(props["proj:shape"] == [10980, 10980], "proj:shape 10980x10980")
-check(props["proj:transform"] == [10, 0, 799980, 0, -10, 1400040, 0, 0, 1], "proj:transform")
-check(props["akasha:scene_key"] == SC.scene_key, "akasha:scene_key matches")
-check(bool(props.get("akasha:metrics_provisional")), "metrics flagged provisional (no SCL yet)")
+check(bool(props.get("akasha:metrics_provisional")), "metrics flagged provisional")
 analytic = item["assets"]["analytic"]
-scl = item["assets"]["scl"]
-check(analytic["href"] == f"s3://akasha-cogs/{SC.analytic_key}", "analytic href")
-check(scl["href"] == f"s3://akasha-cogs/{SC.scl_key}", "scl href")
+mask = item["assets"]["mask"]
+check(analytic["href"] == ANALYTIC_HREF, "analytic href")
+check(mask["href"] == MASK_HREF, "mask href")
 band_names = [b["name"] for b in analytic["eo:bands"]]
-check(
-    band_names == ["B04", "B08", "B05", "B06", "B07", "B11", "B12", "B03", "B02"],
-    "analytic eo:bands frozen 9-band order",
-)
+check(band_names == BANDS, "analytic eo:bands ResourceSat 4-band order")
 rb0 = analytic["raster:bands"][0]
-check(rb0["scale"] == 0.0001 and rb0["offset"] == -0.1, "raster:bands scale 0.0001 / offset -0.1")
-check(rb0["nodata"] == 0, "analytic nodata == 0")
-check(len(scl["classification:classes"]) == 12, "SCL has 12 classification classes")
+check(rb0["scale"] == SCALE and rb0["offset"] == OFFSET, "raster:bands scale 0.0001 / offset 0")
+check(len(analytic["raster:bands"]) == 4, "analytic has 4 raster bands")
+mask_classes = [c["value"] for c in mask["classification:classes"]]
+check(mask_classes == [0, 1, 2, 3, 4], "provisional mask classes 0..4")
 
-section("Collection extent contains the scene footprint")
-coll = json.loads(read("data/seed/stac/sentinel-2-l2a-collection.json"))
+section("Collection extent contains the sample composite")
+coll = json.loads(read("data/seed/stac/resourcesat-2a-liss3-boa-collection.json"))
 cbbox = coll["extent"]["spatial"]["bbox"][0]
 ibbox = item["bbox"]
 contains = (
     cbbox[0] <= ibbox[0] and cbbox[1] <= ibbox[1] and cbbox[2] >= ibbox[2] and cbbox[3] >= ibbox[3]
 )
 check(contains, f"collection bbox {cbbox} contains item bbox")
+check(coll["akasha:source_kind"] == "optical", "collection source kind optical")
+check(
+    coll["akasha:supported_indices"] == SUPPORTED_RESOURCE_INDICES,
+    "ResourceSat supported indices",
+)
+check(
+    coll["akasha:unsupported_indices"] == ["NDRE", "RECI"],
+    "ResourceSat red-edge indices unsupported",
+)
+check(coll["akasha:default_display_mode"] == "FCC", "ResourceSat default display mode FCC")
+check(coll["akasha:fcc_role_order"] == ["NIR", "RED", "GREEN"], "FCC role order NIR/RED/GREEN")
+check(coll["akasha:band_role_mapping"] == BAND_ROLE_MAPPING, "collection band-role mapping")
+check(
+    coll["akasha:default_excluded_mask_classes"] == EXCLUDED_MASK_CLASSES,
+    "excluded mask classes",
+)
+reflectance = coll["akasha:reflectance"]
+check(
+    reflectance["scale"] == SCALE and reflectance["offset"] == OFFSET,
+    "ResourceSat reflectance scale/offset",
+)
 
-section("Phase 2 NDVI reference polygon fixture")
-poly_doc = json.loads(read("data/seed/phase2-ndvi-sample-polygon.geojson"))
-poly = poly_doc["geometry"]
+section("Sample plot lies inside ResourceSat AOI")
+plot_doc = json.loads(read("data/seed/sample-plot.geojson"))
+poly = plot_doc["geometry"]
 check(poly["type"] == "Polygon", "fixture is a Polygon")
 xs = [c[0] for c in poly["coordinates"][0]]
 ys = [c[1] for c in poly["coordinates"][0]]
 in_fp = min(xs) >= ibbox[0] and max(xs) <= ibbox[2] and min(ys) >= ibbox[1] and max(ys) <= ibbox[3]
-check(in_fp, "reference polygon lies inside the scene footprint")
+check(in_fp, "sample plot lies inside the ResourceSat composite footprint")
+stat_poly = {
+    "type": "Polygon",
+    "coordinates": [
+        [
+            [77.585, 12.965],
+            [77.587, 12.965],
+            [77.587, 12.967],
+            [77.585, 12.967],
+            [77.585, 12.965],
+        ]
+    ],
+}
 
 # ---------------------------------------------------------------- BFF package
 section("BFF raster package modules")
@@ -131,21 +162,13 @@ for mod in [
 from app.raster import indices  # noqa: E402
 
 core_indices = {"NDVI", "MSAVI", "NDRE", "NDMI", "NDWI_GREEN_NIR"}
-check(
-    core_indices.issubset(indices.INDEX_REGISTRY),
-    "core Slice 2 indices remain supported",
-)
+check(core_indices.issubset(indices.INDEX_REGISTRY), "core index registry remains available")
 ndvi = indices.get_index("NDVI")
 check(ndvi.required_roles == ("NIR", "RED"), "NDVI = (NIR - RED)/(NIR + RED)")
 check(indices.get_index("MSAVI").formula_kind == "msavi", "MSAVI formula registered")
 check(
-    indices.rgb_band_positions(indices.FROZEN_ANALYTIC_BANDS) == [1, 8, 9],
-    "RGB positions [1,8,9]",
-)
-check(indices.DEFAULT_SCALE == 0.0001 and indices.DEFAULT_OFFSET == -0.1, "default scale/offset")
-check(
-    indices.DEFAULT_EXCLUDED_SCL_CLASSES == (0, 1, 2, 3, 7, 8, 9, 10, 11),
-    "default excluded SCL classes (water class 6 kept)",
+    indices.fcc_band_positions(BANDS, BAND_ROLE_MAPPING) == [3, 2, 1],
+    "ResourceSat FCC positions [3,2,1]",
 )
 
 # ---------------------------------------------------------------- numeric de-risk
@@ -156,36 +179,29 @@ from app.raster.statistics_core import compute_index_statistics  # noqa: E402
 
 nir = np.full((3, 3), 4000, dtype="uint16")
 red = np.full((3, 3), 2000, dtype="uint16")
-sclv = np.full((3, 3), 4, dtype="uint8")
+maskv = np.full((3, 3), VALID_MASK_CLASS, dtype="uint8")
 geom = np.ones((3, 3), dtype=bool)
-sclv[0, 0] = 9
+maskv[0, 0] = 2
 red[0, 1] = 0
 geom[0, 2] = False
 s = compute_index_statistics(
     index_type="NDVI",
     band_a_dn=nir,
     band_b_dn=red,
-    mask=sclv,
+    mask=maskv,
     geometry_mask=geom,
-    scale=0.0001,
-    offset=-0.1,
+    scale=SCALE,
+    offset=OFFSET,
     nodata=0,
+    excluded_mask_classes=tuple(EXCLUDED_MASK_CLASSES),
 ).as_dict()
-check(s["mean"] == 0.5, f"NDVI mean == 0.5 (offset applied) [{s['mean']}]")
+check(
+    round(s["mean"], 6) == 0.333333,
+    f"NDVI mean == 0.333333 (ResourceSat offset 0) [{s['mean']}]",
+)
 check(s["totalPixels"] == 8 and s["validPixels"] == 6, "pixel accounting total=8 valid=6")
 check(s["nodataPixels"] == 1 and s["maskedPixels"] == 1, "nodata=1 masked=1")
 check(s["validPixelPercent"] == 75.0, "validPixelPercent == 75.0")
-no_off = compute_index_statistics(
-    index_type="NDVI",
-    band_a_dn=nir,
-    band_b_dn=red,
-    mask=sclv,
-    geometry_mask=geom,
-    scale=0.0001,
-    offset=0.0,
-    nodata=0,
-).mean
-check(abs(0.5 - no_off) > 0.1, f"offset materially changes NDVI (no-offset={round(no_off,4)})")
 
 # ---------------------------------------------------------------- endpoints
 section("Product endpoints (in-process TestClient)")
@@ -195,7 +211,6 @@ try:
     from app.config import settings
     from app.main import app
 
-    os.environ.pop("RAILWAY_ENVIRONMENT", None)
     settings.auth_mode = "disabled"
     settings.auth_allow_disabled = True
     settings.app_env = "test"
@@ -203,25 +218,33 @@ try:
     tc = TestClient(app)
     cfg = tc.get("/api/config")
     check(cfg.status_code == 200, "GET /api/config -> 200")
-    check(cfg.json()["supportedIndices"] == indices.SUPPORTED_INDICES, "config supportedIndices")
-    check(cfg.json()["defaultIndex"] == "NDVI", "config defaultIndex NDVI")
-    src = tc.get("/api/sources")
-    check(src.status_code == 200 and src.json()[0]["id"] == "sentinel-2-l2a", "GET /api/sources")
-    dts = tc.get("/api/sources/sentinel-2-l2a/dates")
+    cfg_body = cfg.json()
+    check(cfg_body["defaultIndex"] == "NDVI", "config defaultIndex NDVI")
     check(
-        dts.status_code == 200 and any(d["acquisitionDate"] == "2025-09-14" for d in dts.json()),
-        "GET dates contains 2025-09-14",
+        any(aoi.get("id") == AOI_ID for aoi in cfg_body.get("aois", [])),
+        "config lists configured AOIs",
+    )
+    src = tc.get("/api/sources")
+    body = src.json()
+    check(src.status_code == 200 and body[0]["id"] == SOURCE_ID, "GET /api/sources")
+    check("sentinel-2-l2a" not in {source["id"] for source in body}, "Sentinel-2 hidden by default")
+    check(body[0]["defaultDisplayMode"] == "FCC", "ResourceSat source defaultDisplayMode FCC")
+    check("NDRE" not in body[0]["supportedIndices"], "ResourceSat source hides unsupported NDRE")
+    dts = tc.get(f"/api/sources/{SOURCE_ID}/dates")
+    check(
+        dts.status_code == 200 and any(d["acquisitionDate"] == SAMPLE_DATE for d in dts.json()),
+        f"GET dates contains {SAMPLE_DATE}",
     )
     lay = tc.get("/api/layers/default")
     check(
         lay.status_code == 200
         and lay.json()["tileUrlTemplate"]
-        == "/api/tiles/sentinel-2-l2a/2025-09-14/rgb/{z}/{x}/{y}.png",
+        == f"/api/tiles/{SOURCE_ID}/{SAMPLE_DATE}/FCC/{{z}}/{{x}}/{{y}}.png",
         "GET /api/layers/default tile template (same-origin /api route)",
     )
     bad = tc.post(
         "/api/indices/statistics",
-        json={"geometry": {"type": "Point", "coordinates": [78.2, 12.1]}, "indexType": "NDVI"},
+        json={"geometry": {"type": "Point", "coordinates": [77.58, 12.96]}, "indexType": "NDVI"},
     )
     check(
         bad.status_code == 422 and bad.json()["error"]["code"] == "INVALID_GEOMETRY",
@@ -229,29 +252,41 @@ try:
     )
     nope = tc.post(
         "/api/indices/statistics",
-        json={"geometry": poly, "indexType": "NOPE"},
+        json={"geometry": stat_poly, "indexType": "NDRE"},
     )
     check(
         nope.status_code == 400 and nope.json()["error"]["code"] == "UNSUPPORTED_INDEX",
-        "POST statistics unsupported index -> 400 UNSUPPORTED_INDEX",
+        "POST ResourceSat unsupported NDRE -> 400 UNSUPPORTED_INDEX",
     )
+    openapi = tc.get("/api/openapi.json").json()
+    stats_meta = openapi["components"]["schemas"]["StatisticsMetadata"]["properties"]
+    check("maskMethod" in stats_meta, "OpenAPI documents statistics metadata maskMethod")
+    check(
+        "nativeExcludedMaskClasses" in stats_meta,
+        "OpenAPI documents nativeExcludedMaskClasses",
+    )
+    check("metricsProvisional" in stats_meta, "OpenAPI documents metricsProvisional")
 except Exception as exc:  # noqa: BLE001
     check(False, f"TestClient endpoint checks raised: {exc}")
 
 # ---------------------------------------------------------------- tile url
-section("TiTiler RGB tile URL builder")
+section("TiTiler FCC tile URL builder")
 from app.raster.tiles import build_rgb_tile_url  # noqa: E402
 
 url = build_rgb_tile_url(
-    analytic_href="s3://akasha-cogs/sentinel-2-l2a/2025-09-14/analytic.tif",
-    rgb_positions=[1, 8, 9],
+    analytic_href=ANALYTIC_HREF,
+    rgb_positions=[3, 2, 1],
     z=12,
     x=2937,
     y=1909,
     titiler_url="http://titiler:8000",
 )
 check("/cog/tiles/WebMercatorQuad/12/2937/1909.png" in url, "TiTiler 1.0 COG tile route")
-check(url.count("bidx=1") == 1 and "bidx=8" in url and "bidx=9" in url, "bidx for RGB [1,8,9]")
+check(url.count("bidx=3") == 1 and "bidx=2" in url and "bidx=1" in url, "bidx for FCC [3,2,1]")
+check(
+    "bidx=8" not in url and "bidx=9" not in url,
+    "ResourceSat FCC does not use Sentinel RGB bands",
+)
 check("rescale=" in url and "url=" in url, "rescale + url query params present")
 
 # ---------------------------------------------------------------- deps & infra
@@ -264,10 +299,7 @@ check(
     "api Dockerfile installs libexpat1 (GDAL runtime)",
 )
 compose = read("infra/docker/docker-compose.yml")
-check(
-    'PORT: "8000"' in compose,
-    "docker-compose titiler PORT=8000 (image defaults to 80 otherwise)",
-)
+check('PORT: "8000"' in compose, "docker-compose titiler PORT=8000")
 check("AWS_ACCESS_KEY_ID:" in compose, "docker-compose api has AWS_ACCESS_KEY_ID")
 check("AWS_S3_ENDPOINT:" in compose, "docker-compose api has AWS_S3_ENDPOINT")
 check(
@@ -277,10 +309,20 @@ check(
 check("PORT=8000" in read("services/titiler/.env.example"), "titiler .env.example PORT=8000")
 api_env = read("apps/api/.env.example")
 check(
-    "AWS_ACCESS_KEY_ID=" in api_env and "AKASHA_RGB_RESCALE=" in api_env,
-    "api .env.example S3/RGB vars",
+    "DEFAULT_SOURCE_ID=resourcesat-2a-liss3-boa" in api_env,
+    "api .env.example ResourceSat default",
 )
-check("AWS_S3_ENDPOINT" in read("infra/railway/ENV_MATRIX.md"), "ENV_MATRIX api S3 vars")
+check("AKASHA_RGB_RESCALE=" in api_env, "api .env.example display rescale vars")
+selfhosted_env = read("infra/selfhosted/env.example")
+selfhosted_compose = read("infra/selfhosted/coolify-compose.yml")
+check(
+    "AWS_REGION=" in selfhosted_env and "AKASHA_COG_BUCKET=" in selfhosted_env,
+    "self-hosted env S3 bucket settings",
+)
+check(
+    "AWS_S3_ENDPOINT:" in selfhosted_compose and "AKASHA_COG_BUCKET:" in selfhosted_compose,
+    "self-hosted compose wires S3 bucket vars",
+)
 
 # ---------------------------------------------------------------- storage Phase 2
 section("Storage / ingestion Phase 2 helpers")
@@ -298,7 +340,7 @@ check(
 )
 
 # ---------------------------------------------------------------- synthetic E2E
-section("Synthetic dual-COG E2E (rasterio)")
+section("Synthetic ResourceSat dual-COG E2E (rasterio)")
 try:
     import rasterio  # noqa: F401,I001
     from pyproj import Transformer
@@ -310,25 +352,25 @@ try:
     tmp = Path(tempfile.mkdtemp())
     crs = "EPSG:32643"
     tf = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
-    pr = [tf.transform(x, y) for x, y in poly["coordinates"][0]]
+    pr = [tf.transform(x, y) for x, y in stat_poly["coordinates"][0]]
     minx = min(p[0] for p in pr) - 100
     maxx = max(p[0] for p in pr) + 100
     miny = min(p[1] for p in pr) - 100
     maxy = max(p[1] for p in pr) + 100
-    w = int((maxx - minx) / 10)
-    h = int((maxy - miny) / 10)
-    transform = from_origin(minx, maxy, 10, 10)
-    analytic_arr = np.zeros((9, h, w), dtype="uint16")
-    analytic_arr[0, :, :] = 2000
-    analytic_arr[1, :, :] = 4000
-    scl_arr = np.full((h, w), 4, dtype="uint8")
+    w = int((maxx - minx) / 24)
+    h = int((maxy - miny) / 24)
+    transform = from_origin(minx, maxy, 24, 24)
+    analytic_arr = np.zeros((4, h, w), dtype="uint16")
+    analytic_arr[1, :, :] = 2000
+    analytic_arr[2, :, :] = 4000
+    mask_arr = np.full((h, w), VALID_MASK_CLASS, dtype="uint8")
     a_path = tmp / "analytic.tif"
-    s_path = tmp / "scl.tif"
+    m_path = tmp / "mask.tif"
     prof = dict(
         driver="GTiff",
         width=w,
         height=h,
-        count=9,
+        count=4,
         dtype="uint16",
         crs=crs,
         transform=transform,
@@ -336,56 +378,53 @@ try:
     )
     with rasterio.open(a_path, "w", **prof) as dst:
         dst.write(analytic_arr)
-    with rasterio.open(s_path, "w", **dict(prof, count=1, dtype="uint8")) as dst:
-        dst.write(scl_arr, 1)
+    with rasterio.open(m_path, "w", **dict(prof, count=1, dtype="uint8")) as dst:
+        dst.write(mask_arr, 1)
     synthetic_assets = {
-        "itemId": "synthetic",
+        "itemId": "synthetic-resourcesat",
         "analyticHref": str(a_path),
-        "sclHref": str(s_path),
-        "maskHref": str(s_path),
-        "bandNames": indices.FROZEN_ANALYTIC_BANDS,
-        "scale": 0.0001,
-        "offset": -0.1,
-        "bandRoleMapping": {
-            "BLUE": "B02",
-            "GREEN": "B03",
-            "RED": "B04",
-            "NIR": "B08",
-            "RED_EDGE": "B05",
-            "SWIR1": "B11",
-            "SWIR2": "B12",
-        },
+        "sclHref": str(m_path),
+        "maskHref": str(m_path),
+        "maskAsset": "mask",
+        "bandNames": BANDS,
+        "scale": SCALE,
+        "offset": OFFSET,
+        "bandRoleMapping": BAND_ROLE_MAPPING,
+        "excludedMaskClasses": EXCLUDED_MASK_CLASSES,
         "nodata": 0,
         "epsg": 32643,
         "bbox": None,
     }
     catalog.resolve_assets = lambda source_id, acquisition_date: synthetic_assets
     catalog.resolve_assets_for_date = lambda source_id, acquisition_date: [synthetic_assets]
-    catalog.supported_indices = lambda source_id="sentinel-2-l2a": list(indices.SUPPORTED_INDICES)
+    catalog.supported_indices = lambda source_id=SOURCE_ID: SUPPORTED_RESOURCE_INDICES
     resp = compute_statistics(
-        geometry=poly,
-        source_id="sentinel-2-l2a",
-        acquisition_date="2025-09-14",
+        geometry=stat_poly,
+        source_id=SOURCE_ID,
+        acquisition_date=SAMPLE_DATE,
         index_type="NDVI",
         max_area_ha=50,
         max_vertices=5000,
     )
     check(
-        abs(resp["statistics"]["mean"] - 0.5) < 1e-6,
-        f"synthetic E2E NDVI mean 0.5 [{resp['statistics']['mean']}]",
+        abs(resp["statistics"]["mean"] - 0.333333) < 1e-6,
+        f"synthetic E2E NDVI mean 0.333333 [{resp['statistics']['mean']}]",
     )
     check(resp["pixelCounts"]["validPixels"] > 0, "synthetic E2E has valid pixels")
     check(resp["statistics"]["validPixelPercent"] == 100.0, "synthetic E2E validPixelPercent 100")
 except ImportError:
-    print("  [SKIP] rasterio/pyproj not installed in this environment (E2E covered on Railway).")
+    print("  [SKIP] rasterio/pyproj not installed in this environment (E2E covered on staging).")
 
 # ---------------------------------------------------------------- blocked
-section("BLOCKED until operator COGs are in MinIO (Railway / local Docker)")
-print("  [BLOCKED] Real RGB PNG tile rendered by TiTiler through the gateway.")
-print("  [BLOCKED] Real cloud-masked NDVI statistic for the reference polygon,")
+section("BLOCKED until ResourceSat composite COGs are in MinIO (staging / local Docker)")
+print("  [BLOCKED] Real ResourceSat FCC PNG tile rendered by TiTiler through the gateway.")
+print("  [BLOCKED] Real mask-aware NDVI statistic for the reference polygon,")
 print("            compared against a QGIS/notebook reference (data-ingestion rules).")
-print("  -> Upload analytic.tif + scl.tif to s3://akasha-cogs/sentinel-2-l2a/2025-09-14/")
-print("     then run: python services/ingestion/worker.py verify-cogs")
+print("  -> Build/ingest the ResourceSat composite COGs, then run:")
+print(
+    "     python services/ingestion/worker.py verify-composite "
+    "--source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item"
+)
 
 print("\n" + "-" * 64)
 print(f" PASSED: {passed}   FAILED: {failed}")
@@ -393,5 +432,5 @@ print("-" * 64)
 if failed:
     print("Slice 2 validation FAILED.")
     sys.exit(1)
-print("Slice 2 (Phase 2) validation PASSED — raster de-risk artifacts are Railway-ready.")
+print("Slice 2 validation PASSED - raster de-risk artifacts are deployment-ready.")
 sys.exit(0)

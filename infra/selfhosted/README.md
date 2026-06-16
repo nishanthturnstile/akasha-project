@@ -94,12 +94,53 @@ The staging workflow builds and pushes these images from the client repository o
 
 It then renders `coolify-compose.yml` with `IMAGE_TAG=<git-sha>`, patches the Coolify staging service stack, and triggers a Coolify deployment.
 
+Before patching Coolify, staging and production deploy workflows verify that all four immutable
+SHA-tagged images exist in GHCR. If any image is missing, the workflow must fail before the
+Coolify stack is changed.
+
 Important: the staging workflow patches the **Coolify Compose definition** with the immutable Git
 SHA. It may not update the separate `IMAGE_TAG` row shown in Coolify's environment-variable UI.
 When checking what is actually deployed, trust the service image tag shown under the stack's
 Services list (for example `akasha-api:<git-sha>`) or the image label, not only the env-var row.
 If you manually redeploy from the Coolify UI without running the workflow, then the env-var row
 matters only if the stored Compose still references `${IMAGE_TAG}`.
+
+## Phase 3 Bhoonidhi deploy acceptance
+
+Use this sequence for the Phase 3 scheduled-sync hardening changes before
+moving to the next implementation phase:
+
+1. Commit and push the Phase 3 hardening changes, including the new files under
+   `infra/selfhosted/systemd/`, `scripts/`, and `tests/`.
+2. Let the staging workflow build and push the four SHA-tagged images. The
+   workflow must pass the immutable GHCR image verification step before it
+   patches Coolify.
+3. Validate the deployed SHA from a workstation with staging SSH access:
+
+```bash
+python scripts/validate_selfhosted_staging_bhoonidhi.py \
+  --expected-sha <deployed-git-sha> \
+  --skip-timer-check \
+  --public-origin https://staging.gis.cidsaglobal.com
+```
+
+4. Install the timer on the staging VM:
+
+```bash
+infra/selfhosted/systemd/install-akasha-bhoonidhi-sync.sh
+```
+
+5. Set `AKASHA_SYNC_DRY_RUN=true` in `/etc/akasha/bhoonidhi-sync.env`, run the
+   service once, and inspect the journal:
+
+```bash
+sudo systemctl start akasha-bhoonidhi-sync.service
+journalctl -u akasha-bhoonidhi-sync.service -n 200 --no-pager
+```
+
+6. Re-run the validator without `--skip-timer-check`.
+7. Remove `AKASHA_SYNC_DRY_RUN=true`, enable the timer, then run one live
+   service invocation only after the dry-run logs are clean.
 
 ## First staging deployment checklist
 
@@ -117,8 +158,35 @@ python -m app.cli migrate
 ```bash
 python worker.py seed
 python worker.py verify
-python worker.py verify-cogs
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
 ```
+
+After deploying a Bhoonidhi ingestion change, run the repeatable staging validator from a
+workstation that can SSH to the staging VM:
+
+```bash
+python scripts/validate_selfhosted_staging_bhoonidhi.py --expected-sha <git-sha> --skip-timer-check
+```
+
+Remove `--skip-timer-check` after the Phase 3 systemd timer is installed. The validator confirms
+the Coolify compose image tags, running `web`/`api` image revisions, container health,
+`worker.py verify`, `worker.py verify-cogs`, current-window Bhoonidhi search behavior, and the
+known historical dry-run sync window. It stops immediately when the expected image tag is not
+running; use `--continue-after-failure` only when intentionally gathering diagnostics from a
+known-bad deploy.
+
+To include the public gateway/API smoke in the same run, add `--public-origin
+https://<staging-domain>`. Without a strict flag, public smoke is advisory because
+staging product endpoints normally require authentication. Add `--smoke-login`
+when `AKASHA_SMOKE_USERNAME` and `AKASHA_SMOKE_PASSWORD` are set locally; that
+makes the public smoke a required gate. Add `--require-public-smoke`,
+`--require-raster`, or `--require-monitoring-clean` only when that stricter gate
+is expected to pass. `--require-monitoring-clean` automatically runs the smoke
+with `--login`; it fails storage errors, zero-byte COG objects, stale/missing
+refresh heartbeats, missing active field composites, low coverage/usable pixels,
+unresolved ingestion failures, and tile-unavailable dates. A stale ResourceSat
+catalog/composite date is allowed only when the Bhoonidhi search heartbeat is
+fresh and the source reports the explicit `UPSTREAM_DATA_STALE` warning class.
 
 6. If `AUTH_ALLOW_BOOTSTRAP=true`, create the first admin user through `/api/auth/bootstrap`, then set `AUTH_ALLOW_BOOTSTRAP=false` in Coolify and redeploy.
 7. Run unauthenticated smoke checks:
@@ -133,7 +201,17 @@ python scripts/smoke-test.py https://<staging-domain>
 AKASHA_SMOKE_USERNAME=<username> AKASHA_SMOKE_PASSWORD=<password> python scripts/smoke-test.py https://<staging-domain> --login
 ```
 
-9. Verify private ports from outside the host:
+9. Verify operator monitoring after a user exists:
+
+```bash
+curl -fsS -b cookies.txt https://<staging-domain>/api/monitoring/imagery-sources
+```
+
+The payload should include `sources`, `storage`, and `ingestionLedger`. If
+`ingestionLedger.status` is `missing`, confirm the API service has the read-only
+`/srv/akasha/ingestion` mount and the worker writes `BHOONIDHI_LEDGER_PATH`.
+
+10. Verify private ports from outside the host:
 
 ```bash
 for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<staging-public-ip>/$p" && echo "$p open" || echo "$p closed_or_filtered"; done
@@ -154,10 +232,64 @@ Catalog/storage seed and verification from `ingestion-worker`:
 ```bash
 python worker.py seed
 python worker.py verify
-python worker.py verify-cogs
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
 ```
 
-SAR preprocessing from `ingestion-sar` depends on staged input data under `/srv/akasha/data` and should follow `docs/sentinel-1-grd-cog-prep-runbook.md`.
+## Scheduled Bhoonidhi sync
+
+Phase 3 uses a systemd timer on the staging worker VM so Bhoonidhi traffic comes
+from the whitelisted static IP and raw/work/ledger files stay under
+`/srv/akasha`.
+
+Install the timer artifacts:
+
+```bash
+infra/selfhosted/systemd/install-akasha-bhoonidhi-sync.sh
+```
+
+Edit `/etc/akasha/bhoonidhi-sync.env` for AOI, window, and per-run download
+cap. `AKASHA_COMPOSE_FILE` and `AKASHA_COMPOSE_PROJECT` can usually stay unset
+on Coolify hosts; the wrapper auto-detects the rendered compose file and uses
+the existing local image with `AKASHA_SYNC_PULL_POLICY=never`. The service uses
+a host-level `flock` at `/srv/akasha/ingestion/bhoonidhi-sync.systemd.lock`;
+the worker also uses its own ledger lock, so overlapping timer/manual runs fail
+fast.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now akasha-bhoonidhi-sync.timer
+systemctl list-timers akasha-bhoonidhi-sync.timer
+journalctl -u akasha-bhoonidhi-sync.service -n 200 --no-pager
+```
+
+The installer also accepts `--enable`, `--start`, and `--dry-run`. For the
+first staging validation, set `AKASHA_SYNC_DRY_RUN=true` in
+`/etc/akasha/bhoonidhi-sync.env`, then run
+`sudo systemctl start akasha-bhoonidhi-sync.service` and inspect the journal
+before enabling live downloads.
+
+For the launch backfill, set `AKASHA_SYNC_BACKFILL_DAYS=90` and
+`AKASHA_SYNC_BACKFILL_STEP_DAYS=15` in `/etc/akasha/bhoonidhi-sync.env`. Each
+timer run processes one bounded historical window and advances
+`AKASHA_SYNC_BACKFILL_STATE_PATH` (default under `/srv/akasha/ingestion`). Remove
+those settings after the backfill completes so the daily timer returns to the
+rolling current window. For a manual one-off window, set
+`AKASHA_SYNC_WINDOW_START` and `AKASHA_SYNC_WINDOW_END`, then run
+`sudo systemctl start akasha-bhoonidhi-sync.service`.
+
+For additional AOIs, set `AOI_CONFIG_DIR` to a directory containing one GeoJSON
+file per AOI, using filenames such as `mysore-60km.geojson`, then pass the
+matching id to ingestion commands:
+
+```bash
+python worker.py bhoonidhi-search --source resourcesat-2a-liss3-boa --aoi mysore-60km --aoi-dir /app/data/seed/aois
+python worker.py build-composite --source resourcesat-2a-liss3-boa --aoi mysore-60km --aoi-dir /app/data/seed/aois --window-start 2026-03-01 --window-end 2026-03-31
+```
+
+EOS-04 and NISAR SAR sources are registered as gated context layers until a validated native
+operator-download/prep workflow is available. The `ingestion-sar` service still contains the legacy
+Sentinel-1 regression path; use `docs/sentinel-1-grd-cog-prep-runbook.md` only for that explicit
+legacy workflow, not for production ISRO SAR onboarding.
 
 ## Rollback
 

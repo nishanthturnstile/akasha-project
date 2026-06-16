@@ -27,9 +27,9 @@ function renderMenu(overrides: Partial<ComponentProps<typeof DownloadMenu>> = {}
         selectedPlot={ plot }
         selectedDate="2026-06-01"
         displayMode="NDVI"
-        sourceId="sentinel-2-l2a"
+        sourceId="resourcesat-2a-liss3-boa"
         indexType="NDVI"
-        cloudMask={ { clouds: true, cloudShadows: false, cirrus: true } }
+        cloudMask={ { clouds: true, cloudShadows: false, cirrus: false } }
         { ...overrides }
       />
     </QueryClientProvider>,
@@ -79,10 +79,22 @@ describe('DownloadMenu', () => {
   });
 
   it('disables GeoTIFF when the active layer is not an index scene', () => {
-    renderMenu({ displayMode: 'RGB' });
+    renderMenu({ displayMode: 'FCC' });
     fireEvent.click(screen.getByTestId('download-menu-toggle'));
     expect((screen.getByTestId('download-index-tiff') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('download-field-geojson') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('disables analytics exports for context-only sources', () => {
+    renderMenu({ analyticsEnabled: false, displayMode: 'NDVI_CONTEXT' });
+    fireEvent.click(screen.getByTestId('download-menu-toggle'));
+
+    const csv = screen.getByTestId('download-analytics-csv') as HTMLButtonElement;
+    const geojson = screen.getByTestId('download-field-geojson') as HTMLButtonElement;
+    expect(csv.disabled).toBe(true);
+    expect(geojson.disabled).toBe(true);
+    expect(csv.title).toBe('Analytics are not enabled for this source.');
+    expect(geojson.title).toBe('Analytics are not enabled for this source.');
   });
 
   it('shows sanitized failed export copy', async () => {

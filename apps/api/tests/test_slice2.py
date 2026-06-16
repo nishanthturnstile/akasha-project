@@ -357,7 +357,14 @@ def test_sources_endpoint_contract():
         "SWIR1": "BAND5",
     }
     assert rs["maskAsset"] == "mask"
-    assert rs["displayModes"] == ["FCC"]
+    # FCC base imagery + optical index display modes (EOS-style LAYER picker).
+    assert rs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI"]
+    assert rs["defaultDisplayMode"] == "FCC"
+    assert [g["label"] for g in rs["layerGroups"]] == [
+        "Imagery",
+        "Vegetation Indices",
+        "Moisture Indices",
+    ]
     assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
     assert rs["metricsProvisional"] is True
     assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
@@ -392,7 +399,9 @@ def test_legacy_sentinel_sources_are_opt_in(monkeypatch):
     assert src["kind"] == "optical"
     assert src["bandRoleMapping"]["NIR"] == "B08"
     assert src["maskAsset"] == "scl"
-    assert src["displayModes"] == ["RGB"]
+    # RGB stays the default layer; index display modes are additive (EOS-style picker).
+    assert src["displayModes"] == ["RGB", "NDVI", "NDRE", "MSAVI", "NDMI"]
+    assert src["defaultDisplayMode"] == "RGB"
     s1 = sources["sentinel-1-grd"]
     assert s1["label"] == "Sentinel-1 GRD"
     assert s1["provider"] == "Copernicus"

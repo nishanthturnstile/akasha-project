@@ -10,6 +10,7 @@ Uses stdlib urllib for the proxy fetch (no extra dependency).
 """
 from __future__ import annotations
 
+import json
 import os
 import struct
 import urllib.error
@@ -174,6 +175,35 @@ def build_rgb_tile_url(
     return f"{base}{path}?{urllib.parse.urlencode(params)}"
 
 
+def build_index_tile_url(
+    *,
+    analytic_href: str,
+    expression: str,
+    rescale: str,
+    colormap_name: str,
+    z: int,
+    x: int,
+    y: int,
+    titiler_url: str | None = None,
+    fmt: str = "png",
+) -> str:
+    """Build an internal TiTiler URL for one colorized index tile.
+
+    TiTiler computes the index from the analytic COG via a band-math ``expression``
+    (reflectance correction baked in by the caller), stretches it across ``rescale``
+    and applies ``colormap_name``. The analytic COG url stays server-side.
+    """
+    base = (titiler_url or titiler_base_url()).rstrip("/")
+    path = f"/cog/tiles/{TILE_MATRIX_SET}/{z}/{x}/{y}.{fmt}"
+    params: list[tuple[str, str]] = [
+        ("url", analytic_href),
+        ("expression", expression),
+        ("rescale", rescale),
+        ("colormap_name", colormap_name),
+    ]
+    return f"{base}{path}?{urllib.parse.urlencode(params)}"
+
+
 def build_mosaic_rgb_tile_url(
     *,
     analytic_hrefs: list[str],
@@ -209,6 +239,67 @@ def build_mosaic_rgb_tile_url(
         sceneCount=len(analytic_hrefs),
         supportedSceneCount=1,
     )
+
+
+def fetch_feature_overlay(
+    *,
+    analytic_href: str,
+    feature: dict,
+    expression: str,
+    rescale: str,
+    colormap_name: str,
+    width: int,
+    height: int,
+    resampling: str = "bilinear",
+    titiler_url: str | None = None,
+    timeout: float = 30.0,
+) -> tuple[bytes, str]:
+    """Render an index image CLIPPED to a GeoJSON feature via TiTiler /cog/feature.
+
+    TiTiler computes the index `expression` from the analytic COG over the
+    feature's bounding box, colorizes it, and sets pixels OUTSIDE the polygon
+    transparent — i.e. the EOS-style field-clipped overlay. `width`/`height` force
+    a higher output resolution so the polygon edge rasterizes smoothly (instead of
+    blocky native COG pixels); `resampling` smooths the index gradient. The analytic
+    COG url and storage details stay server-side. Returns (png_bytes, content_type).
+    """
+    base = (titiler_url or titiler_base_url()).rstrip("/")
+    if not base:
+        raise raster_backend_unavailable(
+            "TiTiler is not configured (TITILER_URL unset) in this environment."
+        )
+    qs = urllib.parse.urlencode(
+        {
+            "url": analytic_href,
+            "expression": expression,
+            "rescale": rescale,
+            "colormap_name": colormap_name,
+            "width": int(width),
+            "height": int(height),
+            "resampling": resampling,
+        }
+    )
+    url = f"{base}/cog/feature.png?{qs}"
+    body = json.dumps(feature).encode()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "image/png,*/*"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+            return resp.read(), resp.headers.get("Content-Type", "image/png")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return TRANSPARENT_PNG, "image/png"
+        raise upstream_error(
+            "TiTiler feature-overlay request failed.", code="TITILER_ERROR"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise upstream_error(
+            "TiTiler feature-overlay request failed.", code="TITILER_ERROR"
+        ) from exc
 
 
 def fetch_tile(url: str, timeout: float = 20.0) -> tuple[bytes, str]:

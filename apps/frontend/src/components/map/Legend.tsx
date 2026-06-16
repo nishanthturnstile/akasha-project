@@ -38,6 +38,14 @@ const NDRE_RAMP: RampSpec = {
     caption: 'Low ▸ high red-edge vigour',
 };
 
+const MSAVI_RAMP: RampSpec = {
+    title: 'MSAVI · vegetation',
+    gradient:
+        'linear-gradient(90deg,#8a5a22 0%,#c79a3a 30%,#e8dd77 55%,#7cbb50 80%,#1f6b3a 100%)',
+    ticks: ['0', '0.5', '1'],
+    caption: 'Soil-adjusted canopy cover',
+};
+
 const NDMI_RAMP: RampSpec = {
     title: 'NDMI · moisture',
     gradient:
@@ -91,6 +99,8 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
             return NDVI_RAMP;
         case 'NDRE':
             return NDRE_RAMP;
+        case 'MSAVI':
+            return MSAVI_RAMP;
         case 'NDMI':
             return NDMI_RAMP;
         case 'NDWI':

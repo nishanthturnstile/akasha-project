@@ -35,14 +35,16 @@ from ..raster.errors import (
     rate_limited,
     upstream_error,
 )
-from ..raster.indices import (
+from .raster.indices import (
     DEFAULT_INDEX,
     SUPPORTED_INDICES,
     fcc_band_positions,
+    get_index,
+    index_tile_expression,
     rgb_band_positions,
 )
-from ..raster.models import StatisticsRequest, StatisticsResponse
-from ..raster.service import compute_statistics
+from .raster.models import StatisticsRequest, StatisticsResponse
+from .raster.service import compute_statistics
 
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
 
@@ -406,6 +408,54 @@ async def _render_fcc_tile(
     return Response(content=body, media_type=content_type)
 
 
+async def _render_index_tile(
+    source_id: str, acquisition_date: str, index_type: str, z: int, x: int, y: int
+) -> Response:
+    """Render a colorized, reflectance-corrected index tile (NDVI/NDRE/MSAVI/NDMI).
+
+    Phase 1 is unmasked: TiTiler computes the index expression from the analytic
+    COG and colorizes it. Clouds are not SCL-masked here (the BFF statistics path
+    remains the masked, analytic source of truth).
+    """
+    index_def = get_index(index_type)
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    if len(assets_for_date) != 1:
+        raise mosaic_tiles_unavailable(
+            "Date-level index tiles for multiple scenes require a configured mosaic backend.",
+            sceneCount=len(assets_for_date),
+            supportedSceneCount=1,
+        )
+    assets = assets_for_date[0]
+    try:
+        expression = index_tile_expression(
+            assets["bandNames"],
+            assets.get("bandRoleMapping", {}),
+            index_def,
+            scale=float(assets.get("scale", 0.0001)),
+            offset=float(assets.get("offset", -0.1)),
+        )
+    except KeyError as exc:
+        raise upstream_error(
+            "STAC analytic asset is missing a band required for this index.",
+            code="MISSING_INDEX_BANDS",
+            indexType=index_type,
+            missingRole=str(exc).strip("'"),
+            availableBands=assets.get("bandNames", []),
+            bandRoleMapping=assets.get("bandRoleMapping", {}),
+        ) from exc
+    url = tiles.build_index_tile_url(
+        analytic_href=assets["analyticHref"],
+        expression=expression,
+        rescale=index_def.display_rescale_str,
+        colormap_name=index_def.display_colormap,
+        z=z,
+        x=x,
+        y=y,
+    )
+    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+    return Response(content=body, media_type=content_type)
+
+
 @router.get("/tiles/{source_id}/{acquisition_date}/rgb/{z}/{x}/{y}.png")
 async def get_rgb_tile(source_id: str, acquisition_date: str, z: int, x: int, y: int) -> Response:
     """Legacy same-origin RGB tile route preserved for Sentinel-2 compatibility."""
@@ -433,6 +483,8 @@ async def get_display_mode_tile(
         return await _render_fcc_tile(source_id, acquisition_date, z, x, y)
     if normalized_mode == "VV_GRAYSCALE":
         return await _render_sar_vv_grayscale_tile(source_id, acquisition_date, z, x, y)
+    if normalized_mode in catalog.supported_indices(source_id):
+        return await _render_index_tile(source_id, acquisition_date, normalized_mode, z, x, y)
     if normalized_mode in {"CONTEXT", "NDVI_CONTEXT"}:
         return await _render_context_tile(source_id, acquisition_date, normalized_mode, z, x, y)
     raise bad_request(

@@ -50,8 +50,14 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         "maskAsset": "scl",
         "maskMethod": "Sentinel-2 Scene Classification Layer (SCL).",
         "excludedMaskClasses": [0, 1, 2, 3, 7, 8, 9, 10, 11],
-        "displayModes": ["RGB"],
+        "displayModes": ["RGB", "NDVI", "NDRE", "MSAVI", "NDMI"],
         "defaultDisplayMode": "RGB",
+        # EOS-style grouped LAYER picker. Each mode is a valid display mode above.
+        "layerGroups": [
+            {"label": "Natural Color", "modes": ["RGB"]},
+            {"label": "Vegetation Indices", "modes": ["NDVI", "NDRE", "MSAVI"]},
+            {"label": "Moisture Indices", "modes": ["NDMI"]},
+        ],
         "description": "Optical Sentinel-2 L2A surface reflectance with cloud/SCL masking.",
         "attribution": "Copernicus Sentinel-2",
         "dateMetricsKind": "optical",
@@ -74,8 +80,15 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "maskAsset": "mask",
         "excludedMaskClasses": [0, 2, 3],
-        "displayModes": ["FCC"],
+        # FCC base imagery + optical indices. LISS-3 has no red-edge band, so NDRE
+        # is intentionally absent (only NDVI/MSAVI vegetation + NDMI moisture).
+        "displayModes": ["FCC", "NDVI", "MSAVI", "NDMI"],
         "defaultDisplayMode": "FCC",
+        "layerGroups": [
+            {"label": "Imagery", "modes": ["FCC"]},
+            {"label": "Vegetation Indices", "modes": ["NDVI", "MSAVI"]},
+            {"label": "Moisture Indices", "modes": ["NDMI"]},
+        ],
         "description": (
             "ResourceSat-2A LISS-3 BOA crop analytics source with Akasha-generated "
             "provisional cloud/validity mask."
@@ -419,6 +432,9 @@ def source_payload(source_id: str) -> dict[str, Any]:
         "maskAsset": source.get("maskAsset"),
         "displayModes": list(source["displayModes"]),
         "defaultDisplayMode": source["defaultDisplayMode"],
+        # EOS-style grouped LAYER picker; None for sources without categories
+        # (frontend then falls back to a flat displayModes list).
+        "layerGroups": source.get("layerGroups"),
         "description": source["description"],
         "attribution": source["attribution"],
         "dateMetricsKind": source["dateMetricsKind"],

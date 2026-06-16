@@ -11,17 +11,20 @@ vi.mock('@/components/map/MapLayerManager', () => ({
     basemap,
     scene,
     sceneB,
+    indexOverlay,
     visible,
   }: {
     basemap: { style?: string; places?: string };
     scene: { tileUrlTemplate?: string; attribution?: string } | null;
     sceneB?: { tileUrlTemplate?: string } | null;
+    indexOverlay?: { url?: string } | null;
     visible: boolean;
   }) => (
     <div
       data-testid="map-layer-manager"
       data-tile-template={ scene?.tileUrlTemplate ?? '' }
       data-compare-tile-template={ sceneB?.tileUrlTemplate ?? '' }
+      data-index-overlay-url={ indexOverlay?.url ?? '' }
       data-attribution={ scene?.attribution ?? '' }
       data-basemap-style={ basemap.style ?? '' }
       data-basemap-places={ basemap.places ?? '' }
@@ -435,8 +438,12 @@ describe('MapPage selected-field native analytics', () => {
     fireEvent.click(await screen.findByTestId('layer-display-trigger'));
     fireEvent.click(await screen.findByTestId('display-mode-NDVI'));
     await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/NDVI/{z}/{x}/{y}.png',
+      const manager = screen.getByTestId('map-layer-manager');
+      // EOS-style: full-scene raster is hidden (basemap imagery shows around the
+      // field) and the index is painted via a field-clipped overlay image.
+      expect(manager.getAttribute('data-tile-template')).toBe('');
+      expect(manager.getAttribute('data-index-overlay-url')).toContain(
+        '/api/fields/plot-1/overlay/NDVI.png',
       );
     });
     expect(screen.getByTestId('map-legend').getAttribute('data-display-mode')).toBe('NDVI');

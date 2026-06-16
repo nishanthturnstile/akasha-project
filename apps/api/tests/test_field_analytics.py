@@ -170,3 +170,117 @@ def test_trend_without_dates_uses_catalog_defaults_without_internal_leaks(monkey
     assert r.json()["provider"] == "native"
     for leak in ["s3://", "minio", "postgres", "Traceback"]:
         assert leak not in r.text
+
+
+def test_native_trend_reports_cloud_percent_per_scene(monkeypatch):
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(
+        field_analytics.catalog, "list_dates", lambda _: [{"acquisitionDate": "2026-01-01"}]
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "compute_statistics",
+        lambda **kwargs: _stats_response(
+            index_type=kwargs["index_type"], acquisition_date=kwargs["acquisition_date"]
+        ),
+    )
+
+    r = client.get(
+        "/api/fields/plot-1/analytics/trend?startDate=2026-01-01&endDate=2026-03-01"
+    )
+
+    assert r.status_code == 200
+    # cloudPercent mirrors the in-field cloud-masked percentage (EOS parity).
+    assert r.json()["points"][0]["cloudPercent"] == pytest.approx(10.0)
+
+
+def test_native_trend_filters_scenes_over_max_cloud_cover(monkeypatch):
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "list_dates",
+        lambda _: [
+            {"acquisitionDate": "2026-01-01"},  # clear scene -> kept
+            {"acquisitionDate": "2026-02-01"},  # cloudy scene -> dropped
+        ],
+    )
+
+    def fake_compute(**kwargs):
+        resp = _stats_response(
+            index_type=kwargs["index_type"], acquisition_date=kwargs["acquisition_date"]
+        )
+        if kwargs["acquisition_date"] == "2026-02-01":
+            resp["statistics"]["cloudMaskedPercent"] = 80.0
+        return resp
+
+    monkeypatch.setattr(field_analytics, "compute_statistics", fake_compute)
+
+    r = client.get(
+        "/api/fields/plot-1/analytics/trend"
+        "?startDate=2026-01-01&endDate=2026-03-01&maxCloudCoverInAoi=50"
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    dates = [p["acquisitionDate"] for p in body["points"]]
+    assert dates == ["2026-01-01"]
+    assert body["metadata"]["maxCloudCoverInAoi"] == pytest.approx(50.0)
+    assert body["metadata"]["cloudFilteredSceneCount"] == 1
+
+
+def test_native_trend_rejects_out_of_range_cloud_cover(monkeypatch):
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    r = client.get("/api/fields/plot-1/analytics/trend?maxCloudCoverInAoi=150")
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_CLOUD_COVER"
+
+
+def test_field_index_overlay_renders_clipped_png(monkeypatch):
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "resolve_assets_for_date",
+        lambda *_: [
+            {
+                "analyticHref": "s3://akasha-cogs/x/analytic.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5",
+                },
+                "scale": 0.0001,
+                "offset": 0.0,
+            }
+        ],
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_overlay(**kwargs):
+        captured.update(kwargs)
+        return b"PNGCLIP", "image/png"
+
+    monkeypatch.setattr(field_analytics.tiles, "fetch_feature_overlay", fake_overlay)
+
+    r = client.get(
+        "/api/fields/plot-1/overlay/ndvi.png"
+        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+    )
+
+    assert r.status_code == 200
+    assert r.content == b"PNGCLIP"
+    assert r.headers["content-type"] == "image/png"
+    # The field polygon is sent to TiTiler as the clip feature; NDVI colormap applied.
+    assert captured["feature"]["geometry"]["type"] == "Polygon"
+    assert captured["colormap_name"] == "rdylgn"
+    assert "b3" in captured["expression"] and "b2" in captured["expression"]
+
+
+def test_field_index_overlay_rejects_unsupported_index(monkeypatch):
+    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI", "NDMI"])
+    r = client.get(
+        "/api/fields/plot-1/overlay/ndre.png?sourceId=resourcesat-2a-liss3-boa"
+        "&acquisitionDate=2026-03-19"
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "UNSUPPORTED_INDEX"

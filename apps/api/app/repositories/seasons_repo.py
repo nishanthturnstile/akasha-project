@@ -114,7 +114,7 @@ def _normalize_field_ids(field_ids: list[str] | None) -> list[uuid.UUID]:
     return normalized
 
 
-def _validate_field_links(session: Any, user_id: str, field_ids: list[uuid.UUID]) -> None:
+def _validate_field_links(session: Any, user_id: str | None, field_ids: list[uuid.UUID]) -> None:
     if not field_ids:
         return
     user_uuid = _uuid(user_id)
@@ -149,14 +149,15 @@ def list_seasons(user_id: str | None = None) -> list[dict[str, Any]]:
 
 def get_season(season_id: str, user_id: str | None = None) -> dict[str, Any] | None:
     try:
-        stmt = select(*_season_columns()).where(Season.season_id == _uuid(season_id))
+        season_uuid = uuid.UUID(str(season_id))
+        stmt = select(*_season_columns()).where(Season.season_id == season_uuid)
         if user_id is not None:
             stmt = stmt.where(Season.user_id == _uuid(user_id))
         with session_scope() as session:
             row = session.execute(stmt).first()
             if row is None:
                 return None
-            field_ids_result = _season_field_ids(session, _uuid(season_id))
+            field_ids_result = _season_field_ids(session, season_uuid)
             can_remove_map = _field_can_remove_map(session, field_ids_result)
             return _row_to_season(row, field_ids_result, can_remove_map=can_remove_map)
     except Exception as exc:
@@ -285,9 +286,10 @@ def delete_season(season_id: str, user_id: str | None = None) -> bool:
         )
         if count <= 1:
             raise AkashaError(
+                "CANNOT_DELETE_SEASON",
                 "Season cannot be deleted.",
-                code="CANNOT_DELETE_SEASON",
-                seasonId=season_id,
+                409,
+                {"seasonId": season_id},
             )
 
         session.delete(season)

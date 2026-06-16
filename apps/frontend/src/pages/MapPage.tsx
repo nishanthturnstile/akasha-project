@@ -4,6 +4,8 @@ import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
 import {
   ApiError,
   composeTileTemplate,
+  exportAllPlotsGeoJson,
+  exportPlotGeoJson,
   type PlotGeoJsonImportPayload,
 } from '@/lib/api';
 import {
@@ -112,6 +114,59 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
     ],
     { padding: 96, maxZoom: 16, duration: 650 },
   );
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function geoJsonFilename(plot: Plot | null): string {
+  if (!plot) return 'fields.geojson';
+  const safeName = plot.name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${safeName || 'field'}.geojson`;
+}
+
+type LngLat = [number, number];
+type ImageCorners = [LngLat, LngLat, LngLat, LngLat];
+
+/** Lng/lat bounding-box corners (TL, TR, BR, BL) for a field's geometry —
+ *  used to georeference the clipped index overlay image on the map. */
+function geometryBboxCorners(geometry: Plot['geometry'] | undefined): ImageCorners | null {
+  if (!geometry) return null;
+  let w = Infinity;
+  let s = Infinity;
+  let e = -Infinity;
+  let n = -Infinity;
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node) && typeof node[0] === 'number') {
+      const [lng, lat] = node as LngLat;
+      w = Math.min(w, lng);
+      e = Math.max(e, lng);
+      s = Math.min(s, lat);
+      n = Math.max(n, lat);
+    } else if (Array.isArray(node)) {
+      node.forEach(visit);
+    }
+  };
+  visit((geometry as { coordinates?: unknown }).coordinates);
+  if (![w, s, e, n].every(Number.isFinite) || w === e || s === n) return null;
+  return [
+    [w, n],
+    [e, n],
+    [e, s],
+    [w, s],
+  ];
 }
 
 /** Map an Akasha {@link Source} to a short sensor badge (for example `S2`, `S1`). */
@@ -269,8 +324,15 @@ export default function MapPage() {
       : undefined) ??
     'FCC';
 
+  // EOS-style: when an index layer is selected, hide the full-scene Akasha raster so
+  // the basemap satellite imagery shows AROUND the field, and paint the colorized
+  // index ONLY inside the field via a clipped overlay image.
+  const isIndexLayer = (selectedSource?.supportedIndices ?? []).includes(selectedDisplayMode);
+
   const scene = useMemo<SatelliteScene | null>(() => {
     if (!selectedDate || !effectiveSourceId) return null;
+    // Index layers render via the field-clipped overlay, not a full-scene raster.
+    if (isIndexLayer) return null;
     const dl = defaultLayerQ.data;
     const isDefault =
       dl &&
@@ -299,6 +361,7 @@ export default function MapPage() {
   }, [
     selectedDate,
     effectiveSourceId,
+    isIndexLayer,
     defaultLayerQ.data,
     selectedDateMetadata,
     selectedDisplayMode,
@@ -331,6 +394,22 @@ export default function MapPage() {
     defaultLayerQ.data,
     selectedSource?.attribution,
   ]);
+
+  // EOS-style field-clipped index overlay: a same-origin PNG (colorized index,
+  // transparent outside the polygon) the map paints over the field only.
+  const indexOverlay = useMemo(() => {
+    if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
+    const corners = geometryBboxCorners(selectedPlot.geometry);
+    if (!corners) return null;
+    const params = new URLSearchParams({
+      sourceId: effectiveSourceId,
+      acquisitionDate: selectedDate,
+    });
+    const url =
+      `${window.location.origin}/api/fields/${selectedPlot.id}` +
+      `/overlay/${selectedDisplayMode}.png?${params.toString()}`;
+    return { url, coordinates: corners };
+  }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -397,6 +476,13 @@ export default function MapPage() {
       view.setSelectedPlotId(first.id);
       focusPlot(map, first);
     }
+  };
+
+  const exportGeoJson = async () => {
+    const blob = selectedPlot
+      ? await exportPlotGeoJson(selectedPlot.id)
+      : await exportAllPlotsGeoJson();
+    downloadBlob(blob, geoJsonFilename(selectedPlot));
   };
 
   const deleteSelectedField = async () => {
@@ -477,6 +563,7 @@ export default function MapPage() {
         zoom={ config.aoi.zoom }
         scene={ scene }
         sceneB={ sceneB }
+        indexOverlay={ indexOverlay }
         opacity={ opacity / 100 }
         visible={ visible }
         onBasemapError={ setBasemapRuntimeError }
@@ -509,7 +596,7 @@ export default function MapPage() {
         } }
         onRequestTool={ requestMapTool }
         onReleaseTool={ releaseMapTool }
-        onPolygonComplete={(geometry) => setDraftGeometry(geometry)}
+        onPolygonComplete={ (geometry) => setDraftGeometry(geometry) }
         className="absolute right-4 top-[280px] z-popover max-[760px]:right-4 max-[760px]:top-[37.5rem]"
       />
 

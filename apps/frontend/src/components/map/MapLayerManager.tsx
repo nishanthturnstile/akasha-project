@@ -25,6 +25,55 @@ const EMPTY_MAP_STYLE: maplibregl.StyleSpecification = {
   layers: [],
 };
 
+const INDEX_OVERLAY_SOURCE_ID = 'akasha-index-overlay';
+const INDEX_OVERLAY_LAYER_ID = 'akasha-index-overlay-layer';
+
+/** EOS-style field-clipped index image: a colorized PNG (transparent outside the
+ *  polygon) georeferenced to the field's lng/lat bbox corners. */
+export interface IndexOverlay {
+  url: string;
+  coordinates: [[number, number], [number, number], [number, number], [number, number]];
+}
+
+function removeIndexOverlay(map: maplibregl.Map): void {
+  if (map.getLayer(INDEX_OVERLAY_LAYER_ID)) map.removeLayer(INDEX_OVERLAY_LAYER_ID);
+  if (map.getSource(INDEX_OVERLAY_SOURCE_ID)) map.removeSource(INDEX_OVERLAY_SOURCE_ID);
+}
+
+/** Add or update the field-clipped index image on top of the base imagery. */
+function applyIndexOverlay(map: maplibregl.Map, overlay: IndexOverlay | null): void {
+  if (!overlay) {
+    removeIndexOverlay(map);
+    return;
+  }
+  const existing = map.getSource(INDEX_OVERLAY_SOURCE_ID) as maplibregl.ImageSource | undefined;
+  if (existing) {
+    existing.updateImage({ url: overlay.url, coordinates: overlay.coordinates });
+    return;
+  }
+  map.addSource(INDEX_OVERLAY_SOURCE_ID, {
+    type: 'image',
+    url: overlay.url,
+    coordinates: overlay.coordinates,
+  });
+  map.addLayer({
+    id: INDEX_OVERLAY_LAYER_ID,
+    type: 'raster',
+    source: INDEX_OVERLAY_SOURCE_ID,
+    paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
+  });
+}
+
+function setIndexOverlayOpacity(map: maplibregl.Map, opacity: number): void {
+  if (map.getLayer(INDEX_OVERLAY_LAYER_ID)) {
+    map.setPaintProperty(INDEX_OVERLAY_LAYER_ID, 'raster-opacity', opacity);
+  }
+}
+
+function overlayKeyOf(overlay: IndexOverlay | null | undefined): string | null {
+  return overlay ? `${overlay.url}|${overlay.coordinates.flat().join(',')}` : null;
+}
+
 function sceneFitPadding(map: maplibregl.Map) {
   const canvas = map.getCanvas();
   const width = canvas.clientWidth || canvas.width || 800;
@@ -91,6 +140,8 @@ interface MapLayerManagerProps {
   scene: SatelliteScene | null;
   /** Compare ("B") scene rendered beneath `scene`; `null` disables compare. */
   sceneB?: SatelliteScene | null;
+  /** EOS-style field-clipped index image painted over the base imagery; `null` off. */
+  indexOverlay?: IndexOverlay | null;
   /** 0..1 */
   opacity: number;
   visible: boolean;
@@ -111,6 +162,7 @@ export function MapLayerManager({
   zoom,
   scene,
   sceneB,
+  indexOverlay,
   opacity,
   visible,
   onBasemapError,
@@ -124,10 +176,13 @@ export function MapLayerManager({
   sceneRef.current = scene;
   const sceneBRef = useRef(sceneB ?? null);
   sceneBRef.current = sceneB ?? null;
+  const overlayRef = useRef(indexOverlay ?? null);
+  overlayRef.current = indexOverlay ?? null;
   const stateRef = useRef({ opacity, visible });
   stateRef.current = { opacity, visible };
   const sceneKey = sceneLayerKey(scene);
   const sceneKeyB = sceneLayerKey(sceneB ?? null);
+  const overlayKey = overlayKeyOf(indexOverlay);
 
   // Create the map exactly once.
   useEffect(() => {
@@ -153,6 +208,10 @@ export function MapLayerManager({
         if (stateRef.current.visible) fitSceneBoundsIfNeeded(map, s);
       }
       if (sceneBRef.current) applyCompareLayer(asHost(map), sceneBRef.current);
+      if (overlayRef.current) {
+        applyIndexOverlay(map, overlayRef.current);
+        setIndexOverlayOpacity(map, stateRef.current.visible ? stateRef.current.opacity : 0);
+      }
       onMapReady?.(map);
     };
 
@@ -247,6 +306,21 @@ export function MapLayerManager({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // Field-clipped index overlay image: add/update/remove when it changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    applyIndexOverlay(map, overlayRef.current);
+    setIndexOverlayOpacity(map, visible ? opacity : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayKey]);
+
+  // Live overlay opacity/visibility (no image refetch).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && loadedRef.current) setIndexOverlayOpacity(map, visible ? opacity : 0);
+  }, [opacity, visible]);
 
   return <div ref={ containerRef } className="absolute inset-0 size-full" data-testid="map-canvas" />;
 }

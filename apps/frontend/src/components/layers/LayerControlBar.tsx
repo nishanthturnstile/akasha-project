@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { SourceSelector } from '@/components/layers/SourceSelector';
 import { DisplayModeToggle } from '@/components/layers/DisplayModeToggle';
+import { modeLabel } from '@/lib/displayMode';
 import { CompareControl } from '@/components/map/CompareControl';
 import { DownloadMenu } from '@/components/monitoring/DownloadMenu';
 import { Switch } from '@/components/ui/switch';
@@ -348,7 +349,7 @@ export function LayerControlBar({
 
             <PopoverButton
                 label="Layer"
-                value={ displayMode }
+                value={ modeLabel(displayMode) }
                 ariaLabel="Display mode"
                 testId="layer-display-trigger"
                 align="start"
@@ -362,6 +363,7 @@ export function LayerControlBar({
                         modes={ displayModes }
                         value={ displayMode }
                         onChange={ onDisplayModeChange }
+                        groups={ activeSource?.layerGroups }
                     />
                 </div>
             </PopoverButton>

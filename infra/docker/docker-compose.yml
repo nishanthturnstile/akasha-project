@@ -269,7 +269,7 @@ services:
     # One-shot: prints config and exits. Run seeding/verify on demand, e.g.:
     #   docker compose run --rm ingestion-worker python worker.py seed
     #   docker compose run --rm ingestion-worker python worker.py verify
-    #   docker compose run --rm ingestion-worker python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+    #   docker compose run --rm ingestion-worker python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
     restart: "no"
 
   ingestion-sar:

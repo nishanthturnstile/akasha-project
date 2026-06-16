@@ -753,7 +753,7 @@ python -m app.cli db upgrade
 # catalog + storage seed / verify (ingestion-worker container)
 python worker.py seed       # only when (re)initialising ResourceSat catalog scaffolding
 python worker.py verify     # PostGIS/STAC/MinIO reachability
-python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
 ```
 
 `ingestion-worker` and `ingestion-sar` stay `restart: "no"` and must not count
@@ -948,7 +948,7 @@ If moving from Azure rehearsal to physical/VPS production with real data:
    ```bash
    python -m app.cli check
    python worker.py verify
-   python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+   python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
    ```
 
 7. Run smoke test against the target staging/production domain.

@@ -82,7 +82,7 @@ What was built:
 
 BLOCKED runtime exit criteria (run on the deployment / local Docker with operator COGs):
 
-- For ResourceSat manifest-driven composites, run `python worker.py ingest-manifest` and verify with `python worker.py verify-manifest-cogs`; production object keys are under `s3://akasha-cogs/resourcesat-2a-liss3-boa/composite/{aoiId}/{date}/analytic.tif|mask.tif`. Use `verify-cogs` for the seeded ResourceSat sample/phase gate, and use `verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item` for real composites.
+- For ResourceSat manifest-driven composites, run `python worker.py ingest-manifest` and verify with `python worker.py verify-manifest-cogs`; production object keys are under `s3://akasha-cogs/resourcesat-2a-liss3-boa/composite/{aoiId}/{date}/analytic.tif|mask.tif`. Use `verify-cogs` for the seeded ResourceSat sample/phase gate, and use `verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km` for real composites; it requires the dated STAC item by default.
 - Render a real ResourceSat FCC PNG tile via the gateway and compute the real source-mask-aware NDVI for an in-footprint AOI polygon, comparing against a QGIS/notebook reference.
 
 Note: the live preview keeps `skeleton.SLICE = 0` (so existing Slice 0 tests stay green and the dashboard is unchanged); only the roadmap status data was advanced (slice0/1 done, slice2 active). `APP_VERSION` is `0.2.0-slice2`.

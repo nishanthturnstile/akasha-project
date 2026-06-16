@@ -353,10 +353,14 @@ export interface FieldStatisticsResponse {
   cloudMask: CloudMaskOptions;
   statistics: IndexStatistics;
   pixelCounts: PixelCounts;
+  maskedPixels?: number;
+  maskMethod?: string | null;
+  metricsProvisional?: boolean;
   metadata: {
     formula?: string;
     bands?: string[];
     maskMethod?: string;
+    metricsProvisional?: boolean;
     nativeExcludedMaskClasses?: number[];
     cloudMaskOptions?: CloudMaskOptions;
     cloudMaskMapping?: CloudMaskMapping;

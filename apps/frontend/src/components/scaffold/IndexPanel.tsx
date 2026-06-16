@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, BarChart3, CalendarDays, Layers, Lock, Plus, Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -47,8 +47,13 @@ function startDateFor(endDate: string | null): string | undefined {
 function preferredIndex(displayMode: string, supported: string[]): string {
   const normalized = displayMode.toUpperCase();
   if (supported.includes(normalized)) return normalized;
+  if (normalized === 'NDWI' && supported.includes('NDWI_GREEN_NIR')) return 'NDWI_GREEN_NIR';
   if (supported.includes('NDVI')) return 'NDVI';
   return supported[0] ?? 'NDVI';
+}
+
+function indexLabel(index: string): string {
+  return index === 'NDWI_GREEN_NIR' ? 'NDWI' : index;
 }
 
 export function IndexPanel({
@@ -65,13 +70,14 @@ export function IndexPanel({
 }: IndexPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('crop-info');
 
-  const analyticsIndices = useMemo(
-    () => supportedIndices.filter((index) => index !== 'NDWI_GREEN_NIR'),
-    [supportedIndices],
-  );
+  const analyticsIndices = useMemo(() => supportedIndices.filter(Boolean), [supportedIndices]);
   const desiredIndex = preferredIndex(displayMode, analyticsIndices);
   const [indexType, setIndexType] = useState(desiredIndex);
   const activeIndexType = analyticsIndices.includes(indexType) ? indexType : desiredIndex;
+
+  useEffect(() => {
+    setIndexType(desiredIndex);
+  }, [desiredIndex]);
 
   const trendStart = periodFrom ?? startDateFor(selectedDate);
   const trendEnd = periodTo ?? selectedDate ?? undefined;
@@ -90,9 +96,16 @@ export function IndexPanel({
     cloudMask,
   });
 
-  const stats = statisticsQ.data?.statistics;
-  const warnings = statisticsQ.data?.metadata.warnings ?? [];
-  const analyticsCopy = sourceMetricsProvisional
+  const statsResponse = statisticsQ.data;
+  const stats = statsResponse?.statistics;
+  const warnings = statsResponse?.metadata.warnings ?? [];
+  const metricsProvisional =
+    statsResponse?.metricsProvisional ??
+    statsResponse?.metadata.metricsProvisional ??
+    sourceMetricsProvisional;
+  const responseMaskMethod = statsResponse?.maskMethod ?? statsResponse?.metadata.maskMethod ?? sourceMaskMethod;
+  const maskedPixels = statsResponse?.maskedPixels ?? statsResponse?.pixelCounts.maskedPixels;
+  const analyticsCopy = metricsProvisional
     ? 'Akasha provisional-mask analytics'
     : 'Akasha masked-raster analytics';
 
@@ -179,15 +192,16 @@ export function IndexPanel({
                 selectedDate={ selectedDate }
                 analyticsCopy={ analyticsCopy }
                 fallbackReason={ trendQ.data?.fallbackReason ?? null }
-                formula={ statisticsQ.data?.metadata.formula }
+                formula={ statsResponse?.metadata.formula }
                 bands={
-                  statisticsQ.data?.metadata.bands ?? trendQ.data?.metadata.bands ?? null
+                  statsResponse?.metadata.bands ?? trendQ.data?.metadata.bands ?? null
                 }
                 warnings={ warnings }
                 periodFrom={ trendStart ?? null }
                 periodTo={ trendEnd ?? null }
-                sourceMaskMethod={ sourceMaskMethod }
-                sourceMetricsProvisional={ sourceMetricsProvisional }
+                sourceMaskMethod={ responseMaskMethod }
+                sourceMetricsProvisional={ metricsProvisional }
+                maskedPixels={ maskedPixels }
               />
             </TabsContent>
 
@@ -359,6 +373,7 @@ interface ChartTabProps {
   periodTo: string | null;
   sourceMaskMethod?: string | null;
   sourceMetricsProvisional?: boolean;
+  maskedPixels?: number | null;
 }
 
 function ChartTab({
@@ -381,6 +396,7 @@ function ChartTab({
   periodTo,
   sourceMaskMethod,
   sourceMetricsProvisional = false,
+  maskedPixels,
 }: ChartTabProps) {
   const maskMethod = sourceMaskMethod ?? null;
   const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud';
@@ -398,7 +414,7 @@ function ChartTab({
             onClick={ () => onSelectIndex(index) }
             data-testid={ `analytics-index-${index}` }
           >
-            { index }
+            { indexLabel(index) }
           </Button>
         )) }
       </div>
@@ -516,6 +532,9 @@ function ChartTab({
           <p data-testid="analytics-mask-method">
             { sourceMetricsProvisional ? 'Provisional mask' : 'Mask' }: { maskMethod }
           </p>
+        ) }
+        { typeof maskedPixels === 'number' && Number.isFinite(maskedPixels) && (
+          <p data-testid="analytics-masked-pixels">Masked pixels: { maskedPixels }</p>
         ) }
         { warnings.map((warning) => (
           <p key={ warning } className="text-amber-300">{ warning }</p>

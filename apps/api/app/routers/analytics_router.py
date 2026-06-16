@@ -35,24 +35,6 @@ router = APIRouter(
 MAX_TREND_DAYS = 365
 
 
-class FieldStatisticsRequest(ApiModel):
-    source_id: str = settings.default_source_id
-    acquisition_date: str | None = None
-    index_type: str = DEFAULT_INDEX
-    cloud_mask: CloudMaskOptions = Field(default_factory=CloudMaskOptions)
-
-
-class FieldStatisticsResponse(ApiModel):
-    plot_id: str
-    provider: Literal["native"] = "native"
-    scope: Literal["field"] = "field"
-    index_type: str
-    source_id: str
-    acquisition_date: str
-    cloud_mask: CloudMaskOptions
-    statistics: IndexStatisticsModel
-    pixel_counts: PixelCounts
-    metadata: dict[str, Any]
 
 
 async def _run_blocking(func, *args, **kwargs):

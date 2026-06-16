@@ -20,6 +20,7 @@ clean. Heavy geospatial deps (rasterio/shapely/pyproj) are imported lazily in
 `app.raster.*` so importing this module never requires them (keeps the live
 Emergent preview healthy).
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,10 +57,6 @@ from .routers.report_router import router as reports_router
 from .routers.risk_router import router as risk_router
 from .routers.scout_task_router import router as scout_tasks_router
 from .routers.season_router import router as seasons_router
-from .reports import router as reports_router
-from .risk import router as risk_router
-from .scout_tasks import router as scout_tasks_router
-from .seasons import router as seasons_router
 from .source_monitoring import router as source_monitoring_router
 
 logging.basicConfig(
@@ -124,6 +121,7 @@ async def enforce_max_request_body(request: Request, call_next):
             },
         )
     return await call_next(request)
+
 
 # --- Health (root) ---------------------------------------------------------
 # Container/Compose health checks hit `/health` directly on the api container.

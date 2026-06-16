@@ -4,7 +4,7 @@ Use this file as the short prompt wrapper for Emergent.sh. The actual requiremen
 
 ## Prompt
 
-Build the Akasha Railway MVP incrementally, one slice at a time. Use the docs in this folder as source of
+Build the Akasha MVP incrementally, one slice at a time. Use the docs in this folder as source of
 truth, but include ONLY the documents/sections listed for the current slice in the prompt-slice table in
 platform-plan.md. Build only the requested slice — do not implement future phases or Wave 2 features unless
 they are explicitly included. Preserve the API/data contracts established by previous slices. Generate a
@@ -25,13 +25,13 @@ Phase 0/Slice 0 skeleton has been verified locally from this repository state:
 - Gateway smoke test passes: `/health`, `/api/health`, `/api/_skeleton/services`, and `/api/_skeleton/manifest`.
 - Internal TiTiler health is `GET /healthz` on port `8000`; set `PORT=8000` because the upstream image defaults to port `80`.
 - Internal STAC API health is `GET /_mgmt/ping` for `stac-fastapi-pgstac:5.0.2`; do not use `/_mgmt/health`.
-- Local Compose intentionally uses pinned upstream images directly for TiTiler and STAC API to avoid exporting huge no-op wrapper images; Railway still uses the per-service Dockerfiles.
+- Local Compose intentionally uses pinned upstream images directly for TiTiler and STAC API to avoid exporting huge no-op wrapper images; the deployment still uses the per-service Dockerfiles.
 
 Historical note: the next implementation chat after this section was Phase 1.
 Phase 1 has since been reviewed and locally verified; use the newer Phase 1
 handoff below for the current state.
 
-Before exposing a public Railway demo, review the remaining container scanner warning on `caddy:2.10-alpine` in `infra/gateway/Dockerfile` and either accept it explicitly for the demo or replace the gateway base/image strategy consistently across Dockerfile, validator, service metadata, and docs.
+Before exposing a public demo, review the remaining container scanner warning on `caddy:2.10-alpine` in `infra/gateway/Dockerfile` and either accept it explicitly for the demo or replace the gateway base/image strategy consistently across Dockerfile, validator, service metadata, and docs.
 
 ## Next-chat handoff after Phase 1 verification
 
@@ -59,7 +59,7 @@ For Phase 2, use `docs/prompts/phase-2-raster-de-risk-emergent-prompt.md` as the
 - TiTiler is display-only. Cloud/SCL-masked NDVI statistics must be computed in the FastAPI BFF using rasterio/rio-tiler over both analytic and SCL COG windows.
 - The gateway currently proxies `/tiles/*` to TiTiler without rewriting. If Phase 2 exposes a friendly `/tiles/{sourceId}/{date}/rgb/{z}/{x}/{y}.png` route, implement and verify the rewrite/proxy path explicitly.
 
-Do not proceed to full frontend map UX, plot CRUD UX, auth, custom domains, Wave 2 ingestion automation, or Railway hardening in Phase 2.
+Do not proceed to full frontend map UX, plot CRUD UX, auth, custom domains, Wave 2 ingestion automation, or deployment hardening in Phase 2.
 
 ## Next-chat handoff after Phase 2 verification
 
@@ -79,11 +79,11 @@ What was built:
 - Infra: `docker-compose` titiler `PORT=8000`; api service gets AWS_*/GDAL env so rasterio can read MinIO COGs; `apps/api/requirements.txt` pins `rasterio/rio-tiler/shapely/pyproj/numpy`; api Dockerfile installs `libexpat1`.
 - Ingestion: `storage.seed_keys` tags real uploads (`akasha-placeholder=false`) vs Slice 1 empty placeholders; new `storage.verify_real_cogs`, `verify.run_phase2`, and `worker.py verify-cogs` (assert both COG objects exist and are non-empty real COGs).
 
-BLOCKED runtime exit criteria (run on Railway / local Docker with operator COGs):
+BLOCKED runtime exit criteria (run on the deployment / local Docker with operator COGs):
 
 - For manifest-driven scenes, run `python worker.py ingest-manifest` and verify with `python worker.py verify-manifest-cogs`; dynamic object keys are `s3://akasha-cogs/sentinel-2-l2a/{date}/{mgrsTile}/{sceneComponent}/...` (see `docs/sentinel-2-l2a-cog-prep-runbook.md`). Use `verify-cogs` only for the legacy sample scene.
 - Render a real RGB PNG tile via the gateway and compute the real cloud-masked NDVI for `data/seed/phase2-ndvi-sample-polygon.geojson`, comparing against a QGIS/notebook reference.
 
 Note: the live preview keeps `skeleton.SLICE = 0` (so existing Slice 0 tests stay green and the dashboard is unchanged); only the roadmap status data was advanced (slice0/1 done, slice2 active). `APP_VERSION` is `0.2.0-slice2`.
 
-Do not proceed to full frontend map UX, plot CRUD UX, auth, custom domains, or Railway hardening in Phase 2.
+Do not proceed to full frontend map UX, plot CRUD UX, auth, custom domains, or deployment hardening in Phase 2.

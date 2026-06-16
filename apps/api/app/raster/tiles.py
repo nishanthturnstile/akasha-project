@@ -61,9 +61,39 @@ def default_rgb_rescale() -> str:
     return os.environ.get("AKASHA_RGB_RESCALE", "0,3000")
 
 
+def default_sar_vv_rescale() -> str:
+    """Default VV backscatter dB display stretch for SAR context layers."""
+    return os.environ.get("AKASHA_SAR_VV_RESCALE") or os.environ.get(
+        "AKASHA_S1_VV_RESCALE", "-25,5"
+    )
+
+
+def build_sar_vv_grayscale_tile_url(
+    *,
+    backscatter_href: str,
+    z: int,
+    x: int,
+    y: int,
+    titiler_url: str | None = None,
+    rescale: str | None = None,
+    fmt: str = "png",
+) -> str:
+    """Build the internal TiTiler request URL for a SAR VV grayscale tile."""
+    base = (titiler_url or titiler_base_url()).rstrip("/")
+    rescale = rescale or default_sar_vv_rescale()
+    path = f"/cog/tiles/{TILE_MATRIX_SET}/{z}/{x}/{y}.{fmt}"
+    params: list[tuple[str, str]] = [
+        ("url", backscatter_href),
+        ("bidx", "1"),
+        ("rescale", rescale),
+        ("colormap_name", "gray"),
+    ]
+    return f"{base}{path}?{urllib.parse.urlencode(params)}"
+
+
 def default_sentinel1_vv_rescale() -> str:
-    """Sentinel-1 VV backscatter dB display stretch."""
-    return os.environ.get("AKASHA_S1_VV_RESCALE", "-25,5")
+    """Backward-compatible alias for the legacy Sentinel-1 helper name."""
+    return default_sar_vv_rescale()
 
 
 def build_sentinel1_vv_tile_url(
@@ -76,16 +106,42 @@ def build_sentinel1_vv_tile_url(
     rescale: str | None = None,
     fmt: str = "png",
 ) -> str:
-    """Build the internal TiTiler request URL for a Sentinel-1 VV grayscale tile."""
+    """Backward-compatible alias for the legacy Sentinel-1 helper name."""
+    return build_sar_vv_grayscale_tile_url(
+        backscatter_href=backscatter_href,
+        z=z,
+        x=x,
+        y=y,
+        titiler_url=titiler_url,
+        rescale=rescale,
+        fmt=fmt,
+    )
+
+
+def build_context_tile_url(
+    *,
+    asset_href: str,
+    z: int,
+    x: int,
+    y: int,
+    titiler_url: str | None = None,
+    rescale: str | None = None,
+    bidx: list[int] | None = None,
+    colormap_name: str | None = None,
+    fmt: str = "png",
+) -> str:
+    """Build an internal TiTiler URL for a source-declared context COG."""
     base = (titiler_url or titiler_base_url()).rstrip("/")
-    rescale = rescale or default_sentinel1_vv_rescale()
     path = f"/cog/tiles/{TILE_MATRIX_SET}/{z}/{x}/{y}.{fmt}"
-    params: list[tuple[str, str]] = [
-        ("url", backscatter_href),
-        ("bidx", "1"),
-        ("rescale", rescale),
-        ("colormap_name", "gray"),
-    ]
+    params: list[tuple[str, str]] = [("url", asset_href)]
+    for pos in bidx or []:
+        params.append(("bidx", str(pos)))
+    if rescale:
+        repeats = max(1, len(bidx or []))
+        for _ in range(repeats):
+            params.append(("rescale", rescale))
+    if colormap_name:
+        params.append(("colormap_name", colormap_name))
     return f"{base}{path}?{urllib.parse.urlencode(params)}"
 
 

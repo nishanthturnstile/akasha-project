@@ -1,9 +1,9 @@
 # `infra/docker` — Local development with Docker Compose
 
-This Compose file mirrors the Railway topology so the architecture stays
+This Compose file mirrors the deployment topology so the architecture stays
 portable to Docker Compose / on-prem. It is the **local-dev / portability**
-artifact — **not** the Railway production runtime (Railway uses separate
-services, each with its own `railway.json`).
+artifact — **not** the production runtime (the self-hosted Coolify/Azure path
+in `infra/selfhosted` deploys the services for production).
 
 ## Quick start
 

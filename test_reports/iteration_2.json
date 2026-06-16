@@ -1,5 +1,5 @@
 {
-  "summary": "Completed comprehensive backend testing of Akasha Railway MVP Slice 2 (Phase 2 raster de-risk). All 13 backend API endpoints tested successfully. The raster tile and statistics endpoints correctly return HTTP 503 with RASTER_BACKEND_UNAVAILABLE (expected behavior in this environment without MinIO/TiTiler/COGs). All error responses follow the standard shape. Slice 0 endpoints remain functional (regression passed).",
+  "summary": "Completed comprehensive backend testing of Akasha MVP Slice 2 (Phase 2 raster de-risk). All 13 backend API endpoints tested successfully. The raster tile and statistics endpoints correctly return HTTP 503 with RASTER_BACKEND_UNAVAILABLE (expected behavior in this environment without MinIO/TiTiler/COGs). All error responses follow the standard shape. Slice 0 endpoints remain functional (regression passed).",
   "backend_issues": {
     "critical_bugs": [],
     "flaky_endpoints": []

@@ -1,24 +1,24 @@
-# Slice 0 Plan (Skeleton Only) — Akasha Railway MVP (UPDATED)
+# Slice 0 Plan (Skeleton Only) — Akasha MVP (UPDATED)
 
 ## 1) Objectives
 
-- Produce a **Railway-compatible multi-service monorepo skeleton** matching the documented topology:
+- Produce a **multi-service monorepo skeleton** matching the documented topology:
   - **Only `web` (gateway) is public**.
   - `api`, `titiler`, `stac-api`, `postgis`, `minio`, `ingestion-worker` are private.
-- Add **per-service Dockerfiles**, **Railway configs**, **local Docker Compose** (as files), and **`.env.example`** files containing **placeholders only**.
+- Add **per-service Dockerfiles**, **deployment configs**, **local Docker Compose** (as files), and **`.env.example`** files containing **placeholders only**.
 - Implement **health endpoints/contracts** for:
   - Gateway: `GET /health` (inside the `web` service)
-  - API: `GET /health` (container/railway health) and `GET /api/health` (same-origin gateway/ingress)
+  - API: `GET /health` (container health) and `GET /api/health` (same-origin gateway/ingress)
   - TiTiler: `GET /healthz`
   - STAC API: `GET /_mgmt/ping`
 - Provide a polished **LIVE Emergent “Service Skeleton Status Dashboard”** (existing CRA frontend) backed by the API skeleton endpoints (`/api/_skeleton/*`).
-- Validate Slice 0 artifacts via **parse/lint + file/contract checks** (since Emergent has no Docker daemon). Runtime validation is deferred to **Railway / local Docker**.
+- Validate Slice 0 artifacts via **parse/lint + file/contract checks** (since Emergent has no Docker daemon). Runtime validation is deferred to **the deployment / local Docker**.
 
 **Status (now):** All Slice 0 deliverables are implemented and validated, including formal E2E validation via `testing_agent_v3` and a smoke test compatible with edge/CDN filters.
 
-> **Slice 1 context:** Slice 1 (Storage/Catalog) is complete as artifact-generation + static validation (runtime checks deferred to Railway).
+> **Slice 1 context:** Slice 1 (Storage/Catalog) is complete as artifact-generation + static validation (runtime checks deferred to the deployment).
 >
-> **Slice 2 context:** Slice 2 (Raster de-risk) is complete as code/artifacts + static/synthetic validation (runtime checks involving real COGs/MinIO/TiTiler deferred to Railway/local Docker).
+> **Slice 2 context:** Slice 2 (Raster de-risk) is complete as code/artifacts + static/synthetic validation (runtime checks involving real COGs/MinIO/TiTiler deferred to the deployment / local Docker).
 >
 > **Slice 3 context:** Slice 3 (BFF API implementation) is **next**. Phase 2 already delivered config/sources/dates/layers/tiles/statistics + standard error shape + polygon validation. Slice 3 adds **only Plot CRUD + GeoJSON import/export**.
 
@@ -28,14 +28,14 @@
 
 ### Phase 1 — Core POC (Isolated): “Skeleton Integrity + Health Contract”
 
-Core workflow (Slice 0): generate the full multi-service skeleton artifacts and prove their health contracts + Railway readiness without running Docker.
+Core workflow (Slice 0): generate the full multi-service skeleton artifacts and prove their health contracts + deployment readiness without running Docker.
 
 User stories:
 1. As a developer, I want `scripts/validate_slice0.py` to fail fast if any required service Dockerfile/config is missing.
-2. As a developer, I want pinned image versions checked so Railway builds don’t break due to floating/nonexistent tags.
+2. As a developer, I want pinned image versions checked so deployment builds don’t break due to floating/nonexistent tags.
 3. As a developer, I want docker-compose YAML to be syntactically valid and include all services with correct healthchecks.
 4. As a developer, I want `.env.example` files to contain placeholders only so no secrets leak.
-5. As a developer, I want api `/health` and `/api/health` to return 200 consistently so Railway health checks are reliable.
+5. As a developer, I want api `/health` and `/api/health` to return 200 consistently so deployment health checks are reliable.
 
 Steps (COMPLETED):
 - ✅ Created monorepo folders per docs: `apps/`, `services/`, `infra/`, `scripts/`, and preserved `/app/docs`.
@@ -51,7 +51,6 @@ Steps (COMPLETED):
   - Verifies required services exist and only `web` publishes host ports
   - Verifies healthchecks + persistent volumes for `postgis`/`minio`
   - Verifies pinned image tags + pinned base images in Dockerfiles
-  - Verifies Railway healthcheck paths in `railway.json` files
   - Ensures `.env.example` values for secret-like vars are placeholders
 - ✅ Ran POC checks in Emergent:
   - `scripts/validate_slice0.py` PASSED (94/0)
@@ -62,18 +61,18 @@ Steps (COMPLETED):
 User stories:
 1. As an operator, I want a single public `web` service that serves the frontend and proxies `/api/*` and `/tiles/*` same-origin.
 2. As a developer, I want `docker-compose up` (outside Emergent) to bring up web/api/titiler/stac/postgis/minio/ingestion with correct networking.
-3. As a developer, I want each internal service to have a documented health endpoint and Railway healthcheck path.
+3. As a developer, I want each internal service to have a documented health endpoint and deployment healthcheck path.
 4. As a developer, I want a Vite+TS `apps/frontend` skeleton that can be built into the `web` gateway container.
 5. As a developer, I want the live Emergent dashboard to clearly show service status, required env vars, and what’s intentionally out of scope.
 
 Steps (COMPLETED):
-- ✅ Web gateway (Railway public only) via Caddy (`/health`, `/api/*`, `/tiles/*`, SPA fallback)
-- ✅ `apps/frontend` Vite skeleton (Railway-deployable target)
+- ✅ Web gateway (public only) via Caddy (`/health`, `/api/*`, `/tiles/*`, SPA fallback)
+- ✅ `apps/frontend` Vite skeleton (deployable target)
 - ✅ `apps/api` skeleton with health + `_skeleton` endpoints
 - ✅ `services/titiler`, `services/stac-api` wrapper configs
 - ✅ `services/ingestion` worker skeleton + CLI
 - ✅ `postgis` + `minio` docker-compose layout + pinned images + volumes
-- ✅ `infra/docker` + `infra/railway` deployment artifacts
+- ✅ `infra/docker` deployment artifacts
 - ✅ Shared formatting/linting conventions
 - ✅ Live Emergent preview wiring (FastAPI + React Service Dashboard)
 
@@ -81,7 +80,7 @@ Conclude Phase 2 (COMPLETED):
 - ✅ `scripts/validate_slice0.py` passes
 - ✅ Dashboard works; skeleton endpoints stable
 
-**Emergent ingress note (for test planning):** In the Emergent preview, externally reachable health is `GET /api/health` (ingress routes `/api/*`). `GET /health` is a Railway/container health path intended for the `api` service itself.
+**Emergent ingress note (for test planning):** In the Emergent preview, externally reachable health is `GET /api/health` (ingress routes `/api/*`). `GET /health` is a container health path intended for the `api` service itself.
 
 ---
 
@@ -91,11 +90,11 @@ Conclude Phase 2 (COMPLETED):
 
 1. ✅ Ran formal E2E testing via `testing_agent_v3`.
 2. ✅ Confirmed smoke test behavior against the live preview base URL.
-3. ✅ Push to GitHub and deploy on Railway for runtime validation.
+3. ✅ Push to GitHub and deploy for runtime validation.
 
-### Slice 1 next actions (Storage/Catalog — runtime checks deferred to Railway)
+### Slice 1 next actions (Storage/Catalog — runtime checks deferred to the deployment)
 
-Even though Slice 1 artifacts are complete, runtime exit criteria must be executed on Railway/local Docker:
+Even though Slice 1 artifacts are complete, runtime exit criteria must be executed on the deployment / local Docker:
 
 1. Apply api-owned app schema:
    - `python -m app.cli migrate`
@@ -105,9 +104,9 @@ Even though Slice 1 artifacts are complete, runtime exit criteria must be execut
 3. Verify Slice 1:
    - `python worker.py verify`
 
-### Slice 2 next actions (Raster de-risk — runtime checks deferred to Railway/local Docker)
+### Slice 2 next actions (Raster de-risk — runtime checks deferred to the deployment / local Docker)
 
-Even though Slice 2 code/artifacts are complete and statically + synthetically validated, runtime exit criteria must be executed on Railway/local Docker:
+Even though Slice 2 code/artifacts are complete and statically + synthetically validated, runtime exit criteria must be executed on the deployment / local Docker:
 
 1. Upload real (non-empty) COGs to MinIO. The 2025-09-14 paths below are the
    legacy sample layout; manifest-driven scenes use
@@ -137,14 +136,14 @@ Proceed with Slice 3 only after confirming Slice 0/1/2 validation remains green.
 
 ---
 
-# Slice 1 Plan (Storage / Catalog) — Akasha Railway MVP (UPDATED)
+# Slice 1 Plan (Storage / Catalog) — Akasha MVP (UPDATED)
 
 ## 1) Objectives
 
-- Stand up the data foundation (Railway-ready artifacts): PostGIS app schema, pgSTAC catalog, MinIO bucket/key layout, STAC seeds.
+- Stand up the data foundation (deployment-ready artifacts): PostGIS app schema, pgSTAC catalog, MinIO bucket/key layout, STAC seeds.
 - Keep secrets safe; only `web` is public.
 
-**Status (now):** Slice 1 deliverables are implemented and statically validated in Emergent. Runtime exit criteria deferred to Railway/local Docker.
+**Status (now):** Slice 1 deliverables are implemented and statically validated in Emergent. Runtime exit criteria deferred to the deployment / local Docker.
 
 ## 2) Implementation Steps
 
@@ -172,7 +171,7 @@ Proceed with Slice 3 only after confirming Slice 0/1/2 validation remains green.
 
 ## 3) Next Actions
 
-Runtime checks on Railway/local Docker:
+Runtime checks on the deployment / local Docker:
 - `python -m app.cli migrate`
 - `python worker.py seed`
 - `python worker.py verify`
@@ -183,14 +182,14 @@ Artifacts:
 - ✅ Schema/migrations + seeds exist
 - ✅ `validate_slice0.py` and `validate_slice1.py` pass
 
-Runtime (Railway/local Docker):
+Runtime (the deployment / local Docker):
 - ⏳ PostGIS verified
 - ⏳ STAC API returns collection
 - ⏳ MinIO reachable and keys exist
 
 ---
 
-# Slice 2 Plan (Phase 2 — Raster de-risk milestone) — Akasha Railway MVP (UPDATED)
+# Slice 2 Plan (Phase 2 — Raster de-risk milestone) — Akasha MVP (UPDATED)
 
 ## 1) Objectives
 
@@ -203,7 +202,7 @@ Implement Phase 2 raster proof path: BFF endpoints for config/sources/dates/laye
 - pytest 24/24
 - smoke-test passes with blocked raster steps in Emergent
 
-Runtime exit criteria remain deferred to Railway/local Docker due to missing real COGs/MinIO/TiTiler in the Emergent environment.
+Runtime exit criteria remain deferred to the deployment / local Docker due to missing real COGs/MinIO/TiTiler in the Emergent environment.
 
 ## 2) Implementation Steps
 
@@ -211,7 +210,7 @@ All Slice 2 phases are DONE (see prior sections in this plan). No further work i
 
 ## 3) Next Actions
 
-On Railway/local Docker only:
+On the deployment / local Docker only:
 - Upload real COGs
 - `worker.py verify-cogs`
 - Verify one RGB tile and one masked NDVI statistic
@@ -222,13 +221,13 @@ Artifacts + synthetic validation:
 - ✅ endpoints exist and return stable contracts
 - ✅ no secrets committed
 
-Runtime (Railway/local Docker):
+Runtime (the deployment / local Docker):
 - ⏳ real RGB tile returns PNG
 - ⏳ real masked NDVI stats match reference
 
 ---
 
-# Slice 3 Plan (Phase 3 — BFF API implementation) — Akasha Railway MVP (NEW)
+# Slice 3 Plan (Phase 3 — BFF API implementation) — Akasha MVP (NEW)
 
 ## 1) Objectives
 
@@ -407,7 +406,7 @@ python -m pytest tests/test_health.py tests/test_slice2.py tests/test_slice3.py 
 
 ---
 
-# Slice 4 Plan (Phase 4 — Frontend Map & Layer UX) — Akasha Railway MVP (NEW)
+# Slice 4 Plan (Phase 4 — Frontend Map & Layer UX) — Akasha MVP (NEW)
 
 ## 1) Objectives
 
@@ -425,7 +424,7 @@ light/dark toggle per user request).
 - Pin latest stable deps (already installed in `apps/frontend`).
 - Default **dark**, toggleable to light.
 - Offline behaviour OK: tiles return `503` locally (no TiTiler/MinIO) → only the ink basemap + full
-  panel UX is shown locally; real imagery renders on Railway.
+  panel UX is shown locally; real imagery renders on the deployment.
 
 ## 2) Implementation Steps
 

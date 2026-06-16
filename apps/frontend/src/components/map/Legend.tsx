@@ -87,6 +87,7 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
 
     switch (mode) {
         case 'NDVI':
+        case 'NDVI_CONTEXT':
             return NDVI_RAMP;
         case 'NDRE':
             return NDRE_RAMP;

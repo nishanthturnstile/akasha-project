@@ -7,12 +7,12 @@
 FROM ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2
 
 # stac-fastapi reads its bind host/port from APP_HOST/APP_PORT. Pin to 8080 to
-# match http://stac-api.railway.internal:8080. Database connection vars
+# match http://stac-api:8080. Database connection vars
 # (POSTGRES_HOST_READER/WRITER/PORT/USER/PASS/DBNAME) are supplied via env.
 ENV APP_HOST=0.0.0.0 \
     APP_PORT=8080
 
-# Internal service. Referenced as http://stac-api.railway.internal:8080.
+# Internal service. Referenced as http://stac-api:8080.
 EXPOSE 8080
 
 # pgSTAC schema migrations are run during Slice 1 (database/catalog foundation),

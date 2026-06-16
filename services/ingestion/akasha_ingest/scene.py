@@ -34,6 +34,10 @@ _EOS04_SAR_SOURCE_ID = "eos-04-sar-mrs-l2b"
 _EOS04_SAR_BHOONIDHI_COLLECTION = "EOS-04_SAR-MRS_L2B"
 _NISAR_GCOV_SOURCE_ID = "nisar-ssar-beta-gcov"
 _NISAR_GCOV_BHOONIDHI_COLLECTION = "NISAR_SSAR-Beta_GCOV"
+_CARTOSAT3_CONTEXT_SOURCE_ID = "cartosat-3-gated"
+_EOS06_CONTEXT_SOURCE_ID = "eos-06-ocm-lac-ndvi-8day-360m"
+_EOS06_CONTEXT_BHOONIDHI_COLLECTION = "EOS-06_OCM-LAC_NDVI_8day_360m"
+_IRS1C_ARCHIVE_SOURCE_ID = "irs-1c-liss3-archive"
 _SAR_COLLECTION_ALIASES = {
     _SENTINEL1_SOURCE_ID: _SENTINEL1_SOURCE_ID,
     _EOS04_SAR_SOURCE_ID: _EOS04_SAR_SOURCE_ID,
@@ -49,6 +53,16 @@ _RESOURCESAT_BOA_COLLECTION_ALIASES = {
     _RESOURCESAT_AWIFS_BHOONIDHI_COLLECTION: _RESOURCESAT_AWIFS_SOURCE_ID,
 }
 _RESOURCESAT_BOA_SOURCE_IDS = set(_RESOURCESAT_BOA_COLLECTION_ALIASES.values())
+_CONTEXT_COLLECTION_ALIASES = {
+    _CARTOSAT3_CONTEXT_SOURCE_ID: _CARTOSAT3_CONTEXT_SOURCE_ID,
+    _EOS06_CONTEXT_SOURCE_ID: _EOS06_CONTEXT_SOURCE_ID,
+    _EOS06_CONTEXT_BHOONIDHI_COLLECTION: _EOS06_CONTEXT_SOURCE_ID,
+}
+_CONTEXT_SOURCE_IDS = set(_CONTEXT_COLLECTION_ALIASES.values())
+_ARCHIVE_COLLECTION_ALIASES = {
+    _IRS1C_ARCHIVE_SOURCE_ID: _IRS1C_ARCHIVE_SOURCE_ID,
+}
+_ARCHIVE_SOURCE_IDS = set(_ARCHIVE_COLLECTION_ALIASES.values())
 
 
 def _nested(manifest: dict[str, Any], *keys: str) -> Any:
@@ -110,6 +124,10 @@ def _source_id_from_manifest(manifest: dict[str, Any]) -> str:
             return _RESOURCESAT_BOA_COLLECTION_ALIASES[source_text]
         if source_text in _SAR_COLLECTION_ALIASES:
             return _SAR_COLLECTION_ALIASES[source_text]
+        if source_text in _CONTEXT_COLLECTION_ALIASES:
+            return _CONTEXT_COLLECTION_ALIASES[source_text]
+        if source_text in _ARCHIVE_COLLECTION_ALIASES:
+            return _ARCHIVE_COLLECTION_ALIASES[source_text]
         return source_text
     if _s1_product_match(manifest):
         return _SENTINEL1_SOURCE_ID
@@ -192,6 +210,10 @@ class SceneIdentity:
             return cls._sar_from_prepare_manifest(manifest, source_id=source_id)
         if source_id in _RESOURCESAT_BOA_SOURCE_IDS:
             return cls._resourcesat_boa_from_prepare_manifest(manifest, source_id=source_id)
+        if source_id in _CONTEXT_SOURCE_IDS:
+            return cls._context_from_prepare_manifest(manifest, source_id=source_id)
+        if source_id in _ARCHIVE_SOURCE_IDS:
+            return cls._archive_from_prepare_manifest(manifest, source_id=source_id)
         return cls._sentinel2_from_prepare_manifest(manifest)
 
     @classmethod
@@ -404,6 +426,78 @@ class SceneIdentity:
             row=row,
         )
 
+    @classmethod
+    def _context_from_prepare_manifest(
+        cls, manifest: dict[str, Any], *, source_id: str
+    ) -> SceneIdentity:
+        product_id = _first_value(manifest, "product_id", "productId", "source_product_id", "id")
+        product_id = str(product_id or source_id)
+
+        acquisition_datetime = _first_value(
+            manifest,
+            "acquisition_datetime",
+            "acquisitionDateTime",
+            "datetime",
+            "sensing_time",
+        )
+        if not acquisition_datetime:
+            acquisition_date = _first_value(manifest, "acquisition_date", "acquisitionDate")
+            if acquisition_date:
+                acquisition_datetime = f"{acquisition_date}T00:00:00Z"
+        if not acquisition_datetime:
+            raise ValueError("context prepare manifest is missing acquisition datetime")
+
+        return cls(
+            satellite=source_id,
+            product_level=str(
+                _first_value(manifest, "product_level", "productLevel") or "VISUAL-CONTEXT"
+            ),
+            mgrs_tile="",
+            acquisition_datetime=_normalise_datetime(str(acquisition_datetime)),
+            processing_baseline="",
+            platform=str(_first_value(manifest, "platform") or source_id),
+            product_type=str(
+                _first_value(manifest, "product:type", "product_type") or "visual-context"
+            ),
+            product_id=product_id,
+        )
+
+    @classmethod
+    def _archive_from_prepare_manifest(
+        cls, manifest: dict[str, Any], *, source_id: str
+    ) -> SceneIdentity:
+        product_id = _first_value(manifest, "product_id", "productId", "source_product_id", "id")
+        product_id = str(product_id or source_id)
+
+        acquisition_datetime = _first_value(
+            manifest,
+            "acquisition_datetime",
+            "acquisitionDateTime",
+            "datetime",
+            "sensing_time",
+        )
+        if not acquisition_datetime:
+            acquisition_date = _first_value(manifest, "acquisition_date", "acquisitionDate")
+            if acquisition_date:
+                acquisition_datetime = f"{acquisition_date}T00:00:00Z"
+        if not acquisition_datetime:
+            raise ValueError("archive prepare manifest is missing acquisition datetime")
+
+        return cls(
+            satellite=source_id,
+            product_level=str(
+                _first_value(manifest, "product_level", "productLevel") or "ARCHIVE"
+            ),
+            mgrs_tile="",
+            acquisition_datetime=_normalise_datetime(str(acquisition_datetime)),
+            processing_baseline="",
+            platform=str(_first_value(manifest, "platform") or source_id),
+            product_type=str(
+                _first_value(manifest, "product:type", "product_type") or "archive"
+            ),
+            product_id=product_id,
+        )
+
     @property
     def acquisition_date(self) -> str:
         return self.acquisition_datetime[:10]
@@ -456,6 +550,16 @@ class SceneIdentity:
                 f"{self.product_type or 'unknown'}:{self.relative_orbit_or_unknown}:"
                 f"{self.orbit_state_or_unknown}:{self.acquisition_datetime}:{self.product_id_hash}"
             )
+        if self.source_id in _CONTEXT_SOURCE_IDS:
+            return (
+                f"{self.source_id}:{self.product_type or 'visual-context'}:"
+                f"{self.acquisition_datetime}:{self.product_id_hash}"
+            )
+        if self.source_id in _ARCHIVE_SOURCE_IDS:
+            return (
+                f"{self.source_id}:{self.product_type or 'archive'}:"
+                f"{self.acquisition_datetime}:{self.product_id_hash}"
+            )
         if self.source_id in _RESOURCESAT_BOA_SOURCE_IDS:
             if self.composite:
                 return (
@@ -475,6 +579,10 @@ class SceneIdentity:
     def item_id(self) -> str:
         if self.source_id in _SAR_SOURCE_IDS:
             return f"{self.source_id}_{self.relative_orbit_or_unknown}_{self.scene_component}"
+        if self.source_id in _CONTEXT_SOURCE_IDS:
+            return f"{self.source_id}_{self.scene_component}"
+        if self.source_id in _ARCHIVE_SOURCE_IDS:
+            return f"{self.source_id}_{self.scene_component}"
         if self.source_id in _RESOURCESAT_BOA_SOURCE_IDS:
             if self.composite:
                 return (
@@ -497,6 +605,14 @@ class SceneIdentity:
             instrument = _safe_path_component(self.instrument_mode or "unknown")
             product = _safe_path_component(self.product_type or "unknown")
             return f"{datetime_compact}_{platform}_{instrument}_{product}_{self.product_id_hash}"
+        if self.source_id in _CONTEXT_SOURCE_IDS:
+            datetime_compact = _safe_component(self.acquisition_datetime)
+            product = _safe_path_component(self.product_type or "visual-context")
+            return f"{datetime_compact}_{product}_{self.product_id_hash}"
+        if self.source_id in _ARCHIVE_SOURCE_IDS:
+            datetime_compact = _safe_component(self.acquisition_datetime)
+            product = _safe_path_component(self.product_type or "archive")
+            return f"{datetime_compact}_{product}_{self.product_id_hash}"
         if self.source_id in _RESOURCESAT_BOA_SOURCE_IDS:
             if self.composite:
                 date_compact = _safe_component(self.acquisition_datetime)
@@ -517,6 +633,10 @@ class SceneIdentity:
                 f"{self.source_id}/{self.acquisition_date}/"
                 f"{self.relative_orbit_or_unknown}/{self.scene_component}"
             )
+        if self.source_id in _CONTEXT_SOURCE_IDS:
+            return f"{self.source_id}/{self.acquisition_date}/{self.scene_component}"
+        if self.source_id in _ARCHIVE_SOURCE_IDS:
+            return f"{self.source_id}/archive/{self.acquisition_date}/{self.scene_component}"
         if self.source_id in _RESOURCESAT_BOA_SOURCE_IDS:
             if self.composite:
                 return (
@@ -557,6 +677,20 @@ class SceneIdentity:
     @property
     def backscatter_key(self) -> str:
         return f"{self._key_prefix}/backscatter.tif"
+
+    @property
+    def visual_key(self) -> str:
+        return f"{self._key_prefix}/visual.tif"
+
+    @property
+    def context_asset_key(self) -> str:
+        if self.source_id == _EOS06_CONTEXT_SOURCE_ID:
+            return "ndvi"
+        return "visual"
+
+    @property
+    def context_key(self) -> str:
+        return f"{self._key_prefix}/{self.context_asset_key}.tif"
 
 
 def scene_from_prepare_manifest(manifest: dict[str, Any]) -> SceneIdentity:

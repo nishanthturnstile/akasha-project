@@ -1,5 +1,5 @@
 {
-  "summary": "Completed comprehensive testing of Akasha Railway MVP Slice 0 (Skeleton). All backend API endpoints and frontend dashboard features tested successfully. No issues found.",
+  "summary": "Completed comprehensive testing of Akasha MVP Slice 0 (Skeleton). All backend API endpoints and frontend dashboard features tested successfully. No issues found.",
   "backend_issues": {
     "critical_bugs": [],
     "flaky_endpoints": []

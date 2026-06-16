@@ -24,9 +24,10 @@ SENTINEL_1_SOURCE_ID = "sentinel-1-grd"
 RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
 RESOURCESAT_AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
 RESOURCESAT_BOA_SOURCE_IDS = {RESOURCESAT_LISS3_SOURCE_ID, RESOURCESAT_AWIFS_SOURCE_ID}
-COLLECTION_ID = SENTINEL_2_SOURCE_ID
-SOURCE_LABEL = "Sentinel-2 L2A"
-SOURCE_PROVIDER = "Copernicus"
+COLLECTION_ID = RESOURCESAT_LISS3_SOURCE_ID
+SOURCE_LABEL = "ResourceSat-2A LISS-3 BOA"
+SOURCE_PROVIDER = "ISRO/NRSC Bhoonidhi"
+_LEGACY_SENTINEL_SOURCE_IDS = {SENTINEL_2_SOURCE_ID, SENTINEL_1_SOURCE_ID}
 
 _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     SENTINEL_2_SOURCE_ID: {
@@ -179,7 +180,7 @@ _SOURCE_REGISTRY.update(
             "id": "eos-06-ocm-lac-ndvi-8day-360m",
             "label": "EOS-06 OCM-LAC NDVI 8-day 360m",
             "provider": "ISRO/NRSC Bhoonidhi",
-            "kind": "optical",
+            "kind": "context",
             "collectionId": "EOS-06_OCM-LAC_NDVI_8day_360m",
             "expectedAssets": ["ndvi"],
             "supportedIndices": [],
@@ -199,7 +200,7 @@ _SOURCE_REGISTRY.update(
             "maskMethod": None,
             "metricsProvisional": True,
             "availabilityStatus": "gated",
-            "gatedReason": "Context product support is not implemented yet.",
+            "gatedReason": "No validated EOS-06 NDVI context COG has been ingested.",
         },
         "eos-04-sar-mrs-l2b": {
             "id": "eos-04-sar-mrs-l2b",
@@ -257,15 +258,15 @@ _SOURCE_REGISTRY.update(
             "id": "cartosat-3-gated",
             "label": "Cartosat-3 (gated)",
             "provider": "ISRO/NRSC Bhoonidhi",
-            "kind": "optical",
+            "kind": "context",
             "collectionId": "cartosat-3-gated",
-            "expectedAssets": [],
+            "expectedAssets": ["visual"],
             "supportedIndices": [],
             "bandRoleMapping": {},
             "maskAsset": None,
             "displayModes": ["CONTEXT"],
             "defaultDisplayMode": "CONTEXT",
-            "description": "Gated high-resolution visual/context source.",
+            "description": "Gated high-resolution visual/context source for manual imports.",
             "attribution": "ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "optical",
             "defaultRescale": "0,3000",
@@ -273,9 +274,15 @@ _SOURCE_REGISTRY.update(
             "resolutionMeters": None,
             "analysisLevel": "context",
             "refreshPolicy": (
-                "Gated until direct API availability or manual order workflow is confirmed."
+                "Manual/order workflow only until direct API availability is confirmed."
             ),
-            "limitations": ["Cartosat-3 is not present in the validated Bhoonidhi API catalog."],
+            "limitations": [
+                "Cartosat-3 is not present in the validated Bhoonidhi API catalog.",
+                (
+                    "No crop indices are enabled until calibrated band metadata and use rights "
+                    "are confirmed."
+                ),
+            ],
             "maskMethod": None,
             "metricsProvisional": True,
             "availabilityStatus": "gated",
@@ -285,7 +292,7 @@ _SOURCE_REGISTRY.update(
             "id": "irs-1c-liss3-archive",
             "label": "IRS-1C LISS-3 archive",
             "provider": "ISRO/NRSC Bhoonidhi",
-            "kind": "optical",
+            "kind": "archive",
             "collectionId": "irs-1c-liss3-archive",
             "expectedAssets": ["analytic", "mask"],
             "supportedIndices": [],
@@ -352,6 +359,31 @@ def registered_source_ids() -> list[str]:
     return list(_SOURCE_REGISTRY)
 
 
+def _include_legacy_sentinel_sources() -> bool:
+    return os.environ.get("AKASHA_INCLUDE_LEGACY_SENTINEL_SOURCES", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def selectable_source_ids() -> list[str]:
+    """Return browser-selectable production sources.
+
+    Phase 8a moves Sentinel out of the production selector after the ResourceSat
+    composite smoke test. Direct resolver access remains for legacy tests and
+    operator migration checks.
+    """
+    if _include_legacy_sentinel_sources():
+        return registered_source_ids()
+    return [
+        source_id
+        for source_id in registered_source_ids()
+        if source_id not in _LEGACY_SENTINEL_SOURCE_IDS
+    ]
+
+
 def _collection_from_registry(source_id: str) -> dict[str, Any]:
     source = get_source(source_id)
     return {
@@ -360,6 +392,7 @@ def _collection_from_registry(source_id: str) -> dict[str, Any]:
         "description": source["description"],
         "providers": [{"name": source["provider"]}],
         "akasha:kind": source["kind"],
+        "akasha:source_kind": source["kind"],
         "akasha:supported_indices": list(source["supportedIndices"]),
         "akasha:band_role_mapping": dict(source.get("bandRoleMapping", {})),
         "akasha:mask_asset": source.get("maskAsset"),
@@ -406,7 +439,7 @@ def source_payload(source_id: str) -> dict[str, Any]:
 
 
 def list_sources() -> list[dict[str, Any]]:
-    return [source_payload(source_id) for source_id in registered_source_ids()]
+    return [source_payload(source_id) for source_id in selectable_source_ids()]
 
 
 def default_display_mode(source_id: str = COLLECTION_ID) -> str:
@@ -498,16 +531,75 @@ def _average_available(items: list[dict[str, Any]], property_name: str) -> float
     return round(sum(values) / len(values), 2)
 
 
+def _usable_pixel_threshold_percent() -> float:
+    try:
+        return float(os.environ.get("USABLE_PIXEL_THRESHOLD_PERCENT", "70"))
+    except ValueError:
+        return 70.0
+
+
 def _has_tile_assets(item: dict[str, Any], source_id: str) -> bool:
+    return not _missing_tile_asset_keys(item, source_id)
+
+
+def _missing_tile_asset_keys(item: dict[str, Any], source_id: str) -> list[str]:
     assets = item.get("assets", {})
+    if not isinstance(assets, dict):
+        assets = {}
     source = get_source(source_id)
     if source["kind"] == "sar":
-        backscatter = assets.get("backscatter") or {}
-        return bool(backscatter.get("href"))
+        return [] if (assets.get("backscatter") or {}).get("href") else ["backscatter"]
+    if source.get("tileRouteMode") == "context":
+        context_asset = str((source.get("expectedAssets") or [""])[0])
+        if context_asset and (assets.get(context_asset) or {}).get("href"):
+            return []
+        return [context_asset or "context"]
     analytic = assets.get("analytic") or {}
     mask_asset = str(source.get("maskAsset") or "scl")
     mask = assets.get(mask_asset) or {}
-    return bool(analytic.get("href") and mask.get("href"))
+    missing: list[str] = []
+    if not analytic.get("href"):
+        missing.append("analytic")
+    if not mask.get("href"):
+        missing.append(mask_asset)
+    return missing
+
+
+def _tiles_available_for_date(source_id: str, date_items: list[dict[str, Any]]) -> bool:
+    source = get_source(source_id)
+    if source["kind"] == "sar" or source.get("tileRouteMode") == "context":
+        return len(date_items) == 1 and all(
+            _has_tile_assets(item, source_id) for item in date_items
+        )
+    return bool(date_items) and all(_has_tile_assets(item, source_id) for item in date_items)
+
+
+def _tile_unavailable_reason(source_id: str, date_items: list[dict[str, Any]]) -> str | None:
+    if _tiles_available_for_date(source_id, date_items):
+        return None
+    if not date_items:
+        return "No servable catalog item is available for this date."
+
+    source = get_source(source_id)
+    if len(date_items) > 1 and source["kind"] == "sar":
+        return (
+            "Multiple same-date radar scenes require a mosaic backend before tiles are available."
+        )
+    if len(date_items) > 1 and source.get("tileRouteMode") == "context":
+        return (
+            "Multiple same-date context scenes require a mosaic backend before tiles are available."
+        )
+
+    missing = sorted(
+        {
+            key
+            for item in date_items
+            for key in _missing_tile_asset_keys(item, source_id)
+        }
+    )
+    if missing:
+        return f"Required raster assets are missing for this date: {', '.join(missing)}."
+    return "Tiles are unavailable for this date."
 
 
 def merged_bbox(items: list[dict[str, Any]]) -> list[float] | None:
@@ -563,6 +655,7 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
 
         if source["dateMetricsKind"] == "radar":
             metrics_missing = coverage_percent is None
+            tile_available = _tiles_available_for_date(source_id, date_items)
             dates.append(
                 {
                     "acquisitionDate": acquisition_date,
@@ -583,8 +676,12 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
                             for item in date_items
                         )
                     ),
-                    "tileAvailable": scene_count == 1
-                    and all(_has_tile_assets(item, source_id) for item in date_items),
+                    "tileAvailable": tile_available,
+                    "unavailableReason": (
+                        None
+                        if tile_available
+                        else _tile_unavailable_reason(source_id, date_items)
+                    ),
                 }
             )
             continue
@@ -598,6 +695,7 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
                 "akasha:coverage_percent",
             )
         )
+        tile_available = _tiles_available_for_date(source_id, date_items)
         dates.append(
             {
                 "acquisitionDate": acquisition_date,
@@ -616,7 +714,10 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
                         for item in date_items
                     )
                 ),
-                "tileAvailable": all(_has_tile_assets(item, source_id) for item in date_items),
+                "tileAvailable": tile_available,
+                "unavailableReason": (
+                    None if tile_available else _tile_unavailable_reason(source_id, date_items)
+                ),
             }
         )
     dates.sort(key=lambda d: d.get("acquisitionDate") or "", reverse=True)
@@ -630,6 +731,25 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
             dates[0],
         )
         latest_selectable["isLatestUsable"] = True
+    if (
+        source["dateMetricsKind"] == "optical"
+        and dates
+        and not explicit_latest
+        and not any(bool(date["isLatestUsable"]) for date in dates)
+    ):
+        threshold = _usable_pixel_threshold_percent()
+        latest_usable = next(
+            (
+                date
+                for date in dates
+                if bool(date.get("tileAvailable"))
+                and isinstance(date.get("usablePixelPercent"), (int, float))
+                and float(date["usablePixelPercent"]) >= threshold
+            ),
+            None,
+        )
+        if latest_usable is not None:
+            latest_usable["isLatestUsable"] = True
     return dates
 
 
@@ -712,6 +832,33 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
             "bandNames": band_names,
             "nodata": first.get("nodata", -9999.0),
             "epsg": backscatter.get("proj:epsg") or item.get("properties", {}).get("proj:epsg"),
+            "bbox": item.get("bbox"),
+        }
+
+    if source.get("tileRouteMode") == "context":
+        context_asset_key = str((source.get("expectedAssets") or [""])[0])
+        context_asset = assets.get(context_asset_key)
+        if not context_asset or not context_asset.get("href"):
+            raise upstream_error(
+                "STAC item is missing context display asset.",
+                code="INCOMPLETE_ITEM",
+                itemId=item.get("id"),
+                sourceId=source_id,
+                contextAsset=context_asset_key,
+            )
+        raster_bands = context_asset.get("raster:bands", [])
+        first = raster_bands[0] if raster_bands else {}
+        return {
+            "itemId": item.get("id"),
+            "contextHref": context_asset.get("href"),
+            "contextAsset": context_asset_key,
+            "bandNames": _band_names_from_raster_bands(context_asset),
+            "rasterBandCount": len(raster_bands),
+            "scale": float(first.get("scale", 1.0)),
+            "offset": float(first.get("offset", 0.0)),
+            "nodata": first.get("nodata"),
+            "epsg": context_asset.get("proj:epsg")
+            or item.get("properties", {}).get("proj:epsg"),
             "bbox": item.get("bbox"),
         }
 

@@ -1,10 +1,10 @@
-# Akasha — Railway MVP
+# Akasha
 
 Geospatial platform for browsing true-colour Sentinel-2 L2A (and ISRO ResourceSat
 LISS-3) imagery over an Area of Interest (Bangalore) and computing cloud-masked
 vegetation-index statistics (NDVI/NDRE/NDMI/NDWI/MSAVI) for user-drawn plots and
-fields. Railway-first, but fully portable to self-hosted Coolify and Docker
-Compose / on-prem.
+fields. Deployed on self-hosted Coolify (Azure VM), and fully portable to local
+Docker Compose / on-prem.
 
 > **Status: Slice 4 implementation in progress.** Slice 0 (skeleton), Slice 1
 > (storage/catalog), Slice 2 (raster de-risk), and Slice 3 (BFF product + plot
@@ -12,7 +12,7 @@ Compose / on-prem.
 > product layer (auth/teams, fields/seasons, field operations, scouting,
 > reports/risk) and a second imagery source (ISRO Bhoonidhi / ResourceSat
 > LISS-3) have been added. The canonical frontend map/product shell lives in
-> `apps/frontend`. Railway/Coolify/local Docker run the same multi-service
+> `apps/frontend`. Coolify/local Docker run the same multi-service
 > topology described below.
 
 ## Architecture (one public service)
@@ -44,7 +44,6 @@ services/
   ingestion-sar/     Sentinel-1/SAR preprocessing runtime
 infra/
   gateway/           Caddy reverse proxy + multi-stage web Dockerfile
-  railway/           Per-service Railway config + env matrix + deploy notes
   selfhosted/        Coolify compose + env template + setup notes (self-hosted)
   docker/            Local docker-compose.yml (dev / on-prem portability)
 docs/                Source-of-truth product/architecture/deploy docs
@@ -222,17 +221,10 @@ Domain invariants seeded by this flow: frozen analytic band order
 `[B04,B08,B05,B06,B07,B11,B12,B03,B02]`; true-colour RGB = bands `[1,8,9]`;
 reflectance `scale 0.0001` / `offset -0.1`. See
 [`data/seed/README.md`](data/seed/README.md) and
-[`infra/railway/README.md`](infra/railway/README.md) for the seed layout and the
-Railway equivalents of these commands.
+[`infra/selfhosted/README.md`](infra/selfhosted/README.md) for the seed layout
+and the deployment equivalents of these commands.
 
-## Deploy to Railway
-
-Each service is a **separate** Railway service. See
-[`infra/railway/README.md`](infra/railway/README.md) for the service→config
-matrix, environment variables ([`ENV_MATRIX.md`](infra/railway/ENV_MATRIX.md)),
-and the deployment sequence.
-
-## Deploy self-hosted (Coolify)
+## Deploy self-hosted (Coolify / Azure)
 
 For on-prem / dedicated-server hosting, deploy the prebuilt GHCR images via
 Coolify. See [`infra/selfhosted/README.md`](infra/selfhosted/README.md) for the
@@ -250,7 +242,7 @@ only `web` gets a public FQDN.
 | 3 | BFF API implementation | **done** |
 | 4 | Frontend map & layer UX | **implemented; active hardening** |
 | 5 | Plot & index UX | planned |
-| 6 | Railway deployment hardening | planned |
+| 6 | Deployment hardening | planned |
 | 7 | Acceptance & QA | planned |
 
 Engineering guardrails: [`docs/engineering-dos-donts.md`](docs/engineering-dos-donts.md).

@@ -85,14 +85,14 @@ function renderHarness(initialEntry: string) {
 describe('useMapUrlState', () => {
     it('hydrates reducer state from the route param + query string on mount', () => {
         renderHarness(
-            '/monitoring/field-analytics/field/field-42?scene=2026-04-27&from=2026-03-05&to=2026-04-27&source=sentinel-2-l2a&layer=NDVI',
+            '/monitoring/field-analytics/field/field-42?scene=2026-04-27&from=2026-03-05&to=2026-04-27&source=resourcesat-2a-liss3-boa&layer=NDVI',
         );
 
         expect(screen.getByTestId('state-plot').textContent).toBe('field-42');
         expect(screen.getByTestId('state-scene').textContent).toBe('2026-04-27');
         expect(screen.getByTestId('state-from').textContent).toBe('2026-03-05');
         expect(screen.getByTestId('state-to').textContent).toBe('2026-04-27');
-        expect(screen.getByTestId('state-source').textContent).toBe('sentinel-2-l2a');
+        expect(screen.getByTestId('state-source').textContent).toBe('resourcesat-2a-liss3-boa');
         expect(screen.getByTestId('state-layer').textContent).toBe('NDVI');
     });
 

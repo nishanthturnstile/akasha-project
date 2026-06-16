@@ -16,13 +16,15 @@ from fastapi.responses import JSONResponse, Response
 from . import plots_repo
 from .api_models import CloudMaskOptions
 from .auth import CurrentTeam, get_current_team
-from .cloud_mask import cloud_mask_mapping
+from .cloud_mask import source_cloud_mask_mapping
+from .config import settings
 from .field_analytics import (
     _field_statistics,
     _native_trend_response,
     _normalize_index,
     _validate_range,
 )
+from .raster import catalog_resolver as catalog
 from .raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from .raster.indices import DEFAULT_INDEX
 
@@ -143,6 +145,7 @@ def _index_csv_content(stats) -> str:
 
 
 def _geojson_payload(plot: dict[str, Any], stats, cloud_mask: CloudMaskOptions) -> dict[str, Any]:
+    source = catalog.get_source(stats.source_id)
     return {
         "type": "Feature",
         "geometry": plot["geometry"],
@@ -161,7 +164,9 @@ def _geojson_payload(plot: dict[str, Any], stats, cloud_mask: CloudMaskOptions) 
             "cloudMaskedPercent": stats.statistics.cloudMaskedPercent,
             "coveragePercent": stats.statistics.coveragePercent,
             "maskOptions": cloud_mask.model_dump(by_alias=True),
-            "cloudMaskMapping": cloud_mask_mapping(cloud_mask).model_dump(by_alias=True),
+            "cloudMaskMapping": source_cloud_mask_mapping(source, cloud_mask).model_dump(
+                by_alias=True
+            ),
         },
     }
 
@@ -223,7 +228,7 @@ def _trend_csv_content(response) -> str:
 async def export_field_index(
     plot_id: str,
     format: ExportFormat = Query(default="csv"),
-    sourceId: str = Query(default="sentinel-2-l2a"),
+    sourceId: str = Query(default=settings.default_source_id),
     acquisitionDate: date | None = Query(default=None),
     indexType: str = Query(default=DEFAULT_INDEX),
     clouds: bool = True,
@@ -279,7 +284,7 @@ async def export_field_report_csv(
     indexType: str = Query(default=DEFAULT_INDEX),
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
-    sourceId: str = Query(default="sentinel-2-l2a"),
+    sourceId: str = Query(default=settings.default_source_id),
     clouds: bool = True,
     cloudShadows: bool = True,
     cirrus: bool = True,

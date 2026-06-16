@@ -1,8 +1,8 @@
-"""Exit-criteria verification for Slice 1 (run on Railway / local Docker).
+"""Exit-criteria verification for Slice 1 (run on the deployment / local Docker).
 
 Checks:
   1. PostGIS reachable via SELECT postgis_version().
-  2. STAC API returns the seeded sentinel-2-l2a collection.
+  2. STAC API returns the configured collection.
   3. MinIO bucket reachable from this (ingestion/api) container.
 
 All heavy drivers are imported lazily. Prints results and returns an exit code.

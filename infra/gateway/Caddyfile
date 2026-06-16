@@ -4,9 +4,9 @@
 # reverse-proxies same-origin /api -> api and /tiles -> titiler. FastAPI,
 # TiTiler, STAC API, PostGIS and MinIO are never given a public domain.
 #
-# PORT is provided by Railway in production; defaults to 80 for local Docker.
-# Upstreams default to the docker-compose service names and are overridden on
-# Railway with *.railway.internal reference variables.
+# PORT is provided by the platform in production; defaults to 80 for local Docker.
+# Upstreams default to the docker-compose service names and can be overridden
+# with deployment-specific environment variables.
 
 {
 	admin off
@@ -16,7 +16,7 @@
 :{$PORT:80} {
 	encode gzip zstd
 
-	# Liveness endpoint for Railway / Docker Compose health checks.
+	# Liveness endpoint for container / Docker Compose health checks.
 	handle /health {
 		respond "ok" 200
 	}
@@ -42,5 +42,5 @@
 	# --- Optional shared-secret gate (Wave 1) -----------------------------
 	# To require HTTP Basic auth for the whole demo, set GATEWAY_BASIC_AUTH and
 	# replace the line below with a `basic_auth` block using a bcrypt hash.
-	# Empty GATEWAY_BASIC_AUTH = off (default). See infra/railway/ENV_MATRIX.md.
+	# Empty GATEWAY_BASIC_AUTH = off (default). See infra/selfhosted/env.example.
 }

@@ -22,6 +22,7 @@ import {
   getDates,
   getFieldLeaderboard,
   getFieldRiskSummary,
+  getImagerySourceMonitoring,
   getJohnDeereConnection,
   listApiKeys,
   listActivities,
@@ -75,6 +76,34 @@ describe('api client error mapping', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/sources/resourcesat-2a-liss3-boa/dates?lookbackDays=92',
       expect.anything(),
+    );
+  });
+
+  it('fetches imagery source monitoring through the same-origin BFF route', async () => {
+    const payload = {
+      generatedAt: '2026-06-16T00:00:00Z',
+      staleAfterDays: 30,
+      sources: [],
+      storage: { status: 'ok', bucket: 'akasha-cogs', byPrefix: [] },
+      ingestionLedger: {
+        status: 'ok',
+        statusCounts: {},
+        failureCountsByKind: {},
+        lastFailures: [],
+        bySource: [],
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getImagerySourceMonitoring()).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/monitoring/imagery-sources',
+      expect.objectContaining({ method: 'GET' }),
     );
   });
 
@@ -250,23 +279,23 @@ describe('api client error mapping', () => {
 
       const file = await exportFieldIndex('plot-1', {
         format: 'csv',
-        sourceId: 'sentinel-2-l2a',
+        sourceId: 'resourcesat-2a-liss3-boa',
         acquisitionDate: '2026-06-01',
         indexType: 'NDVI',
-        cloudMask: { clouds: true, cloudShadows: false, cirrus: true },
+        cloudMask: { clouds: true, cloudShadows: false, cirrus: false },
       });
       await exportFieldReportCsv('plot-1', {
-        sourceId: 'sentinel-2-l2a',
+        sourceId: 'resourcesat-2a-liss3-boa',
         indexType: 'NDVI',
         startDate: '2026-06-01',
         endDate: '2026-06-01',
-        cloudMask: { clouds: true, cloudShadows: false, cirrus: true },
+        cloudMask: { clouds: true, cloudShadows: false, cirrus: false },
       });
 
       expect(file.filename).toBe('North_NDVI.csv');
       expect(fetchMock).toHaveBeenNthCalledWith(
         1,
-        '/api/fields/plot-1/exports/index?format=csv&sourceId=sentinel-2-l2a&acquisitionDate=2026-06-01&indexType=NDVI&clouds=true&cloudShadows=false&cirrus=true',
+        '/api/fields/plot-1/exports/index?format=csv&sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-06-01&indexType=NDVI&clouds=true&cloudShadows=false&cirrus=false',
         expect.objectContaining({ method: 'GET' }),
       );
       expect(String(fetchMock.mock.calls[1][0])).toContain('/api/fields/plot-1/exports/report.csv?');

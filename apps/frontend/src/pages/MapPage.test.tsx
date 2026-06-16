@@ -86,9 +86,9 @@ function makeFieldStatistics(overrides: Partial<FieldStatisticsResponse> = {}): 
     provider: 'native',
     scope: 'field',
     indexType: 'NDVI',
-    sourceId: 'sentinel-2-l2a',
-    acquisitionDate: '2026-06-01',
-    cloudMask: { clouds: true, cloudShadows: true, cirrus: true },
+    sourceId: 'resourcesat-2a-liss3-boa',
+    acquisitionDate: '2026-03-19',
+    cloudMask: { clouds: true, cloudShadows: true, cirrus: false },
     statistics: {
       min: 0.1,
       max: 0.8,
@@ -106,8 +106,8 @@ function makeFieldStatistics(overrides: Partial<FieldStatisticsResponse> = {}): 
       validPixels: 91,
     },
     metadata: {
-      formula: '(B08 - B04) / (B08 + B04)',
-      bands: ['B08', 'B04'],
+      formula: '(BAND4 - BAND3) / (BAND4 + BAND3)',
+      bands: ['BAND4', 'BAND3'],
       warnings: [],
     },
     ...overrides,
@@ -119,13 +119,13 @@ function makeFieldTrend(overrides: Partial<FieldTrendResponse> = {}): FieldTrend
     plotId: 'plot-1',
     provider: 'native',
     scope: 'native_fallback',
-    sourceId: 'sentinel-2-l2a',
+    sourceId: 'resourcesat-2a-liss3-boa',
     indexType: 'NDVI',
     startDate: '2025-12-03',
-    endDate: '2026-06-01',
+    endDate: '2026-03-19',
     points: [
       {
-        acquisitionDate: '2026-05-20',
+        acquisitionDate: '2026-03-01',
         mean: 0.5,
         min: 0.1,
         max: 0.75,
@@ -133,10 +133,10 @@ function makeFieldTrend(overrides: Partial<FieldTrendResponse> = {}): FieldTrend
         validPixelPercent: 88,
         cloudMaskedPercent: 12,
         coveragePercent: 100,
-        metricsProvisional: false,
+        metricsProvisional: true,
       },
       {
-        acquisitionDate: '2026-06-01',
+        acquisitionDate: '2026-03-19',
         mean: 0.56,
         min: 0.1,
         max: 0.8,
@@ -144,12 +144,12 @@ function makeFieldTrend(overrides: Partial<FieldTrendResponse> = {}): FieldTrend
         validPixelPercent: 91,
         cloudMaskedPercent: 6,
         coveragePercent: 97,
-        metricsProvisional: false,
+        metricsProvisional: true,
       },
     ],
     metadata: {
-      formula: '(B08 - B04) / (B08 + B04)',
-      bands: ['B08', 'B04'],
+      formula: '(BAND4 - BAND3) / (BAND4 + BAND3)',
+      bands: ['BAND4', 'BAND3'],
     },
     ...overrides,
   };
@@ -167,8 +167,8 @@ afterEach(() => {
 });
 
 function stubAkashaFetch({
-  sentinel2Dates = [makeDate('2026-04-27', { isLatestUsable: true })],
-  sentinel1Dates = [
+  resourcesatDates = [makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true })],
+  sarDates = [
     makeDate('2026-04-26', {
       usablePixelPercent: null,
       cloudMaskedPercent: null,
@@ -180,8 +180,8 @@ function stubAkashaFetch({
   fieldStatistics = makeFieldStatistics(),
   fieldTrend = makeFieldTrend(),
 }: {
-  sentinel2Dates?: SceneDate[];
-  sentinel1Dates?: SceneDate[];
+  resourcesatDates?: SceneDate[];
+  sarDates?: SceneDate[];
   plots?: Plot[];
   fieldStatistics?: FieldStatisticsResponse;
   fieldTrend?: FieldTrendResponse;
@@ -216,7 +216,7 @@ function stubAkashaFetch({
             maxPolygonAreaHa: 100,
             maxPolygonVertices: 40,
             usablePixelThresholdPercent: 70,
-            supportedIndices: ['NDVI', 'NDRE', 'NDMI'],
+            supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
             defaultIndex: 'NDVI',
           }),
         );
@@ -226,25 +226,25 @@ function stubAkashaFetch({
         return Promise.resolve(
           jsonResponse([
             {
-              id: 'sentinel-2-l2a',
-              label: 'Sentinel-2 L2A',
-              provider: 'Copernicus',
+              id: 'resourcesat-2a-liss3-boa',
+              label: 'ResourceSat-2A LISS-3 BOA',
+              provider: 'ISRO/NRSC Bhoonidhi',
               kind: 'optical',
-              supportedIndices: ['NDVI', 'NDRE', 'NDMI'],
-              displayModes: ['RGB', 'NDVI'],
-              defaultDisplayMode: 'RGB',
-              attribution: 'Copernicus Sentinel-2',
+              supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              displayModes: ['FCC', 'NDVI'],
+              defaultDisplayMode: 'FCC',
+              attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
             },
             {
-              id: 'sentinel-1-grd',
-              label: 'Sentinel-1 GRD',
-              provider: 'Copernicus',
+              id: 'eos-04-sar-mrs-l2b',
+              label: 'EOS-04 SAR MRS L2B',
+              provider: 'ISRO/NRSC Bhoonidhi',
               kind: 'sar',
               supportedIndices: [],
               displayModes: ['VV_GRAYSCALE'],
               defaultDisplayMode: 'VV_GRAYSCALE',
               description: 'VV grayscale radar backscatter.',
-              attribution: 'Copernicus Sentinel-1',
+              attribution: 'ISRO/NRSC Bhoonidhi',
             },
           ]),
         );
@@ -253,15 +253,16 @@ function stubAkashaFetch({
       if (path === '/api/layers/default') {
         return Promise.resolve(
           jsonResponse({
-            sourceId: 'sentinel-2-l2a',
-            acquisitionDate: '2026-04-27',
-            displayMode: 'RGB',
-            tileUrlTemplate: '/api/tiles/sentinel-2-l2a/2026-04-27/RGB/{z}/{x}/{y}.png',
+            sourceId: 'resourcesat-2a-liss3-boa',
+            acquisitionDate: '2026-03-19',
+            displayMode: 'FCC',
+            tileUrlTemplate:
+              '/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png',
             minzoom: 0,
             maxzoom: 14,
-            attribution: 'Copernicus Sentinel-2',
+            attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
             usablePixelPercent: 90,
-            metricsProvisional: false,
+            metricsProvisional: true,
           }),
         );
       }
@@ -284,12 +285,12 @@ function stubAkashaFetch({
         return Promise.resolve(jsonResponse(fieldTrend));
       }
 
-      if (path.startsWith('/api/sources/sentinel-2-l2a/dates')) {
-        return Promise.resolve(jsonResponse(sentinel2Dates));
+      if (path.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')) {
+        return Promise.resolve(jsonResponse(resourcesatDates));
       }
 
-      if (path.startsWith('/api/sources/sentinel-1-grd/dates')) {
-        return Promise.resolve(jsonResponse(sentinel1Dates));
+      if (path.startsWith('/api/sources/eos-04-sar-mrs-l2b/dates')) {
+        return Promise.resolve(jsonResponse(sarDates));
       }
 
       throw new Error(`Unexpected request: ${path}`);
@@ -310,13 +311,13 @@ describe('MapPage native source behavior', () => {
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-basemap-places')).toBe(
       'none',
     );
-    expect(screen.getByTestId('attribution').textContent).toBe('Copernicus Sentinel-2');
+    expect(screen.getByTestId('attribution').textContent).toBe('ISRO-IRS, ISRO/NRSC, Bhoonidhi');
     expect(
       screen.getByText('Select a field to view cloud-masked statistics and trend analytics.'),
     ).toBeTruthy();
   });
 
-  it('shows SAR notes and hides optical index controls after Sentinel-1 selection', async () => {
+  it('shows SAR notes and hides optical index controls after SAR selection', async () => {
     stubAkashaFetch();
 
     renderMapPage();
@@ -324,30 +325,29 @@ describe('MapPage native source behavior', () => {
     await screen.findByTestId('index-panel');
 
     fireEvent.click(screen.getByTestId('layer-source-trigger'));
-    fireEvent.click(await screen.findByTestId('source-tab-sentinel-1-grd'));
+    fireEvent.click(await screen.findByTestId('source-tab-eos-04-sar-mrs-l2b'));
 
     await waitFor(() => {
       expect(screen.queryByTestId('index-panel')).toBeNull();
     });
 
-    const note = await screen.findByTestId('nearest-pass-note');
-    expect(note.textContent).toContain('Nearest radar pass: 2026-04-26.');
+    expect(screen.queryByTestId('nearest-pass-note')).toBeNull();
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/sentinel-1-grd/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
+        '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
       );
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('attribution').textContent).toContain('Copernicus Sentinel-1');
+      expect(screen.getByTestId('attribution').textContent).toContain('ISRO/NRSC Bhoonidhi');
     });
   });
 
   it('does not render the compare scene while satellite imagery is hidden', async () => {
     stubAkashaFetch({
-      sentinel2Dates: [
-        makeDate('2026-04-20'),
-        makeDate('2026-04-27', { isLatestUsable: true }),
+      resourcesatDates: [
+        makeDate('2026-03-01'),
+        makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true }),
       ],
     });
 
@@ -359,7 +359,7 @@ describe('MapPage native source behavior', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/sentinel-2-l2a/2026-04-27/RGB/{z}/{x}/{y}.png',
+        '/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png',
       );
     });
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-visible')).toBe('false');
@@ -370,29 +370,29 @@ describe('MapPage native source behavior', () => {
 
   it('clears the stale compare scene when switching imagery sources', async () => {
     stubAkashaFetch({
-      sentinel2Dates: [
-        makeDate('2026-04-20'),
-        makeDate('2026-04-27', { isLatestUsable: true }),
+      resourcesatDates: [
+        makeDate('2026-03-01'),
+        makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true }),
       ],
     });
 
     renderMapPage({
       compareEnabled: true,
-      compareDate: '2026-04-20',
+      compareDate: '2026-03-01',
     });
 
     await waitFor(() => {
       expect(
         screen.getByTestId('map-layer-manager').getAttribute('data-compare-tile-template'),
-      ).toContain('/api/tiles/sentinel-2-l2a/2026-04-20/RGB/{z}/{x}/{y}.png');
+      ).toContain('/api/tiles/resourcesat-2a-liss3-boa/2026-03-01/FCC/{z}/{x}/{y}.png');
     });
 
     fireEvent.click(screen.getByTestId('layer-source-trigger'));
-    fireEvent.click(await screen.findByTestId('source-tab-sentinel-1-grd'));
+    fireEvent.click(await screen.findByTestId('source-tab-eos-04-sar-mrs-l2b'));
 
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/sentinel-1-grd/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
+        '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
       );
     });
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-compare-tile-template')).toBe(
@@ -410,7 +410,7 @@ describe('MapPage selected-field native analytics', () => {
     await screen.findByTestId('index-panel');
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/sentinel-2-l2a/2026-04-27/RGB/{z}/{x}/{y}.png',
+        '/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png',
       );
     });
 
@@ -432,7 +432,7 @@ describe('MapPage selected-field native analytics', () => {
     fireEvent.click(await screen.findByTestId('display-mode-NDVI'));
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
-        '/api/tiles/sentinel-2-l2a/2026-04-27/NDVI/{z}/{x}/{y}.png',
+        '/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/NDVI/{z}/{x}/{y}.png',
       );
     });
     expect(screen.getByTestId('map-legend').getAttribute('data-display-mode')).toBe('NDVI');

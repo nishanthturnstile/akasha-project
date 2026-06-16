@@ -11,8 +11,8 @@ selection, cloud usability, visibility, and opacity.
 
 ### Where we are
 
-- The BFF (Phase 3) is **live and validated** at `https://web-production-aaf7d.up.railway.app`
-  behind the Caddy `web` gateway. The browser only ever talks to the gateway; `/api/*` and
+- The BFF (Phase 3) is **live and validated** behind the Caddy `web` gateway at the deployment's
+  public origin. The browser only ever talks to the gateway; `/api/*` and
   `/tiles/*` are same-origin.
 - The frontend (`apps/frontend`) is still the **Slice 0 skeleton**: React 18 + Vite 5 +
   TypeScript, no MapLibre, no Tailwind, no shadcn yet. `App.tsx` only pings
@@ -133,11 +133,11 @@ The error shape for any failed call is `{ "error": { "code", "message", "details
 
 You are working in the Akasha repository. Implement **Phase 4 — Frontend map and layer UX (Slice 4)**
 in `apps/frontend`. Build the real product map experience on top of the existing, live BFF. Do not
-modify backend services, the gateway, or Railway config.
+modify backend services, the gateway, or deployment config.
 
 ### Project context
 
-Akasha is a Railway-first Sentinel-2 satellite imagery MVP for Indian agriculture. The browser talks
+Akasha is a Sentinel-2 satellite imagery MVP for Indian agriculture. The browser talks
 **only** to the public `web` gateway, which serves the built SPA and reverse-proxies same-origin
 `/api/*` to the FastAPI BFF and `/tiles/*` to TiTiler. FastAPI, TiTiler, STAC, PostGIS, and MinIO are
 private. The frontend must never reference MinIO, COG paths, STAC, TiTiler, database URLs, or any
@@ -320,7 +320,7 @@ apps/frontend/
 - Terra Draw drawing/editing, GeoJSON import/export, named plot save/list/delete.
 - Index selector and statistics/`IndexPanel` behavior (NDVI/NDRE/NDMI/NDWI).
 - Ingestion automation, Wave 2 analytics/time-series.
-- Auth/user accounts, new satellite sources, gateway/Railway changes.
+- Auth/user accounts, new satellite sources, gateway/deployment changes.
 
 ### Final response expected from Emergent
 

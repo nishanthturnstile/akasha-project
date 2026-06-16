@@ -1,7 +1,7 @@
-"""Pure-numpy masked index-statistics engine (Slice 2 — Phase 2).
+"""Pure-numpy masked index-statistics engine (Slice 2 - Phase 2).
 
 NO file/network I/O lives here on purpose: every input is an in-memory numpy
-array, so the offset/scale correction + SCL masking + index math + pixel
+array, so the offset/scale correction + source-mask filtering + index math + pixel
 accounting are fully unit-testable without a COG, MinIO, or GDAL.
 
 Pixel accounting:
@@ -17,7 +17,7 @@ Pixel accounting:
     coveragePercent    = coveragePixels   / totalPixels    * 100
 
 Reflectance correction (raw uint16 DN stored):
-    corrected = dn * scale + offset   (= dn * 0.0001 - 0.1)
+    corrected = dn * scale + offset
 The offset does NOT cancel in a normalized-difference index because it biases
 the denominator; correction is therefore applied BEFORE the index is computed.
 """
@@ -87,7 +87,7 @@ def _round(value: float | None, ndigits: int = 6) -> float | None:
 def correct_reflectance(
     dn: np.ndarray, scale: float = DEFAULT_SCALE, offset: float = DEFAULT_OFFSET
 ) -> np.ndarray:
-    """Apply per-band Sentinel-2 L2A reflectance correction: dn * scale + offset."""
+    """Apply per-band source reflectance correction: dn * scale + offset."""
     return dn.astype("float64") * float(scale) + float(offset)
 
 
@@ -147,8 +147,8 @@ def compute_index_statistics(
     coverage_pixels = int(coverage_mask.sum())
 
     # --- source mask exclusion within coverage ----------------------------
-    # Class 0 is already counted as nodata; the remaining excluded classes
-    # (1,2,3,7,8,9,10,11 by default) are the "cloud-masked" pixels.
+    # Class 0 is already counted as nodata; remaining source-declared excluded
+    # classes are the masked pixels.
     excluded_within_coverage = tuple(c for c in excluded_mask_classes if c != MASK_NODATA_CLASS)
     mask_excluded_mask = coverage_mask & np.isin(mask, excluded_within_coverage)
     masked_pixels = int(mask_excluded_mask.sum())
@@ -177,7 +177,9 @@ def compute_index_statistics(
         else:  # pragma: no cover - degenerate
             warnings.append("No finite index values after masking.")
     else:
-        warnings.append("No valid pixels after nodata + SCL masking for this geometry/date.")
+        warnings.append(
+            "No valid pixels after nodata + source-mask filtering for this geometry/date."
+        )
 
     def pct(numerator: int) -> float:
         return _round((numerator / total_pixels * 100.0) if total_pixels else 0.0, 4) or 0.0

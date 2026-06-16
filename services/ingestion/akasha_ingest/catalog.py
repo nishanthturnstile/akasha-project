@@ -30,6 +30,10 @@ SENTINEL1_STAC_EXTENSIONS = [
     "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
     "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
 ]
+CONTEXT_STAC_EXTENSIONS = [
+    "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json",
+]
 
 ANALYTIC_EO_BANDS = [
     {
@@ -184,6 +188,27 @@ SAR_SOURCE_META = {
         "frequency_band": "S",
         "default_gsd": None,
         "title": "NISAR S-SAR GCOV backscatter COG (dB)",
+    },
+}
+
+CONTEXT_SOURCE_META = {
+    config.CARTOSAT3_CONTEXT_COLLECTION_ID: {
+        "constellation": "cartosat",
+        "instruments": ["optical"],
+        "default_gsd": None,
+        "title": "Operator-provided visual context COG",
+        "platform": "cartosat-3",
+        "asset_key": "visual",
+        "asset_roles": ["data", "visual"],
+    },
+    config.EOS06_CONTEXT_COLLECTION_ID: {
+        "constellation": "eos-06",
+        "instruments": ["ocm"],
+        "default_gsd": 360,
+        "title": "EOS-06 OCM-LAC precomputed NDVI context COG",
+        "platform": "eos-06",
+        "asset_key": "ndvi",
+        "asset_roles": ["data", "index", "ndvi"],
     },
 }
 
@@ -468,6 +493,10 @@ def build_stac_item_from_prepare_manifest(manifest: dict[str, Any]) -> dict:
     scene = SceneIdentity.from_prepare_manifest(manifest)
     if scene.source_id in config.SAR_COLLECTION_IDS:
         return _build_sar_stac_item(manifest, scene)
+    if scene.source_id in config.CONTEXT_COLLECTION_IDS:
+        return _build_context_stac_item(manifest, scene)
+    if scene.source_id in config.ARCHIVE_COLLECTION_IDS:
+        return _build_archive_stac_item(manifest, scene)
     if scene.source_id in config.RESOURCESAT_BOA_COLLECTION_IDS:
         return _build_resourcesat_boa_stac_item(manifest, scene)
     return _build_sentinel2_stac_item(manifest, scene)
@@ -652,6 +681,22 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
         "akasha:row": None if scene.composite else scene.row_or_unknown,
         "akasha:composite": True if scene.composite else None,
         "akasha:aoi_id": scene.aoi_id if scene.composite else None,
+        "akasha:composite_grid_crs": _first(
+            manifest.get("composite_grid_crs"),
+            props.get("akasha:composite_grid_crs"),
+        ),
+        "akasha:composite_resolution_meters": _first(
+            manifest.get("composite_resolution_meters"),
+            props.get("akasha:composite_resolution_meters"),
+        ),
+        "akasha:composite_grid_bounds": _first(
+            manifest.get("composite_grid_bounds"),
+            props.get("akasha:composite_grid_bounds"),
+        ),
+        "akasha:composite_grid_dimensions": _first(
+            manifest.get("composite_grid_dimensions"),
+            props.get("akasha:composite_grid_dimensions"),
+        ),
         "akasha:period_start": _first(
             manifest.get("period_start"),
             manifest.get("window_start"),
@@ -807,6 +852,284 @@ def _backscatter_raster_bands(
             band["nodata"] = nodata
         bands.append(band)
     return bands
+
+
+def _visual_raster_bands(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    existing = _first(meta.get("raster:bands"), meta.get("raster_bands"))
+    if existing:
+        return list(existing)
+    resolution = meta.get("resolution") or []
+    spatial_resolution = resolution[0] if isinstance(resolution, list) and resolution else None
+    count = int(meta.get("band_count") or 3)
+    nodata = meta.get("nodata")
+    names = _as_list(meta.get("descriptions") or meta.get("band_names"))
+    bands: list[dict[str, Any]] = []
+    for index in range(count):
+        band: dict[str, Any] = {
+            "data_type": meta.get("dtype") or "uint16",
+        }
+        if index < len(names):
+            band["name"] = str(names[index])
+        if nodata is not None:
+            band["nodata"] = nodata
+        if spatial_resolution is not None:
+            band["spatial_resolution"] = spatial_resolution
+        bands.append(band)
+    return bands
+
+
+def _build_context_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+    source_meta = CONTEXT_SOURCE_META.get(
+        scene.source_id,
+        {
+            "constellation": scene.source_id,
+            "instruments": ["optical"],
+            "default_gsd": None,
+            "title": "Visual context COG",
+            "platform": scene.source_id,
+            "asset_key": "visual",
+            "asset_roles": ["data", "visual"],
+        },
+    )
+    props = _properties(manifest)
+    asset_key = str(source_meta.get("asset_key") or scene.context_asset_key)
+    asset_meta = _output_meta(manifest, asset_key)
+    bbox = _bbox_from_manifest(manifest, asset_meta)
+    geometry = _geometry_from_manifest(manifest, asset_meta, bbox)
+    epsg = _epsg(_first(asset_meta.get("crs"), manifest.get("crs"), props.get("proj:epsg")))
+    shape = _shape(asset_meta)
+    transform = _transform(asset_meta)
+    proj_bbox = list(_first(asset_meta.get("proj:bbox"), asset_meta.get("bounds"), bbox))
+    gsd = _first(
+        manifest.get("gsd"),
+        props.get("gsd"),
+        asset_meta.get("gsd"),
+        source_meta["default_gsd"],
+    )
+
+    item_props: dict[str, Any] = {
+        "datetime": scene.acquisition_datetime,
+        "platform": scene.platform or source_meta["platform"],
+        "constellation": source_meta["constellation"],
+        "instruments": _first(props.get("instruments"), source_meta["instruments"]),
+        "gsd": gsd,
+        "product:type": scene.product_type,
+        "akasha:scene_key": scene.scene_key,
+        "akasha:source_id": scene.source_id,
+        "akasha:acquisition_date": scene.acquisition_date,
+        "akasha:scene_component": scene.scene_component,
+        "akasha:product_id_hash": scene.product_id_hash,
+        "akasha:date_metrics_kind": "context",
+        "akasha:crop_indices_enabled": False,
+        "akasha:coverage_percent": _first(props.get("akasha:coverage_percent"), 100.0),
+        "akasha:is_latest_usable": _first(props.get("akasha:is_latest_usable"), True),
+        "akasha:metrics_provisional": _first(props.get("akasha:metrics_provisional"), True),
+    }
+    if epsg is not None:
+        item_props["proj:epsg"] = epsg
+    if shape:
+        item_props["proj:shape"] = shape
+    if transform:
+        item_props["proj:transform"] = transform
+    if proj_bbox:
+        item_props["proj:bbox"] = proj_bbox
+    if manifest.get("created") or props.get("created"):
+        item_props["created"] = manifest.get("created") or props.get("created")
+    item_props = {key: value for key, value in item_props.items() if value is not None}
+
+    context_asset: dict[str, Any] = {
+        "href": f"s3://{config.BUCKET}/{scene.context_key}",
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": source_meta["title"],
+        "roles": list(source_meta.get("asset_roles") or ["data", asset_key]),
+        "raster:bands": _visual_raster_bands(asset_meta),
+    }
+    if gsd is not None:
+        context_asset["gsd"] = gsd
+    if epsg is not None:
+        context_asset["proj:epsg"] = epsg
+    if shape:
+        context_asset["proj:shape"] = shape
+    if transform:
+        context_asset["proj:transform"] = transform
+    if proj_bbox:
+        context_asset["proj:bbox"] = proj_bbox
+
+    return {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "stac_extensions": CONTEXT_STAC_EXTENSIONS,
+        "id": scene.item_id,
+        "collection": scene.source_id,
+        "bbox": bbox,
+        "geometry": geometry,
+        "properties": item_props,
+        "assets": {asset_key: context_asset},
+        "links": [
+            {
+                "rel": "collection",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "parent",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "root",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+        ],
+    }
+
+
+def _archive_raster_bands(
+    meta: dict[str, Any],
+    default_count: int,
+    asset: str,
+) -> list[dict[str, Any]]:
+    existing = _first(meta.get("raster:bands"), meta.get("raster_bands"))
+    if existing:
+        return list(existing)
+    resolution = meta.get("resolution") or []
+    spatial_resolution = resolution[0] if isinstance(resolution, list) and resolution else None
+    count = int(meta.get("band_count") or default_count)
+    nodata = meta.get("nodata", 0)
+    dtype = meta.get("dtype") or ("uint8" if asset == "mask" else "uint16")
+    bands: list[dict[str, Any]] = []
+    for _index in range(count):
+        band: dict[str, Any] = {
+            "data_type": dtype,
+            "nodata": nodata,
+        }
+        if spatial_resolution is not None:
+            band["spatial_resolution"] = spatial_resolution
+        if asset == "analytic":
+            band["unit"] = meta.get("unit") or "reflectance"
+            if "scale" in meta:
+                band["scale"] = meta["scale"]
+            if "offset" in meta:
+                band["offset"] = meta["offset"]
+        bands.append(band)
+    return bands
+
+
+def _build_archive_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:
+    props = _properties(manifest)
+    analytic = _output_meta(manifest, "analytic")
+    mask = _output_meta(manifest, "mask")
+    bbox = _bbox_from_manifest(manifest, analytic)
+    geometry = _geometry_from_manifest(manifest, analytic, bbox)
+    epsg = _epsg(_first(analytic.get("crs"), manifest.get("crs"), props.get("proj:epsg")))
+    shape = _shape(analytic)
+    transform = _transform(analytic)
+    proj_bbox = list(_first(analytic.get("proj:bbox"), analytic.get("bounds"), bbox))
+    gsd = _first(manifest.get("gsd"), props.get("gsd"), analytic.get("gsd"))
+    band_role_mapping = _first(
+        manifest.get("band_role_mapping"),
+        manifest.get("akasha:band_role_mapping"),
+        props.get("akasha:band_role_mapping"),
+    )
+
+    item_props: dict[str, Any] = {
+        "datetime": scene.acquisition_datetime,
+        "platform": scene.platform or "irs-1c",
+        "constellation": _first(props.get("constellation"), "irs"),
+        "instruments": _first(props.get("instruments"), ["liss-3"]),
+        "gsd": gsd,
+        "product:type": scene.product_type or "archive",
+        "akasha:scene_key": scene.scene_key,
+        "akasha:source_id": scene.source_id,
+        "akasha:acquisition_date": scene.acquisition_date,
+        "akasha:scene_component": scene.scene_component,
+        "akasha:product_id_hash": scene.product_id_hash,
+        "akasha:date_metrics_kind": "archive",
+        "akasha:crop_indices_enabled": False,
+        "akasha:band_role_mapping": band_role_mapping,
+        "akasha:mask_asset": "mask",
+        "akasha:mask_method": _first(
+            manifest.get("mask_method"),
+            manifest.get("akasha:mask_method"),
+            props.get("akasha:mask_method"),
+            "Pending archive mask validation.",
+        ),
+        "akasha:coverage_percent": _first(props.get("akasha:coverage_percent"), 100.0),
+        "akasha:is_latest_usable": _first(props.get("akasha:is_latest_usable"), True),
+        "akasha:metrics_provisional": _first(props.get("akasha:metrics_provisional"), True),
+    }
+    if epsg is not None:
+        item_props["proj:epsg"] = epsg
+    if shape:
+        item_props["proj:shape"] = shape
+    if transform:
+        item_props["proj:transform"] = transform
+    if proj_bbox:
+        item_props["proj:bbox"] = proj_bbox
+    if manifest.get("created") or props.get("created"):
+        item_props["created"] = manifest.get("created") or props.get("created")
+    item_props = {key: value for key, value in item_props.items() if value is not None}
+
+    analytic_asset: dict[str, Any] = {
+        "href": f"s3://{config.BUCKET}/{scene.analytic_key}",
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "IRS-1C LISS-3 archive analytic COG",
+        "roles": ["data", "reflectance", "archive"],
+        "eo:bands": manifest.get("eo_bands") or analytic.get("eo:bands") or [],
+        "raster:bands": _archive_raster_bands(analytic, 4, "analytic"),
+    }
+    mask_asset: dict[str, Any] = {
+        "href": f"s3://{config.BUCKET}/{scene.mask_key}",
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "Archive validity mask COG",
+        "roles": ["metadata", "data-mask", "archive"],
+        "raster:bands": _archive_raster_bands(mask, 1, "mask"),
+        "classification:classes": (
+            manifest.get("classification_classes") or mask.get("classification:classes") or []
+        ),
+    }
+    if gsd is not None:
+        analytic_asset["gsd"] = gsd
+        mask_asset["gsd"] = gsd
+    for asset in (analytic_asset, mask_asset):
+        if epsg is not None:
+            asset["proj:epsg"] = epsg
+        if shape:
+            asset["proj:shape"] = shape
+        if transform:
+            asset["proj:transform"] = transform
+        if proj_bbox:
+            asset["proj:bbox"] = proj_bbox
+
+    return {
+        "type": "Feature",
+        "stac_version": "1.0.0",
+        "stac_extensions": STAC_EXTENSIONS,
+        "id": scene.item_id,
+        "collection": scene.source_id,
+        "bbox": bbox,
+        "geometry": geometry,
+        "properties": item_props,
+        "assets": {"analytic": analytic_asset, "mask": mask_asset},
+        "links": [
+            {
+                "rel": "collection",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "parent",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+            {
+                "rel": "root",
+                "href": f"./{scene.source_id}-collection.json",
+                "type": "application/json",
+            },
+        ],
+    }
 
 
 def _build_sar_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict:

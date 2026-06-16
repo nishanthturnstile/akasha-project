@@ -187,7 +187,7 @@ sentinel-2-l2a/2025-09-14/scl.tif
 ## Raster artifact availability model
 
 Large raster artifacts are intentionally **not** checked into git and will not be
-available in normal Railway builds.
+available in normal deployment builds.
 
 Treat the paths as different lifecycle stages:
 
@@ -200,21 +200,21 @@ Treat the paths as different lifecycle stages:
 For local development, if `data/seed/rasters/2025-09-14/analytic.tif` and
 `data/seed/rasters/2025-09-14/scl.tif` exist, ingestion can upload them to MinIO.
 
-For Emergent or Railway builds, do **not** assume these local files exist. Code
+For Emergent or deployment builds, do **not** assume these local files exist. Code
 must be written so runtime uses STAC asset hrefs/object-storage keys. If local
 COGs are missing during validation, report runtime tile/stat validation as
 blocked and point to `docs/sentinel-2-l2a-cog-prep-runbook.md` or an operator
 upload step. Do not replace missing COGs with fake committed files.
 
-For Railway specifically, use one of these deployment/operator flows before the
+For the deployment specifically, use one of these deployment/operator flows before the
 Phase 2 smoke test:
 
-1. Preferred MVP path: upload the validated COGs to the Railway MinIO volume or
+1. Preferred MVP path: upload the validated COGs to the deployment's MinIO volume or
   compatible object storage at the object keys above, then seed/register STAC
   metadata pointing to those keys.
 2. Acceptable local-dev path only: mount/use `data/seed/rasters/...` and run
   `worker.py seed --force` to upload real COGs into local MinIO.
-3. Avoid for now: downloading the SAFE ZIP and generating COGs inside Railway;
+3. Avoid for now: downloading the SAFE ZIP and generating COGs inside the deployment;
   this is CPU/disk heavy and requires CDSE credentials at runtime.
 
 ## Important constraints
@@ -514,4 +514,4 @@ the requirements or create fake raster assets.
 
 ## Out of scope
 
-Do not implement full frontend map UX, auth, custom domains, future sources, Wave 2 ingestion automation, or production Railway deployment hardening in this prompt. Keep this slice focused on raster proof and backend validation.
+Do not implement full frontend map UX, auth, custom domains, future sources, Wave 2 ingestion automation, or production deployment hardening in this prompt. Keep this slice focused on raster proof and backend validation.

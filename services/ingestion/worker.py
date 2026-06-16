@@ -16,10 +16,11 @@ Usage:
     python worker.py bhoonidhi-download --manifest ...
     python worker.py bhoonidhi-sync --source resourcesat-2a-liss3-boa --aoi bangalore-60km
     python worker.py build-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km ...
-    python worker.py verify                    # Slice 1 exit criteria
-    python worker.py verify-cogs               # Phase 2: + non-empty real COGs
+    python worker.py prepare-context-cog --source cartosat-3-gated --input visual.tif ...
+    python worker.py verify                    # configured collection + storage reachability
+    python worker.py verify-cogs               # legacy Sentinel sample COG check
     python worker.py verify-manifest-cogs [--manifest-glob ...]
-    python worker.py verify-composite [--manifest ...]
+    python worker.py verify-composite [--manifest ...]  # ResourceSat launch acceptance
     python worker.py healthcheck               # required env vars present
 """
 
@@ -29,6 +30,7 @@ import argparse
 import os
 import subprocess
 import sys
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 REQUIRED_ENV: list[str] = [
@@ -61,6 +63,45 @@ def _manifest_paths(manifest_glob: str | None, collection_id: str | None = None)
     return paths
 
 
+def _load_requested_aoi(args: argparse.Namespace) -> dict:
+    from akasha_ingest import bhoonidhi, config
+
+    try:
+        return bhoonidhi.load_aoi(
+            args.aoi_path,
+            aoi_id=getattr(args, "aoi", None),
+            aoi_dir=getattr(args, "aoi_dir", None) or config.AOI_CONFIG_DIR,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def _aoi_id(aoi: dict | None, fallback: str = "unknown-aoi") -> str:
+    if not aoi:
+        return fallback
+    value = aoi.get("id")
+    props = aoi.get("properties") if isinstance(aoi.get("properties"), dict) else {}
+    return str(value or props.get("id") or fallback)
+
+
+def _aoi_composite_crs(aoi: dict | None, default: str = "EPSG:32643") -> str:
+    if not aoi:
+        return default
+    props = aoi.get("properties") if isinstance(aoi.get("properties"), dict) else {}
+    return str(props.get("compositeGridCrs") or default)
+
+
+def _should_load_aoi_for_verify(args: argparse.Namespace) -> bool:
+    from akasha_ingest import config
+
+    return bool(
+        getattr(args, "aoi_path", None)
+        or getattr(args, "aoi_dir", None)
+        or config.AOI_CONFIG_DIR
+        or Path(config.AOI_CONFIG_PATH).is_file()
+    )
+
+
 def cmd_info(_: argparse.Namespace) -> int:
     from akasha_ingest import config
     from akasha_ingest.scene import SAMPLE_SCENE
@@ -78,6 +119,7 @@ def cmd_info(_: argparse.Namespace) -> int:
     for name in REQUIRED_ENV + [
         "AKASHA_COG_BUCKET",
         "AOI_CONFIG_PATH",
+        "AOI_CONFIG_DIR",
         "BHOONIDHI_API_BASE",
         "BHOONIDHI_USER_ID",
         "BHOONIDHI_SEARCH_RPS",
@@ -162,9 +204,7 @@ def cmd_bhoonidhi_search(args: argparse.Namespace) -> int:
     from akasha_ingest import bhoonidhi, config
 
     collection = bhoonidhi.source_collection(args.source)
-    aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
-    if args.aoi and args.aoi != aoi.get("id"):
-        raise SystemExit(f"AOI '{args.aoi}' not found; loaded '{aoi.get('id')}'")
+    aoi = _load_requested_aoi(args)
     datetime_range = args.datetime or bhoonidhi.lookback_datetime_range(args.lookback_days)
     client = bhoonidhi.BhoonidhiClient()
     items = client.search(
@@ -202,45 +242,68 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
     raw_root = Path(args.raw_root or config.BHOONIDHI_RAW_ROOT) / source_id
     client = bhoonidhi.BhoonidhiClient()
     downloaded: list[dict[str, object]] = []
-    for candidate in manifest.get("candidates", []):
-        item_id = candidate.get("item_id")
-        if not item_id:
-            continue
-        dest = raw_root / f"{item_id}.zip"
-        result = client.download_product(
-            product_id=str(item_id),
-            collection=collection,
-            destination=dest,
-        )
-        candidate["download_status"] = result["status"]
-        candidate["downloaded_path"] = result["path"]
-        candidate["downloaded_bytes"] = result["bytes"]
-        downloaded.append(
-            {
-                **candidate,
-                "item_id": item_id,
-                **result,
-                "downloaded_path": result["path"],
-                "downloaded_bytes": result["bytes"],
-            }
-        )
-    output = dict(manifest)
-    output["downloaded"] = downloaded
+    failed: list[dict[str, object]] = []
+    candidates = [
+        candidate for candidate in manifest.get("candidates", []) if isinstance(candidate, dict)
+    ]
+    max_downloads = getattr(args, "max_downloads", None)
+    if max_downloads is not None and max_downloads > 0:
+        deferred_candidates = candidates[max_downloads:]
+        candidates = candidates[:max_downloads]
+        manifest.setdefault("download", {})["deferred_product_ids"] = [
+            str(candidate.get("item_id")) for candidate in deferred_candidates
+        ]
+        manifest["download"]["max_downloads"] = max_downloads
+
     output_path = manifest_path.parent / "download_manifest.json"
-    bhoonidhi.write_manifest(output, output_path)
+    try:
+        for candidate in candidates:
+            item_id = candidate.get("item_id")
+            if not item_id:
+                continue
+            dest = raw_root / f"{item_id}.zip"
+            try:
+                result = client.download_product(
+                    product_id=str(item_id),
+                    collection=collection,
+                    destination=dest,
+                )
+            except Exception as exc:  # noqa: BLE001
+                candidate["download_status"] = "failed"
+                candidate["download_error"] = str(exc)
+                failed.append({"item_id": item_id, **candidate})
+                raise
+            candidate["download_status"] = result["status"]
+            candidate["downloaded_path"] = result["path"]
+            candidate["downloaded_bytes"] = result["bytes"]
+            downloaded.append(
+                {
+                    **candidate,
+                    "item_id": item_id,
+                    **result,
+                    "downloaded_path": result["path"],
+                    "downloaded_bytes": result["bytes"],
+                }
+            )
+    finally:
+        output = dict(manifest)
+        output["candidates"] = candidates
+        output["downloaded"] = downloaded
+        output["failed"] = failed
+        bhoonidhi.write_manifest(output, output_path)
     print(f"downloaded {len(downloaded)} product(s)")
+    if failed:
+        print(f"failed {len(failed)} product(s)")
     print(f"manifest: {output_path}")
     return 0
 
 
 def cmd_build_composite(args: argparse.Namespace) -> int:
-    from akasha_ingest import bhoonidhi, composite, config
+    from akasha_ingest import composite, config
 
     if args.source not in config.RESOURCESAT_BOA_COLLECTION_IDS:
         raise SystemExit("build-composite currently supports ResourceSat-2A BOA sources only")
-    aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
-    if args.aoi and args.aoi != aoi.get("id"):
-        raise SystemExit(f"AOI '{args.aoi}' not found; loaded '{aoi.get('id')}'")
+    aoi = _load_requested_aoi(args)
     manifest_paths = composite.scene_manifest_paths_for_window(
         _manifest_paths(args.manifest_glob, args.source),
         window_start=args.window_start,
@@ -274,6 +337,32 @@ def cmd_build_composite(args: argparse.Namespace) -> int:
         f"usable={result.metrics['usable_pixel_percent']} "
         f"cloudMasked={result.metrics['cloud_masked_percent']}"
     )
+    return 0
+
+
+def cmd_prepare_context_cog(args: argparse.Namespace) -> int:
+    script = Path(__file__).resolve().parents[2] / "scripts" / "prepare_context_cog.py"
+    command = [
+        sys.executable,
+        str(script),
+        "--source",
+        args.source,
+        "--input",
+        args.input,
+        "--product-id",
+        args.product_id,
+        "--acquisition-datetime",
+        args.acquisition_datetime,
+        "--output-root",
+        args.output_root,
+    ]
+    if args.gsd is not None:
+        command.extend(["--gsd", str(args.gsd)])
+    if args.overwrite:
+        command.append("--overwrite")
+    if args.skip_validation:
+        command.append("--skip-validation")
+    subprocess.run(command, check=True)
     return 0
 
 
@@ -311,12 +400,14 @@ def _latest_composite_manifest(source: str, aoi: str):
 def cmd_verify_composite(args: argparse.Namespace) -> int:
     from akasha_ingest import composite, config
 
+    aoi = _load_requested_aoi(args) if _should_load_aoi_for_verify(args) else None
+    expected_crs = args.expected_crs or _aoi_composite_crs(aoi)
     manifest_path = (
         Path(args.manifest)
         if args.manifest
         else _latest_composite_manifest(
             args.source,
-            args.aoi,
+            _aoi_id(aoi, args.aoi),
         )
     )
     deps = composite.require_raster_deps()
@@ -324,8 +415,9 @@ def cmd_verify_composite(args: argparse.Namespace) -> int:
         deps=deps,
         manifest_path=manifest_path,
         source_id=args.source,
+        expected_aoi_id=_aoi_id(aoi, args.aoi),
         min_coverage_percent=args.min_coverage_percent,
-        expected_crs=args.expected_crs,
+        expected_crs=expected_crs,
         expected_resolution=args.expected_resolution,
         resolution_tolerance=args.resolution_tolerance,
         require_overviews=not args.allow_missing_overviews,
@@ -368,21 +460,80 @@ def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> No
     subprocess.run(command, check=True)
 
 
+def _composite_ledger_product_id(
+    args: argparse.Namespace, aoi: dict | None = None, suffix: str = "pending"
+) -> str:
+    window_start = args.window_start or "latest"
+    window_end = args.window_end or "latest"
+    return f"composite:{_aoi_id(aoi, args.aoi)}:{window_start}:{window_end}:{suffix}"
+
+
+def _max_downloads_per_sync(args: argparse.Namespace) -> int | None:
+    from akasha_ingest import config as ingest_config
+
+    raw = getattr(args, "max_downloads", None)
+    if raw is None:
+        raw = ingest_config.BHOONIDHI_MAX_DOWNLOADS_PER_SYNC
+    if raw in (None, ""):
+        return None
+    value = int(raw)
+    return value if value > 0 else None
+
+
+def _parse_date(value: str) -> date:
+    return date.fromisoformat(value)
+
+
+def _resolve_sync_window(args: argparse.Namespace, *, aoi_id: str, ledger_path: Path):
+    from akasha_ingest import sync
+
+    if getattr(args, "backfill_days", 0) and int(args.backfill_days) > 0:
+        anchor = (
+            _parse_date(args.backfill_anchor_date)
+            if args.backfill_anchor_date
+            else datetime.now(UTC).date()
+        )
+        window_days = int(args.window_days)
+        step_days = int(args.backfill_step_days or args.window_days)
+        state_path = Path(args.backfill_state_path or ledger_path.with_suffix(".backfill.json"))
+        return sync.next_backfill_window(
+            state_path,
+            source_id=args.source,
+            aoi_id=aoi_id,
+            anchor_date=anchor,
+            history_days=int(args.backfill_days),
+            window_days=window_days,
+            step_days=step_days,
+            advance=not args.dry_run,
+        )
+
+    window_end = args.window_end or datetime.now(UTC).date().isoformat()
+    window_start = args.window_start or (
+        _parse_date(window_end) - timedelta(days=int(args.window_days) - 1)
+    ).isoformat()
+    return sync.SyncWindow(
+        window_start=window_start,
+        window_end=window_end,
+        datetime_range=sync.datetime_range_for_window(window_start, window_end),
+    )
+
+
 def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
     from akasha_ingest import bhoonidhi, catalog, composite, config, storage, sync
 
     if args.source not in config.RESOURCESAT_BOA_COLLECTION_IDS:
         raise SystemExit("bhoonidhi-sync currently supports ResourceSat-2A BOA sources only")
     collection = bhoonidhi.source_collection(args.source)
-    aoi = bhoonidhi.load_aoi(args.aoi_path or config.AOI_CONFIG_PATH)
-    if args.aoi and args.aoi != aoi.get("id"):
-        raise SystemExit(f"AOI '{args.aoi}' not found; loaded '{aoi.get('id')}'")
-    datetime_range = args.datetime or bhoonidhi.lookback_datetime_range(args.lookback_days)
+    aoi = _load_requested_aoi(args)
     out_dir = Path(args.out_dir or config.BHOONIDHI_TEMP_ROOT) / args.source
     search_manifest_path = out_dir / "coverage_manifest.json"
     new_manifest_path = out_dir / "coverage_manifest.new.json"
     download_manifest_path = out_dir / "download_manifest.json"
     ledger_path = Path(args.ledger_path or config.BHOONIDHI_LEDGER_PATH)
+    sync_window = _resolve_sync_window(args, aoi_id=_aoi_id(aoi, args.aoi), ledger_path=ledger_path)
+    args.window_start = sync_window.window_start
+    args.window_end = sync_window.window_end
+    datetime_range = args.datetime or sync_window.datetime_range
     lock_path = (
         Path(args.lock_path)
         if args.lock_path
@@ -399,12 +550,24 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
             print(f"sync lock: {lock.path}")
 
         client = bhoonidhi.BhoonidhiClient()
-        items = client.search(
-            collection=collection,
-            datetime_range=datetime_range,
-            intersects=aoi["geometry"],
-            limit=args.limit,
-        )
+        conn = sync.connect_ledger(ledger_path)
+        search_product_id = f"sync:{_aoi_id(aoi, args.aoi)}:{datetime_range}"
+        try:
+            items = client.search(
+                collection=collection,
+                datetime_range=datetime_range,
+                intersects=aoi["geometry"],
+                limit=args.limit,
+            )
+        except Exception as exc:  # noqa: BLE001
+            sync.record_product(
+                conn,
+                source_id=args.source,
+                product_id=search_product_id,
+                status="failed",
+                error=f"Bhoonidhi search failed: {exc}",
+            )
+            raise
         manifest = bhoonidhi.build_search_manifest(
             source_id=args.source,
             collection=collection,
@@ -414,13 +577,45 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
         )
         bhoonidhi.write_manifest(manifest, search_manifest_path)
 
-        conn = sync.connect_ledger(ledger_path)
         selection = sync.filter_new_candidates(manifest, conn=conn, source_id=args.source)
+        sync_meta = selection.manifest.setdefault("sync", {})
+        sync_meta["window_start"] = args.window_start
+        sync_meta["window_end"] = args.window_end
+        sync_meta["datetime_range"] = datetime_range
+        if sync_window.backfill_index and sync_window.backfill_total:
+            sync_meta["backfill_index"] = sync_window.backfill_index
+            sync_meta["backfill_total"] = sync_window.backfill_total
+        max_downloads = _max_downloads_per_sync(args)
+        deferred_product_ids: list[str] = []
+        if max_downloads is not None and len(selection.selected_product_ids) > max_downloads:
+            candidates = selection.manifest.get("candidates", [])
+            deferred_candidates = candidates[max_downloads:]
+            deferred_product_ids = [
+                str(candidate.get("item_id")) for candidate in deferred_candidates
+            ]
+            selection.manifest["candidates"] = candidates[:max_downloads]
+            selection.manifest["selection"] = {
+                "selected_product_ids": selection.selected_product_ids[:max_downloads]
+            }
+            sync_meta["deferred_product_ids"] = deferred_product_ids
+            sync_meta["max_downloads_per_sync"] = max_downloads
         bhoonidhi.write_manifest(selection.manifest, new_manifest_path)
         print(f"found {len(items)} Bhoonidhi item(s)")
         print(f"selected {len(manifest['selection']['selected_product_ids'])} candidate(s)")
         print(f"skipped existing {len(selection.skipped_product_ids)} product(s)")
         print(f"new products {len(selection.selected_product_ids)}")
+        print(f"sync window: {args.window_start}..{args.window_end}")
+        if sync_window.backfill_index and sync_window.backfill_total:
+            print(
+                "backfill window "
+                f"{sync_window.backfill_index}/{sync_window.backfill_total}"
+            )
+        if deferred_product_ids:
+            print(
+                "deferred "
+                f"{len(deferred_product_ids)} product(s) due to max downloads per sync "
+                f"({max_downloads})"
+            )
         print(f"manifest: {new_manifest_path}")
         if args.dry_run:
             print("dry-run: stopping before download/prepare/composite/ingest")
@@ -464,7 +659,7 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                     source_id=args.source,
                     product_id=str(product_id),
                     status="failed",
-                    error=str(exc),
+                    error=f"download failed: {exc}",
                 )
                 raise
         download_manifest = dict(selection.manifest)
@@ -476,7 +671,19 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
             print("skip prepare requested")
             return 0
         if downloaded:
-            _run_prepare_script(args, download_manifest_path)
+            try:
+                _run_prepare_script(args, download_manifest_path)
+            except Exception as exc:  # noqa: BLE001
+                for row in downloaded:
+                    sync.record_product(
+                        conn,
+                        source_id=args.source,
+                        product_id=str(row["item_id"]),
+                        status="failed",
+                        bytes_count=int(row.get("bytes") or 0),
+                        error=f"conversion failed: {exc}",
+                    )
+                raise
             for row in downloaded:
                 sync.record_product(
                     conn,
@@ -491,63 +698,121 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
         if args.skip_composite:
             print("skip composite requested")
             return 0
-        manifest_paths = composite.scene_manifest_paths_for_window(
-            config.prepared_manifest_files(source_id=args.source),
-            window_start=args.window_start,
-            window_end=args.window_end,
-            source_id=args.source,
-        )
-        if not manifest_paths:
-            raise SystemExit("no prepared scene manifests found for composite window")
-        deps = composite.require_raster_deps()
-        build = composite.build_resource_sat_composite(
-            deps=deps,
-            manifest_paths=manifest_paths,
-            aoi=aoi,
-            output_root=config.raster_source_root(),
-            window_start=args.window_start,
-            window_end=args.window_end,
-            source_id=args.source,
-            resolution=args.resolution or composite.default_resolution(args.source),
-            padding_pixels=args.padding_pixels,
-            overwrite=args.overwrite,
-            skip_validation=args.skip_composite_validation,
-            keep_intermediate=args.keep_intermediate,
-        )
-        verify = composite.verify_composite_manifest(
-            deps=deps,
-            manifest_path=build.manifest,
-            source_id=args.source,
-            min_coverage_percent=args.min_coverage_percent,
-            require_overviews=not args.allow_missing_overviews,
-        )
-        if not verify.ok:
-            raise SystemExit(verify.detail)
+        composite_product_id = _composite_ledger_product_id(args, aoi)
+        try:
+            manifest_paths = composite.scene_manifest_paths_for_window(
+                config.prepared_manifest_files(source_id=args.source),
+                window_start=args.window_start,
+                window_end=args.window_end,
+                source_id=args.source,
+            )
+            if not manifest_paths:
+                detail = "no prepared scene manifests found for composite window"
+                sync.record_product(
+                    conn,
+                    source_id=args.source,
+                    product_id=composite_product_id,
+                    status="failed",
+                    error=f"composite failed: {detail}",
+                )
+                raise SystemExit(detail)
+            deps = composite.require_raster_deps()
+            build = composite.build_resource_sat_composite(
+                deps=deps,
+                manifest_paths=manifest_paths,
+                aoi=aoi,
+                output_root=config.raster_source_root(),
+                window_start=args.window_start,
+                window_end=args.window_end,
+                source_id=args.source,
+                resolution=args.resolution or composite.default_resolution(args.source),
+                padding_pixels=args.padding_pixels,
+                overwrite=args.overwrite,
+                skip_validation=args.skip_composite_validation,
+                keep_intermediate=args.keep_intermediate,
+            )
+            composite_product_id = (
+                f"composite:{_aoi_id(aoi, args.aoi)}:{build.manifest.parent.name}"
+            )
+            verify = composite.verify_composite_manifest(
+                deps=deps,
+                manifest_path=build.manifest,
+                source_id=args.source,
+                expected_aoi_id=_aoi_id(aoi, args.aoi),
+                min_coverage_percent=args.min_coverage_percent,
+                require_overviews=not args.allow_missing_overviews,
+            )
+            if not verify.ok:
+                sync.record_product(
+                    conn,
+                    source_id=args.source,
+                    product_id=composite_product_id,
+                    status="failed",
+                    error=f"composite failed: {verify.detail}",
+                )
+                raise SystemExit(verify.detail)
+        except Exception as exc:  # noqa: BLE001
+            sync.record_product(
+                conn,
+                source_id=args.source,
+                product_id=composite_product_id,
+                status="failed",
+                error=f"composite failed: {exc}",
+            )
+            raise
         print(verify.detail)
 
         if args.skip_ingest:
             print("skip ingest requested")
             return 0
-        print(storage.ensure_bucket())
-        for line in storage.seed_manifest_cogs([build.manifest], force=args.force):
-            print(line)
-        print(catalog.load_manifest_items([build.manifest], method=args.method))
+        try:
+            print(storage.ensure_bucket())
+            for line in storage.seed_manifest_cogs([build.manifest], force=args.force):
+                print(line)
+        except Exception as exc:  # noqa: BLE001
+            sync.record_product(
+                conn,
+                source_id=args.source,
+                product_id=composite_product_id,
+                status="failed",
+                error=f"storage upload failed: {exc}",
+            )
+            raise
+        try:
+            print(catalog.load_manifest_items([build.manifest], method=args.method))
+        except Exception as exc:  # noqa: BLE001
+            sync.record_product(
+                conn,
+                source_id=args.source,
+                product_id=composite_product_id,
+                status="failed",
+                error=f"STAC registration failed: {exc}",
+            )
+            raise
         post_ingest = composite.verify_composite_manifest(
             deps=deps,
             manifest_path=build.manifest,
             source_id=args.source,
+            expected_aoi_id=_aoi_id(aoi, args.aoi),
             min_coverage_percent=args.min_coverage_percent,
             require_overviews=not args.allow_missing_overviews,
             require_catalog_item=True,
             stac_api_url=config.STAC_API_URL,
         )
         if not post_ingest.ok:
+            sync.record_product(
+                conn,
+                source_id=args.source,
+                product_id=composite_product_id,
+                status="failed",
+                error=f"STAC registration failed: {post_ingest.detail}",
+            )
             raise SystemExit(post_ingest.detail)
         print(post_ingest.detail)
         sync.record_product(
             conn,
             source_id=args.source,
-            product_id=f"composite:{args.aoi}:{build.manifest.parent.name}",
+            product_id=composite_product_id,
             status="composited",
         )
         deleted = sync.cleanup_downloads(downloaded, audit_retention=args.retain_raw_downloads)
@@ -609,6 +874,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="AOI id expected in the AOI config.",
     )
     p_bhoonidhi_search.add_argument("--aoi-path", default=None, help="AOI GeoJSON path.")
+    p_bhoonidhi_search.add_argument(
+        "--aoi-dir",
+        default=None,
+        help="Directory of AOI GeoJSON files.",
+    )
     p_bhoonidhi_search.add_argument("--lookback-days", type=int, default=45)
     p_bhoonidhi_search.add_argument("--datetime", default=None, help="RFC3339 interval override.")
     p_bhoonidhi_search.add_argument("--limit", type=int, default=100)
@@ -621,6 +891,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_bhoonidhi_download.add_argument("--manifest", required=True)
     p_bhoonidhi_download.add_argument("--source", default=None)
     p_bhoonidhi_download.add_argument("--raw-root", default=None)
+    p_bhoonidhi_download.add_argument(
+        "--max-downloads",
+        type=int,
+        default=None,
+        help="Maximum products to download from this manifest in one run.",
+    )
     p_bhoonidhi_download.set_defaults(func=cmd_bhoonidhi_download)
     p_sync = sub.add_parser(
         "bhoonidhi-sync",
@@ -629,15 +905,53 @@ def build_parser() -> argparse.ArgumentParser:
     p_sync.add_argument("--source", default="resourcesat-2a-liss3-boa")
     p_sync.add_argument("--aoi", default="bangalore-60km")
     p_sync.add_argument("--aoi-path", default=None)
+    p_sync.add_argument("--aoi-dir", default=None)
     p_sync.add_argument("--lookback-days", type=int, default=45)
     p_sync.add_argument("--datetime", default=None)
     p_sync.add_argument("--limit", type=int, default=100)
-    p_sync.add_argument("--window-start", required=True)
-    p_sync.add_argument("--window-end", required=True)
+    p_sync.add_argument("--window-start", default=None)
+    p_sync.add_argument("--window-end", default=None)
+    p_sync.add_argument(
+        "--window-days",
+        type=int,
+        default=45,
+        help="Rolling composite window size when window-start/window-end are omitted.",
+    )
+    p_sync.add_argument(
+        "--backfill-days",
+        type=int,
+        default=0,
+        help="Rotate through this many historical days, one bounded window per run.",
+    )
+    p_sync.add_argument(
+        "--backfill-step-days",
+        type=int,
+        default=None,
+        help="Days to advance between backfill windows; defaults to window-days.",
+    )
+    p_sync.add_argument(
+        "--backfill-anchor-date",
+        default=None,
+        help="YYYY-MM-DD anchor date for deterministic launch backfills; defaults to today UTC.",
+    )
+    p_sync.add_argument(
+        "--backfill-state-path",
+        default=None,
+        help="JSON state file tracking the next scheduled backfill window.",
+    )
     p_sync.add_argument("--out-dir", default=None)
     p_sync.add_argument("--raw-root", default=None)
     p_sync.add_argument("--ledger-path", default=None)
     p_sync.add_argument("--lock-path", default=None)
+    p_sync.add_argument(
+        "--max-downloads",
+        type=int,
+        default=None,
+        help=(
+            "Maximum new products to download in one sync run; defaults to "
+            "BHOONIDHI_MAX_DOWNLOADS_PER_SYNC. Use 0 for no cap."
+        ),
+    )
     p_sync.add_argument(
         "--resolution",
         type=float,
@@ -675,6 +989,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="AOI id expected in the AOI config.",
     )
     p_composite.add_argument("--aoi-path", default=None, help="AOI GeoJSON path.")
+    p_composite.add_argument("--aoi-dir", default=None, help="Directory of AOI GeoJSON files.")
     p_composite.add_argument("--manifest-glob", help="Glob for scene prepare_manifest.json files.")
     p_composite.add_argument("--output-root", type=Path, default=None)
     p_composite.add_argument("--window-start", required=True, help="Composite period start date.")
@@ -690,6 +1005,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_composite.add_argument("--keep-intermediate", action="store_true")
     p_composite.add_argument("--skip-validation", action="store_true")
     p_composite.set_defaults(func=cmd_build_composite)
+    p_context = sub.add_parser(
+        "prepare-context-cog",
+        help="Prepare an operator-provided context GeoTIFF as a COG + manifest.",
+    )
+    p_context.add_argument(
+        "--source",
+        default="cartosat-3-gated",
+        choices=["cartosat-3-gated", "eos-06-ocm-lac-ndvi-8day-360m"],
+    )
+    p_context.add_argument("--input", required=True, help="Operator-provided GeoTIFF.")
+    p_context.add_argument("--product-id", required=True, help="Stable product/order id.")
+    p_context.add_argument("--acquisition-datetime", required=True)
+    p_context.add_argument(
+        "--output-root",
+        default=str(Path(__file__).resolve().parents[2] / "data" / "seed" / "rasters"),
+    )
+    p_context.add_argument("--gsd", type=float, default=None)
+    p_context.add_argument("--overwrite", action="store_true")
+    p_context.add_argument("--skip-validation", action="store_true")
+    p_context.set_defaults(func=cmd_prepare_context_cog)
     p_verify = sub.add_parser("verify", help="Verify Slice 1 exit criteria.")
     p_verify.add_argument("--collection-id", default=None, help="Collection/source id to verify.")
     p_verify.set_defaults(func=cmd_verify)
@@ -728,9 +1063,19 @@ def build_parser() -> argparse.ArgumentParser:
         default="bangalore-60km",
         help="AOI id used in the composite layout.",
     )
+    p_verify_composite.add_argument("--aoi-path", default=None, help="AOI GeoJSON path.")
+    p_verify_composite.add_argument(
+        "--aoi-dir",
+        default=None,
+        help="Directory of AOI GeoJSON files.",
+    )
     p_verify_composite.add_argument("--manifest", help="Composite prepare_manifest.json path.")
     p_verify_composite.add_argument("--min-coverage-percent", type=float, default=95.0)
-    p_verify_composite.add_argument("--expected-crs", default="EPSG:32643")
+    p_verify_composite.add_argument(
+        "--expected-crs",
+        default=None,
+        help="Expected output CRS; defaults to the selected AOI compositeGridCrs or EPSG:32643.",
+    )
     p_verify_composite.add_argument(
         "--expected-resolution",
         type=float,

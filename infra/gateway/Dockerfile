@@ -1,4 +1,4 @@
-# Akasha `web` gateway — the single public Railway service (Slice 0).
+# Akasha `web` gateway — the single public service (Slice 0).
 #
 # Multi-stage build:
 #   1) Build the Vite React SPA from apps/frontend (node:24-alpine).

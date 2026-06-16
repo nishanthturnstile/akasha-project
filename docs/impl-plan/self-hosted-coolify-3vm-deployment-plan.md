@@ -24,8 +24,8 @@ Do not use Azure managed services for the target deployment path:
 - no Azure Key Vault.
 
 The application runtime remains Akasha's existing multi-service topology. The
-deployment control plane changes from Railway-first notes to self-hosted
-Coolify, but the application service boundaries do not change.
+deployment control plane is self-hosted Coolify, but the application service
+boundaries do not change.
 
 ## Final decision
 
@@ -401,9 +401,8 @@ Add GitHub Actions workflows:
   deploy-production.yml
 ```
 
-The implementation should not remove existing Railway docs immediately. Keep
-Railway material as historical/reference documentation until the self-hosted
-path is validated.
+Legacy hosting deployment docs and config have been removed from the repository
+now that the self-hosted Coolify/Azure path is the source of truth.
 
 One small code change is required: extend `scripts/smoke-test.py` with an
 optional `--login` mode (username/password from env) so the authenticated
@@ -440,6 +439,12 @@ reverse-proxies `/api/*` to `api:8000` and `/tiles/*` to `titiler:8000` on the
 internal Compose network. This is two proxies in series (Coolify proxy -> Caddy)
 and is expected. `web` stays plain HTTP on `:80` internally; HTTPS is handled by
 Coolify at the edge. Assign the domain to `web` only.
+
+Set `SERVICE_FQDN_WEB` to the exact public web origin, for example
+`https://staging.gis.cidsaglobal.com`, and keep `PUBLIC_ORIGIN`/`CORS_ALLOWED_ORIGINS`
+aligned with the same value. Do not leave `SERVICE_FQDN_WEB=/` for staging or
+production; that makes Coolify generate a temporary HTTP domain and leaves the
+canonical HTTPS domain unrouted.
 
 ### Image tags from CI
 
@@ -492,6 +497,8 @@ Runtime env (Coolify) is intentionally minimal — the SPA is already built into
 the image and gets its config from same-origin `/api/config`:
 
 ```text
+SERVICE_FQDN_WEB=https://<environment-domain>
+PUBLIC_ORIGIN=https://<environment-domain>
 PUBLIC_APP_NAME=Akasha
 PUBLIC_DEFAULT_AOI_NAME=Bangalore
 API_UPSTREAM_URL=http://api:8000
@@ -522,7 +529,7 @@ GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
 CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff
 AKASHA_RGB_RESCALE=0,3000
 AKASHA_S1_VV_RESCALE=-25,5
-DEFAULT_SOURCE_ID=sentinel-2-l2a
+DEFAULT_SOURCE_ID=resourcesat-2a-liss3-boa
 DEFAULT_AOI_ID=bangalore
 BASEMAP_PROVIDER=esri
 ESRI_BASEMAP_STYLE=arcgis/imagery
@@ -616,7 +623,7 @@ S3_SECRET_KEY=<minio-password>
 S3_REGION=us-east-1
 AKASHA_COG_BUCKET=akasha-cogs
 SEED_DATA_DIR=/app/data/seed
-AOI_CONFIG_PATH=/app/data/seed/bangalore-aoi.geojson
+AOI_CONFIG_PATH=/app/data/seed/bangalore-60km-aoi.geojson
 ```
 
 ## CI workflow
@@ -743,8 +750,9 @@ the stack is healthy (Coolify's container terminal/exec, or an SSH step from the
 python -m app.cli db upgrade
 
 # catalog + storage seed / verify (ingestion-worker container)
-python worker.py seed       # only when (re)initialising the catalog
-python worker.py verify     # exit-criteria check
+python worker.py seed       # only when (re)initialising ResourceSat catalog scaffolding
+python worker.py verify     # PostGIS/STAC/MinIO reachability
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
 ```
 
 `ingestion-worker` and `ingestion-sar` stay `restart: "no"` and must not count
@@ -939,6 +947,7 @@ If moving from Azure rehearsal to physical/VPS production with real data:
    ```bash
    python -m app.cli check
    python worker.py verify
+   python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
    ```
 
 7. Run smoke test against the target staging/production domain.
@@ -1047,13 +1056,13 @@ curl -fsS -c cookies.txt -X POST https://<domain>/api/auth/login \
 # 2. Reuse the cookie for product endpoints
 curl -fsS -b cookies.txt https://<domain>/api/config
 curl -fsS -b cookies.txt https://<domain>/api/sources
-curl -fsS -b cookies.txt https://<domain>/api/sources/sentinel-2-l2a/dates
+curl -fsS -b cookies.txt https://<domain>/api/sources/resourcesat-2a-liss3-boa/dates
 curl -fsS -b cookies.txt https://<domain>/api/layers/default
 ```
 
 Then confirm, using the same cookie:
 
-- one RGB tile returns a PNG,
+- one ResourceSat FCC tile returns a PNG,
 - one NDVI statistics request returns valid JSON.
 
 ### Tier 3 — private services must not be reachable

@@ -24,6 +24,7 @@ import {
   getNotificationUnreadCount,
   getFieldLeaderboard,
   getReportTemplate,
+  getImagerySourceMonitoring,
   listActivities,
   listApiKeys,
   listDatasets,
@@ -128,6 +129,7 @@ export const queryKeys = {
   notifications: (unreadOnly: boolean) => ['notifications', unreadOnly] as const,
   notificationUnreadCount: ['notifications', 'unread-count'] as const,
   assistantStatus: ['assistant', 'status'] as const,
+  imagerySourceMonitoring: ['monitoring', 'imagery-sources'] as const,
 };
 
 interface LoginVariables {
@@ -204,6 +206,14 @@ export function useDates(sourceId: string | undefined) {
 
 export function useDefaultLayer() {
   return useQuery({ queryKey: queryKeys.defaultLayer, queryFn: getDefaultLayer });
+}
+
+export function useImagerySourceMonitoring() {
+  return useQuery({
+    queryKey: queryKeys.imagerySourceMonitoring,
+    queryFn: getImagerySourceMonitoring,
+    staleTime: 60 * 1000,
+  });
 }
 
 export function usePlots() {

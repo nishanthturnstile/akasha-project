@@ -23,7 +23,7 @@ import anyio
 from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
-from .aoi import load_aoi_config
+from .aoi import load_aoi_configs, select_default_aoi
 from .auth import get_current_team
 from .config import settings
 from .raster import catalog_resolver as catalog
@@ -36,7 +36,7 @@ from .raster.errors import (
     upstream_error,
 )
 from .raster.indices import DEFAULT_INDEX, SUPPORTED_INDICES, fcc_band_positions, rgb_band_positions
-from .raster.models import StatisticsRequest
+from .raster.models import StatisticsRequest, StatisticsResponse
 from .raster.service import compute_statistics
 
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
@@ -82,9 +82,11 @@ def _enforce_index_rate_limit(request: Request) -> None:
 @router.get("/config")
 async def get_config() -> dict[str, Any]:
     """App configuration: AOI, map defaults, limits, and global optical index defaults."""
+    aois = load_aoi_configs()
     return {
         "appName": os.environ.get("PUBLIC_APP_NAME", "Akasha"),
-        "aoi": load_aoi_config(),
+        "aoi": select_default_aoi(aois),
+        "aois": aois,
         "basemapStyleUrl": "",
         "basemap": _basemap_config(),
         "maxPolygonAreaHa": settings.max_polygon_area_ha,
@@ -213,6 +215,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         "coveragePercent": date.get("coveragePercent"),
         "metricsProvisional": bool(date.get("metricsProvisional", False)),
         "tileAvailable": bool(date.get("tileAvailable", True)),
+        "unavailableReason": date.get("unavailableReason"),
     }
 
 
@@ -267,21 +270,52 @@ async def _render_rgb_tile(
     return Response(content=body, media_type=content_type)
 
 
-async def _render_sentinel1_vv_tile(
+async def _render_sar_vv_grayscale_tile(
     source_id: str, acquisition_date: str, z: int, x: int, y: int
 ) -> Response:
     assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
     if len(assets_for_date) != 1:
         raise mosaic_tiles_unavailable(
-            "Date-level Sentinel-1 tiles for multiple scenes require a configured mosaic backend.",
+            "Date-level SAR tiles for multiple scenes require a configured mosaic backend.",
             sceneCount=len(assets_for_date),
             supportedSceneCount=1,
         )
-    url = tiles.build_sentinel1_vv_tile_url(
+    url = tiles.build_sar_vv_grayscale_tile_url(
         backscatter_href=assets_for_date[0]["backscatterHref"],
         z=z,
         x=x,
         y=y,
+    )
+    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+    return Response(content=body, media_type=content_type)
+
+
+async def _render_context_tile(
+    source_id: str, acquisition_date: str, display_mode: str, z: int, x: int, y: int
+) -> Response:
+    source = catalog.get_source(source_id)
+    assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
+    if len(assets_for_date) != 1:
+        raise mosaic_tiles_unavailable(
+            (
+                f"Date-level {display_mode} tiles for multiple scenes require a configured "
+                "mosaic backend."
+            ),
+            sceneCount=len(assets_for_date),
+            supportedSceneCount=1,
+        )
+    assets = assets_for_date[0]
+    mode = display_mode.upper()
+    bidx = [1] if mode == "NDVI_CONTEXT" else None
+    colormap_name = "rdylgn" if mode == "NDVI_CONTEXT" else None
+    url = tiles.build_context_tile_url(
+        asset_href=assets["contextHref"],
+        z=z,
+        x=x,
+        y=y,
+        rescale=source.get("defaultRescale"),
+        bidx=bidx,
+        colormap_name=colormap_name,
     )
     body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
@@ -368,7 +402,9 @@ async def get_display_mode_tile(
     if normalized_mode == "FCC":
         return await _render_fcc_tile(source_id, acquisition_date, z, x, y)
     if normalized_mode == "VV_GRAYSCALE":
-        return await _render_sentinel1_vv_tile(source_id, acquisition_date, z, x, y)
+        return await _render_sar_vv_grayscale_tile(source_id, acquisition_date, z, x, y)
+    if normalized_mode in {"CONTEXT", "NDVI_CONTEXT"}:
+        return await _render_context_tile(source_id, acquisition_date, normalized_mode, z, x, y)
     raise bad_request(
         f"Display mode '{display_mode}' is not implemented for source '{source_id}'.",
         code="UNSUPPORTED_DISPLAY_MODE",
@@ -378,11 +414,11 @@ async def get_display_mode_tile(
     )
 
 
-@router.post("/indices/statistics")
+@router.post("/indices/statistics", response_model=StatisticsResponse)
 async def post_index_statistics(
     request: Request, payload: StatisticsRequest = Body(...)
 ) -> dict[str, Any]:
-    """Compute cloud/SCL-masked, offset-corrected optical index statistics."""
+    """Compute source-mask-aware, offset-corrected optical index statistics."""
     geometry = payload.geometry.model_dump()
     if not payload.sourceId:
         raise bad_request("sourceId is required.", code="MISSING_SOURCE")

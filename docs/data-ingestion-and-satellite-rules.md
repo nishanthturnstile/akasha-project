@@ -2,314 +2,240 @@
 
 ## Purpose
 
-This document is the source of truth for imagery sources, COG layout, STAC metadata, cloud masking, and index calculation rules. Product UX belongs in `product-plan.md`; service architecture belongs in `architecture-tech-stack.md`; Railway runtime details belong in `railway-deployment-guide.md`.
+This document is the source of truth for imagery sources, COG layout, STAC
+metadata, masking, and index calculation rules. Product UX belongs in
+`product-plan.md`; service architecture belongs in `architecture-tech-stack.md`;
+deployment/runtime details belong in `infra/selfhosted/README.md`.
 
-## MVP source strategy
+## Production Source Strategy
 
-Wave 1 uses Sentinel-2 L2A over the Bangalore AOI. Other sources are intentionally deferred until the Sentinel-2 pipeline proves end-to-end rendering and cloud-masked statistics.
+The production default source is ISRO/NRSC Bhoonidhi ResourceSat-2A LISS-3 BOA
+over the Bangalore 60 km AOI. Sentinel source support remains only for legacy
+regression and migration checks unless explicitly enabled.
 
-| Source | Provider | MVP status | Role |
+| Source | Provider | Status | Role |
 |---|---|---|---|
-| Sentinel-2 L2A | ESA / Copernicus Data Space Ecosystem | Primary | True-colour display plus NDVI, NDRE, NDMI, NDWI_GREEN_NIR. |
-| Sentinel-1 | ESA | Wave 2 | SAR fallback/product layer for cloudy periods; not an optical index source. |
-| ResourceSat-2A | ISRO/NRSC | Wave 2 | Optical agriculture source after access and data terms are confirmed. |
-| Cartosat-3 | ISRO/NRSC | Wave 2+ | High-resolution visual context after licensing; not primary for NDVI. |
-| ISRO SAR / NISAR | ISRO / NASA-ISRO | Wave 2+ | SAR product layers; not optical vegetation-index sources. |
-| ISRO OCM / IRS-1C | ISRO | Not planned for field MVP | Too coarse or archival/decommissioned for this product goal. |
+| ResourceSat-2A LISS-3 BOA | ISRO/NRSC Bhoonidhi | Primary | Field-level optical analytics, FCC display, NDVI/MSAVI/NDMI/NDWI_GREEN_NIR. |
+| ResourceSat-2A AWiFS BOA | ISRO/NRSC Bhoonidhi | Gated | Coarser optical context/analytics after validation. |
+| ResourceSat-2A LISS-4 | ISRO/NRSC Bhoonidhi | Gated | Higher-resolution context after band/radiometry validation. |
+| EOS-06 OCM NDVI | ISRO/NRSC Bhoonidhi | Gated | Coarse precomputed NDVI context only; not field-level stats. |
+| EOS-04 SAR / NISAR | ISRO/NRSC Bhoonidhi | Gated SAR | Radar context; never optical vegetation-index sources. |
+| Cartosat-3 | ISRO/NRSC Bhoonidhi | Gated/manual | High-resolution visual context only until access, licensing, and product format are confirmed. |
+| Sentinel-2 L2A | ESA / Copernicus | Legacy opt-in | Regression/migration path; not production-selectable by default. |
+| Sentinel-1 GRD | ESA / Copernicus | Legacy/gated SAR | SAR context; no optical indices. |
 
-## Data access rules
+## AOI Rules
 
-### Sentinel-2
+- `AOI_CONFIG_PATH` is the authoritative AOI input for the default deployment.
+- `AOI_CONFIG_DIR` allows selecting additional AOIs by id for ingestion and
+  composite commands.
+- The launch AOI is `bangalore-60km`.
+- AOI must be configurable; do not hard-code it into frontend or ingestion
+  components.
+- "Latest usable" means the newest date whose usable-pixel percentage is above
+  the configured threshold and whose tile assets are available.
 
-- Use Copernicus Data Space Ecosystem for current Sentinel access.
-- Wave 1 may ingest manually downloaded products or a provided Bangalore `.tif` for the first spike.
-- Wave 2 should automate discovery/download using CDSE STAC/OData/S3 APIs.
-- Use L2A products because SCL is needed for cloud/shadow masking.
+## ResourceSat LISS-3 COG Assets
 
-ISRO/Bhoonidhi access notes are deferred to the Appendix and are not for MVP prompts.
+Keep continuous reflectance and categorical masks as separate COG assets.
 
-## Area of interest rules
-
-- Initial AOI is Bangalore and nearby agricultural areas.
-- AOI must be configurable, not hard-coded into components.
-- Compute AOI-level cloud/usable-pixel percentage per acquisition date.
-- “Latest usable” means the newest date whose usable-pixel percentage is above the configured threshold.
-
-## COG asset layout
-
-Do not combine mixed-resolution continuous reflectance bands and categorical SCL into one ambiguous raster.
-
-For each Sentinel-2 scene (one SAFE ZIP = one MGRS tile/granule), create/register these assets:
+For each prepared ResourceSat scene or composite, create/register:
 
 1. **Analytic reflectance COG**
-   - Contains spectral bands needed for RGB and supported indices.
-   - Resampled to a common 10 m grid.
-   - Continuous reflectance bands use bilinear/cubic resampling.
-   - Preserve uint16 source values; do not pre-stretch.
-   - Build internal overviews.
+   - Four raw uint16 BOA reflectance bands.
+   - Common analysis grid from the AOI/composite configuration.
+   - Continuous reflectance overviews use bilinear/cubic resampling.
+   - Preserve source values; do not pre-stretch.
 
-2. **SCL COG**
-   - Contains Sentinel-2 Scene Classification Layer.
-   - Keep categorical values intact.
-   - Use nearest-neighbour resampling only.
-   - SCL COG internal overviews must also use nearest-neighbour resampling.
-   - Register as a separate STAC asset.
+2. **Provisional mask COG**
+   - One categorical uint8 band.
+   - Nearest-neighbour resampling for base data and overviews.
+   - Register as STAC asset `mask`.
 
-## Frozen Sentinel-2 analytic band order
-
-Use this order for the Wave 1 analytic COG unless there is a documented migration:
+### ResourceSat LISS-3 Band Order
 
 | Position | Band | Meaning | Used for |
 |---:|---|---|---|
-| 1 | B04 | Red | RGB, NDVI |
-| 2 | B08 | NIR | NDVI, NDRE, NDMI, NDWI_GREEN_NIR |
-| 3 | B05 | Red edge 1 | NDRE |
-| 4 | B06 | Red edge 2 | Future red-edge variants |
-| 5 | B07 | Red edge 3 | Future red-edge variants |
-| 6 | B11 | SWIR 1 | NDMI |
-| 7 | B12 | SWIR 2 | Future moisture/burn variants |
-| 8 | B03 | Green | RGB, NDWI_GREEN_NIR |
-| 9 | B02 | Blue | RGB |
+| 1 | BAND2 | Green | FCC, NDWI_GREEN_NIR |
+| 2 | BAND3 | Red | FCC, NDVI, MSAVI |
+| 3 | BAND4 | NIR | FCC, NDVI, MSAVI, NDMI, NDWI_GREEN_NIR |
+| 4 | BAND5 | SWIR1 | NDMI |
 
-STAC `eo:bands` and `raster:bands` metadata must match this order exactly. The BFF builds TiTiler expressions from this metadata.
+Default display mode is FCC using role order `NIR, RED, GREEN`, which resolves
+to positional `bidx=3,2,1`. Do not reuse Sentinel RGB positions `[1,8,9]`.
 
-With the frozen analytic band order, true-colour RGB uses **bands [1, 8, 9]** (B04 Red=b1, B03 Green=b8, B02 Blue=b9), in that order, with display rescale configured separately from reflectance/index math. Do NOT assume RGB = bands 1,2,3.
+### ResourceSat Reflectance
 
-## Supported index formulas
-
-| Index id | Label | Formula | Bands |
-|---|---|---|---|
-| NDVI | NDVI | (NIR-Red)/(NIR+Red) | (B08-B04)/(B08+B04) |
-| NDRE | NDRE | (NIR-RedEdge)/(NIR+RedEdge) | (B08-B05)/(B08+B05) |
-| NDMI | NDMI (vegetation moisture) | (NIR-SWIR)/(NIR+SWIR) | (B08-B11)/(B08+B11) |
-| NDWI_GREEN_NIR | Water NDWI (McFeeters) | (Green-NIR)/(Green+NIR) | (B03-B08)/(B03+B08) |
-
-Supported indices list (config/sources): `["NDVI","NDRE","NDMI","NDWI_GREEN_NIR"]`. Default = NDVI.
-
-TiTiler expressions are positional (`b1`, `b2`, …), so the BFF must translate band names to positions using STAC metadata.
-
-## Reflectance correction rules
-
-Wave 1 stores **raw uint16 DN** COGs, and all index/stat code applies per-band scale/offset.
+ResourceSat LISS-3 BOA COGs store raw uint16 DN with:
 
 ```text
-QUANTIFICATION_VALUE = 10000
-BOA_ADD_OFFSET       = -1000   # raw DN units; read per band from product metadata; 0 for baselines < 04.00
-
-If storing raw DN (Wave 1 choice):
-  corrected_reflectance = (raw_dn + BOA_ADD_OFFSET) / QUANTIFICATION_VALUE
-
-STAC raster:bands uses the convention  physical = raw * scale + offset, so:
-  scale  = 1 / QUANTIFICATION_VALUE          # 0.0001
-  offset = BOA_ADD_OFFSET / QUANTIFICATION_VALUE   # -0.1   (NOT -1000)
+scale  = 0.0001
+offset = 0.0
+physical_reflectance = raw * scale + offset
 ```
 
-Offsets may be band-specific and must be read per band; do not reuse the raw-DN `-1000` as a STAC `offset` — the STAC offset is `-0.1`. Confirm exact values from product metadata at ingestion.
+Do not apply Sentinel-2's `-0.1` offset to ResourceSat.
 
-Do not assume the offset cancels out for all indices. It can bias denominators and therefore index values.
+### ResourceSat Provisional Mask
 
-## Cloud and validity masking
+The validated Bhoonidhi LISS-3 BOA sample did not include a native
+quality/cloud/shadow raster. Akasha generates a provisional threshold mask.
 
-Default excluded set: **0, 1, 2, 3, 7, 8, 9, 10, 11**.
-
-| SCL class | Meaning | Default action |
+| Value | Meaning | Default action |
 |---:|---|---|
-| 0 | No data | Exclude |
-| 1 | Saturated/defective | Exclude |
-| 2 | Dark area / cast & topographic shadow | Exclude |
-| 3 | Cloud shadow | Exclude |
-| 7 | Unclassified | Exclude |
-| 8 | Cloud medium probability | Exclude |
-| 9 | Cloud high probability | Exclude |
-| 10 | Thin cirrus | Exclude |
-| 11 | Snow/ice | Exclude unless locally irrelevant and reviewed |
+| 0 | gap/background/nodata | Exclude as nodata |
+| 1 | valid optical pixel | Keep |
+| 2 | cloud | Exclude |
+| 3 | shadow | Exclude |
+| 4 | water | Keep |
 
-Keep class **6 (Water)** included by default (NDWI may intentionally analyze water); a plot with high water coverage may be flagged but is not auto-excluded. Also exclude nodata/out-of-coverage pixels.
+Default excluded classes are `0,2,3`. Metrics using this mask must expose
+`metricsProvisional = true` and a clear `maskMethod`.
 
-> Cloud-masked index statistics are computed in the **BFF (FastAPI) using rasterio/rio-tiler**, not by
-> plain TiTiler `/cog/statistics`. The BFF reads the analytic COG window and the SCL COG window for the
-> request polygon, applies per-band scale/offset, applies the SCL mask, then computes
-> min/max/mean/stddev and the pixel-percentage fields. **TiTiler serves RGB display tiles (and
-> optional index *display* overlays) only — it is not used for masked statistics**, because vanilla
-> TiTiler `/cog/statistics` takes a single `url` and cannot apply a categorical mask from a second COG.
+## Supported Index Formulas
 
-### Pixel accounting and percentages
+The formula registry is source-agnostic, but each source advertises only indices
+that its band roles support.
 
-```text
-totalPixels      = pixels intersecting the request geometry at 10 m analysis grid
-nodataPixels     = out-of-coverage / nodata pixels
-coveragePixels   = totalPixels - nodataPixels
-sclExcludedPixels= pixels excluded by the SCL mask (within coverage)
-validPixels      = coveragePixels - sclExcludedPixels
+| Index id | Formula | ResourceSat LISS-3 roles |
+|---|---|---|
+| NDVI | (NIR - Red) / (NIR + Red) | BAND4, BAND3 |
+| MSAVI | (2*NIR + 1 - sqrt((2*NIR + 1)^2 - 8*(NIR - Red))) / 2 | BAND4, BAND3 |
+| NDMI | (NIR - SWIR1) / (NIR + SWIR1) | BAND4, BAND5 |
+| NDWI_GREEN_NIR | (Green - NIR) / (Green + NIR) | BAND2, BAND4 |
 
-validPixelPercent  = validPixels      / totalPixels    * 100
-cloudMaskedPercent = sclExcludedPixels / totalPixels    * 100
-coveragePercent    = coveragePixels   / totalPixels    * 100
-```
+ResourceSat LISS-3 must not advertise NDRE or RECI because it has no true
+red-edge band. SAR sources must advertise no optical vegetation indices.
 
-For AOI-level "latest usable" date selection, use:
+## Statistics Rules
+
+Cloud/mask-aware index statistics are computed in the BFF with
+rasterio/rio-tiler, not by plain TiTiler `/cog/statistics`. The BFF reads the
+analytic COG window and the source mask COG window, applies scale/offset,
+applies source-specific excluded mask classes, then computes statistics and
+pixel percentages.
 
 ```text
-usablePixelPercent = validPixels / coveragePixels * 100   # ignores partial-coverage edges
+totalPixels       = pixels intersecting the request geometry at source grid
+nodataPixels      = out-of-coverage / nodata / mask class 0 pixels
+coveragePixels    = totalPixels - nodataPixels
+maskedPixels      = pixels excluded by source mask within coverage
+validPixels       = coveragePixels - maskedPixels
+
+validPixelPercent  = validPixels   / totalPixels * 100
+cloudMaskedPercent = maskedPixels  / totalPixels * 100
+coveragePercent    = coveragePixels / totalPixels * 100
 ```
 
-## STAC metadata requirements
+For AOI-level latest-usable selection:
 
-Every scene item must include:
+```text
+usablePixelPercent = validPixels / coveragePixels * 100
+```
 
-- Collection id, source name, acquisition datetime, product level, MGRS tile where applicable.
-- `proj` extension fields per asset: EPSG, shape, transform, bbox/geometry.
-- `eo` extension band names matching the frozen order.
-- `raster` extension band metadata: data type, nodata/mask, scale, offset, units where available.
+## STAC Metadata Requirements
+
+Every scene or composite item must include:
+
+- Collection id, source id, acquisition date/datetime, AOI id where applicable.
+- `proj` extension fields per asset where available.
+- `eo:bands` and `raster:bands` in the exact source band order.
+- `akasha:band_role_mapping` for source role lookup.
+- `akasha:mask_asset`, `akasha:mask_method`, and excluded mask classes for
+  optical mask-aware sources.
+- Date-level coverage, usable, cloud/masked, provisional, and latest-usable
+  fields when known.
 - Asset roles:
-  - `data` for analytic reflectance COG;
-  - `metadata` or clear custom role for SCL COG;
-  - optional `thumbnail` or preview later.
-- AOI cloud/usable-pixel percentage for layer-date display.
+  - `data` / `reflectance` for analytic COGs.
+  - `metadata` / `data-mask` for mask COGs.
+  - `backscatter` for SAR COGs.
 
-### Dynamic scene identity and object keys
+## Object Key Rules
 
-Production ingestion must derive scene identity from the prepared manifest / SAFE product name rather than a hard-coded sample scene.
-
-```text
-scene key: {satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}
-scene component: {compactAcquisitionDatetime}_{processingBaselineWithoutDot}
-dynamic item id: {satellite}_{mgrs_tile}_{sceneComponent}
-```
-
-For dynamic scenes, use collision-safe object keys that include acquisition date, MGRS tile,
-and the scene component so multiple scenes for one date/tile do not overwrite each other:
+ResourceSat scene keys and item ids must be deterministic and idempotent. Use
+source, AOI, acquisition date, and scene component in object paths so reruns do
+not collide.
 
 ```text
-s3://akasha-cogs/sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/analytic.tif
-s3://akasha-cogs/sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/scl.tif
+s3://akasha-cogs/resourcesat-2a-liss3-boa/scene/{date}/{sceneComponent}/analytic.tif
+s3://akasha-cogs/resourcesat-2a-liss3-boa/scene/{date}/{sceneComponent}/mask.tif
+
+s3://akasha-cogs/resourcesat-2a-liss3-boa/composite/{aoiId}/{date}/analytic.tif
+s3://akasha-cogs/resourcesat-2a-liss3-boa/composite/{aoiId}/{date}/mask.tif
 ```
 
-Date-only keys such as `sentinel-2-l2a/{acquisitionDate}/analytic.tif` are legacy/sample-only. They cannot represent multiple MGRS tiles for the same acquisition date without overwrites.
+Uploads skip existing keys unless the operator passes an explicit force flag.
+STAC registration uses upsert semantics.
 
-## Ingestion pipeline
+## Ingestion Pipeline
 
-### Wave 1 manual path
+1. `worker.py bhoonidhi-search` discovers ResourceSat products for the selected
+   AOI and records a coverage manifest.
+2. `worker.py bhoonidhi-download` downloads selected products and updates the
+   ingestion ledger.
+3. `scripts/prepare_resourcesat_liss3_boa_cogs.py` converts native products to
+   analytic + provisional mask COGs and writes a prepare manifest.
+4. `worker.py ingest-manifest --method upsert` uploads COGs and registers STAC
+   items.
+5. `worker.py build-composite` builds AOI/date composites from validated scenes.
+6. `worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi
+   bangalore-60km --require-catalog-item` verifies the runtime assets.
 
-Detailed repeatable runbook: [`sentinel-2-l2a-cog-prep-runbook.md`](./sentinel-2-l2a-cog-prep-runbook.md).
-Sentinel-1 GRD SAR preprocessing is documented separately in
-[`sentinel-1-grd-cog-prep-runbook.md`](./sentinel-1-grd-cog-prep-runbook.md).
+## Date-Level Serving Rules
 
-1. Start with provided Bangalore `.tif` or manually downloaded Sentinel-2 L2A products.
-2. Convert inputs into analytic reflectance COG and SCL COG.
-3. Validate COGs.
-4. Upload COGs to MinIO using the deterministic scene layout.
-5. Register STAC collection/items/assets.
-6. Smoke-test one RGB tile and one index statistics request.
+The BFF groups STAC items by `akasha:acquisition_date` or item datetime date.
 
-```text
-Bucket: akasha-cogs
-Object keys:
-  sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/analytic.tif
-  sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/scl.tif
-Repo seed folder:
-data/seed/
-  bangalore-aoi.geojson
-  sample-plot.geojson
-  stac/sentinel-2-l2a-collection.json
-  stac/sentinel-2-l2a-sample-item.json
-  rasters/{acquisitionDate}/{mgrsTile}/analytic.tif   # prepared manifest layout; large rasters not committed
-  rasters/{acquisitionDate}/{mgrsTile}/scl.tif
-  rasters/{acquisitionDate}/{mgrsTile}/prepare_manifest.json
-  rasters/{acquisitionDate}/prepare_manifest.json      # legacy/single-ZIP layout also discovered
-  rasters/sentinel-1-grd/{acquisitionDate}/{relativeOrbitOrUnknown}/{sceneComponent}/backscatter.tif
-  rasters/sentinel-1-grd/{acquisitionDate}/{relativeOrbitOrUnknown}/{sceneComponent}/prepare_manifest.json
-```
+- `/api/sources/{sourceId}/dates` returns date metadata newest first.
+- `/api/layers/default` chooses the latest usable date and returns a same-origin
+  tile template.
+- `/api/tiles/{sourceId}/{acquisitionDate}/FCC/{z}/{x}/{y}.png` serves
+  ResourceSat FCC tiles.
+- ResourceSat composites are the preferred served item for a date when present.
+- Multi-scene, non-composite dates return `MOSAIC_TILES_UNAVAILABLE` until a
+  supported mosaic backend is configured.
 
-Wave 2 automated ingestion is deferred to the Appendix and is not for MVP prompts.
+Do not create one MapLibre raster layer per scene in the browser. The browser
+must receive one source/date tile template from the BFF.
 
-## Idempotency rules
+## Validation Checklist
 
-Use the deterministic scene key:
+- `rio cogeo validate` passes for every COG.
+- `gdalinfo` confirms overviews, CRS, band count, dtype, scale/offset, and mask
+  classes.
+- STAC items validate against required extensions and source metadata.
+- TiTiler renders a ResourceSat FCC PNG through the gateway.
+- A known small polygon returns ResourceSat NDVI statistics matching an
+  independent QGIS/notebook reference within agreed tolerance.
+- `/api/sources` hides Sentinel by default and advertises ResourceSat limits.
+- `/api/indices/statistics` rejects unsupported ResourceSat NDRE/RECI and all
+  optical indices for SAR sources.
+- Monitoring exposes latest date, stale source warnings, storage usage, and
+  ingestion ledger failures.
 
-```text
-{satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}
-```
+## Legacy Sentinel Notes
 
-Re-ingesting the same scene must not create duplicate STAC items or overwrite validated assets unless explicitly forced.
+Sentinel-2 L2A and Sentinel-1 GRD code may remain for regression or migration
+checks. They are not production-selectable unless
+`AKASHA_INCLUDE_LEGACY_SENTINEL_SOURCES=true`.
 
-STAC item generation must be idempotent:
+Sentinel-2 specifics:
 
-- one prepared manifest produces one STAC item;
-- the item id is deterministic from satellite, MGRS tile, acquisition date, and processing baseline;
-- `upsert` is the normal load mode for repeated registration;
-- object uploads skip existing keys unless the operator passes an explicit force flag.
+- Analytic band order remains `[B04, B08, B05, B06, B07, B11, B12, B03, B02]`.
+- True-colour RGB uses `[1,8,9]`.
+- Reflectance offset is `-0.1`.
+- SCL excluded classes are `0,1,2,3,7,8,9,10,11`; water class `6` is kept.
+- Legacy object paths are under `sentinel-2-l2a/.../analytic.tif|scl.tif`.
 
-## Date-level mosaic serving rules
+SAR specifics:
 
-The BFF groups STAC items by `akasha:acquisition_date` (or the item datetime date) and presents one selectable date to the frontend.
+- SAR sources are context/display sources until radar-specific analytics are
+  designed.
+- Do not run optical index formulas on SAR COGs.
+- Register SAR items with radar-safe metrics and null optical cloud metrics.
 
-- `/api/sources/{sourceId}/dates` returns date-level metadata with `sceneCount`, merged bounds, and averaged available pixel metrics.
-- `/api/layers/default` chooses the latest usable date and returns one same-origin tile template for that date.
-- `/api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png` serves a single analytic COG when `sceneCount == 1`. Multi-scene dates keep the same metadata/date contract but return a sanitized `MOSAIC_TILES_UNAVAILABLE` 503 until a supported MosaicJSON/pgSTAC mosaic backend is configured.
-- Frontend map layers must stay date-based; do not create one browser layer per MGRS tile.
+## Storage and Retention
 
-### Large-area storage and rendering strategy
-
-For South India or all-India ingestion, store imagery as many scene-level COG pairs, not as one monolithic regional COG.
-
-Use this hierarchy for every dynamic Sentinel-2 scene:
-
-```text
-sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/analytic.tif
-sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/{sceneComponent}/scl.tif
-```
-
-The BFF and STAC layer determine how those objects are grouped for rendering:
-
-1. STAC stores one item per prepared scene.
-2. BFF groups items by date and returns one row per acquisition date.
-3. BFF returns merged bounds and `sceneCount` for the date.
-4. Browser receives one same-origin date-level tile template.
-5. Tile serving uses:
-  - direct single-COG TiTiler rendering when `sceneCount == 1`;
-  - a supported MosaicJSON or pgSTAC-backed mosaic renderer when `sceneCount > 1`.
-
-Do not create one MapLibre raster layer per scene/MGRS tile in the browser. That leaks ingestion complexity into the UI, increases layer churn, and makes opacity/date transitions harder to reason about.
-
-Do not pre-mosaic all regional data into one giant COG as the default production path. Pre-mosaics may be created later for specific cached products, but the primary operational model is scene-level COG storage plus date-level mosaic rendering.
-
-For full India ingestion, expect many MGRS tiles per date. Operators must review the dry-run manifest before downloading and should ingest in batches small enough for available disk, network, and MinIO capacity.
-
-## Validation checklist
-
-- `rio cogeo validate` passes for each COG.
-- `gdalinfo` confirms COG driver/overviews and expected CRS.
-- JP2 decoding works in the ingestion container when SAFE products are used.
-- STAC item validates against required extensions.
-- TiTiler can render a true-colour tile with sensible rescale.
-- A known polygon returns NDVI statistics matching an independent QGIS/notebook reference within agreed tolerance.
-- AOI cloud/usable-pixel percentage is computed and stored.
-
-Storage and retention notes are deferred to the Appendix and are not for MVP prompts.
-
-## Appendix (not for MVP prompts)
-
-### ISRO/Bhoonidhi
-
-- Treat high-resolution ISRO data as a commercial/licensing dependency.
-- Request/confirm API access, pricing, quota, licensing, and allowed redistribution before implementation.
-- Add ISRO sources as new STAC collections; do not change the frontend layer model.
-
-### Wave 2 automated path
-
-1. Scheduled worker queries CDSE and later Bhoonidhi.
-2. Worker filters by AOI, date, and cloud constraints.
-3. Worker downloads candidate scenes.
-4. Worker converts and validates COGs.
-5. Worker uploads assets to MinIO.
-6. Worker registers or updates STAC idempotently.
-7. Worker records ingestion status and errors.
-
-### Storage and retention
-
-- Expect each Sentinel-2 date over the AOI to require hundreds of MB to a few GB depending on clipping, bands, compression, and overviews.
-- Keep raw downloads temporary unless needed for audit/reprocessing.
-- Retain the last configurable number of usable scenes per source.
-- Purge failed/partial conversion artifacts.
+- Keep raw Bhoonidhi downloads temporary unless needed for audit/reprocessing.
+- Retain the last configurable number of usable scenes/composites per source.
+- Purge failed/partial conversion artifacts after review.
 - Monitor MinIO volume usage and alert before disk pressure affects writes.

@@ -27,9 +27,9 @@ COPY app ./app
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 
-# Railway/Compose health check target: GET /health
+# Container/Compose health check target: GET /health
 # The service listens on $PORT (defaults to 8000 to match the documented
-# internal URL http://api.railway.internal:8000).
+# internal URL http://api:8000).
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

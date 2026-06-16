@@ -82,7 +82,11 @@ describe('api client error mapping', () => {
   it('fetches imagery source monitoring through the same-origin BFF route', async () => {
     const payload = {
       generatedAt: '2026-06-16T00:00:00Z',
+      status: 'ok',
+      statusReasons: [],
       staleAfterDays: 30,
+      coverageThresholdPercent: 95,
+      usablePixelThresholdPercent: 70,
       sources: [],
       storage: { status: 'ok', bucket: 'akasha-cogs', byPrefix: [] },
       ingestionLedger: {

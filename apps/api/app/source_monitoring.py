@@ -124,6 +124,7 @@ class ImagerySourceMonitoringSource(MonitoringApiModel):
     latest_successful_search_updated_at: str | None = None
     days_since_latest_successful_search: int | None = None
     is_successful_search_stale: bool
+    is_upstream_data_stale: bool = False
     ingestion_failure_counts_by_kind: dict[str, int] = Field(default_factory=dict)
     last_ingestion_failure: MonitoringFailure | None = None
     has_unresolved_ingestion_failure: bool = False
@@ -625,11 +626,10 @@ def _source_status(payload: dict[str, Any]) -> dict[str, Any]:
         has_error = True
         reasons.append("MONITORING_LOOKUP_FAILED")
 
+    upstream_stale_allowed = bool(payload.get("isUpstreamDataStale"))
     warning_error_reasons = {
         "DATE_LOOKUP_FAILED",
         "NO_AVAILABLE_DATES",
-        "LATEST_DATE_STALE",
-        "LATEST_SUCCESSFUL_COMPOSITE_STALE",
         "LATEST_SUCCESSFUL_SEARCH_STALE",
         "NO_SUCCESSFUL_SEARCH",
         "UNRESOLVED_INGESTION_FAILURE",
@@ -639,6 +639,18 @@ def _source_status(payload: dict[str, Any]) -> dict[str, Any]:
     }
     for warning in sorted(warnings):
         if warning == "SOURCE_GATED":
+            continue
+        if warning in {
+            "LATEST_DATE_STALE",
+            "LATEST_SUCCESSFUL_COMPOSITE_STALE",
+            "UPSTREAM_DATA_STALE",
+        } and upstream_stale_allowed:
+            has_warning = True
+            reasons.append(warning)
+            continue
+        if warning in {"LATEST_DATE_STALE", "LATEST_SUCCESSFUL_COMPOSITE_STALE"}:
+            has_error = True
+            reasons.append(warning)
             continue
         if availability != "gated" and warning in warning_error_reasons:
             has_error = True
@@ -735,6 +747,7 @@ def _summarize_source(
                 "daysSinceLatestSuccessfulSearch"
             ],
             "isSuccessfulSearchStale": search_freshness["isSuccessfulSearchStale"],
+            "isUpstreamDataStale": False,
             "hasUnresolvedIngestionFailure": has_unresolved_ingestion_failure,
         })
 
@@ -759,6 +772,11 @@ def _summarize_source(
 
     is_gated = availability == "gated"
     stale = False
+    has_fresh_successful_search = (
+        is_field_optical
+        and not search_freshness["isSuccessfulSearchMissing"]
+        and not search_freshness["isSuccessfulSearchStale"]
+    )
     if is_gated:
         warnings.append("SOURCE_GATED")
     elif latest_available_day is None:
@@ -788,6 +806,17 @@ def _summarize_source(
         and float(usable_pixel_percent) < settings.usable_pixel_threshold_percent
     ):
         warnings.append("LOW_USABLE_PIXEL_PERCENT")
+    latest_composite_date = ledger_fields.get("latestSuccessfulCompositeDate")
+    is_upstream_data_stale = (
+        stale
+        and has_fresh_successful_search
+        and latest_available_day is not None
+        and latest_composite_date == (
+            latest_available.get("acquisitionDate") if latest_available else None
+        )
+    )
+    if is_upstream_data_stale:
+        warnings.append("UPSTREAM_DATA_STALE")
     return _source_status({
         "sourceId": source_id,
         "label": source.get("label"),
@@ -820,6 +849,7 @@ def _summarize_source(
             "daysSinceLatestSuccessfulSearch"
         ],
         "isSuccessfulSearchStale": search_freshness["isSuccessfulSearchStale"],
+        "isUpstreamDataStale": is_upstream_data_stale,
         "hasUnresolvedIngestionFailure": has_unresolved_ingestion_failure,
     })
 

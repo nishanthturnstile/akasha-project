@@ -92,6 +92,9 @@ export interface MonitoringLedgerSource {
     productId?: string | null;
     updatedAt?: string | null;
   }>;
+  latestSuccessfulSearchAoiId?: string | null;
+  latestSuccessfulSearchDatetimeRange?: string | null;
+  latestSuccessfulSearchUpdatedAt?: string | null;
 }
 
 export interface IngestionLedgerSummary {
@@ -126,6 +129,8 @@ export interface StorageUsage {
 
 export interface ImagerySourceMonitoringSource {
   sourceId: string;
+  status: 'ok' | 'warning' | 'error';
+  statusReasons: string[];
   label?: string | null;
   provider?: string | null;
   kind?: SourceKind | string | null;
@@ -159,11 +164,24 @@ export interface ImagerySourceMonitoringSource {
   }>;
   daysSinceLatestSuccessfulComposite?: number | null;
   isSuccessfulCompositeStale: boolean;
+  latestSuccessfulSearchAoiId?: string | null;
+  latestSuccessfulSearchDatetimeRange?: string | null;
+  latestSuccessfulSearchUpdatedAt?: string | null;
+  daysSinceLatestSuccessfulSearch?: number | null;
+  isSuccessfulSearchStale: boolean;
+  isUpstreamDataStale: boolean;
+  ingestionFailureCountsByKind: Record<string, number>;
+  lastIngestionFailure?: MonitoringFailure | null;
+  hasUnresolvedIngestionFailure: boolean;
 }
 
 export interface ImagerySourceMonitoringResponse {
   generatedAt: string;
+  status: 'ok' | 'warning' | 'error';
+  statusReasons: string[];
   staleAfterDays: number;
+  coverageThresholdPercent: number;
+  usablePixelThresholdPercent: number;
   sources: ImagerySourceMonitoringSource[];
   storage: StorageUsage;
   ingestionLedger: IngestionLedgerSummary;

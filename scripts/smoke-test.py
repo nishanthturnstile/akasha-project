@@ -17,8 +17,11 @@ Usage:
     BASE_URL env var also supported. Default: http://localhost:8080
     --require-raster (or REQUIRE_RASTER=1) turns BLOCKED tile/stat checks into failures.
     --require-monitoring-clean (or REQUIRE_MONITORING_CLEAN=1) fails if operator
-    monitoring reports storage errors, zero-byte COG objects, stale active
-    sources, missing active field composites, or tile-unavailable dates.
+    monitoring reports storage errors, zero-byte COG objects, stale/missing
+    refresh heartbeats, missing active field composites, low coverage/usable
+    pixels, unresolved ingestion failures, or tile-unavailable dates. A fresh
+    search heartbeat with no newer upstream Online=Y product is allowed only
+    as the explicit UPSTREAM_DATA_STALE warning class.
     --login logs in before product checks using AKASHA_SMOKE_USERNAME and
     AKASHA_SMOKE_PASSWORD, then reuses the session cookie.
 """
@@ -216,6 +219,7 @@ def _monitoring_contract_errors(data: dict) -> list[str]:
                 "latestSuccessfulSearchUpdatedAt",
                 "daysSinceLatestSuccessfulSearch",
                 "isSuccessfulSearchStale",
+                "isUpstreamDataStale",
                 "ingestionFailureCountsByKind",
                 "lastIngestionFailure",
                 "hasUnresolvedIngestionFailure",
@@ -247,7 +251,18 @@ def _monitoring_cleanliness_errors(data: dict) -> list[str]:
         source_id = str(source.get("sourceId") or "unknown-source")
         if source.get("availabilityStatus") == "gated":
             continue
-        if source.get("status") not in {None, "ok"}:
+        allowed_upstream_stale_warning = (
+            source.get("status") == "warning"
+            and source.get("isUpstreamDataStale") is True
+            and set(source.get("statusReasons", [])).issubset(
+                {
+                    "LATEST_DATE_STALE",
+                    "LATEST_SUCCESSFUL_COMPOSITE_STALE",
+                    "UPSTREAM_DATA_STALE",
+                }
+            )
+        )
+        if source.get("status") not in {None, "ok"} and not allowed_upstream_stale_warning:
             reasons = [
                 str(reason).strip()
                 for reason in source.get("statusReasons", [])
@@ -257,9 +272,12 @@ def _monitoring_cleanliness_errors(data: dict) -> list[str]:
             errors.append(f"{source_id} operator status is {source.get('status')!r}{detail}")
         if source.get("lastError"):
             errors.append(f"{source_id} monitoring error")
-        if source.get("isStale"):
+        if source.get("isStale") and not source.get("isUpstreamDataStale"):
             errors.append(f"{source_id} latest catalog date is stale")
-        if source.get("isSuccessfulCompositeStale"):
+        if (
+            source.get("isSuccessfulCompositeStale")
+            and not source.get("isUpstreamDataStale")
+        ):
             errors.append(f"{source_id} latest successful composite is stale")
         if source.get("isSuccessfulSearchStale"):
             errors.append(f"{source_id} latest successful search is stale")

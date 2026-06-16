@@ -14,10 +14,16 @@ function jsonResponse(payload: unknown, status = 200) {
 
 const monitoringPayload = {
   generatedAt: '2026-06-16T12:00:00Z',
+  status: 'error',
+  statusReasons: ['SOURCE_ERROR:resourcesat-2a-liss3-boa'],
   staleAfterDays: 30,
+  coverageThresholdPercent: 95,
+  usablePixelThresholdPercent: 70,
   sources: [
     {
       sourceId: 'resourcesat-2a-liss3-boa',
+      status: 'error',
+      statusReasons: ['LATEST_SUCCESSFUL_COMPOSITE_STALE'],
       label: 'ResourceSat LISS-3',
       provider: 'ISRO/NRSC',
       kind: 'optical',
@@ -51,9 +57,20 @@ const monitoringPayload = {
       ],
       daysSinceLatestSuccessfulComposite: 46,
       isSuccessfulCompositeStale: true,
+      latestSuccessfulSearchAoiId: 'bangalore-60km',
+      latestSuccessfulSearchDatetimeRange: '2026-05-01T00:00:00Z/2026-06-16T23:59:59Z',
+      latestSuccessfulSearchUpdatedAt: '2026-06-16T08:30:00Z',
+      daysSinceLatestSuccessfulSearch: 0,
+      isSuccessfulSearchStale: false,
+      isUpstreamDataStale: false,
+      ingestionFailureCountsByKind: {},
+      lastIngestionFailure: null,
+      hasUnresolvedIngestionFailure: false,
     },
     {
       sourceId: 'cartosat-3-gated',
+      status: 'warning',
+      statusReasons: ['SOURCE_GATED'],
       label: 'Cartosat-3 gated',
       provider: 'ISRO/NRSC',
       kind: 'context',
@@ -77,6 +94,15 @@ const monitoringPayload = {
       latestSuccessfulComposites: [],
       daysSinceLatestSuccessfulComposite: null,
       isSuccessfulCompositeStale: false,
+      latestSuccessfulSearchAoiId: null,
+      latestSuccessfulSearchDatetimeRange: null,
+      latestSuccessfulSearchUpdatedAt: null,
+      daysSinceLatestSuccessfulSearch: null,
+      isSuccessfulSearchStale: false,
+      isUpstreamDataStale: false,
+      ingestionFailureCountsByKind: {},
+      lastIngestionFailure: null,
+      hasUnresolvedIngestionFailure: false,
     },
   ],
   storage: {
@@ -145,7 +171,8 @@ describe('MonitoringGlobalView', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('ResourceSat LISS-3')).toBeTruthy());
-    expect(screen.getByText('stale composite')).toBeTruthy();
+    expect(screen.getByText('error')).toBeTruthy();
+    expect(screen.getByText(/LATEST_SUCCESSFUL_COMPOSITE_STALE/)).toBeTruthy();
     expect(screen.getAllByText('resourcesat-2a-liss3-boa').length).toBeGreaterThan(0);
     expect(screen.getByText('storage_upload')).toBeTruthy();
     expect(screen.getByText('1 zero-byte object(s)')).toBeTruthy();
@@ -168,5 +195,52 @@ describe('MonitoringGlobalView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('renders fresh-search upstream stale sources as warnings', async () => {
+    const payload = {
+      ...monitoringPayload,
+      status: 'warning',
+      statusReasons: ['SOURCE_WARNING:resourcesat-2a-liss3-boa'],
+      sources: [
+        {
+          ...monitoringPayload.sources[0],
+          status: 'warning',
+          statusReasons: [
+            'LATEST_DATE_STALE',
+            'LATEST_SUCCESSFUL_COMPOSITE_STALE',
+            'UPSTREAM_DATA_STALE',
+          ],
+          isStale: true,
+          isSuccessfulCompositeStale: true,
+          isUpstreamDataStale: true,
+          warnings: ['UPSTREAM_DATA_STALE'],
+          tileUnavailableReasons: [],
+          latestSuccessfulSearchUpdatedAt: '2026-06-16T08:30:00Z',
+          daysSinceLatestSuccessfulSearch: 0,
+        },
+      ],
+      storage: {
+        ...monitoringPayload.storage,
+        zeroByteObjectCount: 0,
+        byPrefix: [],
+      },
+      ingestionLedger: {
+        ...monitoringPayload.ingestionLedger,
+        lastFailures: [],
+      },
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      void input;
+      return Promise.resolve(jsonResponse(payload));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('ResourceSat LISS-3')).toBeTruthy());
+    expect(screen.getByText('upstream stale')).toBeTruthy();
+    expect(screen.getByText(/UPSTREAM_DATA_STALE/)).toBeTruthy();
+    expect(screen.queryByText('stale composite')).toBeNull();
   });
 });

@@ -209,8 +209,11 @@ must receive one source/date tile template from the BFF.
 - `/api/sources` hides Sentinel by default and advertises ResourceSat limits.
 - `/api/indices/statistics` rejects unsupported ResourceSat NDRE/RECI and all
   optical indices for SAR sources.
-- Monitoring exposes latest date, stale source warnings, storage usage, and
-  ingestion ledger failures.
+- Monitoring exposes latest catalog/composite date, successful search heartbeat,
+  source status/reasons, storage usage, and ingestion ledger failures. Stale
+  upstream data is a warning only when search is fresh and no newer Online=Y
+  product exists; stale/missing searches, unresolved failures, low coverage,
+  storage errors, and tile-unavailable active dates remain blockers.
 
 ## Legacy Sentinel Notes
 

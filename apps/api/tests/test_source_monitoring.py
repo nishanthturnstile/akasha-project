@@ -180,6 +180,18 @@ def test_imagery_source_monitoring_flags_stale_successful_composite(monkeypatch)
             ],
         },
     )
+    monkeypatch.setattr(
+        source_monitoring,
+        "_storage_usage",
+        lambda: {
+            "status": "ok",
+            "bucket": "akasha-cogs",
+            "objectCount": 2,
+            "bytes": 1234,
+            "zeroByteObjectCount": 0,
+            "byPrefix": [],
+        },
+    )
 
     response = client.get("/api/monitoring/imagery-sources")
 
@@ -194,6 +206,99 @@ def test_imagery_source_monitoring_flags_stale_successful_composite(monkeypatch)
     assert source["daysSinceLatestSuccessfulComposite"] == 88
     assert source["isSuccessfulCompositeStale"] is True
     assert source["warnings"] == ["LATEST_SUCCESSFUL_COMPOSITE_STALE"]
+
+
+def test_imagery_source_monitoring_treats_stale_upstream_data_as_warning(monkeypatch):
+    monkeypatch.setattr(settings, "source_freshness_stale_days", 30, raising=False)
+    monkeypatch.setattr(
+        source_monitoring,
+        "_now",
+        lambda: datetime(2026, 6, 15, tzinfo=UTC),
+    )
+    monkeypatch.setattr(
+        source_monitoring.catalog,
+        "list_sources",
+        lambda: [
+            {
+                "id": "resourcesat-2a-liss3-boa",
+                "label": "ResourceSat-2A LISS-3 BOA",
+                "provider": "ISRO/NRSC Bhoonidhi",
+                "kind": "optical",
+                "analysisLevel": "field",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        source_monitoring.catalog,
+        "list_dates",
+        lambda source_id: [
+            {
+                "acquisitionDate": "2026-03-19",
+                "isLatestUsable": True,
+                "tileAvailable": True,
+                "coveragePercent": 100.0,
+                "usablePixelPercent": 99.68,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        source_monitoring,
+        "_ingestion_ledger_summary",
+        lambda: {
+            "status": "ok",
+            "bySource": [
+                {
+                    "sourceId": "resourcesat-2a-liss3-boa",
+                    "latestSuccessfulSearchAoiId": "bangalore-60km",
+                    "latestSuccessfulSearchDatetimeRange": (
+                        "2026-01-06T00:00:00Z/2026-06-15T23:59:59Z"
+                    ),
+                    "latestSuccessfulSearchUpdatedAt": "2026-06-15T01:00:00Z",
+                    "latestSuccessfulCompositeDate": "2026-03-19",
+                    "latestSuccessfulCompositeProductId": (
+                        "composite:bangalore-60km:2026-03-19"
+                    ),
+                    "latestSuccessfulCompositeAoiId": "bangalore-60km",
+                    "latestSuccessfulCompositeUpdatedAt": "2026-06-15T02:00:00Z",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        source_monitoring,
+        "_storage_usage",
+        lambda: {
+            "status": "ok",
+            "bucket": "akasha-cogs",
+            "objectCount": 2,
+            "bytes": 1234,
+            "zeroByteObjectCount": 0,
+            "byPrefix": [],
+        },
+    )
+
+    response = client.get("/api/monitoring/imagery-sources")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "warning"
+    assert body["statusReasons"] == ["SOURCE_WARNING:resourcesat-2a-liss3-boa"]
+    source = body["sources"][0]
+    assert source["status"] == "warning"
+    assert source["statusReasons"] == [
+        "LATEST_DATE_STALE",
+        "LATEST_SUCCESSFUL_COMPOSITE_STALE",
+        "UPSTREAM_DATA_STALE",
+    ]
+    assert source["isStale"] is True
+    assert source["isSuccessfulSearchStale"] is False
+    assert source["isSuccessfulCompositeStale"] is True
+    assert source["isUpstreamDataStale"] is True
+    assert source["warnings"] == [
+        "LATEST_SUCCESSFUL_COMPOSITE_STALE",
+        "LATEST_DATE_STALE",
+        "UPSTREAM_DATA_STALE",
+    ]
 
 
 def test_imagery_source_monitoring_flags_stale_active_source(monkeypatch):
@@ -827,6 +932,7 @@ def test_imagery_source_monitoring_openapi_documents_operator_contract():
     assert "latestSuccessfulSearchUpdatedAt" in source_props
     assert "daysSinceLatestSuccessfulSearch" in source_props
     assert "isSuccessfulSearchStale" in source_props
+    assert "isUpstreamDataStale" in source_props
     assert "ingestionFailureCountsByKind" in source_props
     assert "lastIngestionFailure" in source_props
     assert "hasUnresolvedIngestionFailure" in source_props

@@ -98,15 +98,9 @@ def _aoi_id(aoi: dict | None, fallback: str = "unknown-aoi") -> str:
 
 
 def _aoi_composite_crs(aoi: dict | None, default: str = "EPSG:32643") -> str:
-    if not aoi:
-        return default
-    props = aoi.get("properties") if isinstance(aoi.get("properties"), dict) else {}
-    for container in (props, aoi):
-        for key in ("compositeGridCrs", "composite_grid_crs", "akasha:composite_grid_crs"):
-            value = container.get(key)
-            if value:
-                return str(value)
-    return default
+    from akasha_ingest import composite
+
+    return composite.aoi_composite_grid_crs(aoi, default=default)
 
 
 def _should_load_aoi_for_verify(args: argparse.Namespace) -> bool:
@@ -544,12 +538,13 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
         raise SystemExit("bhoonidhi-sync currently supports ResourceSat-2A BOA sources only")
     collection = bhoonidhi.source_collection(args.source)
     aoi = _load_requested_aoi(args)
-    out_dir = Path(args.out_dir or config.BHOONIDHI_TEMP_ROOT) / args.source
+    aoi_id = _aoi_id(aoi, args.aoi)
+    out_dir = Path(args.out_dir or config.BHOONIDHI_TEMP_ROOT) / args.source / aoi_id
     search_manifest_path = out_dir / "coverage_manifest.json"
     new_manifest_path = out_dir / "coverage_manifest.new.json"
     download_manifest_path = out_dir / "download_manifest.json"
     ledger_path = Path(args.ledger_path or config.BHOONIDHI_LEDGER_PATH)
-    sync_window = _resolve_sync_window(args, aoi_id=_aoi_id(aoi, args.aoi), ledger_path=ledger_path)
+    sync_window = _resolve_sync_window(args, aoi_id=aoi_id, ledger_path=ledger_path)
     args.window_start = sync_window.window_start
     args.window_end = sync_window.window_end
     datetime_range = args.datetime or sync_window.datetime_range
@@ -570,7 +565,7 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
 
         client = bhoonidhi.BhoonidhiClient()
         conn = sync.connect_ledger(ledger_path)
-        search_product_id = f"sync:{_aoi_id(aoi, args.aoi)}:{datetime_range}"
+        search_product_id = f"sync:{aoi_id}:{datetime_range}"
         try:
             items = client.search(
                 collection=collection,
@@ -730,7 +725,7 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                 window_start=args.window_start,
                 window_end=args.window_end,
                 source_id=args.source,
-                aoi_id=_aoi_id(aoi, args.aoi),
+                aoi_id=aoi_id,
             )
             if not manifest_paths:
                 detail = "no prepared scene manifests found for composite window"
@@ -760,14 +755,12 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                 skip_validation=args.skip_composite_validation,
                 keep_intermediate=args.keep_intermediate,
             )
-            composite_product_id = (
-                f"composite:{_aoi_id(aoi, args.aoi)}:{build.manifest.parent.name}"
-            )
+            composite_product_id = f"composite:{aoi_id}:{build.manifest.parent.name}"
             verify = composite.verify_composite_manifest(
                 deps=deps,
                 manifest_path=build.manifest,
                 source_id=args.source,
-                expected_aoi_id=_aoi_id(aoi, args.aoi),
+                expected_aoi_id=aoi_id,
                 min_coverage_percent=args.min_coverage_percent,
                 require_overviews=not args.allow_missing_overviews,
             )
@@ -822,7 +815,7 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
             deps=deps,
             manifest_path=build.manifest,
             source_id=args.source,
-            expected_aoi_id=_aoi_id(aoi, args.aoi),
+            expected_aoi_id=aoi_id,
             min_coverage_percent=args.min_coverage_percent,
             require_overviews=not args.allow_missing_overviews,
             require_catalog_item=True,

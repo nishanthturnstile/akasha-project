@@ -138,6 +138,48 @@ def test_cartosat3_has_no_unvalidated_bhoonidhi_collection_mapping():
         bhoonidhi.source_collection("cartosat-3-gated")
 
 
+def test_composite_grid_crs_derives_utm_zone_when_aoi_has_no_crs_metadata():
+    chennai_aoi = {
+        "type": "Feature",
+        "properties": {"id": "chennai-60km"},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [79.7, 12.5],
+                    [80.8, 12.5],
+                    [80.8, 13.6],
+                    [79.7, 13.6],
+                    [79.7, 12.5],
+                ]
+            ],
+        },
+    }
+
+    assert composite.aoi_composite_grid_crs(chennai_aoi) == "EPSG:32644"
+
+
+def test_composite_grid_crs_prefers_aoi_metadata_over_derived_zone():
+    aoi = {
+        "type": "Feature",
+        "properties": {"id": "custom-aoi", "compositeGridCrs": "EPSG:32645"},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [79.7, 12.5],
+                    [80.8, 12.5],
+                    [80.8, 13.6],
+                    [79.7, 13.6],
+                    [79.7, 12.5],
+                ]
+            ],
+        },
+    }
+
+    assert composite.aoi_composite_grid_crs(aoi) == "EPSG:32645"
+
+
 def test_client_reuses_token_and_retries_search_429():
     opener = FakeOpener(
         [
@@ -606,7 +648,12 @@ def test_worker_bhoonidhi_search_selects_aoi_from_directory(monkeypatch, tmp_pat
     )
 
     manifest = json.loads(
-        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.json").read_text()
+        (
+            tmp_path
+            / "work"
+            / "resourcesat-2a-liss3-boa"
+            / "coverage_manifest.json"
+        ).read_text()
     )
     assert result == 0
     assert manifest["aoi"]["id"] == "mysore-60km"
@@ -749,6 +796,59 @@ def test_worker_verify_composite_infers_expected_crs_from_selected_aoi(monkeypat
     assert captured["manifest_path"] == manifest_path
     assert captured["expected_crs"] == "EPSG:32644"
     assert captured["expected_aoi_id"] == "mysore-60km"
+
+
+def test_worker_verify_composite_derives_expected_crs_without_aoi_metadata(monkeypatch, tmp_path):
+    aoi_path = tmp_path / "chennai.geojson"
+    aoi_path.write_text(
+        json.dumps(
+            {
+                "type": "Feature",
+                "properties": {"id": "chennai-60km"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [79.7, 12.5],
+                            [80.8, 12.5],
+                            [80.8, 13.6],
+                            [79.7, 13.6],
+                            [79.7, 12.5],
+                        ]
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "prepare_manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_verify_composite_manifest(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(ok=True, detail="ok", checks=["checked"], problems=[])
+
+    monkeypatch.setattr(composite, "require_raster_deps", lambda: object())
+    monkeypatch.setattr(composite, "verify_composite_manifest", fake_verify_composite_manifest)
+
+    result = worker.main(
+        [
+            "verify-composite",
+            "--source",
+            "resourcesat-2a-liss3-boa",
+            "--aoi",
+            "chennai-60km",
+            "--aoi-path",
+            str(aoi_path),
+            "--manifest",
+            str(manifest_path),
+        ]
+    )
+
+    assert result == 0
+    assert captured["expected_crs"] == "EPSG:32644"
+    assert captured["expected_aoi_id"] == "chennai-60km"
 
 
 def test_worker_bhoonidhi_download_updates_manifest(monkeypatch, tmp_path):
@@ -903,6 +1003,34 @@ def test_sync_ledger_filters_terminal_product_statuses(tmp_path):
     assert selection.skipped_product_ids == ["RS_OLD"]
     assert selection.manifest["selection"]["selected_product_ids"] == ["RS_NEW"]
     assert selection.manifest["sync"]["skipped_existing_product_ids"] == ["RS_OLD"]
+
+
+def test_sync_ledger_keeps_downloaded_products_resumable(tmp_path):
+    conn = sync.connect_ledger(tmp_path / "ledger.sqlite")
+    sync.record_product(
+        conn,
+        source_id="resourcesat-2a-liss3-boa",
+        product_id="RS_DOWNLOADED_ONLY",
+        status="downloaded",
+        bytes_count=123,
+    )
+    manifest = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "selection": {"selected_product_ids": ["RS_DOWNLOADED_ONLY"]},
+        "candidates": [
+            {"item_id": "RS_DOWNLOADED_ONLY", "download_status": "pending"},
+        ],
+    }
+
+    selection = sync.filter_new_candidates(
+        manifest,
+        conn=conn,
+        source_id="resourcesat-2a-liss3-boa",
+    )
+
+    assert selection.selected_product_ids == ["RS_DOWNLOADED_ONLY"]
+    assert selection.skipped_product_ids == []
+    assert selection.manifest["sync"]["skipped_existing_product_ids"] == []
 
 
 def test_sync_lock_rejects_second_instance_and_releases(tmp_path):
@@ -1079,7 +1207,13 @@ def test_worker_bhoonidhi_sync_dry_run_writes_filtered_manifest(monkeypatch, tmp
     )
 
     filtered = json.loads(
-        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.new.json").read_text()
+        (
+            tmp_path
+            / "work"
+            / "resourcesat-2a-liss3-boa"
+            / "bangalore-60km"
+            / "coverage_manifest.new.json"
+        ).read_text()
     )
     assert result == 0
     assert filtered["selection"]["selected_product_ids"] == ["RS_NEW"]
@@ -1122,7 +1256,13 @@ def test_worker_bhoonidhi_sync_empty_search_is_noop_without_composite_failure(
     )
 
     filtered = json.loads(
-        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.new.json").read_text()
+        (
+            tmp_path
+            / "work"
+            / "resourcesat-2a-liss3-boa"
+            / "bangalore-60km"
+            / "coverage_manifest.new.json"
+        ).read_text()
     )
     assert result == 0
     assert filtered["selection"]["selected_product_ids"] == []
@@ -1139,6 +1279,90 @@ def test_worker_bhoonidhi_sync_empty_search_is_noop_without_composite_failure(
         "searched",
         None,
     )
+
+
+def test_worker_bhoonidhi_sync_scopes_scratch_manifests_by_aoi(monkeypatch, tmp_path):
+    aoi_dir = tmp_path / "aois"
+    aoi_dir.mkdir()
+    for aoi_id, bbox in {
+        "bangalore-60km": [77.0, 12.0, 78.0, 13.0],
+        "mysore-60km": [75.9, 11.8, 77.0, 12.9],
+    }.items():
+        west, south, east, north = bbox
+        (aoi_dir / f"{aoi_id}.geojson").write_text(
+            json.dumps(
+                {
+                    "type": "Feature",
+                    "properties": {"id": aoi_id, "name": aoi_id},
+                    "bbox": bbox,
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [west, south],
+                                [east, south],
+                                [east, north],
+                                [west, north],
+                                [west, south],
+                            ]
+                        ],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    class FakeClient:
+        def search(self, **_kwargs):
+            return []
+
+    monkeypatch.setattr(bhoonidhi, "BhoonidhiClient", lambda: FakeClient())
+    monkeypatch.setattr(config, "raster_source_root", lambda: tmp_path / "missing-rasters")
+
+    for aoi_id in ("bangalore-60km", "mysore-60km"):
+        assert (
+            worker.main(
+                [
+                    "bhoonidhi-sync",
+                    "--source",
+                    "resourcesat-2a-liss3-boa",
+                    "--aoi",
+                    aoi_id,
+                    "--aoi-dir",
+                    str(aoi_dir),
+                    "--datetime",
+                    "2026-05-03T00:00:00Z/2026-06-16T23:59:59Z",
+                    "--window-start",
+                    "2026-05-03",
+                    "--window-end",
+                    "2026-06-16",
+                    "--out-dir",
+                    str(tmp_path / "work"),
+                    "--ledger-path",
+                    str(tmp_path / "ledger.sqlite"),
+                ]
+            )
+            == 0
+        )
+
+    bangalore_manifest = (
+        tmp_path
+        / "work"
+        / "resourcesat-2a-liss3-boa"
+        / "bangalore-60km"
+        / "coverage_manifest.new.json"
+    )
+    mysore_manifest = (
+        tmp_path
+        / "work"
+        / "resourcesat-2a-liss3-boa"
+        / "mysore-60km"
+        / "coverage_manifest.new.json"
+    )
+    assert bangalore_manifest.is_file()
+    assert mysore_manifest.is_file()
+    assert json.loads(bangalore_manifest.read_text())["aoi"]["id"] == "bangalore-60km"
+    assert json.loads(mysore_manifest.read_text())["aoi"]["id"] == "mysore-60km"
 
 
 def test_worker_bhoonidhi_sync_rotates_backfill_window(monkeypatch, tmp_path):
@@ -1187,7 +1411,13 @@ def test_worker_bhoonidhi_sync_rotates_backfill_window(monkeypatch, tmp_path):
     )
 
     filtered = json.loads(
-        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.new.json").read_text()
+        (
+            tmp_path
+            / "work"
+            / "resourcesat-2a-liss3-boa"
+            / "bangalore-60km"
+            / "coverage_manifest.new.json"
+        ).read_text()
     )
     assert result == 0
     assert captured_datetimes == ["2026-03-19T00:00:00Z/2026-05-02T23:59:59Z"]
@@ -1246,7 +1476,13 @@ def test_worker_bhoonidhi_sync_caps_downloads_per_run(monkeypatch, tmp_path):
     )
 
     filtered = json.loads(
-        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.new.json").read_text()
+        (
+            tmp_path
+            / "work"
+            / "resourcesat-2a-liss3-boa"
+            / "bangalore-60km"
+            / "coverage_manifest.new.json"
+        ).read_text()
     )
     assert result == 0
     assert downloaded_ids == ["RS_A", "RS_B"]

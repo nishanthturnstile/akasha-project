@@ -32,16 +32,14 @@ const plots: Plot[] = [
 ];
 
 describe('AllFieldsPanel', () => {
-  it('renders field cards, filters search, and emits selection/focus actions', () => {
+  it('renders field cards, filters search, and emits selection actions', () => {
     const onSelect = vi.fn();
-    const onFocus = vi.fn();
 
     render(
       <AllFieldsPanel
         plots={ plots }
         selectedPlotId="plot-1"
         onSelect={ onSelect }
-        onFocus={ onFocus }
       />,
     );
 
@@ -53,9 +51,8 @@ describe('AllFieldsPanel', () => {
     expect(screen.queryByText('North field')).toBeNull();
     expect(screen.getByText('South field')).toBeTruthy();
 
-    fireEvent.click(screen.getByTestId('field-card-focus-plot-2'));
+    fireEvent.click(screen.getByTestId('field-card-select-plot-2'));
     expect(onSelect).toHaveBeenCalledWith(plots[1]);
-    expect(onFocus).toHaveBeenCalledWith(plots[1]);
   });
 
   it('renders loading, empty, and error states', () => {

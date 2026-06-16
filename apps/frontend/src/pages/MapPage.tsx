@@ -221,6 +221,18 @@ export default function MapPage() {
     }
   }, [plotsQ.data, plotsQ.isLoading, selectedPlotId, view]);
 
+  // Focus the last-selected field on first load so a refresh keeps the map
+  // centred on the user's context instead of the default AOI.
+  const initialFocusDone = useRef(false);
+  useEffect(() => {
+    if (initialFocusDone.current) return;
+    if (!map || plotsQ.isLoading) return;
+    if (selectedPlot) {
+      focusPlot(map, selectedPlot);
+      initialFocusDone.current = true;
+    }
+  }, [map, plotsQ.isLoading, selectedPlot]);
+
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -378,6 +390,17 @@ export default function MapPage() {
     return true;
   };
 
+  // Wrapper to request tool ownership and start drawing a field
+  const handleAddField = () => {
+    if (!map) {
+      // Map not ready – do nothing or could show a warning
+      return;
+    }
+    // Ensure we have ownership of the field-draw tool before activating draw mode
+    requestMapTool('field-draw');
+    setFieldMode('draw');
+  };
+
   const releaseMapTool = (owner: MapToolOwner) => {
     setActiveMapTool((current) => (current === owner ? null : current));
   };
@@ -509,7 +532,7 @@ export default function MapPage() {
         } }
         onRequestTool={ requestMapTool }
         onReleaseTool={ releaseMapTool }
-        className="absolute left-[392px] top-[112px] z-popover max-[760px]:left-4 max-[760px]:top-[37.5rem]"
+        className="absolute right-4 top-[280px] z-popover max-[760px]:right-4 max-[760px]:top-[37.5rem]"
       />
 
       {/* Top chrome: field context · layers · search · theme · all-fields trigger */ }
@@ -555,27 +578,26 @@ export default function MapPage() {
       {/* Left: field tools */ }
       <div className="absolute left-4 top-[68px] z-toolbar">
         <PlotToolbar
-          activeAction={ fieldMode }
-          disabledActions={ {
-            draw: !map ? 'The map must finish loading before drawing a field.' : undefined,
-            edit:
-              selectedPlot && selectedPlot.geometry.type !== 'Polygon'
-                ? 'Multi-part field editing is not available in this first field workflow.'
-                : undefined,
-          } }
-          hasSelectedField={ Boolean(selectedPlot) }
+          activeAction={ fieldMode === 'draw' ? 'draw' : null }
           isMapAvailable={ Boolean(map) }
-          selectedFieldName={ selectedPlot?.name }
-          onDrawField={ () => setFieldMode((current) => (current === 'draw' ? null : 'draw')) }
-          onEditSelectedField={ () => setFieldMode((current) => (current === 'edit' ? null : 'edit')) }
-          onImportGeoJSON={ () => fileInputRef.current?.click() }
-          onExportGeoJSON={ () => void exportGeoJson() }
+          // Request ownership of the field-draw tool before toggling draw mode
+          onDrawField={() => {
+            requestMapTool('field-draw');
+            setFieldMode((current) => (current === 'draw' ? null : 'draw'));
+          }}
+          // Request ownership of the field-edit tool before toggling edit mode
+          onEditSelectedField={() => {
+            requestMapTool('field-edit');
+            setFieldMode((current) => (current === 'edit' ? null : 'edit'));
+          }}
+          onImportGeoJSON={ () => undefined }
+          onExportGeoJSON={ () => undefined }
           onDeleteSelectedField={ () => void deleteSelectedField() }
         />
       </div>
 
-      {/* Layers surface — left drawer (≥md) / bottom sheet (<md) */ }
-      <div className="absolute left-4 top-[112px] z-panel" id="all-fields-panel">
+      {/* Right: stacked panels — All Fields dropdown above, field details below */ }
+      <div className="absolute right-4 top-[68px] z-panel flex max-w-[360px] flex-col gap-3">
         { allFieldsOpen && (
           <AllFieldsPanel
             plots={ plotsQ.data }
@@ -585,21 +607,34 @@ export default function MapPage() {
             selectedPlotId={ selectedPlotId }
             onSelect={ (plot) => {
               view.setSelectedPlotId(plot.id);
-              setAllFieldsOpen(false);
-            } }
-            onFocus={ (plot) => {
               selectAndFocusPlot(plot);
               setAllFieldsOpen(false);
             } }
-            onAdd={ map ? () => setFieldMode('draw') : undefined }
+            onEdit={ (plot) => {
+              view.setSelectedPlotId(plot.id);
+              setFieldMode('edit');
+              setAllFieldsOpen(false);
+            } }
+            onDelete={ (plot) => {
+              const confirmed = window.confirm(`Delete field "${plot.name}"?`);
+              if (!confirmed) return;
+              deletePlotMutation.mutateAsync(plot.id).then(() => {
+                view.clearSelectedPlot();
+                if (map && config) {
+                  map.flyTo({
+                    center: config.aoi.center,
+                    zoom: config.aoi.zoom,
+                    duration: 800,
+                  });
+                }
+              });
+            } }
+            onAdd={ map ? handleAddField : undefined }
             onImport={ () => fileInputRef.current?.click() }
           />
         ) }
-      </div>
-
-      {/* Right: native selected-field analytics panel. */ }
-      <div className="absolute right-4 top-[68px] z-toolbar hidden max-w-[320px] flex-col gap-2 xl:flex">
         { showIndexPanel && (
+<<<<<<< HEAD
           <IndexPanel
             selectedPlot={ selectedPlot }
             selectedDate={ selectedDate }
@@ -612,6 +647,20 @@ export default function MapPage() {
             periodFrom={ periodFrom }
             periodTo={ periodTo }
           />
+=======
+          <div className="hidden xl:block">
+            <IndexPanel
+              selectedPlot={ selectedPlot }
+              selectedDate={ selectedDate }
+              sourceId={ effectiveSourceId }
+              displayMode={ selectedDisplayMode }
+              supportedIndices={ analyticsSupportedIndices }
+              cloudMask={ cloudMask }
+              periodFrom={ periodFrom }
+              periodTo={ periodTo }
+            />
+          </div>
+>>>>>>> 9e39cad (Update frontend changes)
         ) }
       </div>
 

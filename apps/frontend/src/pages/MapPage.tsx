@@ -4,6 +4,8 @@ import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
 import {
   ApiError,
   composeTileTemplate,
+  exportAllPlotsGeoJson,
+  exportPlotGeoJson,
   type PlotGeoJsonImportPayload,
 } from '@/lib/api';
 import {
@@ -112,6 +114,27 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
     ],
     { padding: 96, maxZoom: 16, duration: 650 },
   );
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function geoJsonFilename(plot: Plot | null): string {
+  if (!plot) return 'fields.geojson';
+  const safeName = plot.name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${safeName || 'field'}.geojson`;
 }
 
 /** Map an Akasha {@link Source} to a short sensor badge (for example `S2`, `S1`). */
@@ -399,6 +422,13 @@ export default function MapPage() {
     }
   };
 
+  const exportGeoJson = async () => {
+    const blob = selectedPlot
+      ? await exportPlotGeoJson(selectedPlot.id)
+      : await exportAllPlotsGeoJson();
+    downloadBlob(blob, geoJsonFilename(selectedPlot));
+  };
+
   const deleteSelectedField = async () => {
     if (!selectedPlot) return;
     const confirmed = window.confirm(`Delete field "${selectedPlot.name}"?`);
@@ -509,7 +539,7 @@ export default function MapPage() {
         } }
         onRequestTool={ requestMapTool }
         onReleaseTool={ releaseMapTool }
-        onPolygonComplete={(geometry) => setDraftGeometry(geometry)}
+        onPolygonComplete={ (geometry) => setDraftGeometry(geometry) }
         className="absolute right-4 top-[280px] z-popover max-[760px]:right-4 max-[760px]:top-[37.5rem]"
       />
 

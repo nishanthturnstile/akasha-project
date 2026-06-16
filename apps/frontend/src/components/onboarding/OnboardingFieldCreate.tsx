@@ -92,7 +92,7 @@ export default function OnboardingFieldCreate() {
   if (basemapResolution.basemapError instanceof BasemapConfigurationError) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <div className="glass p-4">{basemapResolution.basemapError.message}</div>
+        <div className="glass p-4">{ basemapResolution.basemapError.message }</div>
       </div>
     );
   }
@@ -115,7 +115,9 @@ export default function OnboardingFieldCreate() {
         setSaveError('Field must be a single polygon.');
         return;
       }
-      const areaMeters = polygonAreaMeters(polygon.coordinates[0]);
+      const areaMeters = polygonAreaMeters(
+        polygon.coordinates[0].map(([lng, lat]) => [lng, lat] as [number, number]),
+      );
       const created = await createFieldMutation.mutateAsync({
         name: fieldName.trim() || 'Field',
         geometry: {
@@ -144,103 +146,103 @@ export default function OnboardingFieldCreate() {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
-      {/* Top bar */}
+      {/* Top bar */ }
       <div className="glass z-50 flex items-center justify-center px-4 py-3 relative">
         <h2 className="font-display text-lg font-semibold">Add field</h2>
-        <button aria-label="Close" onClick={handleClose} className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground">
-          <X className="size-5" strokeWidth={1.75} />
+        <button aria-label="Close" onClick={ handleClose } className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground">
+          <X className="size-5" strokeWidth={ 1.75 } />
         </button>
       </div>
 
-      {/* Map area */}
+      {/* Map area */ }
       <div className="relative flex-1">
         <MapLayerManager
-          basemap={basemapResolution.basemapConfig!}
-          center={configQ.data.aoi.center}
-          zoom={configQ.data.aoi.zoom}
-          scene={null}
-          opacity={1}
-          visible={true}
-          onBasemapError={() => undefined}
-          onMapReady={setMap}
+          basemap={ basemapResolution.basemapConfig! }
+          center={ configQ.data.aoi.center }
+          zoom={ configQ.data.aoi.zoom }
+          scene={ null }
+          opacity={ 1 }
+          visible={ true }
+          onBasemapError={ () => undefined }
+          onMapReady={ setMap }
         />
 
         <FieldBoundaryLayer
-          map={map}
-          plot={null}
-          geometry={draftGeometry}
+          map={ map }
+          plot={ null }
+          geometry={ draftGeometry }
           featureId="draft-field"
           name="Draft field"
         />
 
         <FieldDrawController
-          activeTool={activeMapTool}
-          map={map}
-          mode={fieldMode}
-          onCancel={() => setFieldMode(null)}
-          onUpdateField={() => Promise.resolve()}
-          onRequestTool={requestMapTool}
-          onReleaseTool={releaseMapTool}
-          selectedPlot={null}
-          drawResetKey={drawResetKey}
-          onPolygonComplete={(geometry) => setDraftGeometry(geometry)}
+          activeTool={ activeMapTool }
+          map={ map }
+          mode={ fieldMode }
+          onCancel={ () => setFieldMode(null) }
+          onUpdateField={ () => Promise.resolve() }
+          onRequestTool={ requestMapTool }
+          onReleaseTool={ releaseMapTool }
+          selectedPlot={ null }
+          drawResetKey={ drawResetKey }
+          onPolygonComplete={ (geometry) => setDraftGeometry(geometry) }
         />
 
-        {/* Left controls */}
+        {/* Left controls */ }
         <div className="absolute left-4 top-20 z-toolbar flex flex-col items-start gap-3">
           <MapControls
-            map={map}
-            hasSelectedField={false}
-            legendOpen={false}
-            onFindSelectedField={undefined}
-            onLegendOpenChange={undefined}
+            map={ map }
+            hasSelectedField={ false }
+            legendOpen={ false }
+            onFindSelectedField={ undefined }
+            onLegendOpenChange={ undefined }
           />
           <div className="mt-2">
             <PlotToolbar
-              activeAction={fieldMode === 'draw' ? 'draw' : null}
-              isMapAvailable={Boolean(map)}
-              onDrawField={() => {
+              activeAction={ fieldMode === 'draw' ? 'draw' : null }
+              isMapAvailable={ Boolean(map) }
+              onDrawField={ () => {
                 // Request ownership of the field-draw tool before entering draw mode
                 requestMapTool('field-draw');
                 setFieldMode((current) => (current === 'draw' ? null : 'draw'));
-              }}
-              onEditSelectedField={() => setFieldMode((current) => (current === 'edit' ? null : 'edit'))}
-              onImportGeoJSON={() => undefined}
-              onExportGeoJSON={() => undefined}
+              } }
+              onEditSelectedField={ () => setFieldMode((current) => (current === 'edit' ? null : 'edit')) }
+              onImportGeoJSON={ () => undefined }
+              onExportGeoJSON={ () => undefined }
             />
           </div>
         </div>
 
-        {/* Field name input when geometry is ready */}
-        {draftGeometry && (
+        {/* Field name input when geometry is ready */ }
+        { draftGeometry && (
           <div className="absolute left-1/2 top-24 z-40 -translate-x-1/2 w-72">
             <input
               placeholder="Field name"
-              value={fieldName}
-              onChange={(e) => setFieldName(e.target.value)}
+              value={ fieldName }
+              onChange={ (e) => setFieldName(e.target.value) }
               className="w-full rounded-md border border-border bg-background px-3 py-2 shadow-lg"
               autoFocus
             />
           </div>
-        )}
+        ) }
 
-        {/* Bottom center hint */}
+        {/* Bottom center hint */ }
         <div className="absolute left-1/2 bottom-24 z-40 -translate-x-1/2">
           <div className="glass rounded-full px-4 py-2 text-sm">Put a dot on the map to start drawing</div>
         </div>
 
-        {/* Error toast */}
-        {saveError && (
+        {/* Error toast */ }
+        { saveError && (
           <div className="absolute left-1/2 bottom-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
-            {saveError}
+            { saveError }
           </div>
-        )}
+        ) }
 
-        {/* Bottom action bar */}
+        {/* Bottom action bar */ }
         <div className="glass absolute inset-x-0 bottom-0 z-50 flex items-center justify-end gap-2 px-4 py-3">
-          <Button variant="ghost" onClick={handleClose}>Cancel</Button>
-          <Button variant="primary" onClick={saveField} disabled={!draftGeometry || createFieldMutation.isPending}>
-            {createFieldMutation.isPending ? 'Saving…' : 'Save'}
+          <Button variant="ghost" onClick={ handleClose }>Cancel</Button>
+          <Button variant="primary" onClick={ saveField } disabled={ !draftGeometry || createFieldMutation.isPending }>
+            { createFieldMutation.isPending ? 'Saving…' : 'Save' }
           </Button>
         </div>
       </div>

@@ -101,7 +101,12 @@ def _aoi_composite_crs(aoi: dict | None, default: str = "EPSG:32643") -> str:
     if not aoi:
         return default
     props = aoi.get("properties") if isinstance(aoi.get("properties"), dict) else {}
-    return str(props.get("compositeGridCrs") or default)
+    for container in (props, aoi):
+        for key in ("compositeGridCrs", "composite_grid_crs", "akasha:composite_grid_crs"):
+            value = container.get(key)
+            if value:
+                return str(value)
+    return default
 
 
 def _should_load_aoi_for_verify(args: argparse.Namespace) -> bool:
@@ -322,6 +327,7 @@ def cmd_build_composite(args: argparse.Namespace) -> int:
         window_start=args.window_start,
         window_end=args.window_end,
         source_id=args.source,
+        aoi_id=_aoi_id(aoi, args.aoi),
     )
     if not manifest_paths:
         raise SystemExit("no ResourceSat scene manifests found for the requested window")
@@ -581,6 +587,12 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                 error=f"Bhoonidhi search failed: {exc}",
             )
             raise
+        sync.record_product(
+            conn,
+            source_id=args.source,
+            product_id=search_product_id,
+            status="searched",
+        )
         manifest = bhoonidhi.build_search_manifest(
             source_id=args.source,
             collection=collection,
@@ -718,9 +730,13 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                 window_start=args.window_start,
                 window_end=args.window_end,
                 source_id=args.source,
+                aoi_id=_aoi_id(aoi, args.aoi),
             )
             if not manifest_paths:
                 detail = "no prepared scene manifests found for composite window"
+                if not selection.manifest.get("candidates"):
+                    print(f"{detail}; no new candidates found, skipping composite rebuild")
+                    return 0
                 sync.record_product(
                     conn,
                     source_id=args.source,

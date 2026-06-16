@@ -280,6 +280,115 @@ def test_build_resource_sat_composite_defaults_awifs_resolution(
     assert manifest["source_id"] == "resourcesat-2a-awifs-boa"
 
 
+def test_build_resource_sat_composite_accepts_aoi_grid_crs_alias(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_grid_from_aoi(**kwargs):
+        captured["crs"] = kwargs["crs"]
+        return CompositeGrid.from_projected_bounds(
+            [799960, 1290192, 800032, 1290264],
+            crs=kwargs["crs"],
+            resolution=kwargs["resolution"],
+        )
+
+    def fake_align_manifest_scene(**_kwargs):
+        return _scene(
+            "liss3-scene",
+            "2026-03-19T00:00:00Z",
+            [[100, 100], [100, 100]],
+            [[1, 1], [1, 1]],
+        )
+
+    def fake_write_intermediate_rasters(**kwargs):
+        kwargs["analytic_path"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["analytic_path"].write_bytes(b"analytic")
+        kwargs["mask_path"].write_bytes(b"mask")
+
+    def fake_translate_to_cog(**kwargs):
+        kwargs["output_path"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["output_path"].write_bytes(b"cog")
+
+    def fake_write_composite_manifest(**kwargs):
+        kwargs["manifest_path"].write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(composite, "grid_from_aoi", fake_grid_from_aoi)
+    monkeypatch.setattr(composite, "align_manifest_scene", fake_align_manifest_scene)
+    monkeypatch.setattr(composite, "_write_intermediate_rasters", fake_write_intermediate_rasters)
+    monkeypatch.setattr(composite, "_translate_to_cog", fake_translate_to_cog)
+    monkeypatch.setattr(composite, "_write_composite_manifest", fake_write_composite_manifest)
+
+    composite.build_resource_sat_composite(
+        deps={},
+        manifest_paths=[tmp_path / "scene" / "prepare_manifest.json"],
+        aoi={
+            "id": "mysore-60km",
+            "composite_grid_crs": "EPSG:32644",
+            "geometry": {"type": "Polygon", "coordinates": []},
+        },
+        output_root=tmp_path / "rasters",
+        window_start="2026-03-01",
+        window_end="2026-03-31",
+        overwrite=True,
+        skip_validation=True,
+    )
+
+    assert captured["crs"] == "EPSG:32644"
+
+
+def test_awifs_composite_manifest_uses_awifs_specific_mask_method(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_raster_summary(_deps: dict, path: Path) -> dict:
+        return {
+            "path": path.as_posix(),
+            "wgs84_bbox": [77.0, 12.0, 78.0, 13.0],
+            "wgs84_geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]
+                ],
+            },
+        }
+
+    monkeypatch.setattr(composite, "_raster_summary", fake_raster_summary)
+    manifest_path = tmp_path / "prepare_manifest.json"
+    grid = CompositeGrid.from_projected_bounds(
+        [799960, 1290240, 800128, 1290408],
+        resolution=56,
+    )
+
+    composite._write_composite_manifest(
+        deps={},
+        manifest_path=manifest_path,
+        aoi_id="bangalore-60km",
+        grid=grid,
+        composite_datetime="2026-03-19T00:00:00Z",
+        period_start="2026-03-01",
+        period_end="2026-03-31",
+        source_manifest_paths=[tmp_path / "scene" / "prepare_manifest.json"],
+        analytic_cog=tmp_path / "analytic.tif",
+        mask_cog=tmp_path / "mask.tif",
+        metrics={
+            "contributing_scenes": 1,
+            "coverage_percent": 99.0,
+            "usable_pixel_percent": 95.0,
+            "cloud_masked_percent": 4.0,
+        },
+        source_id="resourcesat-2a-awifs-boa",
+    )
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert payload["source_id"] == "resourcesat-2a-awifs-boa"
+    assert payload["mask_method"] == composite.mask_method_for_source("resourcesat-2a-awifs-boa")
+    assert payload["properties"]["akasha:mask_method"] == composite.mask_method_for_source(
+        "resourcesat-2a-awifs-boa"
+    )
+    assert "AWiFS" in payload["mask_method"]
+    assert "LISS-3 BOA sample" not in payload["mask_method"]
+
+
 def test_verify_composite_manifest_accepts_generated_composite(tmp_path: Path) -> None:
     deps = composite.require_raster_deps()
     rasterio = deps["rasterio"]
@@ -748,6 +857,33 @@ def test_scene_manifest_paths_for_window_filters_awifs_source(tmp_path: Path) ->
         window_end="2026-03-31",
         source_id="resourcesat-2a-awifs-boa",
     ) == [awifs]
+
+
+def test_scene_manifest_paths_for_window_filters_explicit_aoi_id(tmp_path: Path) -> None:
+    def write_manifest(name: str, payload: dict) -> Path:
+        path = tmp_path / name / "prepare_manifest.json"
+        path.parent.mkdir()
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    base = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+    }
+    aoi_neutral = write_manifest("neutral-scene", base)
+    matching_aoi = write_manifest("matching-aoi-scene", {**base, "aoi_id": "mysore-60km"})
+    other_aoi = write_manifest(
+        "other-aoi-scene",
+        {**base, "properties": {"akasha:aoi_id": "bangalore-60km"}},
+    )
+
+    assert composite.scene_manifest_paths_for_window(
+        [other_aoi, aoi_neutral, matching_aoi],
+        window_start="2026-03-01",
+        window_end="2026-03-31",
+        source_id="resourcesat-2a-liss3-boa",
+        aoi_id="mysore-60km",
+    ) == [matching_aoi, aoi_neutral]
 
 
 def test_verify_composite_manifest_accepts_awifs_resolution(tmp_path: Path) -> None:

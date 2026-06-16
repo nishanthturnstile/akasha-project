@@ -280,9 +280,9 @@ Relevant current behavior:
   `analytic` and `scl`; the service/reader pass `sclHref`/`scl_href` and return `read.scl`. This
   must be generalized to a source-declared mask asset (`mask`) while keeping Sentinel compatibility
   during coexistence.
-- The product API still hard-codes the AOI in the `_AOI` constant in `product.py`; the old
-  `DEFAULT_AOI_ID=bangalore` setting is propagated through env files; and `AOI_CONFIG_PATH` already
-  exists in deployment configuration but is not yet wired into `/api/config` route logic.
+- The product API now loads AOI metadata from `AOI_CONFIG_PATH`; `DEFAULT_AOI_ID` is retained only
+  as an optional multi-AOI selector and is blank by default so the configured AOI path remains the
+  single-AOI source of truth.
 - The ingestion worker (`services/ingestion/worker.py`) already supports `info`, `scene-key`,
   `migrate-catalog`, `seed-stac`, `seed-minio`, `seed`, `ingest-manifest`, `verify`,
   `verify-cogs`, `verify-manifest-cogs`, `healthcheck`. New Bhoonidhi subcommands extend this CLI,
@@ -297,9 +297,8 @@ Relevant current behavior:
   `data/seed/README.md`, `data/seed/stac/sentinel-*`, `scripts/*sentinel*`, repo-root
   `tests/test_*sentinel*`, frontend test fixtures/types referencing Sentinel or SCL fields, and
   `AGENTS.md` / `CLAUDE.md`.
-- Current `data/seed/bangalore-aoi.geojson` is a small box (`center [77.59, 12.97]`,
-  `bbox [77.4, 12.8, 77.8, 13.2]`) — replaced by the new 60 km AOI (§5), and all env references to
-  the old file must be updated or deliberately retained as legacy-only.
+- The old small-box `data/seed/bangalore-aoi.geojson` has been removed; the launch AOI is
+  `data/seed/bangalore-60km-aoi.geojson` (§5).
 
 Important existing guardrails to preserve:
 
@@ -336,9 +335,8 @@ Implementation requirement:
   target pixel size is source-configured and must be set from confirmed BOA metadata (expected
   around 23.5–24 m), not blindly hard-coded.
 - Load AOI from `AOI_CONFIG_PATH`; do not hard-code it in API routes or React components.
-  `AOI_CONFIG_PATH` already exists in deployment configuration, but it must become the actual
-  `/api/config` source of truth. Retire the `_AOI` constant immediately; keep `DEFAULT_AOI_ID` only
-  as a legacy env field until Phase 8 cleanup removes or rewrites remaining references.
+  `AOI_CONFIG_PATH` is the `/api/config` source of truth. Keep `DEFAULT_AOI_ID` optional and blank
+  by default; use it only when a multi-AOI deployment must choose a non-primary AOI.
 
 ## 6. Source Capability Matrix
 
@@ -642,6 +640,33 @@ Exit criteria: re-running sync is idempotent; new scenes are discovered, downloa
 into rebuilt composites without duplicates; ~3 months of composite dates exist; failures are
 visible and retryable.
 
+Current validation gate (2026-06-16):
+
+- Repo-side Phase 3 hardening is implemented but must be committed, built, and deployed before
+  Phase 3 can be accepted. The staging stack observed during validation was still running
+  image tag `8e46309d38f30dd12ba35f09d779849bcebeea5c`, whose worker treats Bhoonidhi
+  `/data/search` `404 NO RESULTS FOUND` as fatal for the fresh 45-day window.
+- The expected deploy tag is the Git SHA created after the Phase 3 hardening changes are
+  committed and pushed. Do not use the pre-commit local HEAD as the acceptance tag.
+- After deployment, run:
+
+  ```bash
+  python scripts/validate_selfhosted_staging_bhoonidhi.py \
+    --expected-sha <deployed-git-sha> \
+    --skip-timer-check \
+    --public-origin https://staging.gis.cidsaglobal.com
+  ```
+
+- Remove `--skip-timer-check` after installing the systemd timer with
+  `infra/selfhosted/systemd/install-akasha-bhoonidhi-sync.sh`. The validator must pass the
+  immutable image/revision gate, container health, `worker.py verify`, `worker.py verify-cogs`,
+  current-window Bhoonidhi search, and historical dry-run sync before moving to
+  Phase 4/next-phase acceptance. `--public-origin` runs public smoke as an advisory check by
+  default because staging product endpoints normally require authentication; make it a required
+  gate with `--smoke-login` plus `AKASHA_SMOKE_USERNAME`/`AKASHA_SMOKE_PASSWORD`, or with
+  `--require-public-smoke`, `--require-raster`, or `--require-monitoring-clean` when those stricter
+  checks are expected to pass.
+
 ### Phase 4: Frontend Source, AOI, Composite & Timeline Behavior
 
 Goal: make the UI accurately represent ArcGIS basemap + ISRO composite coverage, and add the
@@ -679,6 +704,33 @@ polygon stats; no object/internal URLs exposed.
 Exit criteria: production has no Sentinel selectable/default source; ResourceSat is the default;
 smoke tests use ISRO data.
 
+Current repo-side progress (2026-06-16):
+
+- `DEFAULT_SOURCE_ID` defaults to `resourcesat-2a-liss3-boa` across API, Docker, Coolify, and env
+  examples.
+- `DEFAULT_AOI_ID=bangalore` has been removed from active defaults and examples. `DEFAULT_AOI_ID`
+  is now optional/blank by default; `AOI_CONFIG_PATH` selects `bangalore-60km-aoi.geojson` for the
+  single-AOI deployment.
+- The legacy `data/seed/bangalore-aoi.geojson` small-box AOI fixture has been removed from seed
+  artifacts.
+- Legacy Sentinel STAC seed files have been removed from `data/seed/stac`; Sentinel registry
+  definitions remain hidden from production selectors unless explicitly opted in for migration
+  checks.
+- Frontend production metadata and SAR UI behavior no longer assume Sentinel sources: the app
+  description is ISRO-oriented, and SAR notes are driven by `source.kind === "sar"` so EOS/NISAR SAR
+  sources work without Sentinel ids.
+- Frontend unit fixtures now use EOS-04 SAR instead of Sentinel-1 for generic SAR selector,
+  command-palette, URL-state, and tile-template coverage.
+- Self-hosted docs now describe EOS/NISAR SAR as gated context sources and mark the Sentinel-1 SAR
+  preprocessing path as legacy-only.
+- README, AGENTS, CLAUDE, architecture, and engineering guardrail docs now describe ResourceSat
+  FCC and Akasha masks as the production defaults; Sentinel references in those files are legacy or
+  negative guardrails only.
+- Slice 1 validation now enforces the production-default documentation contract: README must
+  describe ResourceSat FCC as the default, TiTiler wording must be source-neutral, the active
+  handoff cannot point operators at Sentinel production object keys, and Sentinel support must stay
+  explicitly opt-in legacy.
+
 ### Phase 5: Additional Optical and Context Sources
 
 | Task | Description |
@@ -691,6 +743,16 @@ smoke tests use ISRO data.
 
 Exit criteria: each added source can be listed, ingested, registered, and rendered or explicitly
 marked context-only; the UI only enables analytics matching source capabilities.
+
+Current repo-side progress (2026-06-16):
+
+- AWiFS is registered as a gated Phase 5 source in the BFF and seed STAC, with FCC display,
+  ResourceSat-safe indices, regional analysis level, and visible limitations.
+- The ResourceSat BOA COG prep and composite writers are now source-aware for mask provenance:
+  LISS-3 manifests keep the validated LISS-3 provisional mask wording, while AWiFS manifests use
+  an AWiFS-specific provisional mask method that does not claim LISS-3 sample validation.
+- AWiFS remains gated until a real AWiFS BOA download/COG/composite is validated end-to-end over
+  the AOI.
 
 ### Phase 6: SAR Sources
 
@@ -705,6 +767,17 @@ marked context-only; the UI only enables analytics matching source capabilities.
 Exit criteria: SAR layers render as context; the API rejects NDVI/MSAVI/NDMI/NDWI/NDRE/RECI for SAR
 sources; SAR processing stays separate from optical.
 
+Current repo-side progress (2026-06-16):
+
+- SAR display rendering no longer assumes band 1 is always VV. The BFF now resolves the actual VV
+  polarization position from STAC `raster:bands` / `sar:polarizations` metadata before building
+  `VV_GRAYSCALE` TiTiler requests.
+- SAR backscatter assets without a VV polarization now fail early with
+  `MISSING_VV_POLARIZATION`, returning source/date/item/polarization metadata without leaking
+  internal object-storage hrefs to the browser.
+- Optical vegetation-index requests remain rejected for SAR sources; SAR analytics stay separated
+  from optical index flows until dedicated radar metrics are designed.
+
 ### Phase 7: Cartosat-3 Gated Visual Adapter
 
 | Task | Description |
@@ -717,6 +790,17 @@ sources; SAR processing stays separate from optical.
 Exit criteria: Cartosat is either a context-only manual/import path or remains explicitly gated; no
 unverified automation promised.
 
+Current repo-side progress (2026-06-16):
+
+- Cartosat-3 remains gated because no direct Bhoonidhi API collection has been validated.
+- A manual operator-upload path exists for licensed visual GeoTIFFs:
+  `worker.py prepare-context-cog --source cartosat-3-gated` creates a `visual.tif` COG and
+  `prepare_manifest.json` for the existing `ingest-manifest` path.
+- Cartosat manifests now default to 1.1 m class GSD metadata, aligned with the gated collection,
+  while still allowing operator override when delivered product metadata differs.
+- The path registers context-only `visual` assets and does not enable field analytics, crop
+  indices, cloud metrics, or Bhoonidhi automation.
+
 ### Phase 8b (remaining): Hardening & Monitoring
 
 | Task | Description |
@@ -726,6 +810,47 @@ unverified automation promised.
 | P8-103 | Monitoring: latest successful/available composite date per source, Bhoonidhi auth/search/download failures, conversion/composite failures, MinIO usage, stale latest date, STAC registration failures. |
 
 Exit criteria: operators can diagnose failed refreshes; coverage/freshness/storage are monitored.
+
+Current repo-side progress (2026-06-16):
+
+- `/api/monitoring/imagery-sources` summarizes source freshness, latest usable dates,
+  successful composite ledger state, ingestion failure kinds, and MinIO bucket/prefix usage.
+- Monitoring payloads now include top-level and per-source `status` / `statusReasons` fields so
+  operators and deployment smoke tests can distinguish healthy, warning, and error states without
+  duplicating interpretation rules.
+- The smoke-test monitoring contract now requires these status fields and can still enforce the
+  stricter `--require-monitoring-clean` gate for staging/production acceptance.
+- Active field-level optical sources now emit `LOW_COVERAGE_PERCENT` when the latest tileable
+  composite coverage falls below `SOURCE_COVERAGE_THRESHOLD_PERCENT` (default 95%) and
+  `LOW_USABLE_PIXEL_PERCENT` when usable pixels fall below `USABLE_PIXEL_THRESHOLD_PERCENT`
+  (default 70%). The authenticated smoke clean gate fails on non-OK active source operator status.
+- Monitoring tests now lock the P8-103 failure taxonomy for Bhoonidhi auth/search/download
+  failures, conversion failures, composite failures, MinIO/storage upload failures, and STAC
+  registration failures.
+- `bhoonidhi-sync` now records a non-terminal `searched` ledger heartbeat after every successful
+  Bhoonidhi search window, including windows with zero products, so operators can distinguish
+  "sync ran and found nothing" from "sync did not run". The monitoring summary exposes this through
+  ingestion ledger status counts.
+- The monitoring payload now also exposes the latest successful Bhoonidhi search AOI, datetime
+  range, and update time per source (`latestSuccessfulSearchAoiId`,
+  `latestSuccessfulSearchDatetimeRange`, `latestSuccessfulSearchUpdatedAt`), parsed from the
+  `searched` ledger heartbeat.
+- Active field-level optical sources now flag `NO_SUCCESSFUL_SEARCH` when no successful
+  Bhoonidhi search heartbeat exists and `LATEST_SUCCESSFUL_SEARCH_STALE` when the heartbeat is
+  older than `SOURCE_FRESHNESS_STALE_DAYS`. The authenticated smoke clean gate treats both as
+  deployment blockers for active sources.
+- Per-source monitoring now exposes `ingestionFailureCountsByKind`, `lastIngestionFailure`, and
+  `hasUnresolvedIngestionFailure`. A failure is considered unresolved only when it is newer than
+  the latest successful search/composite heartbeat, so historical failures remain visible without
+  keeping a recovered source in error. The authenticated smoke clean gate fails on unresolved
+  ingestion failures.
+- Multi-AOI ingestion hardening now accepts AOI composite grid CRS metadata as
+  `compositeGridCrs`, `composite_grid_crs`, or `akasha:composite_grid_crs` at either top level or
+  under GeoJSON `properties`, and uses the selected AOI CRS consistently for composite build and
+  verification.
+- Composite scene-manifest selection is AOI-safe for future multi-AOI operation: AOI-neutral scene
+  manifests remain reusable, but any prepared manifest that explicitly declares an `aoi_id` /
+  `akasha:aoi_id` is excluded from a different selected AOI's composite build.
 
 ## 10. Public API and UI Changes
 

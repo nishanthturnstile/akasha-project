@@ -141,7 +141,10 @@ _SOURCE_REGISTRY.update(
             "analysisLevel": "regional",
             "refreshPolicy": "Gated until AWiFS BOA download and COG prep are validated.",
             "limitations": ["Registered for roadmap visibility; no composites are loaded yet."],
-            "maskMethod": "Pending Akasha mask validation.",
+            "maskMethod": (
+                "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
+                "(pending AWiFS-specific native quality-layer validation; provisional)."
+            ),
             "excludedMaskClasses": [0, 2, 3],
             "availableMaskOptions": ["clouds", "cloudShadows"],
             "metricsProvisional": True,
@@ -825,7 +828,7 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
         band_names = _band_names_from_raster_bands(backscatter)
         if not band_names:
             polarizations = item.get("properties", {}).get("sar:polarizations") or []
-            band_names = [str(pol) for pol in polarizations if str(pol).upper() == "VV"] or ["VV"]
+            band_names = [str(pol).upper() for pol in polarizations] or ["VV"]
         return {
             "itemId": item.get("id"),
             "backscatterHref": backscatter.get("href"),

@@ -23,9 +23,9 @@ const sources: Source[] = [
     defaultDisplayMode: 'NDVI_CONTEXT',
   },
   {
-    id: 'sentinel-1-grd',
-    label: 'Sentinel-1 GRD',
-    provider: 'Copernicus',
+    id: 'eos-04-sar-mrs-l2b',
+    label: 'EOS-04 SAR MRS L2B',
+    provider: 'ISRO/NRSC Bhoonidhi',
     kind: 'sar',
     supportedIndices: [],
     displayModes: ['VV_GRAYSCALE'],
@@ -34,22 +34,24 @@ const sources: Source[] = [
 ];
 
 describe('SourceSelector', () => {
-  it('renders Sentinel-1 as a separate source tab', () => {
+  it('renders SAR as a separate source tab', () => {
     const { getByTestId } = render(
       <SourceSelector sources={sources} value="resourcesat-2a-liss3-boa" onChange={vi.fn()} />,
     );
 
-    expect(getByTestId('source-tab-sentinel-1-grd').textContent).toContain('Sentinel-1 GRD');
+    expect(getByTestId('source-tab-eos-04-sar-mrs-l2b').textContent).toContain(
+      'EOS-04 SAR MRS L2B',
+    );
   });
 
-  it('calls onChange when the Sentinel-1 tab is selected', () => {
+  it('calls onChange when the SAR tab is selected', () => {
     const onChange = vi.fn();
     const { getByTestId } = render(
       <SourceSelector sources={sources} value="resourcesat-2a-liss3-boa" onChange={onChange} />,
     );
 
-    fireEvent.click(getByTestId('source-tab-sentinel-1-grd'));
-    expect(onChange).toHaveBeenCalledWith('sentinel-1-grd');
+    fireEvent.click(getByTestId('source-tab-eos-04-sar-mrs-l2b'));
+    expect(onChange).toHaveBeenCalledWith('eos-04-sar-mrs-l2b');
   });
 
   it('labels context sources in the tab title', () => {

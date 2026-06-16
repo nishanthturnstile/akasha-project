@@ -84,7 +84,10 @@ def lookback_datetime_range(days: int, now: datetime | None = None) -> str:
 
 
 def _feature_aoi(feature: dict[str, Any], fallback_id: str) -> dict[str, Any]:
-    props = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+    props = dict(feature.get("properties")) if isinstance(feature.get("properties"), dict) else {}
+    for key in ("compositeGridCrs", "composite_grid_crs", "akasha:composite_grid_crs"):
+        if key in feature and key not in props:
+            props[key] = feature[key]
     return {
         "id": props.get("id") or fallback_id,
         "name": props.get("name") or props.get("id") or fallback_id,
@@ -116,12 +119,16 @@ def _load_aoi_file(path: Path, *, aoi_id: str | None = None) -> dict[str, Any]:
         if len(aois) == 1:
             return aois[0]
         raise ValueError(f"{path} contains multiple AOIs; pass --aoi to select one.")
+    props = dict(doc.get("properties", {})) if isinstance(doc.get("properties"), dict) else {}
+    for key in ("compositeGridCrs", "composite_grid_crs", "akasha:composite_grid_crs"):
+        if key in doc and key not in props:
+            props[key] = doc[key]
     aoi = {
         "id": doc.get("id") or path.stem,
         "name": doc.get("name") or doc.get("id") or path.stem,
         "bbox": doc.get("bbox"),
         "geometry": doc.get("geometry") if isinstance(doc, dict) else None,
-        "properties": doc.get("properties", {}) if isinstance(doc.get("properties"), dict) else {},
+        "properties": props,
     }
     if aoi_id and aoi_id != aoi.get("id"):
         raise ValueError(f"AOI '{aoi_id}' not found; loaded '{aoi.get('id')}'")
@@ -392,11 +399,13 @@ class BhoonidhiClient:
             try:
                 return self._request_json_url(method, url, payload, auth=True)
             except urllib.error.HTTPError as exc:
+                detail = _parse_error_body(exc)
+                if _is_search_no_results(url, exc.code, detail):
+                    return {"features": []}
                 if (
                     exc.code not in retry_statuses
                     and exc.code not in AUTH_RETRY_STATUS
                 ) or attempt >= self.max_retries:
-                    detail = _parse_error_body(exc)
                     raise BhoonidhiError(
                         f"Bhoonidhi request failed with HTTP {exc.code}: {detail or exc.reason}"
                     ) from exc
@@ -495,6 +504,15 @@ def _next_link(data: dict[str, Any]) -> dict[str, Any] | None:
         ),
         None,
     )
+
+
+def _is_search_no_results(url: str, status_code: int, detail: dict[str, Any]) -> bool:
+    if status_code != 404:
+        return False
+    if urllib.parse.urlparse(url).path.rstrip("/") != "/data/search":
+        return False
+    haystack = " ".join(str(detail.get(key, "")) for key in ("ErrorCode", "Description"))
+    return "no results" in haystack.lower()
 
 
 def _bbox_intersection(a: list[float], b: list[float]) -> list[float] | None:

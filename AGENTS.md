@@ -5,11 +5,12 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 ## What this is
 
 Akasha is a geospatial MVP that has grown into a farm-management platform: browse
-true-colour Sentinel-2 L2A (and ISRO ResourceSat LISS-3) imagery over an Area of Interest
-(Bangalore) and compute **cloud-masked vegetation-index statistics** (NDVI/NDRE/NDMI/NDWI/MSAVI)
+ISRO ResourceSat LISS-3 FCC composites over the Bangalore 60 km Area of Interest
+and compute **cloud-masked vegetation-index statistics** (NDVI/NDMI/NDWI/MSAVI)
 for user-drawn plots and fields. It is a Dockerized **multi-service** application (not one
 collapsed service), deployed on a self-hosted Coolify (Azure VM) and portable to local Docker
-Compose / on-prem.
+Compose / on-prem. Legacy Sentinel support remains for explicit regression or migration work, but
+it is not production-selectable by default.
 
 Development is **slice-by-slice**: Slices 0–3 (skeleton, storage/catalog, raster de-risk, BFF
 product + plot contracts) are implemented; **Slice 4 is in progress**. On top of the raster core,
@@ -146,38 +147,40 @@ uploaded_datasets, notifications, report_templates, index_requests, app_settings
 `apps/api/migrations/*.sql` path is legacy/empty; do not add new SQL there.
 
 ### Statistics are computed in the BFF, not TiTiler
-**TiTiler serves RGB display tiles only.** Cloud-masked index statistics are computed in the BFF
+**TiTiler serves display tiles only.** Cloud-masked index statistics are computed in the BFF
 with rasterio/rio-tiler, because vanilla TiTiler `/cog/statistics` takes a single `url` and cannot
-apply a categorical mask from a second (SCL) COG. The BFF reads the analytic COG window **and** the
-SCL COG window for the request polygon, applies per-band scale/offset, applies the SCL mask, then
-computes stats + pixel-percentage fields.
+apply a categorical mask from a second mask COG. The BFF reads the analytic COG window **and** the
+source-declared mask COG window for the request polygon, applies per-band scale/offset, applies the
+source-specific mask, then computes stats + pixel-percentage fields.
 
 ### Catalog & storage ownership
 STAC/pgSTAC owns collections, items, asset URLs, acquisition timestamps, cloud metrics, projection
 and band metadata — the BFF **reads** this and does not duplicate it into app tables. App tables
 (auth/plots/fields/seasons/ops, see [app/models.py](apps/api/app/models.py)) are owned by the api
 and migrated via Alembic (`app.cli db upgrade`). Catalog (pgSTAC) migrations are owned by the
-ingestion worker. `catalog_resolver.py` holds a multi-source registry: Sentinel-2 L2A,
-Sentinel-1 GRD, and ISRO `resourcesat-2a-liss3-boa` are active; other ISRO/Bhoonidhi sources
-(AWiFS, LISS-4, EOS-04/06, NISAR, Cartosat) are gated.
+ingestion worker. `catalog_resolver.py` holds a multi-source registry where ISRO
+`resourcesat-2a-liss3-boa` is the active production source. AWiFS, LISS-4, EOS-04/06, NISAR,
+Cartosat, and archive/context sources are gated until validation; Sentinel-2/Sentinel-1 remain
+legacy opt-in only.
 
 ## Domain rules (hard guardrails — see [docs/engineering-dos-donts.md](docs/engineering-dos-donts.md) and [docs/data-ingestion-and-satellite-rules.md](docs/data-ingestion-and-satellite-rules.md))
 
 These are easy to get wrong and are enforced across the raster/catalog code:
 
-- **Frozen analytic band order** (9 bands): `[B04, B08, B05, B06, B07, B11, B12, B03, B02]`.
+- **ResourceSat LISS-3 analytic band order** (4 bands): `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`.
   STAC `eo:bands`/`raster:bands` must match exactly. TiTiler expressions are **positional**
-  (`b1`,`b2`,…), so band NAME→POSITION translation happens only in [indices.py](apps/api/app/raster/indices.py); never hard-code positions elsewhere.
-- **True-colour RGB uses bands `[1, 8, 9]`** (B04 Red, B03 Green, B02 Blue) — **not** `[1,2,3]`.
-- **Reflectance correction:** raw uint16 DN is stored; apply `corrected = dn * 0.0001 + (-0.1)`.
-  The STAC `offset` is `-0.1`, **not** the raw-DN `BOA_ADD_OFFSET=-1000`. Offsets may be band-specific.
-- **Cloud/validity mask:** exclude SCL classes `{0,1,2,3,7,8,9,10,11}` plus nodata; **keep class 6
-  (water)** by default. Never blindly set `nodata=0` (valid reflectance can be 0).
-- **Resampling:** nearest-neighbour for categorical SCL (and its overviews); bilinear/cubic for
-  continuous reflectance. Analytic COG and SCL COG stay as **separate** assets.
-- **Indices** are normalized-difference `(a-b)/(a+b)`: NDVI=(B08-B04), NDRE=(B08-B05),
-  NDMI=(B08-B11), NDWI_GREEN_NIR=(B03-B08). MSAVI is a non-normalized formula. SAR sources are
-  never optical-index sources.
+  (`b1`,`b2`,...), so band NAME->POSITION translation happens only in [indices.py](apps/api/app/raster/indices.py); never hard-code positions elsewhere.
+- **ResourceSat display is FCC** with role order `NIR,RED,GREEN` (`bidx=3,2,1`). Do not use
+  Sentinel true-colour RGB positions `[1,8,9]`.
+- **ResourceSat reflectance correction:** raw uint16 DN is stored; apply
+  `corrected = dn * 0.0001 + 0.0`. Do not apply Sentinel-2's `-0.1` offset.
+- **ResourceSat cloud/validity mask:** there is **no SCL**. Use the Akasha threshold mask v1
+  classes `0=nodata,1=valid,2=cloud,3=shadow,4=water`; keep `{1,4}` by default.
+- **Resampling:** nearest-neighbour for categorical masks (and their overviews); bilinear/cubic for
+  continuous reflectance. Analytic COG and mask COG stay as **separate** assets.
+- **Indices** are normalized-difference `(a-b)/(a+b)`: NDVI=(NIR-RED), NDMI=(NIR-SWIR1),
+  NDWI_GREEN_NIR=(GREEN-NIR). MSAVI is a non-normalized formula. ResourceSat does not support
+  NDRE/RECI; SAR sources are never optical-index sources.
 - **ISRO ResourceSat LISS-3 BOA differs from Sentinel-2** (see [indices.py](apps/api/app/raster/indices.py),
   [scripts/prepare_resourcesat_liss3_boa_cogs.py](scripts/prepare_resourcesat_liss3_boa_cogs.py)):
   **4 analytic bands** `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`; reflectance offset is
@@ -187,34 +190,26 @@ These are easy to get wrong and are enforced across the raster/catalog code:
   "most-recent valid pixel" rule ([services/ingestion/akasha_ingest/composite.py](services/ingestion/akasha_ingest/composite.py)).
 - **Determinism/idempotency:** scene key =
   `{satellite}:{product_level}:{mgrs_tile}:{acquisition_datetime}:{processing_baseline}`.
-  Object keys: `s3://akasha-cogs/{source}/{date}/{mgrsTile}/{sceneComponent}/analytic.tif|scl.tif`
-  (date-only keys are legacy/sample). `upsert` is the normal STAC load mode; uploads skip existing
-  keys unless `--force`. Multi-scene dates return `MOSAIC_TILES_UNAVAILABLE` until a mosaic backend exists.
+  ResourceSat object keys use `s3://akasha-cogs/{source}/scene/{date}/{sceneComponent}/analytic.tif|mask.tif`
+  for scenes and `s3://akasha-cogs/{source}/composite/{aoiId}/{date}/analytic.tif|mask.tif` for
+  composites. `upsert` is the normal STAC load mode; uploads skip existing keys unless `--force`.
 
 ## Data & ingestion pipeline
 
-Real COGs are large and **not committed** (`data/raw/`, `data/work/` are gitignored). The flow:
-1. `scripts/download_sentinel2_l2a_product.py` — discover/download CDSE L2A SAFE ZIPs (dry-run by default).
-2. `scripts/prepare_sentinel2_l2a_cogs.py` — SAFE ZIP → `analytic.tif` + `scl.tif` COGs +
-   `prepare_manifest.json` under `data/seed/rasters/{date}/{mgrsTile}/`. Run inside the ingestion
-   Docker image to avoid local GDAL setup (esp. on Windows).
-3. `worker.py ingest-manifest` then `worker.py verify-manifest-cogs`.
-
-Sentinel-1 GRD SAR has a parallel path (`download_sentinel1_grd_product.py`,
-`prepare_sentinel1_grd_cogs.py`, SNAP GPT graph in `services/ingestion/snap/`). ISRO ResourceSat
-LISS-3 BOA has its own path via Bhoonidhi: `worker.py bhoonidhi-search` / `bhoonidhi-download`
+Real COGs are large and **not committed** (`data/raw/`, `data/work/` are gitignored). ResourceSat
+LISS-3 BOA is ingested via Bhoonidhi: `worker.py bhoonidhi-search` / `bhoonidhi-download`
 (client in [services/ingestion/akasha_ingest/bhoonidhi.py](services/ingestion/akasha_ingest/bhoonidhi.py),
 CQL2 `Online=Y` filter), then `scripts/prepare_resourcesat_liss3_boa_cogs.py` +
-`worker.py ingest-manifest`. Runbooks:
-[docs/sentinel-2-l2a-cog-prep-runbook.md](docs/sentinel-2-l2a-cog-prep-runbook.md),
-[docs/sentinel-1-grd-cog-prep-runbook.md](docs/sentinel-1-grd-cog-prep-runbook.md).
+`worker.py build-composite` / `worker.py ingest-manifest`. Legacy Sentinel-2 and Sentinel-1 helper
+scripts remain for regression/migration reference only, not the production ingestion path.
 
 ## Frontend rules
 - Map renderer is **MapLibre GL JS**; plot drawing uses **Terra Draw + MapLibre adapter**. Do not
   use `@mapbox/mapbox-gl-draw` (it targets Mapbox GL).
 - Server state via **TanStack Query**. Derive all layer/date/tile metadata from the BFF; keep
   basemap and satellite overlays as separate sources/layers; use relative same-origin tile URLs only.
-- Default map layer is true-colour imagery — **never** show NDVI/any index as the default layer.
+- Default map layer is the source's natural display mode (ResourceSat FCC for production) —
+  **never** show NDVI/any index as the default layer.
 
 ## Source-of-truth docs
 [docs/](docs/) is canonical; start at [docs/platform-plan.md](docs/platform-plan.md).

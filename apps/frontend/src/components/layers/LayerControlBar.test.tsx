@@ -20,9 +20,9 @@ const sources: Source[] = [
         metricsProvisional: true,
     },
     {
-        id: 'sentinel-1-grd',
-        label: 'Sentinel-1 GRD',
-        provider: 'Copernicus',
+        id: 'eos-04-sar-mrs-l2b',
+        label: 'EOS-04 SAR MRS L2B',
+        provider: 'ISRO/NRSC Bhoonidhi',
         kind: 'sar',
         displayModes: ['VV_GRAYSCALE'],
         defaultDisplayMode: 'VV_GRAYSCALE',
@@ -149,9 +149,9 @@ describe('LayerControlBar', () => {
 
         fireEvent.click(screen.getByTestId('layer-source-trigger'));
         // SourceSelector renders one tab per source inside the popover.
-        const sarTab = screen.getByTestId('source-tab-sentinel-1-grd');
+        const sarTab = screen.getByTestId('source-tab-eos-04-sar-mrs-l2b');
         fireEvent.click(sarTab);
-        expect(props.onSelectSource).toHaveBeenCalledWith('sentinel-1-grd');
+        expect(props.onSelectSource).toHaveBeenCalledWith('eos-04-sar-mrs-l2b');
     });
 
     it('collapses the bar via the explicit collapse trigger', () => {

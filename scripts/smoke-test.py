@@ -185,6 +185,11 @@ def _monitoring_contract_errors(data: dict) -> list[str]:
         errors.append("storage must be an object")
         return errors
 
+    if data.get("status") not in {"ok", "warning", "error"}:
+        errors.append("status must be ok/warning/error")
+    if not isinstance(data.get("statusReasons"), list):
+        errors.append("statusReasons must be a list")
+
     if "zeroByteObjectCount" not in storage:
         errors.append("storage.zeroByteObjectCount missing")
     by_prefix = storage.get("byPrefix")
@@ -205,8 +210,24 @@ def _monitoring_contract_errors(data: dict) -> list[str]:
                 continue
             if not isinstance(source.get("latestSuccessfulComposites"), list):
                 errors.append(f"sources[{index}].latestSuccessfulComposites missing/list")
+            for field in [
+                "latestSuccessfulSearchAoiId",
+                "latestSuccessfulSearchDatetimeRange",
+                "latestSuccessfulSearchUpdatedAt",
+                "daysSinceLatestSuccessfulSearch",
+                "isSuccessfulSearchStale",
+                "ingestionFailureCountsByKind",
+                "lastIngestionFailure",
+                "hasUnresolvedIngestionFailure",
+            ]:
+                if field not in source:
+                    errors.append(f"sources[{index}].{field} missing")
             if not isinstance(source.get("tileUnavailableReasons"), list):
                 errors.append(f"sources[{index}].tileUnavailableReasons missing/list")
+            if source.get("status") not in {"ok", "warning", "error"}:
+                errors.append(f"sources[{index}].status must be ok/warning/error")
+            if not isinstance(source.get("statusReasons"), list):
+                errors.append(f"sources[{index}].statusReasons missing/list")
     return errors
 
 
@@ -226,18 +247,36 @@ def _monitoring_cleanliness_errors(data: dict) -> list[str]:
         source_id = str(source.get("sourceId") or "unknown-source")
         if source.get("availabilityStatus") == "gated":
             continue
+        if source.get("status") not in {None, "ok"}:
+            reasons = [
+                str(reason).strip()
+                for reason in source.get("statusReasons", [])
+                if str(reason).strip()
+            ]
+            detail = f": {reasons[0]}" if reasons else ""
+            errors.append(f"{source_id} operator status is {source.get('status')!r}{detail}")
         if source.get("lastError"):
             errors.append(f"{source_id} monitoring error")
         if source.get("isStale"):
             errors.append(f"{source_id} latest catalog date is stale")
         if source.get("isSuccessfulCompositeStale"):
             errors.append(f"{source_id} latest successful composite is stale")
+        if source.get("isSuccessfulSearchStale"):
+            errors.append(f"{source_id} latest successful search is stale")
+        if source.get("hasUnresolvedIngestionFailure"):
+            errors.append(f"{source_id} has unresolved ingestion failure")
         if (
             source.get("kind") == "optical"
             and source.get("analysisLevel") == "field"
             and not source.get("latestSuccessfulCompositeDate")
         ):
             errors.append(f"{source_id} has no successful composite")
+        if (
+            source.get("kind") == "optical"
+            and source.get("analysisLevel") == "field"
+            and not source.get("latestSuccessfulSearchUpdatedAt")
+        ):
+            errors.append(f"{source_id} has no successful search")
         tile_reasons = [
             str(reason).strip()
             for reason in source.get("tileUnavailableReasons", [])

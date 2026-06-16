@@ -44,6 +44,7 @@ SOURCE_PROFILES = {
         platform="cartosat-3",
         product_level="VISUAL-CONTEXT",
         product_type="operator-upload-visual",
+        gsd=1.1,
     ),
     "eos-06-ocm-lac-ndvi-8day-360m": ContextSourceProfile(
         source_id="eos-06-ocm-lac-ndvi-8day-360m",

@@ -36,11 +36,19 @@ SOURCE_PROFILES = {
         "collection": BHOONIDHI_COLLECTION,
         "label": "LISS-3",
         "resolution_meters": 24,
+        "mask_method": (
+            "Akasha threshold mask v1 (no native quality layer found in validated "
+            "LISS-3 BOA sample; provisional)."
+        ),
     },
     AWIFS_SOURCE_ID: {
         "collection": AWIFS_BHOONIDHI_COLLECTION,
         "label": "AWiFS",
         "resolution_meters": 56,
+        "mask_method": (
+            "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
+            "(pending AWiFS-specific native quality-layer validation; provisional)."
+        ),
     },
 }
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "bhoonidhi" / SOURCE_ID
@@ -64,6 +72,11 @@ def source_profile(source_id: str) -> dict[str, Any]:
         raise SystemExit(
             f"Unsupported ResourceSat BOA source '{source_id}'. Supported: {supported}"
         ) from exc
+
+
+def mask_method_for_source(source_id: str) -> str:
+    method = source_profile(source_id).get("mask_method")
+    return str(method or MASK_METHOD)
 
 
 ANALYTIC_BANDS: tuple[tuple[str, str, str], ...] = (
@@ -648,6 +661,7 @@ def build_mask_intermediate(
     analytic_path: Path,
     output_path: Path,
     meta: ResourceSatMeta,
+    source_id: str,
     overwrite: bool,
 ) -> Path:
     np = deps["np"]
@@ -684,13 +698,14 @@ def build_mask_intermediate(
         with rasterio.open(output_path, "w", **profile) as dst:
             dst.write(mask, 1)
             dst.set_band_description(1, "mask")
+            mask_method = mask_method_for_source(source_id)
             dst.update_tags(
                 1,
                 name="mask",
-                description=MASK_METHOD,
+                description=mask_method,
                 classes=json.dumps(MASK_CLASSES),
             )
-            dst.update_tags(AKASHA_MASK_METHOD=MASK_METHOD, AREA_OR_POINT="Area")
+            dst.update_tags(AKASHA_MASK_METHOD=mask_method, AREA_OR_POINT="Area")
     return output_path
 
 
@@ -796,6 +811,7 @@ def write_manifest(
 ) -> None:
     analytic_summary = raster_summary(deps, paths.analytic_cog)
     mask_summary = raster_summary(deps, paths.mask_cog)
+    mask_method = mask_method_for_source(source_id)
     payload: dict[str, Any] = {
         "source_id": source_id,
         "collection": collection,
@@ -810,7 +826,7 @@ def write_manifest(
         "product_dir": paths.product_dir.as_posix(),
         "analytic_band_order": [band for band, _role, _description in ANALYTIC_BANDS],
         "band_role_mapping": {role: band for band, role, _description in ANALYTIC_BANDS},
-        "mask_method": MASK_METHOD,
+        "mask_method": mask_method,
         "classification_classes": MASK_CLASSES,
         "akasha:metrics_provisional": True,
         "intermediates": {
@@ -830,7 +846,7 @@ def write_manifest(
             "mask": mask_summary,
         },
         "properties": {
-            "akasha:mask_method": MASK_METHOD,
+            "akasha:mask_method": mask_method,
             "akasha:metrics_provisional": True,
             "akasha:band_role_mapping": {role: band for band, role, _description in ANALYTIC_BANDS},
         },
@@ -949,6 +965,7 @@ def prepare_one(
         analytic_path=analytic_intermediate,
         output_path=mask_intermediate,
         meta=meta,
+        source_id=args.source,
         overwrite=args.overwrite,
     )
     translate_to_cog(

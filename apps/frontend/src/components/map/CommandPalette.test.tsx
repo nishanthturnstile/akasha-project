@@ -10,7 +10,12 @@ const sources: Source[] = [
         provider: 'ISRO/NRSC Bhoonidhi',
         kind: 'optical',
     },
-    { id: 'sentinel-1-grd', label: 'Sentinel-1 GRD', provider: 'ESA', kind: 'sar' },
+    {
+        id: 'eos-04-sar-mrs-l2b',
+        label: 'EOS-04 SAR MRS L2B',
+        provider: 'ISRO/NRSC Bhoonidhi',
+        kind: 'sar',
+    },
 ];
 
 const dates: SceneDate[] = [
@@ -71,15 +76,15 @@ describe('CommandPalette', () => {
         renderPalette();
         expect(screen.getByTestId('command-palette')).toBeTruthy();
         expect(screen.getByTestId('command-source-resourcesat-2a-liss3-boa')).toBeTruthy();
-        expect(screen.getByTestId('command-source-sentinel-1-grd')).toBeTruthy();
+        expect(screen.getByTestId('command-source-eos-04-sar-mrs-l2b')).toBeTruthy();
         expect(screen.getByTestId('command-date-2026-05-31')).toBeTruthy();
         expect(screen.queryByTestId('command-date-2026-05-21')).toBeNull();
     });
 
     it('selecting a source notifies and closes', () => {
         const { onSelectSource, onOpenChange } = renderPalette();
-        fireEvent.click(screen.getByTestId('command-source-sentinel-1-grd'));
-        expect(onSelectSource).toHaveBeenCalledWith('sentinel-1-grd');
+        fireEvent.click(screen.getByTestId('command-source-eos-04-sar-mrs-l2b'));
+        expect(onSelectSource).toHaveBeenCalledWith('eos-04-sar-mrs-l2b');
         expect(onOpenChange).toHaveBeenCalledWith(false);
     });
 

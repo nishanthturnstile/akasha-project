@@ -127,8 +127,8 @@ describe('api client error mapping', () => {
 
   describe('composeTileTemplate', () => {
     it('uses the requested display mode in the source/date tile route', () => {
-      expect(composeTileTemplate('sentinel-1-grd', '2026-04-26', 'VV_GRAYSCALE')).toBe(
-        '/api/tiles/sentinel-1-grd/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
+      expect(composeTileTemplate('eos-04-sar-mrs-l2b', '2026-04-26', 'VV_GRAYSCALE')).toBe(
+        '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
       );
     });
   });

@@ -530,7 +530,8 @@ CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff
 AKASHA_RGB_RESCALE=0,3000
 AKASHA_S1_VV_RESCALE=-25,5
 DEFAULT_SOURCE_ID=resourcesat-2a-liss3-boa
-DEFAULT_AOI_ID=bangalore
+# Optional multi-AOI selector. Leave blank to use AOI_CONFIG_PATH as the default AOI.
+DEFAULT_AOI_ID=
 BASEMAP_PROVIDER=esri
 ESRI_BASEMAP_STYLE=arcgis/imagery
 ESRI_BASEMAP_STYLE_FAMILY=arcgis

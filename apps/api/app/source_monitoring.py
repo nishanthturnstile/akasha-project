@@ -7,7 +7,7 @@ import sqlite3
 from collections import Counter
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import ConfigDict, Field
@@ -52,6 +52,9 @@ class MonitoringLedgerSource(MonitoringApiModel):
     latest_successful_composite_aoi_id: str | None = None
     latest_successful_composite_updated_at: str | None = None
     latest_successful_composites: list[dict[str, str | None]] = Field(default_factory=list)
+    latest_successful_search_aoi_id: str | None = None
+    latest_successful_search_datetime_range: str | None = None
+    latest_successful_search_updated_at: str | None = None
 
 
 class IngestionLedgerSummary(MonitoringApiModel):
@@ -86,6 +89,8 @@ class StorageUsage(MonitoringApiModel):
 
 class ImagerySourceMonitoringSource(MonitoringApiModel):
     source_id: str
+    status: Literal["ok", "warning", "error"] = "ok"
+    status_reasons: list[str] = Field(default_factory=list)
     label: str | None = None
     provider: str | None = None
     kind: str | None = None
@@ -114,11 +119,23 @@ class ImagerySourceMonitoringSource(MonitoringApiModel):
     latest_successful_composites: list[dict[str, str | None]] = Field(default_factory=list)
     days_since_latest_successful_composite: int | None = None
     is_successful_composite_stale: bool
+    latest_successful_search_aoi_id: str | None = None
+    latest_successful_search_datetime_range: str | None = None
+    latest_successful_search_updated_at: str | None = None
+    days_since_latest_successful_search: int | None = None
+    is_successful_search_stale: bool
+    ingestion_failure_counts_by_kind: dict[str, int] = Field(default_factory=dict)
+    last_ingestion_failure: MonitoringFailure | None = None
+    has_unresolved_ingestion_failure: bool = False
 
 
 class ImagerySourceMonitoringResponse(MonitoringApiModel):
     generated_at: str
+    status: Literal["ok", "warning", "error"] = "ok"
+    status_reasons: list[str] = Field(default_factory=list)
     stale_after_days: int
+    coverage_threshold_percent: int
+    usable_pixel_threshold_percent: int
     sources: list[ImagerySourceMonitoringSource]
     storage: StorageUsage
     ingestion_ledger: IngestionLedgerSummary
@@ -135,6 +152,19 @@ def _parse_date(value: Any) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _latest_date(
@@ -204,6 +234,16 @@ def _composite_record(product_id: Any) -> dict[str, str] | None:
     return {"aoiId": parts[1], "date": composite_date.isoformat()}
 
 
+def _search_record(product_id: Any) -> dict[str, str] | None:
+    parts = str(product_id or "").split(":", 2)
+    if len(parts) != 3 or parts[0] != "sync":
+        return None
+    datetime_range = parts[2]
+    if "/" not in datetime_range:
+        return None
+    return {"aoiId": parts[1], "datetimeRange": datetime_range}
+
+
 def _empty_ledger_source(source_id: str) -> dict[str, Any]:
     return {
         "sourceId": source_id,
@@ -217,6 +257,9 @@ def _empty_ledger_source(source_id: str) -> dict[str, Any]:
         "latestSuccessfulCompositeAoiId": None,
         "latestSuccessfulCompositeUpdatedAt": None,
         "latestSuccessfulComposites": [],
+        "latestSuccessfulSearchAoiId": None,
+        "latestSuccessfulSearchDatetimeRange": None,
+        "latestSuccessfulSearchUpdatedAt": None,
     }
 
 
@@ -274,6 +317,12 @@ def _ingestion_ledger_summary() -> dict[str, Any]:
                 select product_id, source_id, scene_key, status, updated_at
                 from ingestion_ledger
                 where status = 'composited' and product_id like 'composite:%'
+                order by updated_at desc
+                """).fetchall()
+            successful_search_rows = conn.execute("""
+                select product_id, source_id, scene_key, status, updated_at
+                from ingestion_ledger
+                where status = 'searched' and product_id like 'sync:%'
                 order by updated_at desc
                 """).fetchall()
         finally:
@@ -372,6 +421,20 @@ def _ingestion_ledger_summary() -> dict[str, Any]:
         source["latestSuccessfulCompositeProductId"] = row["product_id"]
         source["latestSuccessfulCompositeAoiId"] = record["aoiId"]
         source["latestSuccessfulCompositeUpdatedAt"] = row["updated_at"]
+
+    for row in successful_search_rows:
+        record = _search_record(row["product_id"])
+        if record is None:
+            continue
+        source_id = str(row["source_id"])
+        source = by_source.setdefault(source_id, _empty_ledger_source(source_id))
+        previous_updated_at = str(source.get("latestSuccessfulSearchUpdatedAt") or "")
+        candidate_updated_at = str(row["updated_at"] or "")
+        if previous_updated_at and candidate_updated_at <= previous_updated_at:
+            continue
+        source["latestSuccessfulSearchAoiId"] = record["aoiId"]
+        source["latestSuccessfulSearchDatetimeRange"] = record["datetimeRange"]
+        source["latestSuccessfulSearchUpdatedAt"] = row["updated_at"]
 
     for source_id, by_aoi in per_source_composites_by_aoi.items():
         source = by_source.setdefault(source_id, _empty_ledger_source(source_id))
@@ -478,6 +541,15 @@ def _ledger_source_fields(ledger_source: dict[str, Any] | None) -> dict[str, Any
             "latestSuccessfulCompositeUpdatedAt"
         ),
         "latestSuccessfulComposites": ledger_source.get("latestSuccessfulComposites") or [],
+        "latestSuccessfulSearchAoiId": ledger_source.get("latestSuccessfulSearchAoiId"),
+        "latestSuccessfulSearchDatetimeRange": ledger_source.get(
+            "latestSuccessfulSearchDatetimeRange"
+        ),
+        "latestSuccessfulSearchUpdatedAt": ledger_source.get(
+            "latestSuccessfulSearchUpdatedAt"
+        ),
+        "ingestionFailureCountsByKind": ledger_source.get("failureCountsByKind") or {},
+        "lastIngestionFailure": ledger_source.get("lastFailure"),
     }
 
 
@@ -497,6 +569,109 @@ def _successful_composite_freshness(
     }
 
 
+def _successful_search_freshness(
+    ledger_fields: dict[str, Any],
+    *,
+    today: date,
+    availability: str,
+    is_field_optical: bool,
+) -> dict[str, Any]:
+    latest_search = _parse_datetime(ledger_fields.get("latestSuccessfulSearchUpdatedAt"))
+    days_since = (today - latest_search.date()).days if latest_search else None
+    stale = (
+        availability != "gated"
+        and is_field_optical
+        and days_since is not None
+        and days_since > settings.source_freshness_stale_days
+    )
+    missing = availability != "gated" and is_field_optical and latest_search is None
+    return {
+        "daysSinceLatestSuccessfulSearch": days_since,
+        "isSuccessfulSearchStale": stale,
+        "isSuccessfulSearchMissing": missing,
+    }
+
+
+def _unresolved_ingestion_failure(ledger_fields: dict[str, Any]) -> bool:
+    failure = ledger_fields.get("lastIngestionFailure")
+    if not isinstance(failure, dict):
+        return False
+    failure_at = _parse_datetime(failure.get("updatedAt"))
+    if failure_at is None:
+        return True
+    successful_timestamps = [
+        _parse_datetime(ledger_fields.get("latestSuccessfulSearchUpdatedAt")),
+        _parse_datetime(ledger_fields.get("latestSuccessfulCompositeUpdatedAt")),
+    ]
+    latest_success = max(
+        (value for value in successful_timestamps if value is not None),
+        default=None,
+    )
+    return latest_success is None or failure_at > latest_success
+
+
+def _source_status(payload: dict[str, Any]) -> dict[str, Any]:
+    availability = str(payload.get("availabilityStatus") or "active")
+    warnings = {str(value) for value in payload.get("warnings", [])}
+    reasons: list[str] = []
+    has_error = False
+    has_warning = False
+
+    if availability == "gated":
+        has_warning = True
+        reasons.append("SOURCE_GATED")
+
+    if payload.get("lastError"):
+        has_error = True
+        reasons.append("MONITORING_LOOKUP_FAILED")
+
+    warning_error_reasons = {
+        "DATE_LOOKUP_FAILED",
+        "NO_AVAILABLE_DATES",
+        "LATEST_DATE_STALE",
+        "LATEST_SUCCESSFUL_COMPOSITE_STALE",
+        "LATEST_SUCCESSFUL_SEARCH_STALE",
+        "NO_SUCCESSFUL_SEARCH",
+        "UNRESOLVED_INGESTION_FAILURE",
+        "NO_TILE_AVAILABLE_DATES",
+        "LOW_COVERAGE_PERCENT",
+        "LOW_USABLE_PIXEL_PERCENT",
+    }
+    for warning in sorted(warnings):
+        if warning == "SOURCE_GATED":
+            continue
+        if availability != "gated" and warning in warning_error_reasons:
+            has_error = True
+        else:
+            has_warning = True
+        reasons.append(warning)
+
+    if (
+        availability != "gated"
+        and payload.get("kind") == "optical"
+        and payload.get("analysisLevel") == "field"
+        and not payload.get("latestSuccessfulCompositeDate")
+    ):
+        has_error = True
+        reasons.append("NO_SUCCESSFUL_COMPOSITE")
+
+    if payload.get("tileUnavailableReasons") and "NO_TILE_AVAILABLE_DATES" not in reasons:
+        has_warning = True
+        reasons.append("SOME_TILE_UNAVAILABLE_DATES")
+
+    if has_error:
+        status = "error"
+    elif has_warning:
+        status = "warning"
+    else:
+        status = "ok"
+    return {
+        **payload,
+        "status": status,
+        "statusReasons": list(dict.fromkeys(reasons)),
+    }
+
+
 def _summarize_source(
     source: dict[str, Any], *, today: date, ledger_source: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -504,6 +679,7 @@ def _summarize_source(
     availability = source.get("availabilityStatus") or "active"
     warnings: list[str] = []
     ledger_fields = _ledger_source_fields(ledger_source)
+    is_field_optical = source.get("kind") == "optical" and source.get("analysisLevel") == "field"
     composite_freshness = _successful_composite_freshness(
         ledger_fields,
         today=today,
@@ -511,13 +687,26 @@ def _summarize_source(
     )
     if composite_freshness["isSuccessfulCompositeStale"]:
         warnings.append("LATEST_SUCCESSFUL_COMPOSITE_STALE")
+    search_freshness = _successful_search_freshness(
+        ledger_fields,
+        today=today,
+        availability=availability,
+        is_field_optical=is_field_optical,
+    )
+    if search_freshness["isSuccessfulSearchMissing"]:
+        warnings.append("NO_SUCCESSFUL_SEARCH")
+    elif search_freshness["isSuccessfulSearchStale"]:
+        warnings.append("LATEST_SUCCESSFUL_SEARCH_STALE")
+    has_unresolved_ingestion_failure = _unresolved_ingestion_failure(ledger_fields)
+    if availability != "gated" and has_unresolved_ingestion_failure:
+        warnings.append("UNRESOLVED_INGESTION_FAILURE")
 
     try:
         dates = catalog.list_dates(source_id)
     except Exception as exc:  # noqa: BLE001 - monitoring must degrade per source.
         is_gated = availability == "gated"
         lookup_warnings = ["SOURCE_GATED"] if is_gated else ["DATE_LOOKUP_FAILED"]
-        return {
+        return _source_status({
             "sourceId": source_id,
             "label": source.get("label"),
             "provider": source.get("provider"),
@@ -542,7 +731,12 @@ def _summarize_source(
             "lastError": f"{exc.__class__.__name__}: {str(exc)[:200]}",
             **ledger_fields,
             **composite_freshness,
-        }
+            "daysSinceLatestSuccessfulSearch": search_freshness[
+                "daysSinceLatestSuccessfulSearch"
+            ],
+            "isSuccessfulSearchStale": search_freshness["isSuccessfulSearchStale"],
+            "hasUnresolvedIngestionFailure": has_unresolved_ingestion_failure,
+        })
 
     tile_available_dates = [entry for entry in dates if bool(entry.get("tileAvailable", True))]
     tile_unavailable_reasons = sorted(
@@ -578,7 +772,23 @@ def _summarize_source(
         warnings.append("NO_TILE_AVAILABLE_DATES")
 
     latest_metrics = latest_usable or latest_available or {}
-    return {
+    coverage_percent = latest_metrics.get("coveragePercent")
+    if (
+        not is_gated
+        and is_field_optical
+        and isinstance(coverage_percent, (int, float))
+        and float(coverage_percent) < settings.source_coverage_threshold_percent
+    ):
+        warnings.append("LOW_COVERAGE_PERCENT")
+    usable_pixel_percent = latest_metrics.get("usablePixelPercent")
+    if (
+        not is_gated
+        and is_field_optical
+        and isinstance(usable_pixel_percent, (int, float))
+        and float(usable_pixel_percent) < settings.usable_pixel_threshold_percent
+    ):
+        warnings.append("LOW_USABLE_PIXEL_PERCENT")
+    return _source_status({
         "sourceId": source_id,
         "label": source.get("label"),
         "provider": source.get("provider"),
@@ -595,8 +805,8 @@ def _summarize_source(
         "isStale": stale,
         "dateCount": len(dates),
         "tileAvailableDateCount": len(tile_available_dates),
-        "coveragePercent": latest_metrics.get("coveragePercent"),
-        "usablePixelPercent": latest_metrics.get("usablePixelPercent"),
+        "coveragePercent": coverage_percent,
+        "usablePixelPercent": usable_pixel_percent,
         "cloudMaskedPercent": latest_metrics.get("cloudMaskedPercent"),
         "metricsProvisional": bool(
             latest_metrics.get("metricsProvisional", source.get("metricsProvisional", False))
@@ -606,7 +816,62 @@ def _summarize_source(
         "tileUnavailableReasons": tile_unavailable_reasons,
         **ledger_fields,
         **composite_freshness,
-    }
+        "daysSinceLatestSuccessfulSearch": search_freshness[
+            "daysSinceLatestSuccessfulSearch"
+        ],
+        "isSuccessfulSearchStale": search_freshness["isSuccessfulSearchStale"],
+        "hasUnresolvedIngestionFailure": has_unresolved_ingestion_failure,
+    })
+
+
+def _overall_monitoring_status(
+    *,
+    sources: list[dict[str, Any]],
+    storage: dict[str, Any],
+    ingestion_ledger: dict[str, Any],
+) -> dict[str, Any]:
+    reasons: list[str] = []
+    has_error = False
+    has_warning = False
+
+    storage_status = storage.get("status")
+    if storage_status not in {"ok", "disabled"}:
+        if storage_status in {"unavailable", "error"}:
+            has_error = True
+            reasons.append("STORAGE_UNAVAILABLE")
+        else:
+            has_warning = True
+            reasons.append("STORAGE_NOT_READY")
+    zero_count = storage.get("zeroByteObjectCount")
+    if isinstance(zero_count, int) and zero_count > 0:
+        has_error = True
+        reasons.append("ZERO_BYTE_STORAGE_OBJECTS")
+
+    ledger_status = ingestion_ledger.get("status")
+    if ledger_status in {"unavailable", "error"}:
+        has_error = True
+        reasons.append("INGESTION_LEDGER_UNAVAILABLE")
+    elif ledger_status in {"missing", "unconfigured"}:
+        has_warning = True
+        reasons.append("INGESTION_LEDGER_NOT_READY")
+
+    for source in sources:
+        source_status = source.get("status")
+        source_id = str(source.get("sourceId") or "unknown-source")
+        if source_status == "error":
+            has_error = True
+            reasons.append(f"SOURCE_ERROR:{source_id}")
+        elif source_status == "warning":
+            has_warning = True
+            reasons.append(f"SOURCE_WARNING:{source_id}")
+
+    if has_error:
+        status = "error"
+    elif has_warning:
+        status = "warning"
+    else:
+        status = "ok"
+    return {"status": status, "statusReasons": list(dict.fromkeys(reasons))}
 
 
 @router.get("/imagery-sources", response_model=ImagerySourceMonitoringResponse)
@@ -628,10 +893,19 @@ async def get_imagery_source_monitoring() -> ImagerySourceMonitoringResponse:
         )
         for source in catalog.list_sources()
     ]
+    storage = _storage_usage()
+    status_payload = _overall_monitoring_status(
+        sources=sources,
+        storage=storage,
+        ingestion_ledger=ingestion_ledger,
+    )
     return {
         "generatedAt": generated_at.isoformat().replace("+00:00", "Z"),
+        **status_payload,
         "staleAfterDays": settings.source_freshness_stale_days,
+        "coverageThresholdPercent": settings.source_coverage_threshold_percent,
+        "usablePixelThresholdPercent": settings.usable_pixel_threshold_percent,
         "sources": sources,
-        "storage": _storage_usage(),
+        "storage": storage,
         "ingestionLedger": ingestion_ledger,
     }

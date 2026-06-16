@@ -19,6 +19,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 SOURCE_ID = "resourcesat-2a-liss3-boa"
+AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
 AOI_ID = "bangalore-60km"
 BANDS = ["BAND2", "BAND3", "BAND4", "BAND5"]
 SUPPORTED_INDICES = ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
@@ -66,6 +67,7 @@ for rel in [
     "data/seed/sample-plot.geojson",
     "data/seed/stac/resourcesat-2a-liss3-boa-collection.json",
     "data/seed/stac/resourcesat-2a-liss3-boa-sample-item.json",
+    "data/seed/stac/resourcesat-2a-awifs-boa-collection.json",
     "data/seed/stac/eos-06-ocm-lac-ndvi-8day-360m-collection.json",
     "data/seed/stac/irs-1c-liss3-archive-collection.json",
     "data/seed/stac/cartosat-3-gated-collection.json",
@@ -74,11 +76,18 @@ for rel in [
     "data/seed/README.md",
 ]:
     check((REPO / rel).exists(), f"exists: {rel}")
+check(
+    not (REPO / "data/seed/bangalore-aoi.geojson").exists(),
+    "legacy small-box bangalore-aoi.geojson removed",
+)
+sentinel_seed_files = sorted((REPO / "data/seed/stac").glob("sentinel-*"))
+check(not sentinel_seed_files, "legacy Sentinel seed STAC files removed from production seed")
 
 aoi = load_json("data/seed/bangalore-60km-aoi.geojson")
 plot = load_json("data/seed/sample-plot.geojson")
 coll = load_json("data/seed/stac/resourcesat-2a-liss3-boa-collection.json")
 item = load_json("data/seed/stac/resourcesat-2a-liss3-boa-sample-item.json")
+awifs_coll = load_json("data/seed/stac/resourcesat-2a-awifs-boa-collection.json")
 eos06_coll = load_json("data/seed/stac/eos-06-ocm-lac-ndvi-8day-360m-collection.json")
 irs1c_coll = load_json("data/seed/stac/irs-1c-liss3-archive-collection.json")
 cartosat_coll = load_json("data/seed/stac/cartosat-3-gated-collection.json")
@@ -155,6 +164,21 @@ if item:
     check(a_eo == BANDS, "item analytic eo:bands order")
     a_rb = assets.get("analytic", {}).get("raster:bands", [])
     check(len(a_rb) == 4 and all(b.get("offset") == OFFSET for b in a_rb), "item analytic raster:bands scale/offset")
+
+# --------------------------------------------------------------------------
+section("ResourceSat AWiFS Phase 5 collection contract")
+if awifs_coll:
+    check(awifs_coll.get("id") == AWIFS_SOURCE_ID, f"AWiFS collection id == {AWIFS_SOURCE_ID}")
+    check(awifs_coll.get("akasha:source_kind") == "optical", "AWiFS source kind == optical")
+    check(awifs_coll.get("akasha:analysis_level") == "regional", "AWiFS analysis level == regional")
+    check(awifs_coll.get("akasha:availability_status") == "gated", "AWiFS remains gated before validation")
+    check(awifs_coll.get("akasha:supported_indices") == SUPPORTED_INDICES, "AWiFS supported indices mirror ResourceSat-safe optical indices")
+    check(awifs_coll.get("akasha:display_modes") == ["FCC"], "AWiFS display mode == FCC")
+    check("AWiFS" in str(awifs_coll.get("akasha:mask_method", "")), "AWiFS mask method is source-specific")
+    check(
+        "LISS-3 BOA sample" not in str(awifs_coll.get("akasha:mask_method", "")),
+        "AWiFS mask method does not claim LISS-3 sample validation",
+    )
 
 # --------------------------------------------------------------------------
 section("EOS-06 context collection contract")
@@ -318,10 +342,14 @@ sync_service = systemd_dir / "akasha-bhoonidhi-sync.service"
 sync_timer = systemd_dir / "akasha-bhoonidhi-sync.timer"
 sync_script = systemd_dir / "akasha-bhoonidhi-sync.sh"
 sync_env = systemd_dir / "akasha-bhoonidhi-sync.env.example"
+sync_installer = systemd_dir / "install-akasha-bhoonidhi-sync.sh"
+staging_validator = REPO / "scripts/validate_selfhosted_staging_bhoonidhi.py"
 check(sync_service.is_file(), "self-hosted systemd Bhoonidhi sync service exists")
 check(sync_timer.is_file(), "self-hosted systemd Bhoonidhi sync timer exists")
 check(sync_script.is_file(), "self-hosted Bhoonidhi sync wrapper exists")
 check(sync_env.is_file(), "self-hosted Bhoonidhi sync env template exists")
+check(sync_installer.is_file(), "self-hosted Bhoonidhi sync installer exists")
+check(staging_validator.is_file(), "self-hosted staging Bhoonidhi validator exists")
 if sync_service.is_file():
     service_raw = sync_service.read_text()
     check("flock -n /srv/akasha/ingestion/bhoonidhi-sync.systemd.lock" in service_raw, "systemd sync uses host non-overlap lock")
@@ -334,6 +362,86 @@ if sync_script.is_file():
     check("bhoonidhi-sync" in script_raw and "--window-days" in script_raw, "sync wrapper runs rolling-window bhoonidhi-sync")
     check("--backfill-days" in script_raw and "AKASHA_SYNC_BACKFILL_DAYS" in script_raw, "sync wrapper supports spread-out launch backfill")
     check("--raw-root" in script_raw and "--ledger-path" in script_raw, "sync wrapper passes /srv raw and ledger paths")
+    check("--pull" in script_raw and "AKASHA_SYNC_PULL_POLICY" in script_raw, "sync wrapper avoids private registry pulls by default")
+if sync_installer.is_file():
+    installer_raw = sync_installer.read_text()
+    check("install_with_mode 0755" in installer_raw and "akasha-bhoonidhi-sync.sh" in installer_raw, "sync installer installs wrapper")
+    check("systemctl daemon-reload" in installer_raw, "sync installer reloads systemd")
+    check("AKASHA_SYNC_DRY_RUN=true" in installer_raw, "sync installer documents dry-run first run")
+if staging_validator.is_file():
+    validator_raw = staging_validator.read_text()
+    check("docker compose" in validator_raw and "worker.py verify-cogs" in validator_raw, "staging validator runs worker COG checks")
+    check("bhoonidhi-search" in validator_raw and "lookback-days 45" in validator_raw, "staging validator checks current Bhoonidhi window")
+    check("org.opencontainers.image.revision" in validator_raw, "staging validator checks running image revision")
+    check("stop_on_failure" in validator_raw and "--continue-after-failure" in validator_raw, "staging validator fails fast on image mismatch")
+    check("smoke-test.py" in validator_raw and "--public-origin" in validator_raw, "staging validator can run public gateway smoke")
+
+deploy_staging = (REPO / ".github/workflows/deploy-staging.yml").read_text()
+deploy_production = (REPO / ".github/workflows/deploy-production.yml").read_text()
+for workflow_name, workflow_raw in [
+    ("staging", deploy_staging),
+    ("production", deploy_production),
+]:
+    check("docker/login-action@v3" in workflow_raw, f"{workflow_name} deploy logs into GHCR before image verification")
+    check("docker manifest inspect" in workflow_raw, f"{workflow_name} deploy verifies immutable image tags before Coolify patch")
+    for image in ["akasha-web", "akasha-api", "akasha-ingestion-worker", "akasha-ingestion-sar"]:
+        check(image in workflow_raw, f"{workflow_name} deploy verifies {image} image tag")
+
+api_env = (REPO / "apps/api/.env.example").read_text()
+selfhosted_env = (REPO / "infra/selfhosted/env.example").read_text()
+docker_compose = (REPO / "infra/docker/docker-compose.yml").read_text()
+coolify_compose = (REPO / "infra/selfhosted/coolify-compose.yml").read_text()
+for name, raw in [
+    ("api env", api_env),
+    ("self-hosted env", selfhosted_env),
+    ("docker compose", docker_compose),
+    ("coolify compose", coolify_compose),
+]:
+    check("DEFAULT_AOI_ID=bangalore" not in raw, f"{name} does not default to legacy bangalore AOI id")
+    check(
+        "bangalore-60km-aoi.geojson" in raw,
+        f"{name} uses bangalore-60km AOI config path",
+    )
+
+# --------------------------------------------------------------------------
+section("Production documentation defaults")
+readme_raw = (REPO / "README.md").read_text(encoding="utf-8")
+engineering_raw = (REPO / "docs/engineering-dos-donts.md").read_text(encoding="utf-8")
+emergent_raw = (REPO / "docs/emergent-context.md").read_text(encoding="utf-8")
+data_rules_raw = (REPO / "docs/data-ingestion-and-satellite-rules.md").read_text(encoding="utf-8")
+check(
+    "ResourceSat LISS-3 FCC composites" in readme_raw,
+    "README describes ResourceSat FCC as the production browsing default",
+)
+check(
+    "RGB display tiles" not in readme_raw,
+    "README does not describe TiTiler as RGB-only",
+)
+check(
+    "TiTiler serves display tiles only" in engineering_raw,
+    "engineering guardrails describe source-neutral display tiles",
+)
+check(
+    "TiTiler serves RGB display tiles only" not in engineering_raw,
+    "engineering guardrails do not retain RGB-only TiTiler wording",
+)
+check(
+    "Cloud/SCL-masked" not in emergent_raw,
+    "emergent handoff avoids active SCL-only statistics wording",
+)
+check(
+    "s3://akasha-cogs/sentinel-2-l2a/{date}" not in emergent_raw,
+    "emergent runtime gates do not point operators at Sentinel production keys",
+)
+check(
+    "resourcesat-2a-liss3-boa/composite/{aoiId}/{date}/analytic.tif|mask.tif"
+    in emergent_raw,
+    "emergent runtime gates point at ResourceSat composite keys",
+)
+check(
+    "AKASHA_INCLUDE_LEGACY_SENTINEL_SOURCES=true" in data_rules_raw,
+    "data rules mark Sentinel support as explicit opt-in legacy",
+)
 
 # --------------------------------------------------------------------------
 section("Secret hygiene (ingestion .env.example)")

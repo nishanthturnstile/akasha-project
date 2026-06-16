@@ -59,13 +59,13 @@ class FakeOpener:
         return response
 
 
-def http_error(code: int) -> urllib.error.HTTPError:
+def http_error(code: int, body: bytes = b'{"Description":"retry"}') -> urllib.error.HTTPError:
     return urllib.error.HTTPError(
         url="https://bhoonidhi-api.nrsc.gov.in/data/search",
         code=code,
         msg="error",
         hdrs={},
-        fp=io.BytesIO(b'{"Description":"retry"}'),
+        fp=io.BytesIO(body),
     )
 
 
@@ -172,6 +172,45 @@ def test_client_reuses_token_and_retries_search_429():
     assert sleeps == [10.0]
     assert len([req for req in opener.requests if req.full_url.endswith("/auth/token")]) == 1
     assert opener.requests[-1].headers["Authorization"] == "Bearer token-a"
+
+
+def test_client_treats_search_no_results_404_as_empty():
+    opener = FakeOpener(
+        [
+            json_response(
+                {
+                    "access_token": "token-a",
+                    "refresh_token": "refresh-a",
+                    "expires_in": 1200,
+                }
+            ),
+            http_error(
+                404,
+                json.dumps(
+                    {
+                        "ErrorCode": "404",
+                        "Description": "NO RESULTS FOUND",
+                        "Action": "No results found. Please modify the inputs and try again.",
+                    }
+                ).encode("utf-8"),
+            ),
+        ]
+    )
+    client = bhoonidhi.BhoonidhiClient(
+        user_id="user",
+        password="pw",
+        opener=opener,
+        now=lambda: 1000.0,
+    )
+
+    items = client.search(
+        collection=bhoonidhi.RESOURCESAT_LISS3_BHOONIDHI_COLLECTION,
+        datetime_range="2026-05-03T00:00:00Z/2026-06-16T23:59:59Z",
+        intersects={"type": "Polygon", "coordinates": []},
+    )
+
+    assert items == []
+    assert len(opener.requests) == 2
 
 
 def test_client_reauthenticates_and_retries_search_401():
@@ -448,6 +487,27 @@ def test_load_aoi_selects_from_directory(tmp_path):
     assert aoi["bbox"] == [75.9, 11.8, 77.0, 12.9]
 
 
+def test_load_aoi_preserves_top_level_composite_grid_crs_alias(tmp_path):
+    aoi_path = tmp_path / "mysore-60km.geojson"
+    aoi_path.write_text(
+        json.dumps(
+            {
+                "type": "Feature",
+                "bbox": [75.9, 11.8, 77.0, 12.9],
+                "composite_grid_crs": "EPSG:32644",
+                "properties": {"id": "mysore-60km", "name": "Mysore"},
+                "geometry": {"type": "Polygon", "coordinates": [[[1, 2]]]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    aoi = bhoonidhi.load_aoi(aoi_path, aoi_id="mysore-60km")
+
+    assert aoi["properties"]["composite_grid_crs"] == "EPSG:32644"
+    assert worker._aoi_composite_crs(aoi) == "EPSG:32644"
+
+
 def test_worker_bhoonidhi_search_writes_manifest(monkeypatch, tmp_path):
     aoi_path = tmp_path / "aoi.geojson"
     aoi_path.write_text(
@@ -635,6 +695,7 @@ def test_worker_build_composite_selects_aoi_from_feature_collection(monkeypatch,
     assert captured["aoi"]["bbox"] == [75.9, 11.8, 77.0, 12.9]
     assert captured["window"]["window_start"] == "2026-03-01"
     assert captured["window"]["window_end"] == "2026-03-31"
+    assert captured["window"]["aoi_id"] == "mysore-60km"
 
 
 def test_worker_verify_composite_infers_expected_crs_from_selected_aoi(monkeypatch, tmp_path):
@@ -1026,6 +1087,60 @@ def test_worker_bhoonidhi_sync_dry_run_writes_filtered_manifest(monkeypatch, tmp
     assert not (tmp_path / "ledger.sqlite.lock").exists()
 
 
+def test_worker_bhoonidhi_sync_empty_search_is_noop_without_composite_failure(
+    monkeypatch, tmp_path
+):
+    aoi_path = tmp_path / "aoi.geojson"
+    _write_test_aoi(aoi_path)
+    ledger_path = tmp_path / "ledger.sqlite"
+
+    class FakeClient:
+        def search(self, **_kwargs):
+            return []
+
+    monkeypatch.setattr(bhoonidhi, "BhoonidhiClient", lambda: FakeClient())
+    monkeypatch.setattr(config, "raster_source_root", lambda: tmp_path / "missing-rasters")
+
+    result = worker.main(
+        [
+            "bhoonidhi-sync",
+            "--source",
+            "resourcesat-2a-liss3-boa",
+            "--aoi-path",
+            str(aoi_path),
+            "--datetime",
+            "2026-05-03T00:00:00Z/2026-06-16T23:59:59Z",
+            "--window-start",
+            "2026-05-03",
+            "--window-end",
+            "2026-06-16",
+            "--out-dir",
+            str(tmp_path / "work"),
+            "--ledger-path",
+            str(ledger_path),
+        ]
+    )
+
+    filtered = json.loads(
+        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.new.json").read_text()
+    )
+    assert result == 0
+    assert filtered["selection"]["selected_product_ids"] == []
+    conn = sqlite3.connect(ledger_path)
+    try:
+        assert conn.execute("select count(*) from ingestion_ledger").fetchone() == (1,)
+        row = conn.execute(
+            "select product_id, status, error from ingestion_ledger"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row == (
+        "sync:bangalore-60km:2026-05-03T00:00:00Z/2026-06-16T23:59:59Z",
+        "searched",
+        None,
+    )
+
+
 def test_worker_bhoonidhi_sync_rotates_backfill_window(monkeypatch, tmp_path):
     aoi_path = tmp_path / "aoi.geojson"
     _write_test_aoi(aoi_path)
@@ -1369,3 +1484,91 @@ def test_worker_bhoonidhi_sync_records_stac_registration_failure(monkeypatch, tm
     assert status == "failed"
     assert "STAC registration failed" in error
     assert "pgSTAC load failed" in error
+
+
+def test_worker_bhoonidhi_sync_deletes_raw_downloads_after_success(monkeypatch, tmp_path):
+    aoi_path = tmp_path / "aoi.geojson"
+    _write_test_aoi(aoi_path)
+    ledger_path = tmp_path / "ledger.sqlite"
+    scene_manifest = tmp_path / "prepared" / "prepare_manifest.json"
+    scene_manifest.parent.mkdir(parents=True)
+    scene_manifest.write_text("{}", encoding="utf-8")
+    composite_manifest = tmp_path / "composite" / "2026-03-19" / "prepare_manifest.json"
+    composite_manifest.parent.mkdir(parents=True)
+    composite_manifest.write_text("{}", encoding="utf-8")
+    raw_root = tmp_path / "raw"
+    downloaded_path = raw_root / "resourcesat-2a-liss3-boa" / "RS_SUCCESS.zip"
+
+    class FakeClient:
+        def search(self, **_kwargs):
+            return [
+                {
+                    "id": "RS_SUCCESS",
+                    "bbox": [77.3, 12.3, 77.9, 12.9],
+                    "properties": {"Online": "Y", "datetime": "2026-03-19T00:00:00Z"},
+                }
+            ]
+
+        def download_product(self, *, product_id, collection, destination):
+            assert product_id == "RS_SUCCESS"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"raw-product")
+            return {"status": "downloaded", "path": destination.as_posix(), "bytes": 11}
+
+    def fake_prepare(_args, _manifest_path):
+        scene_manifest.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(bhoonidhi, "BhoonidhiClient", lambda: FakeClient())
+    monkeypatch.setattr(worker, "_run_prepare_script", fake_prepare)
+    monkeypatch.setattr(config, "prepared_manifest_files", lambda source_id=None: [scene_manifest])
+    monkeypatch.setattr(
+        composite,
+        "scene_manifest_paths_for_window",
+        lambda *args, **kwargs: [scene_manifest],
+    )
+    monkeypatch.setattr(composite, "require_raster_deps", lambda: object())
+    monkeypatch.setattr(composite, "default_resolution", lambda source_id: 24)
+    monkeypatch.setattr(
+        composite,
+        "build_resource_sat_composite",
+        lambda **_kwargs: SimpleNamespace(manifest=composite_manifest),
+    )
+    monkeypatch.setattr(
+        composite,
+        "verify_composite_manifest",
+        lambda **_kwargs: SimpleNamespace(ok=True, detail="composite ok"),
+    )
+    monkeypatch.setattr(storage, "ensure_bucket", lambda: "bucket exists")
+    monkeypatch.setattr(storage, "seed_manifest_cogs", lambda *_args, **_kwargs: ["uploaded"])
+    monkeypatch.setattr(catalog, "load_manifest_items", lambda *_args, **_kwargs: "loaded")
+
+    result = worker.main(
+        [
+            "bhoonidhi-sync",
+            "--source",
+            "resourcesat-2a-liss3-boa",
+            "--aoi-path",
+            str(aoi_path),
+            "--datetime",
+            "2026-03-01T00:00:00Z/2026-03-31T23:59:59Z",
+            "--window-start",
+            "2026-03-01",
+            "--window-end",
+            "2026-03-31",
+            "--raw-root",
+            str(raw_root),
+            "--out-dir",
+            str(tmp_path / "work"),
+            "--ledger-path",
+            str(ledger_path),
+        ]
+    )
+
+    status = sqlite_row(
+        ledger_path,
+        "select status from ingestion_ledger "
+        "where product_id = 'composite:bangalore-60km:2026-03-19'",
+    )
+    assert result == 0
+    assert status == ("composited",)
+    assert not downloaded_path.exists()

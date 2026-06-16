@@ -369,10 +369,9 @@ export default function MapPage() {
   // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
   const nearestPassNote = useMemo<string | null>(() => {
     if (selectedSource?.kind !== 'sar') return null;
-    if (effectiveSourceId !== 'sentinel-1-grd') return null;
-    if (!selectedDate || selectedDate === '2026-04-27') return null;
+    if (!selectedDate) return null;
     return `Nearest radar pass: ${selectedDate}.`;
-  }, [selectedSource?.kind, effectiveSourceId, selectedDate]);
+  }, [selectedSource?.kind, selectedDate]);
 
   const requestMapTool = (owner: MapToolOwner): boolean => {
     setActiveMapTool(owner);

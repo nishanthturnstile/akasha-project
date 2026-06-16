@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-compose_file="${AKASHA_COMPOSE_FILE:-/srv/akasha/coolify-compose.yml}"
+default_compose_file="/srv/akasha/coolify-compose.yml"
+if [[ -n "${AKASHA_COMPOSE_FILE:-}" ]]; then
+  compose_file="${AKASHA_COMPOSE_FILE}"
+elif [[ -f "${default_compose_file}" ]]; then
+  compose_file="${default_compose_file}"
+else
+  compose_file="$(find /data/coolify/services -mindepth 2 -maxdepth 2 -name docker-compose.yml -print -quit 2>/dev/null || true)"
+fi
+if [[ -z "${compose_file}" || ! -f "${compose_file}" ]]; then
+  echo "Akasha Bhoonidhi sync: compose file not found; set AKASHA_COMPOSE_FILE." >&2
+  exit 1
+fi
+compose_dir="$(dirname "${compose_file}")"
 source_id="${AKASHA_SYNC_SOURCE:-resourcesat-2a-liss3-boa}"
 aoi_id="${AKASHA_SYNC_AOI:-bangalore-60km}"
 window_days="${AKASHA_SYNC_WINDOW_DAYS:-45}"
@@ -9,6 +21,7 @@ window_end="${AKASHA_SYNC_WINDOW_END:-$(date -u +%F)}"
 window_offset=$((window_days - 1))
 window_start="${AKASHA_SYNC_WINDOW_START:-$(date -u -d "${window_end} -${window_offset} days" +%F)}"
 backfill_days="${AKASHA_SYNC_BACKFILL_DAYS:-0}"
+pull_policy="${AKASHA_SYNC_PULL_POLICY:-never}"
 
 compose_args=()
 if [[ -n "${AKASHA_COMPOSE_PROJECT:-}" ]]; then
@@ -63,7 +76,11 @@ fi
 if [[ "${AKASHA_SYNC_OVERWRITE:-false}" == "true" ]]; then
   sync_args+=(--overwrite)
 fi
+if [[ "${AKASHA_SYNC_DRY_RUN:-false}" == "true" ]]; then
+  sync_args+=(--dry-run)
+fi
 
 echo "Akasha Bhoonidhi sync: source=${source_id} aoi=${aoi_id} backfill_days=${backfill_days} window=${window_start}..${window_end}"
-exec docker compose "${compose_args[@]}" -f "${compose_file}" run --rm ingestion-worker \
+cd "${compose_dir}"
+exec docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker \
   python worker.py "${sync_args[@]}"

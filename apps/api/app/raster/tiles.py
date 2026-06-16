@@ -71,6 +71,7 @@ def default_sar_vv_rescale() -> str:
 def build_sar_vv_grayscale_tile_url(
     *,
     backscatter_href: str,
+    vv_position: int = 1,
     z: int,
     x: int,
     y: int,
@@ -84,7 +85,7 @@ def build_sar_vv_grayscale_tile_url(
     path = f"/cog/tiles/{TILE_MATRIX_SET}/{z}/{x}/{y}.{fmt}"
     params: list[tuple[str, str]] = [
         ("url", backscatter_href),
-        ("bidx", "1"),
+        ("bidx", str(vv_position)),
         ("rescale", rescale),
         ("colormap_name", "gray"),
     ]

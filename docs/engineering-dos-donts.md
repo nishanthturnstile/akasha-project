@@ -8,7 +8,7 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 
 ### Do
 
-- Do show true-colour satellite imagery by default; indices are requested after plot selection/drawing.
+- Do show the source-native satellite display by default (ResourceSat FCC in production); indices are requested after plot selection/drawing.
 - Do keep source/date selection visible and show AOI cloud/usable-pixel percentages.
 - Do report valid-pixel and cloud-masked percentages with every index result.
 - Do provide clear empty/error messages when no usable optical image exists.
@@ -46,7 +46,7 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 - Do enforce max polygon area, max vertices, request timeouts, rate limits, and useful error responses before raster work.
 - Do keep index formula mapping centralized in the BFF using `NDVI`, `NDRE`, `NDMI`, and `NDWI_GREEN_NIR`.
 - Do log index request duration, source/date/index type, and failure reason.
-- Do compute cloud-masked index statistics in the BFF using rasterio/rio-tiler; TiTiler serves RGB display tiles only.
+- Do compute cloud-masked index statistics in the BFF using rasterio/rio-tiler; TiTiler serves display tiles only.
 
 ### Don't
 

@@ -67,10 +67,15 @@ python worker.py verify-composite \
 `bhoonidhi-sync` records download, conversion, composite, storage upload, and
 STAC registration failures in `BHOONIDHI_LEDGER_PATH`. The BFF monitoring
 endpoint `/api/monitoring/imagery-sources` reads that ledger and reports latest
-successful composite date, recent failure kinds, MinIO usage, and stale catalog
-dates. Storage usage includes `zeroByteObjectCount` totals by bucket and source
-prefix; any non-zero ResourceSat count usually means placeholder or incomplete
-COG objects still need replacement before live tile/stat validation.
+successful search heartbeat, successful composite date, recent failure kinds,
+MinIO usage, and stale catalog/composite dates. A stale latest ResourceSat date
+is treated as an operator warning only when the latest Bhoonidhi search
+heartbeat is fresh and no newer upstream Online=Y product is available for the
+AOI; stale searches, unresolved failures, low coverage/usable pixels, storage
+errors, and tile-unavailable dates remain blockers. Storage usage includes
+`zeroByteObjectCount` totals by bucket and source prefix; any non-zero
+ResourceSat count usually means placeholder or incomplete COG objects still
+need replacement before live tile/stat validation.
 
 ## Manual visual context imports
 

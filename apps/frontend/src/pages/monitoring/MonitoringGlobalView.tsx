@@ -41,10 +41,10 @@ function healthTone(source: ImagerySourceMonitoringSource): string {
   if (source.availabilityStatus === 'gated') {
     return 'border-zinc-500/40 bg-zinc-500/10 text-zinc-100';
   }
-  if (source.lastError || source.isStale || source.isSuccessfulCompositeStale) {
+  if (source.status === 'error') {
     return 'border-red-500/50 bg-red-500/10 text-red-100';
   }
-  if (source.warnings.length || (source.tileUnavailableReasons?.length ?? 0) > 0) {
+  if (source.status === 'warning') {
     return 'border-amber-500/50 bg-amber-500/10 text-amber-100';
   }
   return 'border-emerald-500/50 bg-emerald-500/10 text-emerald-100';
@@ -52,6 +52,9 @@ function healthTone(source: ImagerySourceMonitoringSource): string {
 
 function healthLabel(source: ImagerySourceMonitoringSource): string {
   if (source.availabilityStatus === 'gated') return 'gated';
+  if (source.status === 'error') return 'error';
+  if (source.isUpstreamDataStale) return 'upstream stale';
+  if (source.status === 'warning') return 'attention';
   if (source.lastError) return 'error';
   if (source.isSuccessfulCompositeStale) return 'stale composite';
   if (source.isStale) return 'stale catalog';
@@ -102,11 +105,16 @@ function MetricCard({
 }
 
 function SourceRow({ source }: { source: ImagerySourceMonitoringSource }) {
-  const reasons = [
+  const reasonValues = [
+    ...source.statusReasons,
     ...source.warnings,
     ...(source.tileUnavailableReasons ?? []),
+    source.hasUnresolvedIngestionFailure
+      ? source.lastIngestionFailure?.error ?? 'unresolved ingestion failure'
+      : '',
     source.lastError ?? '',
-  ].filter(Boolean);
+  ].filter((reason): reason is string => Boolean(reason));
+  const reasons = Array.from(new Set(reasonValues));
   return (
     <tr className="border-t border-border/60 align-top">
       <td className="py-3 pr-4">
@@ -126,6 +134,15 @@ function SourceRow({ source }: { source: ImagerySourceMonitoringSource }) {
         <div>{ formatDate(source.latestSuccessfulCompositeDate) }</div>
         <div className="text-xs text-muted-foreground">
           { source.latestSuccessfulCompositeAoiId ?? 'no AOI success' }
+        </div>
+      </td>
+      <td className="py-3 pr-4 text-sm">
+        <div>{ formatDate(source.latestSuccessfulSearchUpdatedAt) }</div>
+        <div className="text-xs text-muted-foreground">
+          { source.daysSinceLatestSuccessfulSearch === null
+            || source.daysSinceLatestSuccessfulSearch === undefined
+            ? source.latestSuccessfulSearchAoiId ?? 'no search heartbeat'
+            : `${source.daysSinceLatestSuccessfulSearch} day(s) ago` }
         </div>
       </td>
       <td className="py-3 pr-4 text-sm">
@@ -177,7 +194,7 @@ export default function MonitoringGlobalView() {
   const data = monitoringQ.data;
   const sources = data?.sources ?? [];
   const activeSources = sources.filter((source) => source.availabilityStatus !== 'gated');
-  const attentionSources = sources.filter((source) => healthLabel(source) !== 'ok');
+  const attentionSources = activeSources.filter((source) => source.status !== 'ok');
   const latestCompositeDates = activeSources
     .map((source) => source.latestSuccessfulCompositeDate)
     .filter(Boolean)
@@ -263,6 +280,7 @@ export default function MonitoringGlobalView() {
                   <th className="py-2 pr-4">State</th>
                   <th className="py-2 pr-4">Latest catalog</th>
                   <th className="py-2 pr-4">Composite success</th>
+                  <th className="py-2 pr-4">Search heartbeat</th>
                   <th className="py-2 pr-4">Coverage</th>
                   <th className="py-2 pr-4">Tiles</th>
                   <th className="py-2">Reason</th>

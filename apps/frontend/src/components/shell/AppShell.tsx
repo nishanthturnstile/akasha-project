@@ -6,15 +6,19 @@ import {
   ChevronsLeft,
   ChevronsRight,
   LogOut,
+  Plus,
   Satellite,
   UserCircle2,
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import { cn } from '@/lib/utils';
 import { queryClient } from '@/lib/queryClient';
-import { useAccountMe, useLogout } from '@/lib/queries';
+import { useAccountMe, useLogout, useSeasons, useDeleteSeason, useUpdateSeason, useFields } from '@/lib/queries';
 import { MAIN_MONITORING_ROUTE, productNavigation } from '@/routes/productNavigation';
 
 function testIdFor(label: string): string {
@@ -62,6 +66,18 @@ export function AppShell() {
     () => new Set(activeGroupLabel ? [activeGroupLabel] : []),
   );
   const [railCollapsed, setRailCollapsed] = useState<boolean>(() => loadRailCollapsed());
+  const [createSeasonOpen, setCreateSeasonOpen] = useState(false);
+  const [seasonDropdownOpen, setSeasonDropdownOpen] = useState(false);
+  const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
+  const [editingSeasonId, setEditingSeasonId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+
+  const seasonsQ = useSeasons();
+  const deleteSeason = useDeleteSeason();
+  const updateSeason = useUpdateSeason();
+  const fieldsQ = useFields();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -109,6 +125,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={ 200 }>
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } />
       <div
         className="grid h-screen w-screen grid-cols-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_var(--rail-w)] lg:grid-rows-1"
         style={ { '--rail-w': railWidth } as CSSProperties }
@@ -200,37 +217,209 @@ export function AppShell() {
             </Tooltip>
           </div>
 
-          {/* Season selector placeholder for the product rail. */ }
-          <div className={ cn('px-3 py-2', railCollapsed && 'px-2') }>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  disabled
-                  data-testid="season-selector"
-                  aria-label="Season selector (coming soon)"
+          {/* Season selector dropdown for the product rail. */ }
+          <div className={ cn('relative px-3 py-2', railCollapsed && 'px-2') }>
+            <button
+              type="button"
+              data-testid="season-selector"
+              aria-label="Season selector"
+              onClick={ () => setSeasonDropdownOpen((open) => !open) }
+              className={ cn(
+                'flex w-full items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-left text-[12px] transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                seasonDropdownOpen && 'border-primary bg-primary/10 text-foreground',
+                !seasonDropdownOpen && 'text-muted-foreground hover:bg-accent/40',
+                railCollapsed && 'justify-center px-0',
+              ) }
+            >
+              <CalendarRange className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+              { !railCollapsed && (
+                <span className="min-w-0 flex-1 truncate">
+                  Season · <span className="text-foreground/70">All seasons</span>
+                </span>
+              ) }
+              { !railCollapsed && (
+                <ChevronDown
                   className={ cn(
-                    'flex w-full items-center gap-2 rounded-md border border-dashed border-border/60 px-2 py-2 text-left text-[12px] text-muted-foreground transition-colors duration-fast hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-70',
-                    railCollapsed && 'justify-center px-0',
+                    'size-3.5 transition-transform duration-fast',
+                    seasonDropdownOpen && 'rotate-180',
                   ) }
-                >
-                  <CalendarRange className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
-                  { !railCollapsed && (
-                    <span className="min-w-0 flex-1 truncate">
-                      Season · <span className="text-foreground/70">All seasons</span>
-                    </span>
-                  ) }
-                  { !railCollapsed && (
-                    <ChevronDown
-                      className="size-3.5 text-muted-foreground"
-                      strokeWidth={ 1.75 }
-                      aria-hidden="true"
-                    />
-                  ) }
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="left">Season filter (coming soon)</TooltipContent>
-            </Tooltip>
+                  strokeWidth={ 1.75 }
+                  aria-hidden="true"
+                />
+              ) }
+            </button>
+
+            { seasonDropdownOpen && !railCollapsed && (
+              <div className="absolute left-0 right-0 z-40 mt-2 w-full rounded-xl border border-border bg-background shadow-e2">
+                <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Active season now</p>
+                    <p className="text-xs text-muted-foreground">Create or switch seasons from the selector.</p>
+                  </div>
+                  <Button variant="primary" size="sm" className="gap-2" onClick={ () => setCreateSeasonOpen(true) }>
+                    <Plus className="size-3" aria-hidden="true" />
+                    Create season
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+                  {(['active', 'planned', 'ended'] as const).map((tab) => (
+                    <button
+                      key={ tab }
+                      type="button"
+                      onClick={ () => setSeasonTab(tab) }
+                      className={ cn(
+                        'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast',
+                        seasonTab === tab
+                          ? 'bg-primary text-primary-foreground'
+                          : 'border border-border bg-card text-foreground hover:bg-accent/40',
+                      ) }
+                    >
+                      { tab === 'active' ? 'Active' : tab === 'planned' ? 'Planned' : 'Ended' }
+                    </button>
+                  )) }
+                </div>
+
+                <div className="max-h-104 overflow-y-auto px-4 py-4 pr-3 scroll-smooth">
+                  <div className="space-y-3 pr-1 pb-3">
+                    { seasonsQ.isLoading ? (
+                      <p className="text-sm text-muted-foreground">Loading seasons…</p>
+                    ) : seasonsQ.error ? (
+                      <p className="text-sm text-destructive">Failed to load seasons</p>
+                    ) : (seasonsQ.data ?? []).length === 0 ? (
+                      <Card className="border-border/60 bg-card/90 shadow-sm">
+                        <CardContent>
+                          <p className="text-sm font-medium text-foreground">
+                            There are no { seasonTab === 'planned' ? 'planned' : seasonTab === 'ended' ? 'ended' : 'active' } seasons.
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Create a new season to manage your crop schedule.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="space-y-3">
+                        {(seasonsQ.data ?? []).map((season) => {
+                          const seasonFields = (fieldsQ.data ?? []).filter((f) =>
+                            f.seasonIds?.includes(season.id),
+                          );
+                          const isEditing = editingSeasonId === season.id;
+                          return (
+                            <Card key={season.id} className="border-border/60 bg-card/90 shadow-sm">
+                              <CardHeader>
+                                {isEditing ? (
+                                  <div className="space-y-2">
+                                    <input
+                                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+                                      value={editName}
+                                      onChange={(e) => setEditName(e.target.value)}
+                                    />
+                                    <div className="flex gap-2">
+                                      <input
+                                        type="date"
+                                        className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                                        value={editStartDate}
+                                        onChange={(e) => setEditStartDate(e.target.value)}
+                                      />
+                                      <input
+                                        type="date"
+                                        className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                                        value={editEndDate}
+                                        onChange={(e) => setEditEndDate(e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <CardTitle>{season.name}</CardTitle>
+                                    <p className="text-sm text-muted-foreground">
+                                      {season.startDate ?? '—'} → {season.endDate ?? '—'}
+                                    </p>
+                                  </>
+                                )}
+                              </CardHeader>
+                              <CardContent className="pt-0">
+                                <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
+                                  <span>Fields:</span>
+                                  <span className="text-foreground font-semibold">
+                                    {seasonFields.length}
+                                  </span>
+                                </div>
+                                {seasonFields.length > 0 && (
+                                  <ul className="mt-1 space-y-0.5">
+                                    {seasonFields.map((f) => (
+                                      <li key={f.id} className="text-xs text-muted-foreground">
+                                        · {f.name}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {isEditing ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={async () => {
+                                          await updateSeason.mutateAsync({
+                                            seasonId: season.id,
+                                            payload: {
+                                              name: editName,
+                                              startDate: editStartDate || null,
+                                              endDate: editEndDate || null,
+                                            },
+                                          });
+                                          setEditingSeasonId(null);
+                                        }}
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={() => setEditingSeasonId(null)}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={() => {
+                                          setEditingSeasonId(season.id);
+                                          setEditName(season.name);
+                                          setEditStartDate(season.startDate ?? '');
+                                          setEditEndDate(season.endDate ?? '');
+                                        }}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={async () => {
+                                          if (window.confirm('Delete this season?')) {
+                                            await deleteSeason.mutateAsync(season.id);
+                                          }
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) }
           </div>
 
           <Separator />

@@ -844,13 +844,36 @@ Current repo-side progress (2026-06-16):
   the latest successful search/composite heartbeat, so historical failures remain visible without
   keeping a recovered source in error. The authenticated smoke clean gate fails on unresolved
   ingestion failures.
+- Monitoring now distinguishes a broken refresh from stale upstream data. If the latest
+  Bhoonidhi search heartbeat is fresh, storage/composite coverage are healthy, and Bhoonidhi has
+  no newer Online=Y ResourceSat product for the AOI, the source reports `UPSTREAM_DATA_STALE`
+  together with the stale catalog/composite age as a warning rather than treating the deployment
+  as a failed refresh. The authenticated smoke clean gate allows only this explicit
+  fresh-search/upstream-stale warning class; stale searches, missing searches, low coverage,
+  unresolved ingestion failures, storage errors, and tile-unavailable dates remain blockers.
+- The operator monitoring UI now consumes the backend `status`, `statusReasons`,
+  `isUpstreamDataStale`, latest successful search heartbeat, and ingestion-failure fields directly.
+  Fresh-search upstream data staleness is shown as a warning, while backend error states remain
+  red/error in the source table.
+- Bhoonidhi sync ledger recovery now treats `downloaded` as a resumable non-terminal state.
+  Products are skipped only after `prepared`, `ingested`, `composited`, or `skipped`, so an
+  interrupted run after raw download can retry conversion/composite on the next sync instead of
+  leaving raw ZIPs stranded.
 - Multi-AOI ingestion hardening now accepts AOI composite grid CRS metadata as
   `compositeGridCrs`, `composite_grid_crs`, or `akasha:composite_grid_crs` at either top level or
   under GeoJSON `properties`, and uses the selected AOI CRS consistently for composite build and
   verification.
+- If an AOI does not declare composite CRS metadata, the compositor now derives the default UTM CRS
+  from the selected AOI geometry instead of silently falling back to Bangalore's `EPSG:32643`.
+  Explicit AOI metadata still wins. This keeps future AOIs outside UTM zone 43N from being built
+  on the wrong fixed grid.
 - Composite scene-manifest selection is AOI-safe for future multi-AOI operation: AOI-neutral scene
   manifests remain reusable, but any prepared manifest that explicitly declares an `aoi_id` /
   `akasha:aoi_id` is excluded from a different selected AOI's composite build.
+- `bhoonidhi-sync` now scopes its scratch search/download manifests by AOI under
+  `<work-root>/<source>/<aoi>/`, avoiding manifest collisions when multiple AOIs are refreshed for
+  the same source. The self-hosted systemd wrapper also supports `AKASHA_SYNC_AOIS` as a
+  comma-separated list and runs AOIs sequentially with AOI-scoped worker locks by default.
 
 ## 10. Public API and UI Changes
 

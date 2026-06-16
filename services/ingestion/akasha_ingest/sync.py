@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-TERMINAL_PRODUCT_STATUSES = {"downloaded", "prepared", "ingested", "composited", "skipped"}
+TERMINAL_PRODUCT_STATUSES = {"prepared", "ingested", "composited", "skipped"}
 
 
 @dataclass(frozen=True)

@@ -79,7 +79,7 @@ export function MeasureTool({
             const [{ TerraDraw, TerraDrawLineStringMode, TerraDrawPolygonMode }, { TerraDrawMapLibreGLAdapter }] =
                 await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
             const draw = new TerraDraw({
-                adapter: new TerraDrawMapLibreGLAdapter({ map }),
+                adapter: new TerraDrawMapLibreGLAdapter({ map, prefixId: 'measure' }),
                 modes: [new TerraDrawLineStringMode(), new TerraDrawPolygonMode()],
             });
             draw.on('change', recompute);

@@ -113,7 +113,18 @@ def aoi_composite_grid_crs(aoi: dict[str, Any] | None, default: str = "EPSG:3264
             value = container.get(key)
             if value:
                 return str(value)
-    return default
+    try:
+        west, south, east, north = _aoi_wgs84_bbox(aoi)
+    except ValueError:
+        return default
+    return _utm_crs_for_lon_lat(lon=(west + east) / 2.0, lat=(south + north) / 2.0)
+
+
+def _utm_crs_for_lon_lat(*, lon: float, lat: float) -> str:
+    zone = int((lon + 180.0) // 6.0) + 1
+    zone = min(60, max(1, zone))
+    epsg_base = 32600 if lat >= 0 else 32700
+    return f"EPSG:{epsg_base + zone}"
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,11 @@ def test_sync_wrapper_uses_coolify_compose_autodetect_and_local_pull_policy():
     assert "AKASHA_SYNC_PULL_POLICY:-never" in script
     assert 'run --rm --pull "${pull_policy}" ingestion-worker' in script
     assert "AKASHA_SYNC_DRY_RUN" in script
+    assert "AKASHA_SYNC_AOIS" in script
+    assert "run_sync_for_aoi" in script
+    assert "bhoonidhi-sync.${aoi_id}.worker.lock" in script
     assert "AKASHA_SYNC_PULL_POLICY=never" in env
+    assert "AKASHA_SYNC_AOIS=bangalore-60km,mysore-60km" in env
     assert "AKASHA_COMPOSE_FILE=/srv/akasha/coolify-compose.yml" not in env
 
 

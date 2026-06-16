@@ -181,7 +181,12 @@ staging product endpoints normally require authentication. Add `--smoke-login`
 when `AKASHA_SMOKE_USERNAME` and `AKASHA_SMOKE_PASSWORD` are set locally; that
 makes the public smoke a required gate. Add `--require-public-smoke`,
 `--require-raster`, or `--require-monitoring-clean` only when that stricter gate
-is expected to pass.
+is expected to pass. `--require-monitoring-clean` automatically runs the smoke
+with `--login`; it fails storage errors, zero-byte COG objects, stale/missing
+refresh heartbeats, missing active field composites, low coverage/usable pixels,
+unresolved ingestion failures, and tile-unavailable dates. A stale ResourceSat
+catalog/composite date is allowed only when the Bhoonidhi search heartbeat is
+fresh and the source reports the explicit `UPSTREAM_DATA_STALE` warning class.
 
 6. If `AUTH_ALLOW_BOOTSTRAP=true`, create the first admin user through `/api/auth/bootstrap`, then set `AUTH_ALLOW_BOOTSTRAP=false` in Coolify and redeploy.
 7. Run unauthenticated smoke checks:

@@ -30,6 +30,7 @@ def monitoring_payload(
         "isStale": False,
         "isSuccessfulCompositeStale": False,
         "isSuccessfulSearchStale": False,
+        "isUpstreamDataStale": False,
         "latestSuccessfulCompositeDate": "2026-06-01",
         "latestSuccessfulSearchAoiId": "bangalore-60km",
         "latestSuccessfulSearchDatetimeRange": "2026-06-01T00:00:00Z/2026-06-15T23:59:59Z",
@@ -75,6 +76,7 @@ def test_monitoring_contract_requires_operator_status_fields():
     del payload["sources"][0]["status"]
     del payload["sources"][0]["statusReasons"]
     del payload["sources"][0]["latestSuccessfulSearchUpdatedAt"]
+    del payload["sources"][0]["isUpstreamDataStale"]
     del payload["sources"][0]["hasUnresolvedIngestionFailure"]
 
     errors = smoke_test._monitoring_contract_errors(payload)
@@ -84,7 +86,30 @@ def test_monitoring_contract_requires_operator_status_fields():
     assert "sources[0].status must be ok/warning/error" in errors
     assert "sources[0].statusReasons missing/list" in errors
     assert "sources[0].latestSuccessfulSearchUpdatedAt missing" in errors
+    assert "sources[0].isUpstreamDataStale missing" in errors
     assert "sources[0].hasUnresolvedIngestionFailure missing" in errors
+
+
+def test_monitoring_clean_gate_allows_fresh_search_with_stale_upstream_data():
+    smoke_test = load_smoke_test_module()
+    payload = monitoring_payload(
+        source_overrides={
+            "status": "warning",
+            "statusReasons": [
+                "LATEST_DATE_STALE",
+                "LATEST_SUCCESSFUL_COMPOSITE_STALE",
+                "UPSTREAM_DATA_STALE",
+            ],
+            "isStale": True,
+            "isSuccessfulCompositeStale": True,
+            "isSuccessfulSearchStale": False,
+            "isUpstreamDataStale": True,
+        }
+    )
+
+    errors = smoke_test._monitoring_cleanliness_errors(payload)
+
+    assert errors == []
 
 
 def test_monitoring_clean_gate_ignores_gated_sources_without_composites():
@@ -103,6 +128,29 @@ def test_monitoring_clean_gate_ignores_gated_sources_without_composites():
             "tileUnavailableReasons": ["Manual order workflow only"],
         }
     )
+
+    errors = smoke_test._monitoring_cleanliness_errors(payload)
+
+    assert errors == []
+
+
+def test_monitoring_clean_gate_allows_overall_warning_from_gated_sources():
+    smoke_test = load_smoke_test_module()
+    payload = monitoring_payload(
+        source_overrides={
+            "sourceId": "cartosat-3-gated",
+            "status": "warning",
+            "statusReasons": ["SOURCE_GATED"],
+            "kind": "context",
+            "analysisLevel": "context",
+            "availabilityStatus": "gated",
+            "latestSuccessfulCompositeDate": None,
+            "latestSuccessfulSearchUpdatedAt": None,
+            "warnings": ["SOURCE_GATED"],
+        }
+    )
+    payload["status"] = "warning"
+    payload["statusReasons"] = ["SOURCE_WARNING:cartosat-3-gated"]
 
     errors = smoke_test._monitoring_cleanliness_errors(payload)
 

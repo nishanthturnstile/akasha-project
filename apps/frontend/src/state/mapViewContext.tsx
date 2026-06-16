@@ -55,6 +55,12 @@ export interface MapViewState {
     legendStatic: boolean;
     /** Layer control bar collapsed (icon-only) state. */
     layerBarCollapsed: boolean;
+    /** Overlay UI visibility (all map chrome except zoom/compass/controls). */
+    overlaysVisible: boolean;
+    /** Header bar visibility (center title "Add Field"). */
+    headerVisible: boolean;
+    /** Bottom action bar visibility (Cancel / Save buttons). */
+    bottomBarVisible: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -77,6 +83,9 @@ export const initialMapViewState: MapViewState = {
     periodTo: null,
     legendStatic: false,
     layerBarCollapsed: false,
+    overlaysVisible: false,
+    headerVisible: true,
+    bottomBarVisible: true,
 };
 
 type MapViewAction =
@@ -98,7 +107,10 @@ type MapViewAction =
     | { type: 'SET_LEGEND_OPEN'; open: boolean }
     | { type: 'SET_PERIOD'; from: string | null; to: string | null }
     | { type: 'SET_LEGEND_STATIC'; staticMode: boolean }
-    | { type: 'SET_LAYER_BAR_COLLAPSED'; collapsed: boolean };
+    | { type: 'SET_LAYER_BAR_COLLAPSED'; collapsed: boolean }
+    | { type: 'SET_OVERLAYS_VISIBLE'; visible: boolean }
+    | { type: 'SET_HEADER_VISIBLE'; visible: boolean }
+    | { type: 'SET_BOTTOM_BAR_VISIBLE'; visible: boolean };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -159,6 +171,15 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_LAYER_BAR_COLLAPSED':
             if (action.collapsed === state.layerBarCollapsed) return state;
             return { ...state, layerBarCollapsed: action.collapsed };
+        case 'SET_OVERLAYS_VISIBLE':
+            if (action.visible === state.overlaysVisible) return state;
+            return { ...state, overlaysVisible: action.visible };
+        case 'SET_HEADER_VISIBLE':
+            if (action.visible === state.headerVisible) return state;
+            return { ...state, headerVisible: action.visible };
+        case 'SET_BOTTOM_BAR_VISIBLE':
+            if (action.visible === state.bottomBarVisible) return state;
+            return { ...state, bottomBarVisible: action.visible };
         default:
             return state;
     }
@@ -181,6 +202,9 @@ export interface MapViewContextValue extends MapViewState {
     setPeriod: (from: string | null, to: string | null) => void;
     setLegendStatic: (staticMode: boolean) => void;
     setLayerBarCollapsed: (collapsed: boolean) => void;
+    setOverlaysVisible: (visible: boolean) => void;
+    setHeaderVisible: (visible: boolean) => void;
+    setBottomBarVisible: (visible: boolean) => void;
 }
 
 const MapViewContext = createContext<MapViewContextValue | null>(null);
@@ -252,6 +276,12 @@ export function MapViewProvider({
                 dispatch({ type: 'SET_LEGEND_STATIC', staticMode }),
             setLayerBarCollapsed: (collapsed) =>
                 dispatch({ type: 'SET_LAYER_BAR_COLLAPSED', collapsed }),
+            setOverlaysVisible: (visible) =>
+                dispatch({ type: 'SET_OVERLAYS_VISIBLE', visible }),
+            setHeaderVisible: (visible) =>
+                dispatch({ type: 'SET_HEADER_VISIBLE', visible }),
+            setBottomBarVisible: (visible) =>
+                dispatch({ type: 'SET_BOTTOM_BAR_VISIBLE', visible }),
         }),
         [state],
     );

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type maplibregl from 'maplibre-gl';
-import type { Plot } from '@/types/api';
+import type { Plot, PlotGeometry } from '@/types/api';
 
 export const FIELD_BOUNDARY_SOURCE_ID = 'akasha-field-boundary-source';
 export const FIELD_BOUNDARY_FILL_LAYER_ID = 'akasha-field-boundary-fill-layer';
@@ -23,8 +23,8 @@ const FIELD_BOUNDARY_FILL_LAYER: maplibregl.LayerSpecification = {
   type: 'fill',
   source: FIELD_BOUNDARY_SOURCE_ID,
   paint: {
-    'fill-color': '#f8fafc',
-    'fill-opacity': 0.16,
+    'fill-color': '#3b82f6',
+    'fill-opacity': 0.22,
   },
 };
 
@@ -33,30 +33,42 @@ const FIELD_BOUNDARY_OUTLINE_LAYER: maplibregl.LayerSpecification = {
   type: 'line',
   source: FIELD_BOUNDARY_SOURCE_ID,
   paint: {
-    'line-color': '#ffffff',
+    'line-color': '#1d4ed8',
     'line-opacity': 0.96,
     'line-width': 4.5,
     'line-blur': 0.35,
   },
 };
 
-export function buildFieldBoundaryFeatureCollection(
-  plot: Plot,
+export function buildFieldBoundaryFeatureCollectionFromGeometry(
+  geometry: FieldBoundaryGeometry,
+  featureId: string,
+  name: string,
 ): FieldBoundaryFeatureCollection {
   return {
     type: 'FeatureCollection',
     features: [
       {
         type: 'Feature',
-        id: plot.id,
+        id: featureId,
         properties: {
-          name: plot.name,
-          plotId: plot.id,
+          name,
+          plotId: featureId,
         },
-        geometry: plot.geometry as FieldBoundaryGeometry,
+        geometry: geometry as FieldBoundaryGeometry,
       },
     ],
   };
+}
+
+export function buildFieldBoundaryFeatureCollection(
+  plot: Plot,
+): FieldBoundaryFeatureCollection {
+  return buildFieldBoundaryFeatureCollectionFromGeometry(
+    plot.geometry as FieldBoundaryGeometry,
+    plot.id,
+    plot.name,
+  );
 }
 
 function getFieldBoundarySource(map: maplibregl.Map): maplibregl.GeoJSONSource | null {
@@ -83,8 +95,22 @@ export function ensureFieldBoundaryOrder(map: maplibregl.Map): void {
   map.moveLayer(FIELD_BOUNDARY_OUTLINE_LAYER_ID);
 }
 
-export function upsertFieldBoundaryLayer(map: maplibregl.Map, plot: Plot): void {
-  const data = buildFieldBoundaryFeatureCollection(plot);
+export function upsertFieldBoundaryLayer(
+  map: maplibregl.Map,
+  plot: Plot | null,
+  geometry?: PlotGeometry | null,
+  featureId = 'draft-field',
+  name = 'Draft field',
+): void {
+  const activeGeometry = (geometry ?? plot?.geometry) as FieldBoundaryGeometry | undefined;
+  if (!activeGeometry) return;
+
+  const isDraft = Boolean(geometry);
+  const data = buildFieldBoundaryFeatureCollectionFromGeometry(
+    activeGeometry,
+    isDraft ? featureId : (plot?.id ?? 'field-boundary'),
+    isDraft ? name : (plot?.name ?? 'Field'),
+  );
   const source = getFieldBoundarySource(map);
 
   if (source) {
@@ -127,11 +153,20 @@ function safelyRemoveFieldBoundaryLayer(map: maplibregl.Map): void {
 }
 
 export interface FieldBoundaryLayerProps {
+  featureId?: string;
+  geometry?: PlotGeometry | null;
   map: maplibregl.Map | null;
+  name?: string;
   plot: Plot | null;
 }
 
-export function FieldBoundaryLayer({ map, plot }: FieldBoundaryLayerProps) {
+export function FieldBoundaryLayer({
+  featureId = 'draft-field',
+  geometry,
+  map,
+  name = 'Draft field',
+  plot,
+}: FieldBoundaryLayerProps) {
   useEffect(() => {
     if (!map) return undefined;
     return () => safelyRemoveFieldBoundaryLayer(map);
@@ -140,12 +175,12 @@ export function FieldBoundaryLayer({ map, plot }: FieldBoundaryLayerProps) {
   useEffect(() => {
     if (!map) return undefined;
 
-    if (!plot) {
+    if (!plot && !geometry) {
       removeFieldBoundaryLayer(map);
       return undefined;
     }
 
-    upsertFieldBoundaryLayer(map, plot);
+    upsertFieldBoundaryLayer(map, plot, geometry, featureId, name);
 
     const keepBoundaryOnTop = () => ensureFieldBoundaryOrder(map);
     map.on('styledata', keepBoundaryOnTop);
@@ -155,7 +190,7 @@ export function FieldBoundaryLayer({ map, plot }: FieldBoundaryLayerProps) {
       map.off('styledata', keepBoundaryOnTop);
       map.off('idle', keepBoundaryOnTop);
     };
-  }, [map, plot]);
+  }, [featureId, geometry, map, name, plot]);
 
   return null;
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import traceback
 from typing import Any
 
 import anyio
@@ -101,8 +102,10 @@ async def _run_blocking(func, *args, **kwargs):
         ) from exc
     except Exception as exc:
         logger.warning("fields backend unavailable: %s", type(exc).__name__)
+        logger.warning("fields backend unavailable: %s", traceback.format_exc())
         raise field_backend_unavailable(
-            "Field storage is not available in this environment."
+            "Field storage is not available in this environment.",
+            traceback=traceback.format_exe()
         ) from exc
 
 

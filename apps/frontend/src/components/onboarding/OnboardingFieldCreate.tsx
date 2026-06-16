@@ -7,6 +7,7 @@ import { FieldDrawController, type FieldDrawMode } from '@/components/fields/Fie
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { MapControls } from '@/components/map/MapControls';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
+import { polygonAreaMeters } from '@/lib/measure';
 import { useConfig, useCreateField } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 
@@ -109,9 +110,19 @@ export default function OnboardingFieldCreate() {
       return;
     }
     try {
+      const polygon = draftGeometry.type === 'Polygon' ? draftGeometry : null;
+      if (!polygon) {
+        setSaveError('Field must be a single polygon.');
+        return;
+      }
+      const areaMeters = polygonAreaMeters(polygon.coordinates[0]);
       const created = await createFieldMutation.mutateAsync({
         name: fieldName.trim() || 'Field',
-        geometry: draftGeometry,
+        geometry: {
+          type: 'Polygon',
+          coordinates: polygon.coordinates,
+        },
+        areaHa: areaMeters / 10000,
         seasonIds: [seasonId],
       });
       // Persist field ID in sessionStorage so Step2 can show it
@@ -154,7 +165,13 @@ export default function OnboardingFieldCreate() {
           onMapReady={setMap}
         />
 
-        <FieldBoundaryLayer map={map} plot={null} />
+        <FieldBoundaryLayer
+          map={map}
+          plot={null}
+          geometry={draftGeometry}
+          featureId="draft-field"
+          name="Draft field"
+        />
 
         <FieldDrawController
           activeTool={activeMapTool}

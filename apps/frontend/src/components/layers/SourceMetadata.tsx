@@ -5,7 +5,16 @@ import type { Source } from '@/types/api';
 export function SourceMetadata({ source }: { source: Source }) {
     const isSar = source.kind === 'sar';
     const Icon = isSar ? Radar : Satellite;
-    const kindLabel = isSar ? 'Radar' : 'Optical';
+    const level = source.analysisLevel;
+    const kindLabel = isSar
+        ? 'Radar'
+        : source.kind === 'context' || level === 'context'
+          ? 'Context'
+          : source.kind === 'archive' || level === 'archive'
+            ? 'Archive'
+            : level === 'regional'
+            ? 'Regional'
+            : 'Optical';
 
     return (
         <p
@@ -14,7 +23,7 @@ export function SourceMetadata({ source }: { source: Source }) {
         >
             <Icon className="size-3.5 shrink-0" strokeWidth={ 1.75 } />
             <span className="truncate">
-                { kindLabel }
+                { source.availabilityStatus === 'gated' ? `${kindLabel} gated` : kindLabel }
                 { source.provider ? ` · ${source.provider}` : '' }
             </span>
         </p>

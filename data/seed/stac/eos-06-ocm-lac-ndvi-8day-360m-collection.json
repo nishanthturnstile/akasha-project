@@ -30,7 +30,7 @@
   "akasha:source_kind": "context",
   "akasha:analysis_level": "regional",
   "akasha:availability_status": "gated",
-  "akasha:gated_reason": "Context product display support is not implemented yet.",
+  "akasha:gated_reason": "No validated EOS-06 NDVI context COG has been ingested.",
   "akasha:supported_indices": [],
   "akasha:display_modes": ["NDVI_CONTEXT"],
   "akasha:default_display_mode": "NDVI_CONTEXT",

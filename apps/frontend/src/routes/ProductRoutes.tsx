@@ -6,6 +6,7 @@ import { NotFoundPage } from '@/components/shell/ModulePlaceholder';
 import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
 
 const FieldAnalyticsPage = lazy(() => import('@/pages/monitoring/FieldAnalyticsPage'));
+const MonitoringGlobalView = lazy(() => import('@/pages/monitoring/MonitoringGlobalView'));
 
 function lazyPlaceholderPage(name: keyof typeof import('@/pages/product/ProductPlaceholderPages')) {
   return lazy(async () => {
@@ -14,7 +15,6 @@ function lazyPlaceholderPage(name: keyof typeof import('@/pages/product/ProductP
   });
 }
 
-const MonitoringGlobalView = lazyPlaceholderPage('MonitoringGlobalView');
 const FieldLeaderboardPage = lazy(() => import('@/pages/reports/FieldLeaderboardPage'));
 const ReportingPage = lazy(() => import('@/pages/reports/ReportingPage'));
 const DiseasesPestsPage = lazy(() => import('@/pages/risk/DiseasesPestsPage'));

@@ -45,6 +45,7 @@ interface LayerControlBarProps {
     exportSourceId: string | undefined;
     exportIndexType: string;
     exportCloudMask?: CloudMaskOptions;
+    analyticsEnabled?: boolean;
     collapsed: boolean;
     onCollapsedChange: (next: boolean) => void;
 }
@@ -279,6 +280,7 @@ export function LayerControlBar({
     exportSourceId,
     exportIndexType,
     exportCloudMask,
+    analyticsEnabled = true,
     collapsed,
     onCollapsedChange,
 }: LayerControlBarProps) {
@@ -391,6 +393,7 @@ export function LayerControlBar({
                     sourceId={ exportSourceId }
                     indexType={ exportIndexType }
                     cloudMask={ exportCloudMask ?? cloudMask }
+                    analyticsEnabled={ analyticsEnabled }
                 />
             </div>
 

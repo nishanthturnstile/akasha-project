@@ -21,10 +21,17 @@ export function CloudUsabilityChip({
   sourceKind,
   className,
 }: CloudUsabilityChipProps) {
-  if (sourceKind === 'sar') {
+  if (sourceKind === 'sar' || sourceKind === 'context' || sourceKind === 'archive') {
     const hasCoverage = coveragePercent != null && !Number.isNaN(coveragePercent);
     const status = hasCoverage ? 'info' : 'nodata';
-    const text = hasCoverage ? `${Math.round(coveragePercent)}% coverage` : 'Radar pass';
+    const fallback =
+      sourceKind === 'sar' ? 'Radar pass' : sourceKind === 'archive' ? 'Archive scene' : 'Context layer';
+    const tooltip =
+      sourceKind === 'sar'
+        ? 'Radar acquisition pass. Coverage is footprint-based when available.'
+        : 'Context layer. Coverage is footprint-based when available; field analytics are disabled.';
+    const testId = sourceKind === 'sar' ? 'radar-coverage-chip' : 'context-coverage-chip';
+    const text = hasCoverage ? `${Math.round(coveragePercent)}% coverage` : fallback;
 
     return (
       <Tooltip>
@@ -32,14 +39,14 @@ export function CloudUsabilityChip({
           <Badge
             variant={status}
             className={cn('cursor-default', className)}
-            data-testid="radar-coverage-chip"
+            data-testid={testId}
             data-status={status}
           >
             <span className="size-1.5 rounded-pill bg-current opacity-90" aria-hidden="true" />
             <span className="font-mono tnum">{text}</span>
           </Badge>
         </TooltipTrigger>
-        <TooltipContent>Radar acquisition pass. Coverage is footprint-based when available.</TooltipContent>
+        <TooltipContent>{tooltip}</TooltipContent>
       </Tooltip>
     );
   }

@@ -40,6 +40,24 @@
   "akasha:mask_asset": "mask",
   "akasha:mask_method": "Pending archive mask validation.",
   "akasha:metrics_provisional": true,
+  "item_assets": {
+    "analytic": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "IRS-1C LISS-3 archive analytic COG",
+      "roles": ["data", "reflectance", "archive"],
+      "raster:bands": [
+        { "data_type": "uint16", "spatial_resolution": 23.5, "unit": "reflectance" }
+      ]
+    },
+    "mask": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "IRS-1C archive validity mask COG",
+      "roles": ["metadata", "data-mask", "archive"],
+      "raster:bands": [
+        { "data_type": "uint8", "nodata": 0, "spatial_resolution": 23.5 }
+      ]
+    }
+  },
   "links": [
     { "rel": "root", "href": "./irs-1c-liss3-archive-collection.json", "type": "application/json" },
     { "rel": "self", "href": "./irs-1c-liss3-archive-collection.json", "type": "application/json" },

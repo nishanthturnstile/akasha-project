@@ -104,6 +104,7 @@ class ResourceSatMeta:
     row: str | None = None
     acquisition_datetime: str | None = None
     background_values: dict[str, int] = field(default_factory=dict)
+    valid_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
     scale: float = REFLECTANCE_SCALE
     offset: float = REFLECTANCE_OFFSET
 
@@ -207,6 +208,7 @@ def acquisition_date_from_datetime(value: str) -> str:
 def parse_band_meta(path: Path) -> ResourceSatMeta:
     raw: dict[str, str] = {}
     background_values: dict[str, int] = {}
+    valid_ranges: dict[str, tuple[float, float]] = {}
     for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -228,9 +230,33 @@ def parse_band_meta(path: Path) -> ResourceSatMeta:
                     background_values[band] = int(float(value))
                 except ValueError:
                     pass
+        valid_range = _range_meta(
+            raw,
+            f"{band}_VALID_RANGE",
+            f"{band}_RANGE",
+            f"{band}_DN_RANGE",
+        )
+        if valid_range is None:
+            valid_range = _paired_range_meta(
+                raw,
+                (f"{band}_VALID_MIN", f"{band}_MIN", f"{band}_DN_MIN"),
+                (f"{band}_VALID_MAX", f"{band}_MAX", f"{band}_DN_MAX"),
+            )
+        if valid_range is not None:
+            valid_ranges[band] = valid_range
 
     scale = _float_meta(raw, "SCALE", "REFLECTANCE_SCALE", "MULTIPLIER") or REFLECTANCE_SCALE
     offset = _float_meta(raw, "OFFSET", "REFLECTANCE_OFFSET", "ADD_OFFSET") or REFLECTANCE_OFFSET
+    default_valid_range = _range_meta(raw, "VALID_RANGE", "RANGE", "DN_RANGE")
+    if default_valid_range is None:
+        default_valid_range = _paired_range_meta(
+            raw,
+            ("VALID_MIN", "MIN", "DN_MIN"),
+            ("VALID_MAX", "MAX", "DN_MAX"),
+        )
+    if default_valid_range is not None:
+        for band, _role, _description in ANALYTIC_BANDS:
+            valid_ranges.setdefault(band, default_valid_range)
     acquisition_datetime = _first_meta(raw, "ACQUISITION_DATETIME", "DATETIME", "DATE")
     if acquisition_datetime:
         acquisition_datetime = acquisition_datetime_from_text(acquisition_datetime)
@@ -240,6 +266,7 @@ def parse_band_meta(path: Path) -> ResourceSatMeta:
         row=_first_meta(raw, "ROW", "ROW_NO", "ROW_NUMBER"),
         acquisition_datetime=acquisition_datetime,
         background_values=background_values,
+        valid_ranges=valid_ranges,
         scale=float(scale),
         offset=float(offset),
     )
@@ -261,6 +288,37 @@ def _float_meta(raw: dict[str, str], *keys: str) -> float | None:
         return float(value)
     except ValueError:
         return None
+
+
+def _range_meta(raw: dict[str, str], *keys: str) -> tuple[float, float] | None:
+    value = _first_meta(raw, *keys)
+    if value is None:
+        return None
+    match = re.match(
+        r"^\s*([-+]?\d+(?:\.\d+)?)\s*(?:-|,|:|\.\.|\bto\b)\s*([-+]?\d+(?:\.\d+)?)\s*$",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    lower, upper = float(match.group(1)), float(match.group(2))
+    if lower > upper:
+        lower, upper = upper, lower
+    return (lower, upper)
+
+
+def _paired_range_meta(
+    raw: dict[str, str],
+    lower_keys: tuple[str, ...],
+    upper_keys: tuple[str, ...],
+) -> tuple[float, float] | None:
+    lower = _float_meta(raw, *lower_keys)
+    upper = _float_meta(raw, *upper_keys)
+    if lower is None or upper is None:
+        return None
+    if lower > upper:
+        lower, upper = upper, lower
+    return (lower, upper)
 
 
 def _entry_value(entry: dict[str, Any], *keys: str) -> Any:
@@ -461,6 +519,7 @@ def build_mask_array(
     analytic: Any,
     *,
     background_values: dict[str, int] | None = None,
+    valid_ranges: dict[str, tuple[float, float]] | None = None,
     scale: float = REFLECTANCE_SCALE,
     offset: float = REFLECTANCE_OFFSET,
     cloud_brightness_threshold: float = 0.32,
@@ -472,12 +531,18 @@ def build_mask_array(
 ) -> Any:
     """Return ResourceSat mask codes: 0 gap, 1 valid, 2 cloud, 3 shadow, 4 water."""
     background_values = background_values or {}
+    valid_ranges = valid_ranges or {}
     data = np.asarray(analytic)
     if data.shape[0] != len(ANALYTIC_BANDS):
         raise ValueError(f"expected {len(ANALYTIC_BANDS)} analytic bands, got {data.shape[0]}")
     gap_parts = []
     for index, (band_name, _role, _description) in enumerate(ANALYTIC_BANDS):
-        gap_parts.append(data[index] == background_values.get(band_name, NODATA_DN))
+        band_gap = data[index] == background_values.get(band_name, NODATA_DN)
+        valid_range = valid_ranges.get(band_name)
+        if valid_range is not None:
+            lower, upper = valid_range
+            band_gap = band_gap | (data[index] < lower) | (data[index] > upper)
+        gap_parts.append(band_gap)
     gap = np.logical_and.reduce(gap_parts)
 
     reflectance = data.astype("float32") * float(scale) + float(offset)
@@ -599,6 +664,7 @@ def build_mask_intermediate(
             np,
             analytic,
             background_values=meta.background_values,
+            valid_ranges=meta.valid_ranges,
             scale=meta.scale,
             offset=meta.offset,
         )
@@ -754,6 +820,7 @@ def write_manifest(
         "band_meta": {
             "path": find_band_meta(paths.product_dir).as_posix(),
             "background_values": meta.background_values,
+            "valid_ranges": meta.valid_ranges,
             "scale": meta.scale,
             "offset": meta.offset,
             "raw": meta.raw,

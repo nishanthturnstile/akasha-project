@@ -15,7 +15,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def native_settings(monkeypatch):
-    monkeypatch.setattr(settings, "default_source_id", "sentinel-2-l2a")
+    monkeypatch.setattr(settings, "default_source_id", "resourcesat-2a-liss3-boa")
 
 
 def _plot(**overrides: Any) -> dict[str, Any]:
@@ -38,7 +38,7 @@ def _stats_response(
 ) -> dict[str, Any]:
     return {
         "indexType": index_type,
-        "sourceId": "sentinel-2-l2a",
+        "sourceId": "resourcesat-2a-liss3-boa",
         "acquisitionDate": acquisition_date,
         "statistics": {
             "min": 0.1,
@@ -56,7 +56,7 @@ def _stats_response(
             "maskedPixels": 10,
             "validPixels": 83,
         },
-        "metadata": {"formula": "(B08 - B04) / (B08 + B04)", "bands": ["B08", "B04"]},
+        "metadata": {"formula": "(NIR - RED) / (NIR + RED)", "bands": ["BAND4", "BAND3"]},
     }
 
 
@@ -74,8 +74,8 @@ def test_index_csv_export_uses_server_side_geometry_and_cloud_mapping(monkeypatc
     monkeypatch.setattr(field_analytics, "compute_statistics", fake_compute_statistics)
     r = client.get(
         "/api/fields/plot-1/exports/index"
-        "?format=csv&sourceId=sentinel-2-l2a&acquisitionDate=2026-06-01"
-        "&indexType=NDVI&clouds=true&cloudShadows=false&cirrus=true"
+        "?format=csv&sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-06-01"
+        "&indexType=NDVI&clouds=true&cloudShadows=false&cirrus=false"
     )
 
     assert r.status_code == 200
@@ -83,7 +83,8 @@ def test_index_csv_export_uses_server_side_geometry_and_cloud_mapping(monkeypatc
     assert "North-Field_2026-06-01_NDVI.csv" in r.headers["content-disposition"]
     assert "mean" in r.text
     assert "0.55" in r.text
-    assert 3 not in calls[0]["excluded_mask_classes"]
+    assert calls[0]["source_id"] == "resourcesat-2a-liss3-boa"
+    assert calls[0]["excluded_mask_classes"] == (0, 2)
     assert "masked_pixels" in r.text
     assert "scl_excluded_pixels" not in r.text
 
@@ -108,17 +109,8 @@ def test_index_geojson_export_contains_safe_field_statistics(monkeypatch):
     body = r.json()
     assert body["type"] == "Feature"
     assert body["properties"]["mean"] == pytest.approx(0.55)
-    assert body["properties"]["cloudMaskMapping"]["nativeExcludedMaskClasses"] == [
-        0,
-        1,
-        2,
-        3,
-        7,
-        8,
-        9,
-        10,
-        11,
-    ]
+    assert body["properties"]["cloudMaskMapping"]["nativeExcludedMaskClasses"] == [0, 2, 3]
+    assert body["properties"]["cloudMaskMapping"]["warnings"]
 
 
 @pytest.mark.parametrize("export_format", ["shp", "geotiff"])

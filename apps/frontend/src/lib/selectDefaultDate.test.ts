@@ -71,4 +71,15 @@ describe('selectDefaultDate', () => {
       '2026-04-29',
     );
   });
+
+  it('selects the latest context date without usablePixelPercent', () => {
+    const dates = [
+      makeDate({ acquisitionDate: '2026-04-08', usablePixelPercent: null }),
+      makeDate({ acquisitionDate: '2026-04-16', usablePixelPercent: null }),
+    ];
+
+    expect(selectDefaultDate(dates, 70, { sourceKind: 'context' })?.acquisitionDate).toBe(
+      '2026-04-16',
+    );
+  });
 });

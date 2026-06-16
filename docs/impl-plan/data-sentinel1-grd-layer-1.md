@@ -152,7 +152,7 @@ The target bounding box is:
 | TASK-033 | Add documentation for expected memory and disk usage. Minimum recommendation: 16 GiB RAM and large attached disk for batch runs. | | |
 | TASK-034 | Add a healthcheck or smoke command that prints SNAP GPT version and verifies that `prepare_sentinel1_grd_cogs.py --help` runs inside the container. | | |
 | TASK-089 | Add `ingestion-sar` service wiring to `infra/docker/docker-compose.yml`, including `../../data:/app/data`, `../../scripts:/app/scripts:ro`, and a persistent SNAP DEM/orbit cache volume or documented host path. | | |
-| TASK-090 | Add SAR image environment examples and Railway/on-prem notes for SNAP cache paths, memory, disk, and `AKASHA_S1_VV_RESCALE`. | | |
+| TASK-090 | Add SAR image environment examples and deployment/on-prem notes for SNAP cache paths, memory, disk, and `AKASHA_S1_VV_RESCALE`. | | |
 
 ### Implementation Phase 5 — STAC Collection, Scene Identity, and MinIO Upload
 

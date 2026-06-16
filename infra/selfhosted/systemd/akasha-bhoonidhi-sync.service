@@ -1,0 +1,19 @@
+[Unit]
+Description=Akasha Bhoonidhi ResourceSat sync and composite refresh
+Documentation=docs/impl-plan/isro-bhoonidhi-ingestion-phase-plan.md
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/akasha/bhoonidhi-sync.env
+WorkingDirectory=/srv/akasha
+ExecStartPre=/usr/bin/mkdir -p /srv/akasha/ingestion /srv/akasha/data/raw/bhoonidhi /srv/akasha/data/work/bhoonidhi
+ExecStart=/usr/bin/flock -n /srv/akasha/ingestion/bhoonidhi-sync.systemd.lock /bin/bash /opt/akasha/bin/akasha-bhoonidhi-sync.sh
+TimeoutStartSec=6h
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,7 @@ import type { CloudMaskOptions, Plot } from '@/types/api';
 const cloudMask: CloudMaskOptions = {
     clouds: true,
     cloudShadows: true,
-    cirrus: true,
+    cirrus: false,
 };
 
 const plot: Plot = {
@@ -54,9 +54,9 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
             <IndexPanel
                 selectedPlot={ null }
                 selectedDate="2026-04-27"
-                sourceId="sentinel-2-l2a"
+                sourceId="resourcesat-2a-liss3-boa"
                 displayMode="NDVI"
-                supportedIndices={ ['NDVI', 'NDRE', 'NDMI'] }
+                supportedIndices={ ['NDVI', 'MSAVI', 'NDMI'] }
                 cloudMask={ cloudMask }
             />,
         );
@@ -71,9 +71,9 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
             <IndexPanel
                 selectedPlot={ plot }
                 selectedDate="2026-04-27"
-                sourceId="sentinel-2-l2a"
+                sourceId="resourcesat-2a-liss3-boa"
                 displayMode="NDVI"
-                supportedIndices={ ['NDVI', 'NDRE', 'NDMI'] }
+                supportedIndices={ ['NDVI', 'MSAVI', 'NDMI'] }
                 cloudMask={ cloudMask }
             />,
         );
@@ -103,9 +103,9 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
             <IndexPanel
                 selectedPlot={ plot }
                 selectedDate="2026-04-27"
-                sourceId="sentinel-2-l2a"
+                sourceId="resourcesat-2a-liss3-boa"
                 displayMode="NDVI"
-                supportedIndices={ ['NDVI', 'NDRE', 'NDMI'] }
+                supportedIndices={ ['NDVI', 'MSAVI', 'NDMI'] }
                 cloudMask={ cloudMask }
                 periodFrom="2026-03-01"
                 periodTo="2026-04-27"
@@ -117,7 +117,7 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.getByTestId('index-panel-tab-chart').getAttribute('data-state')).toBe('active');
         expect(screen.getByTestId('index-panel-content-chart')).toBeTruthy();
         expect(screen.getByTestId('analytics-index-NDVI')).toBeTruthy();
-        expect(screen.getByTestId('analytics-index-NDRE')).toBeTruthy();
+        expect(screen.getByTestId('analytics-index-MSAVI')).toBeTruthy();
         expect(screen.getByTestId('analytics-index-NDMI')).toBeTruthy();
         expect(screen.getByTestId('analytics-chart-section')).toBeTruthy();
         expect(screen.getByTestId('analytics-year-toggles')).toBeTruthy();
@@ -158,7 +158,7 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
             <IndexPanel
                 selectedPlot={ plot }
                 selectedDate="2026-04-27"
-                sourceId="sentinel-2-l2a"
+                sourceId="resourcesat-2a-liss3-boa"
                 displayMode="NDVI"
                 supportedIndices={ ['NDVI'] }
                 cloudMask={ cloudMask }

@@ -6,10 +6,11 @@ SQLite ledger and command planning independently testable.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +34,95 @@ class SyncLockError(RuntimeError):
     """Raised when another scheduled sync already owns the lock."""
 
 
+@dataclass(frozen=True)
+class SyncWindow:
+    window_start: str
+    window_end: str
+    datetime_range: str
+    backfill_index: int | None = None
+    backfill_total: int | None = None
+
+
 def utc_timestamp() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def datetime_range_for_window(window_start: str, window_end: str) -> str:
+    return f"{window_start}T00:00:00Z/{window_end}T23:59:59Z"
+
+
+def backfill_windows(
+    *,
+    anchor_date: date,
+    history_days: int,
+    window_days: int,
+    step_days: int,
+) -> list[tuple[str, str]]:
+    if history_days <= 0:
+        raise ValueError("history_days must be positive")
+    if window_days <= 0:
+        raise ValueError("window_days must be positive")
+    if step_days <= 0:
+        raise ValueError("step_days must be positive")
+    earliest = anchor_date - timedelta(days=history_days - 1)
+    windows: list[tuple[str, str]] = []
+    current_start = earliest
+    while current_start <= anchor_date:
+        current_end = min(anchor_date, current_start + timedelta(days=window_days - 1))
+        windows.append((current_start.isoformat(), current_end.isoformat()))
+        current_start = current_start + timedelta(days=step_days)
+    return windows
+
+
+def next_backfill_window(
+    state_path: str | Path,
+    *,
+    source_id: str,
+    aoi_id: str,
+    anchor_date: date,
+    history_days: int,
+    window_days: int,
+    step_days: int,
+    advance: bool = True,
+) -> SyncWindow:
+    windows = backfill_windows(
+        anchor_date=anchor_date,
+        history_days=history_days,
+        window_days=window_days,
+        step_days=step_days,
+    )
+    path = Path(state_path)
+    base_key = f"{source_id}:{aoi_id}:{history_days}:{window_days}:{step_days}"
+    state: dict[str, Any] = {}
+    if path.is_file():
+        state = json.loads(path.read_text(encoding="utf-8"))
+        anchors = state.get("_anchors") if isinstance(state.get("_anchors"), dict) else {}
+        stored_anchor = anchors.get(base_key)
+        if isinstance(stored_anchor, str):
+            anchor_date = date.fromisoformat(stored_anchor)
+            windows = backfill_windows(
+                anchor_date=anchor_date,
+                history_days=history_days,
+                window_days=window_days,
+                step_days=step_days,
+            )
+    key = f"{base_key}:{anchor_date.isoformat()}"
+    next_index = int(state.get(key, 0)) % len(windows)
+    if advance:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        anchors = state.setdefault("_anchors", {})
+        if isinstance(anchors, dict):
+            anchors.setdefault(base_key, anchor_date.isoformat())
+        state[key] = (next_index + 1) % len(windows)
+        path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    window_start, window_end = windows[next_index]
+    return SyncWindow(
+        window_start=window_start,
+        window_end=window_end,
+        datetime_range=datetime_range_for_window(window_start, window_end),
+        backfill_index=next_index + 1,
+        backfill_total=len(windows),
+    )
 
 
 def acquire_lock(path: str | Path) -> SyncLock:

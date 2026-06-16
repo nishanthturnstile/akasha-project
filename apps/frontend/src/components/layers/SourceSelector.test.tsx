@@ -5,11 +5,22 @@ import type { Source } from '@/types/api';
 
 const sources: Source[] = [
   {
-    id: 'sentinel-2-l2a',
-    label: 'Sentinel-2 L2A',
-    provider: 'Copernicus',
+    id: 'resourcesat-2a-liss3-boa',
+    label: 'ResourceSat-2A LISS-3 BOA',
+    provider: 'ISRO/NRSC Bhoonidhi',
     kind: 'optical',
-    supportedIndices: ['NDVI'],
+    supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+    displayModes: ['FCC'],
+    defaultDisplayMode: 'FCC',
+  },
+  {
+    id: 'eos-06-ocm-lac-ndvi-8day-360m',
+    label: 'EOS-06 OCM-LAC NDVI',
+    provider: 'ISRO/NRSC Bhoonidhi',
+    kind: 'context',
+    supportedIndices: [],
+    displayModes: ['NDVI_CONTEXT'],
+    defaultDisplayMode: 'NDVI_CONTEXT',
   },
   {
     id: 'sentinel-1-grd',
@@ -25,7 +36,7 @@ const sources: Source[] = [
 describe('SourceSelector', () => {
   it('renders Sentinel-1 as a separate source tab', () => {
     const { getByTestId } = render(
-      <SourceSelector sources={sources} value="sentinel-2-l2a" onChange={vi.fn()} />,
+      <SourceSelector sources={sources} value="resourcesat-2a-liss3-boa" onChange={vi.fn()} />,
     );
 
     expect(getByTestId('source-tab-sentinel-1-grd').textContent).toContain('Sentinel-1 GRD');
@@ -34,10 +45,20 @@ describe('SourceSelector', () => {
   it('calls onChange when the Sentinel-1 tab is selected', () => {
     const onChange = vi.fn();
     const { getByTestId } = render(
-      <SourceSelector sources={sources} value="sentinel-2-l2a" onChange={onChange} />,
+      <SourceSelector sources={sources} value="resourcesat-2a-liss3-boa" onChange={onChange} />,
     );
 
     fireEvent.click(getByTestId('source-tab-sentinel-1-grd'));
     expect(onChange).toHaveBeenCalledWith('sentinel-1-grd');
+  });
+
+  it('labels context sources in the tab title', () => {
+    const { getByTestId } = render(
+      <SourceSelector sources={sources} value="resourcesat-2a-liss3-boa" onChange={vi.fn()} />,
+    );
+
+    expect(getByTestId('source-tab-eos-06-ocm-lac-ndvi-8day-360m').getAttribute('title')).toContain(
+      'Context',
+    );
   });
 });

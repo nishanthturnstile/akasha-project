@@ -1,5 +1,5 @@
 {
-  "summary": "Completed comprehensive frontend testing for Akasha Railway MVP Phase 4 (Map & Layer UX). All UI elements render correctly, all interactive controls function as expected, and no JavaScript errors detected. The dark ink basemap displays correctly, and the Layer Panel with all controls (source selector, date list with cloud usability chips, visibility toggle, opacity slider, collapse/expand) works perfectly. Theme toggle, map controls, and Phase 5 placeholders are all present and functional. Expected 503 tile errors for /api/tiles/* are acceptable (no TiTiler locally).",
+  "summary": "Completed comprehensive frontend testing for Akasha MVP Phase 4 (Map & Layer UX). All UI elements render correctly, all interactive controls function as expected, and no JavaScript errors detected. The dark ink basemap displays correctly, and the Layer Panel with all controls (source selector, date list with cloud usability chips, visibility toggle, opacity slider, collapse/expand) works perfectly. Theme toggle, map controls, and Phase 5 placeholders are all present and functional. Expected 503 tile errors for /api/tiles/* are acceptable (no TiT...
   "backend_issues": {
     "critical_bugs": [],
     "flaky_endpoints": []

@@ -46,4 +46,12 @@ describe('CloudUsabilityChip', () => {
     expect(chip.textContent).toContain('Radar pass');
     expect(chip.textContent).not.toMatch(/cloud|usable/i);
   });
+
+  it('renders context coverage copy without cloud or usable wording', () => {
+    const { getByTestId, queryByTestId } = renderChip(null, 'context', 88);
+    const chip = getByTestId('context-coverage-chip');
+    expect(queryByTestId('cloud-usability-chip')).toBeNull();
+    expect(chip.textContent).toContain('88% coverage');
+    expect(chip.textContent).not.toMatch(/cloud|usable/i);
+  });
 });

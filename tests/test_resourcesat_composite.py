@@ -28,6 +28,16 @@ def _scene(scene_id: str, dt: str, values: list[list[int]], mask: list[list[int]
     )
 
 
+def _with_resource_sat_provenance(manifest: dict) -> dict:
+    manifest.setdefault("mask_method", composite.MASK_METHOD)
+    manifest.setdefault("classification_classes", composite.MASK_CLASSES)
+    props = dict(manifest.get("properties") or {})
+    props.setdefault("akasha:mask_method", composite.MASK_METHOD)
+    props.setdefault("akasha:metrics_provisional", True)
+    manifest["properties"] = props
+    return manifest
+
+
 def test_composite_grid_snaps_projected_extent_to_resolution() -> None:
     grid = CompositeGrid.from_projected_bounds(
         [100.5, 200.5, 155.1, 260.1],
@@ -188,8 +198,16 @@ def test_build_resource_sat_composite_writes_manifest_from_scene_cogs(tmp_path: 
     assert result.mask_cog.is_file()
     assert payload["composite"] is True
     assert payload["aoi_id"] == "test-aoi"
+    assert payload["composite_grid_crs"] == "EPSG:32643"
+    assert payload["composite_resolution_meters"] == 24.0
+    assert payload["composite_grid_dimensions"] == [
+        payload["outputs"]["analytic"]["width"],
+        payload["outputs"]["analytic"]["height"],
+    ]
     assert payload["composite_date"] == "2026-03-19"
     assert payload["properties"]["akasha:composite"] is True
+    assert payload["properties"]["akasha:composite_grid_crs"] == "EPSG:32643"
+    assert payload["properties"]["akasha:composite_resolution_meters"] == 24.0
     assert payload["properties"]["akasha:contributing_scenes"][1]["id"] == "newer"
     assert payload["outputs"]["analytic"]["band_count"] == 4
     assert payload["outputs"]["mask"]["band_count"] == 1
@@ -388,7 +406,7 @@ def test_verify_composite_manifest_rejects_low_coverage(tmp_path: Path) -> None:
         "properties": {"akasha:composite": True},
     }
     manifest_path = output / "prepare_manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    manifest_path.write_text(json.dumps(_with_resource_sat_provenance(manifest)), encoding="utf-8")
 
     verify = composite.verify_composite_manifest(
         deps=deps,
@@ -399,6 +417,132 @@ def test_verify_composite_manifest_rejects_low_coverage(tmp_path: Path) -> None:
 
     assert not verify.ok
     assert any("coverage 25.0% below threshold" in problem for problem in verify.problems)
+
+
+def test_verify_composite_manifest_rejects_unexpected_aoi_id(tmp_path: Path) -> None:
+    deps = composite.require_raster_deps()
+    rasterio = deps["rasterio"]
+    Affine = deps["Affine"]
+    output = tmp_path / "composite"
+    output.mkdir()
+    profile = {
+        "driver": "GTiff",
+        "crs": "EPSG:32643",
+        "transform": Affine(24, 0, 799980, 0, -24, 1290288),
+        "width": 2,
+        "height": 2,
+        "count": 4,
+        "dtype": "uint16",
+        "nodata": 0,
+    }
+    with rasterio.open(output / "analytic.tif", "w", **profile) as dst:
+        dst.write(np.ones((4, 2, 2), dtype="uint16") * 100)
+    with rasterio.open(
+        output / "mask.tif",
+        "w",
+        **dict(profile, count=1, dtype="uint8", nodata=0),
+    ) as dst:
+        dst.write(np.ones((2, 2), dtype="uint8"), 1)
+    manifest = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "collection": "ResourceSat-2A_LISS3_BOA",
+        "product_id": "wrong-aoi",
+        "composite": True,
+        "aoi_id": "bangalore-60km",
+        "composite_date": "2026-03-19",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+        "period_start": "2026-03-01",
+        "period_end": "2026-03-31",
+        "bbox": [77.0, 11.0, 78.0, 12.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]],
+        },
+        "contributing_scenes": [{"id": "scene", "datetime": "2026-03-19T00:00:00Z"}],
+        "outputs": {
+            "analytic": {"path": "analytic.tif"},
+            "mask": {"path": "mask.tif"},
+        },
+        "properties": {"akasha:composite": True},
+    }
+    manifest_path = output / "prepare_manifest.json"
+    manifest_path.write_text(json.dumps(_with_resource_sat_provenance(manifest)), encoding="utf-8")
+
+    verify = composite.verify_composite_manifest(
+        deps=deps,
+        manifest_path=manifest_path,
+        expected_aoi_id="mysore-60km",
+        min_coverage_percent=95,
+        require_overviews=False,
+    )
+
+    assert not verify.ok
+    assert any("does not match expected 'mysore-60km'" in problem for problem in verify.problems)
+
+
+def test_verify_composite_manifest_requires_provisional_mask_provenance(tmp_path: Path) -> None:
+    deps = composite.require_raster_deps()
+    rasterio = deps["rasterio"]
+    Affine = deps["Affine"]
+    output = tmp_path / "composite"
+    output.mkdir()
+    profile = {
+        "driver": "GTiff",
+        "crs": "EPSG:32643",
+        "transform": Affine(24, 0, 799980, 0, -24, 1290288),
+        "width": 2,
+        "height": 2,
+        "count": 4,
+        "dtype": "uint16",
+        "nodata": 0,
+    }
+    with rasterio.open(output / "analytic.tif", "w", **profile) as dst:
+        dst.write(np.ones((4, 2, 2), dtype="uint16") * 100)
+    with rasterio.open(
+        output / "mask.tif",
+        "w",
+        **dict(profile, count=1, dtype="uint8", nodata=0),
+    ) as dst:
+        dst.write(np.ones((2, 2), dtype="uint8"), 1)
+    manifest = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "collection": "ResourceSat-2A_LISS3_BOA",
+        "product_id": "missing-provenance",
+        "composite": True,
+        "aoi_id": "test-aoi",
+        "composite_date": "2026-03-19",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+        "period_start": "2026-03-01",
+        "period_end": "2026-03-31",
+        "bbox": [77.0, 11.0, 78.0, 12.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.0, 11.0], [78.0, 11.0], [78.0, 12.0], [77.0, 12.0], [77.0, 11.0]]],
+        },
+        "contributing_scenes": [{"id": "scene", "datetime": "2026-03-19T00:00:00Z"}],
+        "outputs": {
+            "analytic": {"path": "analytic.tif"},
+            "mask": {"path": "mask.tif"},
+        },
+        "properties": {"akasha:composite": True},
+    }
+    manifest_path = output / "prepare_manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    verify = composite.verify_composite_manifest(
+        deps=deps,
+        manifest_path=manifest_path,
+        min_coverage_percent=95,
+        require_overviews=False,
+    )
+
+    assert not verify.ok
+    assert "manifest missing ResourceSat provisional mask method" in verify.problems
+    assert "manifest does not mark ResourceSat metrics as provisional" in verify.problems
+    assert (
+        "manifest classification classes do not match ResourceSat mask classes"
+        in verify.problems
+    )
 
 
 def test_verify_composite_manifest_can_require_catalog_item(
@@ -451,7 +595,7 @@ def test_verify_composite_manifest_can_require_catalog_item(
         "properties": {"akasha:composite": True},
     }
     manifest_path = output / "prepare_manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    manifest_path.write_text(json.dumps(_with_resource_sat_provenance(manifest)), encoding="utf-8")
     monkeypatch.setattr(
         composite,
         "_stac_item_exists",
@@ -521,7 +665,7 @@ def test_verify_composite_manifest_reports_missing_catalog_item(
         "properties": {"akasha:composite": True},
     }
     manifest_path = output / "prepare_manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    manifest_path.write_text(json.dumps(_with_resource_sat_provenance(manifest)), encoding="utf-8")
     monkeypatch.setattr(
         composite,
         "_stac_item_exists",
@@ -653,7 +797,7 @@ def test_verify_composite_manifest_accepts_awifs_resolution(tmp_path: Path) -> N
         "properties": {"akasha:composite": True},
     }
     manifest_path = output / "prepare_manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    manifest_path.write_text(json.dumps(_with_resource_sat_provenance(manifest)), encoding="utf-8")
 
     verify = composite.verify_composite_manifest(
         deps=deps,

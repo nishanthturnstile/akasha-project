@@ -11,6 +11,8 @@ Covers (no Docker / no MinIO required):
     pipeline that proves NDVI end-to-end without the real 2.24 GiB scene
 """
 
+import json
+
 import numpy as np
 import pytest
 from app.main import app
@@ -48,6 +50,21 @@ def test_index_registry_has_supported_core_indices():
         "NDWI_GREEN_NIR",
     }
     assert indices.DEFAULT_INDEX == "NDVI"
+
+
+def test_statistics_openapi_documents_source_neutral_metadata_fields():
+    schema = client.get("/api/openapi.json").json()
+    metadata = schema["components"]["schemas"]["StatisticsMetadata"]
+    properties = metadata["properties"]
+
+    assert properties["maskMethod"]["type"] == "string"
+    assert properties["nativeExcludedMaskClasses"]["items"]["type"] == "integer"
+    assert properties["metricsProvisional"]["type"] == "boolean"
+    assert properties["warnings"]["items"]["type"] == "string"
+
+    response = schema["components"]["schemas"]["StatisticsResponse"]
+    metadata_ref = response["properties"]["metadata"]["$ref"]
+    assert metadata_ref.endswith("/StatisticsMetadata")
 
 
 def test_ndvi_band_assignment_is_nir_minus_red():
@@ -241,6 +258,8 @@ def test_config_endpoint_contract():
     assert body["aoi"]["center"] == [77.5776037099731, 13.076858177177233]
     assert body["aoi"]["bounds"] == [77.023647, 12.537266, 78.131561, 13.61645]
     assert body["aoi"]["geometry"]["type"] == "Polygon"
+    assert body["aois"][0]["id"] == "bangalore-60km"
+    assert body["aois"][0]["geometry"]["type"] == "Polygon"
     assert body["basemapStyleUrl"] == ""
     assert body["basemap"] == {
         "provider": "esri",
@@ -253,16 +272,61 @@ def test_config_endpoint_contract():
     assert "arcgis/imagery" in r.text
 
 
+def _aoi_feature(aoi_id: str, west: float, south: float, east: float, north: float):
+    return {
+        "type": "Feature",
+        "properties": {
+            "id": aoi_id,
+            "name": aoi_id.replace("-", " ").title(),
+            "center": [(west + east) / 2, (south + north) / 2],
+            "zoom": 10,
+            "radiusMeters": 60000,
+            "compositeGridCrs": "EPSG:32643",
+        },
+        "bbox": [west, south, east, north],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[west, south], [east, south], [east, north], [west, north], [west, south]]
+            ],
+        },
+    }
+
+
+def test_config_endpoint_lists_configured_aois_and_selects_default(tmp_path, monkeypatch):
+    from app.config import settings
+
+    primary = tmp_path / "bangalore-60km.geojson"
+    aoi_dir = tmp_path / "aois"
+    aoi_dir.mkdir()
+    mysore = aoi_dir / "mysore-60km.geojson"
+    primary.write_text(
+        json.dumps(_aoi_feature("bangalore-60km", 77.0, 12.0, 78.0, 13.0)),
+        encoding="utf-8",
+    )
+    mysore.write_text(
+        json.dumps(_aoi_feature("mysore-60km", 76.0, 11.5, 77.0, 12.5)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "aoi_config_path", str(primary), raising=False)
+    monkeypatch.setattr(settings, "aoi_config_dir", str(aoi_dir), raising=False)
+    monkeypatch.setattr(settings, "default_aoi_id", "mysore-60km", raising=False)
+
+    r = client.get("/api/config")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["aoi"]["id"] == "mysore-60km"
+    assert [aoi["id"] for aoi in body["aois"]] == ["bangalore-60km", "mysore-60km"]
+    assert body["aois"][1]["compositeGridCrs"] == "EPSG:32643"
+
+
 def test_sources_endpoint_contract():
     r = client.get("/api/sources")
     assert r.status_code == 200
     sources = {src["id"]: src for src in r.json()}
-    src = sources["sentinel-2-l2a"]
-    assert "NDVI" in src["supportedIndices"]
-    assert src["kind"] == "optical"
-    assert src["bandRoleMapping"]["NIR"] == "B08"
-    assert src["maskAsset"] == "scl"
-    assert src["displayModes"] == ["RGB"]
+    assert "sentinel-2-l2a" not in sources
+    assert "sentinel-1-grd" not in sources
     rs = sources["resourcesat-2a-liss3-boa"]
     assert rs["provider"] == "ISRO/NRSC Bhoonidhi"
     assert rs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
@@ -281,12 +345,34 @@ def test_sources_endpoint_contract():
     assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
     assert sources["resourcesat-2a-liss4-mx70-l2"]["analysisLevel"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["availabilityStatus"] == "gated"
+    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["displayModes"] == ["NDVI_CONTEXT"]
     assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
     assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "gated"
-    assert sources["cartosat-3-gated"]["gatedReason"]
+    cartosat = sources["cartosat-3-gated"]
+    assert cartosat["availabilityStatus"] == "gated"
+    assert cartosat["kind"] == "context"
+    assert cartosat["analysisLevel"] == "context"
+    assert cartosat["expectedAssets"] == ["visual"]
+    assert cartosat["supportedIndices"] == []
+    assert cartosat["displayModes"] == ["CONTEXT"]
+    assert cartosat["gatedReason"]
+    assert sources["irs-1c-liss3-archive"]["kind"] == "archive"
     assert sources["irs-1c-liss3-archive"]["analysisLevel"] == "archive"
+
+
+def test_legacy_sentinel_sources_are_opt_in(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setenv("AKASHA_INCLUDE_LEGACY_SENTINEL_SOURCES", "true")
+    sources = {src["id"]: src for src in catalog.list_sources()}
+    src = sources["sentinel-2-l2a"]
+    assert "NDVI" in src["supportedIndices"]
+    assert src["kind"] == "optical"
+    assert src["bandRoleMapping"]["NIR"] == "B08"
+    assert src["maskAsset"] == "scl"
+    assert src["displayModes"] == ["RGB"]
     s1 = sources["sentinel-1-grd"]
     assert s1["label"] == "Sentinel-1 GRD"
     assert s1["provider"] == "Copernicus"
@@ -307,6 +393,7 @@ def test_phase5_gated_collection_contracts_are_loadable():
         "irs-1c-liss3-archive",
         "eos-04-sar-mrs-l2b",
         "nisar-ssar-beta-gcov",
+        "cartosat-3-gated",
     ):
         collection = catalog.get_collection(source_id)
         assert collection["id"] == source_id
@@ -316,12 +403,18 @@ def test_phase5_gated_collection_contracts_are_loadable():
     assert eos["akasha:source_kind"] == "context"
     assert eos["akasha:supported_indices"] == []
     irs = catalog.get_collection("irs-1c-liss3-archive")
+    assert irs["akasha:source_kind"] == "archive"
     assert irs["akasha:refresh_policy"] == "Archive only; no scheduled refresh."
     eos04 = catalog.get_collection("eos-04-sar-mrs-l2b")
     assert eos04["akasha:kind"] == "sar"
     assert eos04["akasha:supported_indices"] == []
     nisar = catalog.get_collection("nisar-ssar-beta-gcov")
     assert nisar["akasha:default_display_mode"] == "VV_GRAYSCALE"
+    cartosat = catalog.get_collection("cartosat-3-gated")
+    assert cartosat["akasha:source_kind"] == "context"
+    assert cartosat["akasha:expected_assets"] == ["visual"]
+    assert cartosat["akasha:supported_indices"] == []
+    assert cartosat["akasha:crop_indices_enabled"] is False
 
 
 def test_dates_endpoint_returns_real_scene():
@@ -351,10 +444,12 @@ def test_layers_default_tile_template_is_same_origin_api_route():
     r = client.get("/api/layers/default")
     assert r.status_code == 200
     body = r.json()
-    assert body["sourceId"] == "sentinel-2-l2a"
-    assert body["acquisitionDate"] == "2025-09-14"
-    assert body["displayMode"] == "RGB"
-    assert body["tileUrlTemplate"] == ("/api/tiles/sentinel-2-l2a/2025-09-14/rgb/{z}/{x}/{y}.png")
+    assert body["sourceId"] == "resourcesat-2a-liss3-boa"
+    assert body["acquisitionDate"] == "2026-03-19"
+    assert body["displayMode"] == "FCC"
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
+    )
 
 
 def _stac_item(item_id, acquisition_date, bbox, analytic_href, scl_href, usable=80.0):
@@ -428,6 +523,7 @@ def _resourcesat_stac_item(
     composite=False,
     usable=80.0,
     coverage=100.0,
+    latest=True,
 ) -> dict:
     props = {
         "datetime": f"{acquisition_date}T00:00:00Z",
@@ -435,7 +531,6 @@ def _resourcesat_stac_item(
         "akasha:usable_pixel_percent": usable,
         "akasha:cloud_masked_percent": 100.0 - usable,
         "akasha:coverage_percent": coverage,
-        "akasha:is_latest_usable": True,
         "akasha:metrics_provisional": True,
         "akasha:band_role_mapping": {
             "GREEN": "BAND2",
@@ -446,6 +541,8 @@ def _resourcesat_stac_item(
         "akasha:mask_asset": "mask",
         "proj:epsg": 32643,
     }
+    if latest is not None:
+        props["akasha:is_latest_usable"] = latest
     if composite:
         props.update(
             {
@@ -470,6 +567,39 @@ def _resourcesat_stac_item(
                 "proj:epsg": 32643,
             },
             "mask": {"href": mask_href},
+        },
+    }
+
+
+def _context_stac_item(
+    source_id: str,
+    item_id: str,
+    acquisition_date: str,
+    bbox: list[float],
+    asset_key: str,
+    href: str,
+    *,
+    raster_bands: list[dict] | None = None,
+) -> dict:
+    return {
+        "type": "Feature",
+        "id": item_id,
+        "collection": source_id,
+        "bbox": bbox,
+        "properties": {
+            "datetime": f"{acquisition_date}T00:00:00Z",
+            "akasha:acquisition_date": acquisition_date,
+            "akasha:coverage_percent": 100.0,
+            "akasha:is_latest_usable": True,
+            "akasha:metrics_provisional": True,
+            "proj:epsg": 32643,
+        },
+        "assets": {
+            asset_key: {
+                "href": href,
+                "raster:bands": raster_bands or [{"name": asset_key, "nodata": None}],
+                "proj:epsg": 32643,
+            }
         },
     }
 
@@ -578,6 +708,7 @@ def test_sentinel1_multi_scene_dates_are_not_tile_available(monkeypatch):
     dates = r.json()
     assert dates[0]["sceneCount"] == 2
     assert dates[0]["tileAvailable"] is False
+    assert "mosaic backend" in dates[0]["unavailableReason"]
     assert dates[0]["metricsProvisional"] is True
 
 
@@ -713,6 +844,143 @@ def test_resourcesat_dates_prefer_composite_when_scene_items_coexist(monkeypatch
     assert dates[0]["tileAvailable"] is True
 
 
+def test_resourcesat_dates_mark_newest_qualified_composite_latest_when_stac_flag_missing(
+    monkeypatch,
+):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setenv("USABLE_PIXEL_THRESHOLD_PERCENT", "70")
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="resourcesat-2a-liss3-boa": [
+            _resourcesat_stac_item(
+                "older-composite",
+                "2026-03-19",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://older/analytic.tif",
+                "s3://older/mask.tif",
+                composite=True,
+                usable=92.0,
+                latest=None,
+            ),
+            _resourcesat_stac_item(
+                "newer-composite",
+                "2026-04-18",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://newer/analytic.tif",
+                "s3://newer/mask.tif",
+                composite=True,
+                usable=88.0,
+                latest=None,
+            ),
+        ],
+    )
+
+    dates = client.get("/api/sources/resourcesat-2a-liss3-boa/dates").json()
+
+    assert dates[0]["acquisitionDate"] == "2026-04-18"
+    assert dates[0]["isLatestUsable"] is True
+    assert dates[1]["isLatestUsable"] is False
+
+
+def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite(
+    monkeypatch,
+):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setenv("USABLE_PIXEL_THRESHOLD_PERCENT", "70")
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="resourcesat-2a-liss3-boa": [
+            _resourcesat_stac_item(
+                "older-composite",
+                "2026-03-19",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://older/analytic.tif",
+                "s3://older/mask.tif",
+                composite=True,
+                usable=92.0,
+                latest=None,
+            ),
+            _resourcesat_stac_item(
+                "newer-composite",
+                "2026-04-18",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://newer/analytic.tif",
+                "s3://newer/mask.tif",
+                composite=True,
+                usable=88.0,
+                latest=None,
+            ),
+        ],
+    )
+
+    body = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa").json()
+
+    assert body["acquisitionDate"] == "2026-04-18"
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/resourcesat-2a-liss3-boa/2026-04-18/FCC/{z}/{x}/{y}.png"
+    )
+
+
+def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_missing(
+    monkeypatch,
+):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setenv("USABLE_PIXEL_THRESHOLD_PERCENT", "70")
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="resourcesat-2a-liss3-boa": [
+            _resourcesat_stac_item(
+                "low-composite",
+                "2026-04-18",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://low/analytic.tif",
+                "s3://low/mask.tif",
+                composite=True,
+                usable=44.0,
+                latest=None,
+            ),
+        ],
+    )
+
+    dates = client.get("/api/sources/resourcesat-2a-liss3-boa/dates").json()
+
+    assert dates[0]["tileAvailable"] is True
+    assert dates[0]["usablePixelPercent"] == pytest.approx(44.0)
+    assert dates[0]["isLatestUsable"] is False
+
+
+def test_resourcesat_dates_explain_missing_tile_assets(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="resourcesat-2a-liss3-boa": [
+            _resourcesat_stac_item(
+                "missing-mask",
+                "2026-04-18",
+                [76.5, 11.5, 79.0, 13.5],
+                "s3://missing-mask/analytic.tif",
+                None,
+                composite=True,
+                usable=84.0,
+                latest=None,
+            ),
+        ],
+    )
+
+    dates = client.get("/api/sources/resourcesat-2a-liss3-boa/dates").json()
+
+    assert dates[0]["tileAvailable"] is False
+    assert "mask" in dates[0]["unavailableReason"]
+
+
 def test_resourcesat_resolve_assets_prefers_composite_when_scene_items_coexist(monkeypatch):
     from app.raster import catalog_resolver as catalog
 
@@ -758,7 +1026,7 @@ def test_layers_default_uses_merged_bounds_for_latest_date(monkeypatch):
         ],
     )
 
-    r = client.get("/api/layers/default")
+    r = client.get("/api/layers/default?sourceId=sentinel-2-l2a")
     assert r.status_code == 200
     body = r.json()
     assert body["acquisitionDate"] == "2026-01-15"
@@ -804,6 +1072,40 @@ def test_layers_default_supports_resourcesat_fcc():
     assert body["displayMode"] == "FCC"
     assert body["tileUrlTemplate"] == (
         "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
+    )
+
+
+def test_context_source_default_layer_uses_declared_display_asset(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="eos-06-ocm-lac-ndvi-8day-360m": [
+            _context_stac_item(
+                source_id,
+                "eos06-a",
+                "2026-04-16",
+                [76.5, 11.5, 79.0, 13.5],
+                "ndvi",
+                "s3://akasha-cogs/eos06/ndvi.tif",
+            )
+        ],
+    )
+
+    dates = client.get("/api/sources/eos-06-ocm-lac-ndvi-8day-360m/dates")
+    assert dates.status_code == 200
+    assert dates.json()[0]["tileAvailable"] is True
+    assert dates.json()[0]["usablePixelPercent"] is None
+    assert dates.json()[0]["cloudMaskedPercent"] is None
+
+    layer = client.get("/api/layers/default?sourceId=eos-06-ocm-lac-ndvi-8day-360m")
+    assert layer.status_code == 200
+    body = layer.json()
+    assert body["sourceId"] == "eos-06-ocm-lac-ndvi-8day-360m"
+    assert body["displayMode"] == "NDVI_CONTEXT"
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/eos-06-ocm-lac-ndvi-8day-360m/2026-04-16/NDVI_CONTEXT/{z}/{x}/{y}.png"
     )
 
 
@@ -929,6 +1231,79 @@ def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
     )
 
 
+def test_ndvi_context_tile_route_uses_declared_context_asset(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    captured = {}
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "eos06-a",
+                "contextHref": "s3://akasha-cogs/eos06/ndvi.tif",
+                "contextAsset": "ndvi",
+                "bandNames": ["ndvi"],
+                "rasterBandCount": 1,
+                "bbox": [76.5, 11.5, 79.0, 13.5],
+            }
+        ],
+    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+
+    r = client.get("/api/tiles/eos-06-ocm-lac-ndvi-8day-360m/2026-04-16/NDVI_CONTEXT/3/4/5.png")
+    assert r.status_code == 200
+    assert r.content == b"png-bytes"
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Feos06%2Fndvi.tif&bidx=1&"
+        "rescale=0%2C1&colormap_name=rdylgn"
+    )
+
+
+def test_visual_context_tile_route_uses_declared_visual_asset(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    captured = {}
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "cartosat-a",
+                "contextHref": "s3://akasha-cogs/cartosat/visual.tif",
+                "contextAsset": "visual",
+                "bandNames": ["red", "green", "blue"],
+                "rasterBandCount": 3,
+                "bbox": [76.5, 11.5, 79.0, 13.5],
+            }
+        ],
+    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+
+    r = client.get("/api/tiles/cartosat-3-gated/2026-04-16/CONTEXT/3/4/5.png")
+    assert r.status_code == 200
+    assert r.content == b"png-bytes"
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fcartosat%2Fvisual.tif&rescale=0%2C3000"
+    )
+
+
 def test_sentinel1_tile_builder_uses_vv_bidx_and_default_rescale(monkeypatch):
     from app.raster import tiles
 
@@ -981,6 +1356,43 @@ def test_sentinel1_display_tile_route_uses_backscatter_asset(monkeypatch):
     assert captured["url"] == (
         "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
         "url=s3%3A%2F%2Fakasha-cogs%2Fs1%2Fa%2Fbackscatter.tif&bidx=1&"
+        "rescale=-25%2C5&colormap_name=gray"
+    )
+
+
+def test_eos04_sar_display_tile_route_uses_backscatter_asset(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    captured = {}
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "eos04-a",
+                "backscatterHref": "s3://akasha-cogs/eos-04/a/backscatter.tif",
+                "bandNames": ["VV"],
+                "nodata": -9999.0,
+                "epsg": 32643,
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+            }
+        ],
+    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+
+    r = client.get("/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/3/4/5.png")
+    assert r.status_code == 200
+    assert r.content == b"png-bytes"
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Feos-04%2Fa%2Fbackscatter.tif&bidx=1&"
         "rescale=-25%2C5&colormap_name=gray"
     )
 
@@ -1087,6 +1499,35 @@ def test_statistics_rejects_sentinel1_optical_index_without_raster_io(monkeypatc
     assert "s3://" not in r.text
 
 
+def test_statistics_rejects_eos04_optical_index_without_raster_io(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    def fail_resolve_assets(*_args, **_kwargs):
+        raise AssertionError("EOS-04 optical indices must fail before asset resolution")
+
+    monkeypatch.setattr(catalog, "resolve_assets_for_date", fail_resolve_assets)
+
+    r = client.post(
+        "/api/indices/statistics",
+        json={
+            "geometry": IN_FOOTPRINT_POLY,
+            "sourceId": "eos-04-sar-mrs-l2b",
+            "acquisitionDate": "2026-04-26",
+            "indexType": "NDVI",
+        },
+    )
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "UNSUPPORTED_INDEX"
+    assert body["error"]["details"] == {
+        "sourceId": "eos-04-sar-mrs-l2b",
+        "indexType": "NDVI",
+        "supported": [],
+    }
+    assert "s3://" not in r.text
+
+
 def test_resourcesat_rejects_unsupported_ndre_without_raster_access(monkeypatch):
     from app.raster import service
 
@@ -1176,6 +1617,7 @@ def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
     assert body["pixelCounts"]["validPixels"] == 2
     assert body["statistics"]["validPixelPercent"] == 50.0
     assert body["statistics"]["mean"] == pytest.approx(0.5)
+    assert body["metadata"]["nativeExcludedMaskClasses"] == [0, 2, 3]
     assert body["metadata"]["metricsProvisional"] is True
 
 

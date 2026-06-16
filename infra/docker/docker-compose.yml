@@ -2,7 +2,7 @@ name: akasha
 
 # Akasha — local development topology (Slice 0).
 #
-# Mirrors the Railway services so the same architecture is portable to
+# Mirrors the deployed services so the same architecture is portable to
 # Docker Compose / on-prem. Only `web` publishes a host port; every other
 # service is private to the `akasha` network. Persistent volumes back postgis
 # and minio (never store state in ephemeral container filesystems).
@@ -13,7 +13,7 @@ name: akasha
 #   open http://localhost:${WEB_PORT:-8080}/health
 #
 # NOTE: This Compose file is the LOCAL DEV / on-prem portability artifact.
-# On Railway, each service is deployed separately using its own railway.json
+# Production deploys via the self-hosted Coolify/Azure path in infra/selfhosted
 # (do NOT run this as a single production appliance).
 
 services:
@@ -63,6 +63,7 @@ services:
       STAC_API_URL: "http://stac-api:8080"
       TITILER_URL: "http://titiler:8000"
       S3_ENDPOINT_URL: "http://minio:9000"
+      AKASHA_COG_BUCKET: "akasha-cogs"
       # Slice 2: server-side S3/GDAL config so the BFF (rasterio) can read MinIO
       # COG windows for masked statistics. Not exposed to the browser.
       AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER}"
@@ -75,7 +76,7 @@ services:
       CPL_VSIL_CURL_ALLOWED_EXTENSIONS: ".tif,.tiff"
       AKASHA_RGB_RESCALE: "0,3000"
       AKASHA_S1_VV_RESCALE: "-25,5"
-      DEFAULT_SOURCE_ID: "sentinel-2-l2a"
+      DEFAULT_SOURCE_ID: "resourcesat-2a-liss3-boa"
       DEFAULT_AOI_ID: "bangalore"
       AOI_CONFIG_PATH: "/app/data/seed/bangalore-60km-aoi.geojson"
       USABLE_PIXEL_THRESHOLD_PERCENT: "70"
@@ -83,11 +84,13 @@ services:
       MAX_POLYGON_VERTICES: "5000"
       INDEX_REQUEST_TIMEOUT_SECONDS: "30"
       RATE_LIMIT_INDEX_PER_MINUTE: "30"
+      SOURCE_FRESHNESS_STALE_DAYS: "45"
       MAX_REQUEST_BODY_BYTES: "1048576"
+      BHOONIDHI_LEDGER_PATH: "/app/data/work/bhoonidhi/ledger.sqlite"
       CORS_ALLOWED_ORIGINS: "http://localhost:${WEB_PORT:-8080}"
       # Enforced auth for the local stack. The browser must sign in via /login;
       # AUTH_COOKIE_SECURE is false ONLY because local dev is plain http
-      # (Railway/customer deployments keep it true — see infra/railway/ENV_MATRIX.md).
+      # (hosted/customer deployments keep it true — see infra/selfhosted/env.example).
       AUTH_MODE: "enabled"
       AUTH_ALLOW_DISABLED: "false"
       AUTH_PASSWORD_PEPPER: "${AUTH_PASSWORD_PEPPER}"
@@ -98,6 +101,7 @@ services:
       - "8000"
     volumes:
       - ../../data/seed:/app/data/seed:ro
+      - ../../data/work/bhoonidhi:/app/data/work/bhoonidhi:ro
     depends_on:
       postgis:
         condition: service_healthy
@@ -115,7 +119,7 @@ services:
 
   titiler:
     # Local Compose uses the pinned upstream image directly because the
-    # Slice 0 Dockerfile is a no-op wrapper. Railway still builds the service
+    # Slice 0 Dockerfile is a no-op wrapper. Production builds the service
     # from services/titiler/Dockerfile.
     platform: linux/amd64
     image: ghcr.io/developmentseed/titiler:1.0.0
@@ -148,7 +152,7 @@ services:
 
   stac-api:
     # Local Compose uses the pinned upstream image directly because the
-    # Slice 0 Dockerfile is a no-op wrapper. Railway still builds the service
+    # Slice 0 Dockerfile is a no-op wrapper. Production builds the service
     # from services/stac-api/Dockerfile.
     platform: linux/amd64
     image: ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2
@@ -238,8 +242,10 @@ services:
       S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
       S3_REGION: "us-east-1"
       AKASHA_COG_BUCKET: "akasha-cogs"
+      AKASHA_COLLECTION_ID: "resourcesat-2a-liss3-boa"
       SEED_DATA_DIR: "/app/data/seed"
       AOI_CONFIG_PATH: "/app/data/seed/bangalore-60km-aoi.geojson"
+      AOI_CONFIG_DIR: "/app/data/seed/aois"
       BHOONIDHI_API_BASE: "https://bhoonidhi-api.nrsc.gov.in"
       BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
       BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
@@ -262,6 +268,7 @@ services:
     # One-shot: prints config and exits. Run seeding/verify on demand, e.g.:
     #   docker compose run --rm ingestion-worker python worker.py seed
     #   docker compose run --rm ingestion-worker python worker.py verify
+    #   docker compose run --rm ingestion-worker python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
     restart: "no"
 
   ingestion-sar:

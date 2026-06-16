@@ -42,8 +42,9 @@ def _get_bool(name: str, default: bool) -> bool:
 class Settings:
     """Typed view over the documented `api` service environment variables.
 
-    Mirrors railway-deployment-guide.md -> `api` env block. Slice 0 only reads
-    `app_env` and CORS for behavior; the rest are parsed for readiness/visibility.
+    Mirrors the `api` env block in infra/selfhosted/env.example. Slice 0 only
+    reads `app_env` and CORS for behavior; the rest are parsed for
+    readiness/visibility.
     """
 
     app_env: str = field(default_factory=lambda: _get("APP_ENV", "development"))
@@ -52,16 +53,22 @@ class Settings:
     database_url: str = field(default_factory=lambda: _get("DATABASE_URL", ""))
     stac_api_url: str = field(default_factory=lambda: _get("STAC_API_URL", ""))
     titiler_url: str = field(default_factory=lambda: _get("TITILER_URL", ""))
+    s3_endpoint_url: str = field(default_factory=lambda: _get("S3_ENDPOINT_URL", ""))
+    s3_access_key: str = field(default_factory=lambda: _get("AWS_ACCESS_KEY_ID", ""))
+    s3_secret_key: str = field(default_factory=lambda: _get("AWS_SECRET_ACCESS_KEY", ""))
+    s3_region: str = field(default_factory=lambda: _get("AWS_REGION", "us-east-1"))
+    cog_bucket: str = field(default_factory=lambda: _get("AKASHA_COG_BUCKET", "akasha-cogs"))
     sentinel1_vv_rescale: str = field(default_factory=lambda: _get("AKASHA_S1_VV_RESCALE", "-25,5"))
 
     # AOI / source defaults
     default_source_id: str = field(
-        default_factory=lambda: _get("DEFAULT_SOURCE_ID", "sentinel-2-l2a")
+        default_factory=lambda: _get("DEFAULT_SOURCE_ID", "resourcesat-2a-liss3-boa")
     )
     default_aoi_id: str = field(default_factory=lambda: _get("DEFAULT_AOI_ID", "bangalore"))
     aoi_config_path: str = field(
         default_factory=lambda: _get("AOI_CONFIG_PATH", "data/seed/bangalore-60km-aoi.geojson")
     )
+    aoi_config_dir: str = field(default_factory=lambda: _get("AOI_CONFIG_DIR", ""))
 
     # Public basemap metadata surfaced to the frontend. Credentials are configured
     # on the web build as a referrer-restricted VITE_ESRI_API_KEY, not exposed here.
@@ -94,6 +101,9 @@ class Settings:
     rate_limit_index_per_minute: int = field(
         default_factory=lambda: _get_int("RATE_LIMIT_INDEX_PER_MINUTE", 30)
     )
+    source_freshness_stale_days: int = field(
+        default_factory=lambda: _get_int("SOURCE_FRESHNESS_STALE_DAYS", 45)
+    )
     max_request_body_bytes: int = field(
         default_factory=lambda: _get_int("MAX_REQUEST_BODY_BYTES", 1_048_576)
     )
@@ -116,6 +126,9 @@ class Settings:
     )
     bhoonidhi_max_download_bytes: int = field(
         default_factory=lambda: _get_int("BHOONIDHI_MAX_DOWNLOAD_BYTES", 5_368_709_120)
+    )
+    bhoonidhi_ledger_path: str = field(
+        default_factory=lambda: _get("BHOONIDHI_LEDGER_PATH", "/srv/akasha/ingestion/ledger.sqlite")
     )
 
     # Phase 12 auth/team foundations. AUTH_MODE=disabled requires explicit local opt-in.

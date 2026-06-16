@@ -1,7 +1,7 @@
 """Supported vegetation/water index registry + STAC band-position mapping.
 
 Akasha keeps index definitions centralized here so routes and UI never hard-code
-band formulas. The frozen analytic band order (data-ingestion-and-satellite-rules.md) is:
+band formulas. Sentinel compatibility keeps the original 9-band analytic order:
 
     pos: 1    2    3    4    5    6    7    8    9
     band:B04  B08  B05  B06  B07  B11  B12  B03  B02
@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-# Frozen Wave 1 analytic band order (source of truth mirrored from STAC eo:bands).
+# Legacy Sentinel analytic band order (source of truth mirrored from STAC eo:bands).
 FROZEN_ANALYTIC_BANDS: list[str] = [
     "B04",
     "B08",
@@ -29,7 +29,7 @@ FROZEN_ANALYTIC_BANDS: list[str] = [
     "B02",
 ]
 
-# True-colour RGB uses analytic bands [1, 8, 9] = (B04 Red, B03 Green, B02 Blue).
+# Sentinel true-colour RGB uses analytic bands [1, 8, 9] = (B04 Red, B03 Green, B02 Blue).
 # Do NOT assume RGB = bands 1,2,3.
 RGB_BAND_NAMES: list[str] = ["B04", "B03", "B02"]
 FCC_ROLE_ORDER: list[str] = ["NIR", "RED", "GREEN"]

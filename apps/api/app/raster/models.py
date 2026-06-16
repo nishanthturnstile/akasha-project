@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Geometry(BaseModel):
@@ -19,7 +19,7 @@ class StatisticsRequest(BaseModel):
     """POST /api/indices/statistics request body."""
 
     geometry: Geometry
-    sourceId: str = Field(default="sentinel-2-l2a")
+    sourceId: str = Field(default="resourcesat-2a-liss3-boa")
     acquisitionDate: str | None = Field(
         default=None, description="YYYY-MM-DD; defaults to the latest usable scene."
     )
@@ -44,10 +44,26 @@ class PixelCounts(BaseModel):
     validPixels: int = 0
 
 
+class StatisticsMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    formula: str
+    bands: list[str]
+    spectralRoles: list[str]
+    maskMethod: str
+    nativeExcludedMaskClasses: list[int]
+    metricsProvisional: bool = False
+    reflectanceCorrection: str
+    itemId: str | None = None
+    areaHa: float | None = None
+    vertices: int | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class StatisticsResponse(BaseModel):
     indexType: str
     sourceId: str
     acquisitionDate: str
     statistics: IndexStatisticsModel
     pixelCounts: PixelCounts
-    metadata: dict[str, Any]
+    metadata: StatisticsMetadata

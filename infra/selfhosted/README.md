@@ -117,7 +117,7 @@ python -m app.cli migrate
 ```bash
 python worker.py seed
 python worker.py verify
-python worker.py verify-cogs
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
 ```
 
 6. If `AUTH_ALLOW_BOOTSTRAP=true`, create the first admin user through `/api/auth/bootstrap`, then set `AUTH_ALLOW_BOOTSTRAP=false` in Coolify and redeploy.
@@ -133,7 +133,17 @@ python scripts/smoke-test.py https://<staging-domain>
 AKASHA_SMOKE_USERNAME=<username> AKASHA_SMOKE_PASSWORD=<password> python scripts/smoke-test.py https://<staging-domain> --login
 ```
 
-9. Verify private ports from outside the host:
+9. Verify operator monitoring after a user exists:
+
+```bash
+curl -fsS -b cookies.txt https://<staging-domain>/api/monitoring/imagery-sources
+```
+
+The payload should include `sources`, `storage`, and `ingestionLedger`. If
+`ingestionLedger.status` is `missing`, confirm the API service has the read-only
+`/srv/akasha/ingestion` mount and the worker writes `BHOONIDHI_LEDGER_PATH`.
+
+10. Verify private ports from outside the host:
 
 ```bash
 for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<staging-public-ip>/$p" && echo "$p open" || echo "$p closed_or_filtered"; done
@@ -154,7 +164,53 @@ Catalog/storage seed and verification from `ingestion-worker`:
 ```bash
 python worker.py seed
 python worker.py verify
-python worker.py verify-cogs
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+```
+
+## Scheduled Bhoonidhi sync
+
+Phase 3 uses a systemd timer on the staging worker VM so Bhoonidhi traffic comes
+from the whitelisted static IP and raw/work/ledger files stay under
+`/srv/akasha`.
+
+Install the timer artifacts:
+
+```bash
+sudo install -d -m 0755 /opt/akasha/bin /etc/akasha
+sudo install -m 0755 infra/selfhosted/systemd/akasha-bhoonidhi-sync.sh /opt/akasha/bin/akasha-bhoonidhi-sync.sh
+sudo install -m 0644 infra/selfhosted/systemd/akasha-bhoonidhi-sync.service /etc/systemd/system/akasha-bhoonidhi-sync.service
+sudo install -m 0644 infra/selfhosted/systemd/akasha-bhoonidhi-sync.timer /etc/systemd/system/akasha-bhoonidhi-sync.timer
+sudo install -m 0600 infra/selfhosted/systemd/akasha-bhoonidhi-sync.env.example /etc/akasha/bhoonidhi-sync.env
+```
+
+Edit `/etc/akasha/bhoonidhi-sync.env` for the deployed Compose path/project,
+AOI, window, and per-run download cap. The service uses a host-level
+`flock` at `/srv/akasha/ingestion/bhoonidhi-sync.systemd.lock`; the worker also
+uses its own ledger lock, so overlapping timer/manual runs fail fast.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now akasha-bhoonidhi-sync.timer
+systemctl list-timers akasha-bhoonidhi-sync.timer
+journalctl -u akasha-bhoonidhi-sync.service -n 200 --no-pager
+```
+
+For the launch backfill, set `AKASHA_SYNC_BACKFILL_DAYS=90` and
+`AKASHA_SYNC_BACKFILL_STEP_DAYS=15` in `/etc/akasha/bhoonidhi-sync.env`. Each
+timer run processes one bounded historical window and advances
+`AKASHA_SYNC_BACKFILL_STATE_PATH` (default under `/srv/akasha/ingestion`). Remove
+those settings after the backfill completes so the daily timer returns to the
+rolling current window. For a manual one-off window, set
+`AKASHA_SYNC_WINDOW_START` and `AKASHA_SYNC_WINDOW_END`, then run
+`sudo systemctl start akasha-bhoonidhi-sync.service`.
+
+For additional AOIs, place GeoJSON files under `AOI_CONFIG_DIR` (default
+`/app/data/seed/aois`) using filenames such as `mysore-60km.geojson`, then pass
+the matching id to ingestion commands:
+
+```bash
+python worker.py bhoonidhi-search --source resourcesat-2a-liss3-boa --aoi mysore-60km --aoi-dir /app/data/seed/aois
+python worker.py build-composite --source resourcesat-2a-liss3-boa --aoi mysore-60km --aoi-dir /app/data/seed/aois --window-start 2026-03-01 --window-end 2026-03-31
 ```
 
 SAR preprocessing from `ingestion-sar` depends on staged input data under `/srv/akasha/data` and should follow `docs/sentinel-1-grd-cog-prep-runbook.md`.

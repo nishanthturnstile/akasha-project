@@ -103,6 +103,8 @@
     "akasha:acquisition_date": "2026-03-19",
     "akasha:item_kind": "composite",
     "akasha:composite": true,
+    "akasha:composite_grid_crs": "EPSG:32643",
+    "akasha:composite_resolution_meters": 24,
     "akasha:composite_window_start": "2026-03-19",
     "akasha:composite_window_end": "2026-03-19",
     "akasha:contributing_scene_count": 1,

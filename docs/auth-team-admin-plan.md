@@ -16,9 +16,9 @@ Phase 12 implements the BFF-side foundations: users, teams, memberships, API key
 
 `AUTH_MODE=disabled` injects a deterministic dev user and team only when local/dev/test environments explicitly set `AUTH_ALLOW_DISABLED=true`. Runtime ownership checks must still use `team_id = current_team.id`; no protected route should rely on `team_id IS NULL`.
 
-## Railway / deployment mode
+## Deployment mode
 
-Customer or Railway deployments must set `AUTH_MODE=enabled`, `AUTH_ALLOW_DISABLED=false`, and a strong `AUTH_PASSWORD_PEPPER`. Disabled auth is forbidden when Railway deployment environment variables are present. Protected routes fail closed with `AUTH_NOT_CONFIGURED` if auth is disabled in deployment.
+Customer or hosted deployments must set `AUTH_MODE=enabled`, `AUTH_ALLOW_DISABLED=false`, and a strong `AUTH_PASSWORD_PEPPER`. Disabled auth is forbidden when deployment environment markers (Coolify `COOLIFY_*` variables or an explicit `AKASHA_DEPLOYMENT`) are present. Protected routes fail closed with `AUTH_NOT_CONFIGURED` if auth is disabled in deployment.
 
 ## Session and identity boundary
 

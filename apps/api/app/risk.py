@@ -432,7 +432,7 @@ def _aggregate(components: list[RiskComponent]) -> tuple[RiskLevel, float | None
 async def get_field_risk_summary(
     plot_id: str,
     indexType: str = Query(default=DEFAULT_INDEX),
-    sourceId: str = Query(default="sentinel-2-l2a"),
+    sourceId: str = Query(default=settings.default_source_id),
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
     lookbackDays: int = Query(default=DEFAULT_LOOKBACK_DAYS),

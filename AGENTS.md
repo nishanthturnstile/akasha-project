@@ -4,12 +4,12 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## What this is
 
-Akasha is a Railway-first geospatial MVP that has grown into a farm-management platform: browse
+Akasha is a geospatial MVP that has grown into a farm-management platform: browse
 true-colour Sentinel-2 L2A (and ISRO ResourceSat LISS-3) imagery over an Area of Interest
 (Bangalore) and compute **cloud-masked vegetation-index statistics** (NDVI/NDRE/NDMI/NDWI/MSAVI)
 for user-drawn plots and fields. It is a Dockerized **multi-service** application (not one
-collapsed service), portable between Railway, self-hosted Coolify, and local Docker Compose /
-on-prem.
+collapsed service), deployed on a self-hosted Coolify (Azure VM) and portable to local Docker
+Compose / on-prem.
 
 Development is **slice-by-slice**: Slices 0–3 (skeleton, storage/catalog, raster de-risk, BFF
 product + plot contracts) are implemented; **Slice 4 is in progress**. On top of the raster core,
@@ -25,7 +25,7 @@ This is the most important thing to understand before editing.
 - [apps/api/](apps/api/) — FastAPI BFF (the backend, package `app`)
 - [apps/frontend/](apps/frontend/) — React 18 + Vite + TypeScript SPA
 - [services/ingestion/](services/ingestion/), [services/ingestion-sar/](services/ingestion-sar/), [services/titiler/](services/titiler/), [services/stac-api/](services/stac-api/), [services/minio/](services/minio/)
-- [infra/gateway/](infra/gateway/) (Caddy reverse proxy), [infra/docker/](infra/docker/) (local), [infra/railway/](infra/railway/) (Railway), [infra/selfhosted/](infra/selfhosted/) (Coolify)
+- [infra/gateway/](infra/gateway/) (Caddy reverse proxy), [infra/docker/](infra/docker/) (local), [infra/selfhosted/](infra/selfhosted/) (Coolify/Azure)
 
 The old root-level Emergent preview shims (`backend/` and `frontend/`) were
 removed. When asked to change backend or frontend behavior, edit
@@ -105,8 +105,8 @@ Browser ─> web (Caddy + React SPA)  ──/api/*──> api (FastAPI BFF)
 **Only the `web` gateway is publicly reachable.** The browser calls `/api/*` and `/tiles/*` on
 that same origin; the gateway proxies to internal `api`/`titiler`. `api`, `titiler`, `stac-api`,
 `postgis`, `minio` never get a public domain. The frontend must never talk directly to MinIO,
-PostGIS, STAC, or TiTiler, and must never hard-code COG/object URLs. This rule holds on Railway,
-self-hosted Coolify ([infra/selfhosted/](infra/selfhosted/)), and local Docker alike.
+PostGIS, STAC, or TiTiler, and must never hard-code COG/object URLs. This rule holds on
+self-hosted Coolify ([infra/selfhosted/](infra/selfhosted/)) and local Docker alike.
 
 ### BFF (`apps/api/app`) — the core
 - [main.py](apps/api/app/main.py) wires ~16 routers under `/api`, all sharing the standard error
@@ -222,5 +222,5 @@ Key files: `architecture-tech-stack.md` (services, BFF API contracts), `data-ing
 (imagery/COG/STAC/mask/index rules), `engineering-dos-donts.md` (guardrail checklist),
 `auth-team-admin-plan.md` (auth/RBAC design), `india-specific-productization-plan.md`
 (ISRO/Bhoonidhi product layer), `emergent-context.md` (per-phase handoff notes),
-`railway-deployment-guide.md` (Railway), and [infra/selfhosted/README.md](infra/selfhosted/README.md) (Coolify).
+and [infra/selfhosted/README.md](infra/selfhosted/README.md) (Coolify/Azure deployment).
 Pinned image/dependency versions matter (GDAL/rasterio/rio-tiler/TiTiler) — do not float to `latest`.

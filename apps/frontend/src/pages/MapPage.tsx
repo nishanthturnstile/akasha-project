@@ -268,7 +268,7 @@ export default function MapPage() {
     [activeTimelineDates, selectedDate],
   );
 
-  const sourceDisplayModes = selectedSource?.displayModes ?? ['RGB'];
+  const sourceDisplayModes = selectedSource?.displayModes ?? ['FCC'];
   const selectedDisplayMode =
     displayModeOverride ??
     selectedSource?.displayMode ??
@@ -277,7 +277,7 @@ export default function MapPage() {
     (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
       ? defaultLayerQ.data.displayMode
       : undefined) ??
-    'RGB';
+    'FCC';
 
   const scene = useMemo<SatelliteScene | null>(() => {
     if (!selectedDate || !effectiveSourceId) return null;
@@ -286,9 +286,9 @@ export default function MapPage() {
       dl &&
       dl.sourceId === effectiveSourceId &&
       dl.acquisitionDate === selectedDate &&
-      (dl.displayMode ?? 'RGB') === selectedDisplayMode;
+      (dl.displayMode ?? 'FCC') === selectedDisplayMode;
     const dateBounds = selectedDateMetadata?.bounds;
-    if (isDefault) {
+    if (isDefault && dl.tileUrlTemplate) {
       return {
         tileUrlTemplate: dl.tileUrlTemplate,
         bounds: dl.bounds ?? dateBounds,
@@ -458,11 +458,15 @@ export default function MapPage() {
   const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
   const analyticsSupportedIndices = sourceSupportedIndices;
+  const sourceAnalysisLevel = selectedSource?.analysisLevel ?? 'field';
+  const analyticsEnabled =
+    selectedSource?.kind !== 'sar' &&
+    sourceAnalysisLevel === 'field' &&
+    sourceSupportedIndices.length > 0;
   const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
     ? selectedDisplayMode
     : analyticsSupportedIndices[0] ?? config.defaultIndex ?? 'NDVI';
-  const showIndexPanel =
-    selectedSource?.kind !== 'sar' && sourceSupportedIndices.length > 0;
+  const showIndexPanel = analyticsEnabled;
 
   return (
     <div className="relative h-full min-h-[640px] w-full overflow-hidden bg-background" data-testid="map-page">
@@ -630,7 +634,7 @@ export default function MapPage() {
           onDisplayModeChange={ view.setDisplayMode }
           cloudMask={ cloudMask }
           onCloudMaskChange={ view.setCloudMask }
-          cloudMaskDisabled={ selectedSource?.kind === 'sar' }
+          cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
           compareEnabled={ compareEnabled }
           onCompareEnabledChange={ view.setCompareEnabled }
           comparableDates={ comparableDates }
@@ -644,6 +648,7 @@ export default function MapPage() {
           exportSourceId={ effectiveSourceId }
           exportIndexType={ exportIndexType }
           exportCloudMask={ effectiveCloudMask }
+          analyticsEnabled={ analyticsEnabled }
           collapsed={ view.layerBarCollapsed }
           onCollapsedChange={ view.setLayerBarCollapsed }
         />

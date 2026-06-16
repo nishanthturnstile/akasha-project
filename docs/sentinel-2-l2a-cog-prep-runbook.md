@@ -158,7 +158,7 @@ First-time Linux VM setup:
 ```bash
 git clone <akasha-repo-url> akasha
 cd akasha
-cp infra/docker/.env.example infra/docker/.env  # if present; otherwise create from infra/railway/ENV_MATRIX.md values
+cp infra/docker/.env.example infra/docker/.env  # if present; otherwise create from infra/selfhosted/env.example values
 cp .env.example .env  # if present; add CDSE_USERNAME/CDSE_PASSWORD or CDSE_ACCESS_TOKEN
 docker compose -f infra/docker/docker-compose.yml up -d postgis minio stac-api titiler api web
 docker compose -f infra/docker/docker-compose.yml build ingestion-worker

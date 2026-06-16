@@ -30,6 +30,7 @@ import type {
   NotificationItem,
   AssistantStatus,
   CloudMaskOptions,
+  ImagerySourceMonitoringResponse,
   Plot,
   PlotCreatePayload,
   PlotGeometry,
@@ -223,6 +224,9 @@ export const getDates = (sourceId: string): Promise<SceneDate[]> =>
   request<SceneDate[]>(
     `/api/sources/${encodeURIComponent(sourceId)}/dates?lookbackDays=${SOURCE_DATE_LOOKBACK_DAYS}`,
   );
+
+export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringResponse> =>
+  request<ImagerySourceMonitoringResponse>('/api/monitoring/imagery-sources');
 
 export const getDefaultLayer = (): Promise<DefaultLayer> =>
   request<DefaultLayer>('/api/layers/default');
@@ -540,7 +544,7 @@ export const exportFieldReportCsv = (
 export function composeTileTemplate(
   sourceId: string,
   acquisitionDate: string,
-  displayMode = 'RGB',
+  displayMode = 'FCC',
 ): string {
   return `/api/tiles/${encodeURIComponent(sourceId)}/${encodeURIComponent(
     acquisitionDate,

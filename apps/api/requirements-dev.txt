@@ -1,7 +1,7 @@
 # Akasha BFF (api) — test/dev dependencies.
 #
 # Installs the runtime deps plus test-only tooling so `python -m pytest` works
-# from a clean environment. Kept OUT of requirements.txt so the Railway runtime
+# from a clean environment. Kept OUT of requirements.txt so the runtime
 # image stays lean (no test tooling shipped to production).
 #
 #   pip install -r requirements-dev.txt

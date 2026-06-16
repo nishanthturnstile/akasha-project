@@ -12,12 +12,20 @@ interface DownloadMenuProps {
   sourceId: string | undefined;
   indexType: string;
   cloudMask: CloudMaskOptions;
+  analyticsEnabled?: boolean;
 }
 
 function isIndexMode(mode: string): boolean {
-  return !['RGB', 'FALSE_COLOR', 'FALSE_COLOR_URBAN', 'VV_GRAYSCALE', 'VH_GRAYSCALE'].includes(
-    mode.toUpperCase(),
-  );
+  return ![
+    'RGB',
+    'FCC',
+    'CONTEXT',
+    'NDVI_CONTEXT',
+    'FALSE_COLOR',
+    'FALSE_COLOR_URBAN',
+    'VV_GRAYSCALE',
+    'VH_GRAYSCALE',
+  ].includes(mode.toUpperCase());
 }
 
 function downloadFile(file: FileDownload): void {
@@ -38,6 +46,7 @@ export function DownloadMenu({
   sourceId,
   indexType,
   cloudMask,
+  analyticsEnabled = true,
 }: DownloadMenuProps) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +59,7 @@ export function DownloadMenu({
       ? 'Select a scene date to download map outputs.'
       : null;
   const fieldId = selectedPlot?.id;
-  const canExportField = Boolean(fieldId && selectedDate && sourceId);
+  const canExportField = Boolean(analyticsEnabled && fieldId && selectedDate && sourceId);
   const nativeGeoTiffAvailable = false;
   const canExportTiff = Boolean(canExportField && isIndexMode(displayMode) && nativeGeoTiffAvailable);
   const busy = indexExport.isPending || reportExport.isPending;
@@ -120,7 +129,7 @@ export function DownloadMenu({
               label="Analytics CSV"
               icon={<FileText className="size-3.5" />}
               disabled={ !canExportField || busy }
-              reason={ disabledReason ?? undefined }
+              reason={ analyticsEnabled ? disabledReason ?? undefined : 'Analytics are not enabled for this source.' }
               onClick={ () => void exportAnalyticsCsv() }
             />
             <DownloadButton
@@ -128,7 +137,7 @@ export function DownloadMenu({
               label="Field GeoJSON"
               icon={<FileDown className="size-3.5" />}
               disabled={ !canExportField || busy }
-              reason={ disabledReason ?? undefined }
+              reason={ analyticsEnabled ? disabledReason ?? undefined : 'Analytics are not enabled for this source.' }
               onClick={ () => void exportIndex('geojson') }
             />
             <DownloadButton

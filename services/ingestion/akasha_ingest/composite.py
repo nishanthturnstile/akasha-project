@@ -634,6 +634,7 @@ def verify_composite_manifest(
     deps: dict[str, Any],
     manifest_path: Path,
     source_id: str = SOURCE_ID,
+    expected_aoi_id: str | None = None,
     min_coverage_percent: float = 95.0,
     expected_crs: str = "EPSG:32643",
     expected_resolution: float | None = None,
@@ -672,11 +673,40 @@ def verify_composite_manifest(
             problems.append(f"manifest missing {key}")
         else:
             checks.append(f"manifest has {key}")
+    if expected_aoi_id and manifest.get("aoi_id") != expected_aoi_id:
+        problems.append(
+            f"manifest aoi_id {manifest.get('aoi_id')!r} does not match expected "
+            f"{expected_aoi_id!r}"
+        )
+    elif expected_aoi_id:
+        checks.append(f"manifest aoi_id matches {expected_aoi_id}")
     contributing = manifest.get("contributing_scenes") or props.get("akasha:contributing_scenes")
     if not isinstance(contributing, list) or not contributing:
         problems.append("manifest has no contributing scenes")
     else:
         checks.append(f"manifest has {len(contributing)} contributing scene(s)")
+    mask_method = manifest.get("mask_method") or props.get("akasha:mask_method")
+    if not isinstance(mask_method, str) or "Akasha threshold mask v1" not in mask_method:
+        problems.append("manifest missing ResourceSat provisional mask method")
+    else:
+        checks.append("manifest records ResourceSat provisional mask method")
+    metrics_provisional = manifest.get("akasha:metrics_provisional")
+    if metrics_provisional is None:
+        metrics_provisional = props.get("akasha:metrics_provisional")
+    if metrics_provisional is not True:
+        problems.append("manifest does not mark ResourceSat metrics as provisional")
+    else:
+        checks.append("manifest marks metrics provisional")
+    class_values = {
+        item.get("value")
+        for item in manifest.get("classification_classes", [])
+        if isinstance(item, dict)
+    }
+    expected_class_values = {item["value"] for item in MASK_CLASSES}
+    if class_values != expected_class_values:
+        problems.append("manifest classification classes do not match ResourceSat mask classes")
+    else:
+        checks.append("manifest records ResourceSat mask classes")
 
     analytic_path = _manifest_asset_path_from_outputs(manifest_path, manifest, "analytic")
     mask_path = _manifest_asset_path_from_outputs(manifest_path, manifest, "mask")
@@ -800,6 +830,7 @@ def _write_composite_manifest(
     deps: dict[str, Any],
     manifest_path: Path,
     aoi_id: str,
+    grid: CompositeGrid,
     composite_datetime: str,
     period_start: str,
     period_end: str,
@@ -821,6 +852,11 @@ def _write_composite_manifest(
         "product_level": "BOA-COMPOSITE",
         "composite": True,
         "aoi_id": aoi_id,
+        "composite_grid_crs": grid.crs,
+        "composite_resolution_meters": grid.resolution,
+        "composite_grid_bounds": list(grid.bounds),
+        "composite_grid_dimensions": [grid.width, grid.height],
+        "composite_grid_transform": list(grid.transform),
         "composite_date": composite_date,
         "acquisition_datetime": composite_datetime,
         "acquisition_date": composite_date,
@@ -839,6 +875,10 @@ def _write_composite_manifest(
         "properties": {
             "akasha:composite": True,
             "akasha:aoi_id": aoi_id,
+            "akasha:composite_grid_crs": grid.crs,
+            "akasha:composite_resolution_meters": grid.resolution,
+            "akasha:composite_grid_bounds": list(grid.bounds),
+            "akasha:composite_grid_dimensions": [grid.width, grid.height],
             "akasha:period_start": period_start,
             "akasha:period_end": period_end,
             "akasha:contributing_scenes": metrics["contributing_scenes"],
@@ -931,6 +971,7 @@ def build_resource_sat_composite(
         deps=deps,
         manifest_path=manifest,
         aoi_id=aoi_id,
+        grid=grid,
         composite_datetime=composite_datetime,
         period_start=window_start,
         period_end=window_end,

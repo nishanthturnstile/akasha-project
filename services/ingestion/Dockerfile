@@ -31,8 +31,8 @@ COPY scripts/prepare_sentinel2_l2a_cogs.py ./scripts/prepare_sentinel2_l2a_cogs.
 COPY scripts/prepare_resourcesat_liss3_boa_cogs.py ./scripts/prepare_resourcesat_liss3_boa_cogs.py
 COPY data/seed ./data/seed
 
-# Default command prints resolved config + sample scene, then exits.
+# Default command prints resolved config, then exits.
 # Seeding/verification are run on demand:
 #   python worker.py seed     (idempotent: pgSTAC migrate -> load -> MinIO)
-#   python worker.py verify   (Slice 1 exit criteria)
+#   python worker.py verify   (ResourceSat default; pass --collection-id for legacy sources)
 CMD ["python", "worker.py", "info"]

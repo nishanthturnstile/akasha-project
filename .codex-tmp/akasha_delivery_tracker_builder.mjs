@@ -43,7 +43,7 @@ const roadmap = [
     "Phase 0 - Implemented Foundation",
     "Architecture and service topology",
     "Production application foundation",
-    "Canonical multi-service app with one public web gateway, internal API/TiTiler/STAC/PostGIS/MinIO, local Docker, Railway, and Coolify portability.",
+    "Canonical multi-service app with one public web gateway, internal API/TiTiler/STAC/PostGIS/MinIO, local Docker, and Coolify portability.",
     "React/Vite SPA served through Caddy gateway; same-origin /api and /tiles paths.",
     "FastAPI BFF, pgSTAC/STAC, PostGIS, MinIO, TiTiler display tile path, ingestion worker.",
     "Docker Compose, health checks, slice validators, smoke test, pinned images.",

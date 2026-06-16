@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Slice 0 artifact validator for the Akasha Railway MVP.
+"""Slice 0 artifact validator for the Akasha MVP.
 
 The Emergent sandbox has no Docker engine, so this script proves the Slice 0
 "core" the way we *can* here: by statically validating that every required
@@ -51,7 +51,6 @@ REQUIRED_PATHS = [
     # source-of-truth docs (kept safe)
     "docs/engineering-dos-donts.md",
     "docs/mvp-execution-plan.md",
-    "docs/railway-deployment-guide.md",
     "docs/architecture-tech-stack.md",
     "docs/emergent-context.md",
     # api
@@ -60,7 +59,6 @@ REQUIRED_PATHS = [
     "apps/api/app/config.py",
     "apps/api/requirements.txt",
     "apps/api/Dockerfile",
-    "apps/api/railway.json",
     "apps/api/.env.example",
     "apps/api/tests/test_health.py",
     # frontend
@@ -71,14 +69,11 @@ REQUIRED_PATHS = [
     "apps/frontend/.env.example",
     # services
     "services/titiler/Dockerfile",
-    "services/titiler/railway.json",
     "services/titiler/.env.example",
     "services/stac-api/Dockerfile",
-    "services/stac-api/railway.json",
     "services/stac-api/.env.example",
     "services/ingestion/Dockerfile",
     "services/ingestion/worker.py",
-    "services/ingestion/railway.json",
     "services/ingestion/.env.example",
     # infra
     "infra/gateway/Dockerfile",
@@ -86,11 +81,7 @@ REQUIRED_PATHS = [
     "infra/gateway/.env.example",
     "infra/docker/docker-compose.yml",
     "infra/docker/.env.example",
-    "infra/railway/README.md",
-    "infra/railway/ENV_MATRIX.md",
-    "infra/railway/web.railway.json",
     # root conventions
-    "railway.json",
     "pyproject.toml",
     ".editorconfig",
     ".prettierrc.json",
@@ -203,42 +194,6 @@ check(
 
 
 # --------------------------------------------------------------------------
-# 4) railway.json health check paths + valid JSON
-# --------------------------------------------------------------------------
-section("Railway configs")
-RAILWAY_EXPECT = {
-    "railway.json": ("/health", "infra/gateway/Dockerfile"),
-    "apps/api/railway.json": ("/health", "Dockerfile"),
-    "services/titiler/railway.json": ("/healthz", "Dockerfile"),
-    "services/stac-api/railway.json": ("/_mgmt/ping", "Dockerfile"),
-}
-for rel, (hc, dockerfile) in RAILWAY_EXPECT.items():
-    p = REPO / rel
-    if not p.exists():
-        check(False, f"missing {rel}")
-        continue
-    try:
-        data = json.loads(p.read_text())
-    except json.JSONDecodeError as exc:
-        check(False, f"{rel} invalid JSON: {exc}")
-        continue
-    check(data.get("deploy", {}).get("healthcheckPath") == hc, f"{rel} healthcheckPath == {hc}")
-    check(
-        data.get("build", {}).get("dockerfilePath") == dockerfile,
-        f"{rel} dockerfilePath == {dockerfile}",
-    )
-
-# ingestion worker railway.json is valid JSON (no healthcheck \u2014 it's a worker).
-ing = REPO / "services/ingestion/railway.json"
-if ing.exists():
-    try:
-        json.loads(ing.read_text())
-        check(True, "services/ingestion/railway.json valid JSON")
-    except json.JSONDecodeError as exc:
-        check(False, f"services/ingestion/railway.json invalid JSON: {exc}")
-
-
-# --------------------------------------------------------------------------
 # 5) Caddy gateway routes
 # --------------------------------------------------------------------------
 section("Caddy gateway routes")
@@ -286,7 +241,7 @@ for rel in ENV_EXAMPLES:
 # 7) JSON sanity for other config files
 # --------------------------------------------------------------------------
 section("JSON sanity")
-for rel in ["apps/frontend/package.json", ".prettierrc.json", "infra/railway/web.railway.json"]:
+for rel in ["apps/frontend/package.json", ".prettierrc.json"]:
     p = REPO / rel
     if not p.exists():
         check(False, f"missing {rel}")
@@ -302,14 +257,14 @@ for rel in ["apps/frontend/package.json", ".prettierrc.json", "infra/railway/web
 # Report
 # --------------------------------------------------------------------------
 print("\n" + "=" * 64)
-print(" Akasha \u2014 Slice 0 artifact validation")
+print(" Akasha - Slice 0 artifact validation")
 print("=" * 64)
 passed = failed = 0
 for ok, msg in results:
     if ok is None:
-        print(f"\n\u25b8 {msg}")
+        print(f"\n> {msg}")
         continue
-    icon = "\u2713" if ok else "\u2717"
+    icon = "PASS" if ok else "FAIL"
     print(f"  [{icon}] {msg}")
     if ok:
         passed += 1
@@ -321,7 +276,7 @@ print(f" PASSED: {passed}   FAILED: {failed}")
 print("-" * 64)
 
 if failed:
-    print("\nSlice 0 validation FAILED \u2014 fix the items above.")
+    print("\nSlice 0 validation FAILED - fix the items above.")
     sys.exit(1)
-print("\nSlice 0 validation PASSED \u2014 skeleton artifacts are Railway-ready.")
+print("\nSlice 0 validation PASSED - skeleton artifacts are deployment-ready.")
 sys.exit(0)

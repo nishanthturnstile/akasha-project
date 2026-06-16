@@ -27,6 +27,7 @@ export interface BasemapConfig {
 export interface AppConfig {
   appName: string;
   aoi: AoiConfig;
+  aois?: AoiConfig[];
   /** Backward-compatible field. Esri basemaps are configured through `basemap`. */
   basemapStyleUrl: string;
   basemap: BasemapConfig;
@@ -37,7 +38,9 @@ export interface AppConfig {
   defaultIndex: string;
 }
 
-export type SourceKind = 'optical' | 'sar';
+export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
+export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
+export type SourceAvailabilityStatus = 'active' | 'gated';
 
 export interface Source {
   id: string;
@@ -52,7 +55,118 @@ export interface Source {
   supportedIndices?: string[];
   maskMethod?: string | null;
   availableMaskOptions?: Array<keyof CloudMaskOptions>;
+  limitations?: string[];
   metricsProvisional?: boolean;
+  resolutionMeters?: number | null;
+  analysisLevel?: SourceAnalysisLevel;
+  availabilityStatus?: SourceAvailabilityStatus;
+  gatedReason?: string | null;
+}
+
+export interface MonitoringFailure {
+  productId?: string | null;
+  sourceId?: string | null;
+  sceneKey?: string | null;
+  status?: string | null;
+  retries: number;
+  bytes: number;
+  updatedAt?: string | null;
+  failureKind: string;
+  error?: string | null;
+}
+
+export interface MonitoringLedgerSource {
+  sourceId: string;
+  statusCounts: Record<string, number>;
+  bytes: number;
+  lastUpdatedAt?: string | null;
+  failureCountsByKind: Record<string, number>;
+  lastFailure?: MonitoringFailure | null;
+  latestSuccessfulCompositeDate?: string | null;
+  latestSuccessfulCompositeProductId?: string | null;
+  latestSuccessfulCompositeAoiId?: string | null;
+  latestSuccessfulCompositeUpdatedAt?: string | null;
+  latestSuccessfulComposites?: Array<{
+    aoiId?: string | null;
+    date?: string | null;
+    productId?: string | null;
+    updatedAt?: string | null;
+  }>;
+}
+
+export interface IngestionLedgerSummary {
+  status: string;
+  path?: string | null;
+  rowCount?: number | null;
+  statusCounts: Record<string, number>;
+  bytes?: number | null;
+  lastUpdatedAt?: string | null;
+  failureCountsByKind: Record<string, number>;
+  lastFailures: MonitoringFailure[];
+  bySource: MonitoringLedgerSource[];
+  lastError?: string | null;
+}
+
+export interface StoragePrefixUsage {
+  prefix: string;
+  objectCount: number;
+  bytes: number;
+  zeroByteObjectCount?: number;
+}
+
+export interface StorageUsage {
+  status: string;
+  bucket?: string | null;
+  objectCount?: number | null;
+  bytes?: number | null;
+  zeroByteObjectCount?: number | null;
+  byPrefix: StoragePrefixUsage[];
+  lastError?: string | null;
+}
+
+export interface ImagerySourceMonitoringSource {
+  sourceId: string;
+  label?: string | null;
+  provider?: string | null;
+  kind?: SourceKind | string | null;
+  availabilityStatus?: SourceAvailabilityStatus | string | null;
+  analysisLevel?: SourceAnalysisLevel | string | null;
+  refreshPolicy?: string | null;
+  latestAvailableDate?: string | null;
+  latestUsableDate?: string | null;
+  daysSinceLatestAvailable?: number | null;
+  staleAfterDays: number;
+  isStale: boolean;
+  dateCount: number;
+  tileAvailableDateCount: number;
+  coveragePercent?: number | null;
+  usablePixelPercent?: number | null;
+  cloudMaskedPercent?: number | null;
+  metricsProvisional: boolean;
+  gatedReason?: string | null;
+  warnings: string[];
+  tileUnavailableReasons?: string[];
+  lastError?: string | null;
+  latestSuccessfulCompositeDate?: string | null;
+  latestSuccessfulCompositeProductId?: string | null;
+  latestSuccessfulCompositeAoiId?: string | null;
+  latestSuccessfulCompositeUpdatedAt?: string | null;
+  latestSuccessfulComposites?: Array<{
+    aoiId?: string | null;
+    date?: string | null;
+    productId?: string | null;
+    updatedAt?: string | null;
+  }>;
+  daysSinceLatestSuccessfulComposite?: number | null;
+  isSuccessfulCompositeStale: boolean;
+}
+
+export interface ImagerySourceMonitoringResponse {
+  generatedAt: string;
+  staleAfterDays: number;
+  sources: ImagerySourceMonitoringSource[];
+  storage: StorageUsage;
+  ingestionLedger: IngestionLedgerSummary;
 }
 
 export interface SceneDate {
@@ -65,6 +179,7 @@ export interface SceneDate {
   isLatestUsable: boolean;
   metricsProvisional: boolean;
   tileAvailable: boolean;
+  unavailableReason?: string | null;
   sceneCount?: number;
   /** [west, south, east, north] */
   bounds?: [number, number, number, number];
@@ -74,7 +189,7 @@ export interface SceneDate {
 
 export interface DefaultLayer {
   sourceId: string;
-  acquisitionDate: string;
+  acquisitionDate: string | null;
   displayMode?: string;
   kind?: SourceKind;
   displayModes?: string[];
@@ -82,15 +197,19 @@ export interface DefaultLayer {
   description?: string;
   supportedIndices?: string[];
   /** Same-origin `/api/tiles/.../{z}/{x}/{y}.png` template — never a COG/MinIO/TiTiler URL. */
-  tileUrlTemplate: string;
+  tileUrlTemplate: string | null;
   /** [west, south, east, north] */
-  bounds?: [number, number, number, number];
+  bounds?: [number, number, number, number] | null;
   sceneCount?: number;
   minzoom: number;
   maxzoom: number;
   attribution: string;
   usablePixelPercent: number | null;
+  cloudMaskedPercent: number | null;
+  coveragePercent: number | null;
   metricsProvisional: boolean;
+  tileAvailable: boolean;
+  unavailableReason?: string | null;
 }
 
 export type PlotStatus = 'planned' | 'active' | 'inactive' | 'archived';
@@ -212,6 +331,7 @@ export interface FieldStatisticsResponse {
     formula?: string;
     bands?: string[];
     maskMethod?: string;
+    nativeExcludedMaskClasses?: number[];
     cloudMaskOptions?: CloudMaskOptions;
     cloudMaskMapping?: CloudMaskMapping;
     reflectanceCorrection?: string;

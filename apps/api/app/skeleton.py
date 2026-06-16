@@ -1,4 +1,4 @@
-"""Canonical Slice 0 skeleton metadata for the Akasha Railway MVP.
+"""Canonical Slice 0 skeleton metadata for the Akasha MVP.
 
 This module is the single source of truth for:
   * the multi-service topology (service registry)
@@ -36,8 +36,8 @@ PINNED_IMAGES: dict[str, str] = {
 }
 
 # --------------------------------------------------------------------------
-# Service registry (railway-deployment-guide.md topology). Only `web` is
-# publicly reachable; everything else is private (railway.internal).
+# Service registry (architecture-tech-stack.md topology). Only `web` is
+# publicly reachable; everything else is private (internal Docker network).
 # `internalPort` is the port the service listens on inside the private network.
 # --------------------------------------------------------------------------
 SERVICES: list[dict[str, Any]] = [
@@ -142,15 +142,15 @@ SERVICES: list[dict[str, Any]] = [
 ]
 
 # --------------------------------------------------------------------------
-# Environment variable matrix (railway-deployment-guide.md). Placeholders only.
-# Do NOT add aliases beyond this matrix (per the deployment guide).
+# Environment variable matrix (infra/selfhosted/env.example). Placeholders only.
+# Do NOT add aliases beyond this matrix (per the deployment docs).
 # --------------------------------------------------------------------------
 ENV_MATRIX: dict[str, dict[str, str]] = {
     "web": {
         "PUBLIC_APP_NAME": "Akasha",
         "PUBLIC_DEFAULT_AOI_NAME": "Bangalore",
-        "API_UPSTREAM_URL": "http://api.railway.internal:8000",
-        "TITILER_UPSTREAM_URL": "http://titiler.railway.internal:8000",
+        "API_UPSTREAM_URL": "http://api:8000",
+        "TITILER_UPSTREAM_URL": "http://titiler:8000",
         "VITE_ESRI_API_KEY": "<referrer-restricted ArcGIS Location Platform key>",
         "VITE_ESRI_BASEMAP_STYLE": "arcgis/imagery",
         "VITE_ESRI_BASEMAP_STYLE_FAMILY": "arcgis",
@@ -160,21 +160,23 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
     },
     "api": {
         "APP_ENV": "production",
-        "DATABASE_URL": "postgresql://<user>:<password>@postgis.railway.internal:5432/<db>",
-        "STAC_API_URL": "http://stac-api.railway.internal:8080",
-        "TITILER_URL": "http://titiler.railway.internal:8000",
-        "S3_ENDPOINT_URL": "http://minio.railway.internal:9000",
+        "DATABASE_URL": "postgresql://<user>:<password>@postgis:5432/<db>",
+        "STAC_API_URL": "http://stac-api:8080",
+        "TITILER_URL": "http://titiler:8000",
+        "S3_ENDPOINT_URL": "http://minio:9000",
         "AWS_ACCESS_KEY_ID": "<minio-access-key>",
         "AWS_SECRET_ACCESS_KEY": "<minio-secret-key>",
-        "AWS_S3_ENDPOINT": "minio.railway.internal:9000",
+        "AWS_S3_ENDPOINT": "minio:9000",
         "AWS_VIRTUAL_HOSTING": "FALSE",
         "AWS_HTTPS": "NO",
         "AWS_REGION": "us-east-1",
         "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
         "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
         "AKASHA_RGB_RESCALE": "0,3000",
-        "DEFAULT_SOURCE_ID": "sentinel-2-l2a",
+        "DEFAULT_SOURCE_ID": "resourcesat-2a-liss3-boa",
         "DEFAULT_AOI_ID": "bangalore",
+        "AOI_CONFIG_PATH": "/app/data/seed/bangalore-60km-aoi.geojson",
+        "AOI_CONFIG_DIR": "/app/data/seed/aois",
         "BASEMAP_PROVIDER": "esri",
         "ESRI_BASEMAP_STYLE": "arcgis/imagery",
         "ESRI_BASEMAP_STYLE_FAMILY": "arcgis",
@@ -204,7 +206,7 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "PORT": "8000",
         "AWS_ACCESS_KEY_ID": "<minio-access-key>",
         "AWS_SECRET_ACCESS_KEY": "<minio-secret-key>",
-        "AWS_S3_ENDPOINT": "minio.railway.internal:9000",
+        "AWS_S3_ENDPOINT": "minio:9000",
         "AWS_VIRTUAL_HOSTING": "FALSE",
         "AWS_HTTPS": "NO",
         "AWS_REGION": "us-east-1",
@@ -212,8 +214,8 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
     },
     "stac-api": {
-        "POSTGRES_HOST_READER": "postgis.railway.internal",
-        "POSTGRES_HOST_WRITER": "postgis.railway.internal",
+        "POSTGRES_HOST_READER": "postgis",
+        "POSTGRES_HOST_WRITER": "postgis",
         "POSTGRES_PORT": "5432",
         "POSTGRES_USER": "<user>",
         "POSTGRES_PASS": "<password>",
@@ -228,12 +230,12 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "MINIO_ROOT_USER": "<generated-user>",
         "MINIO_ROOT_PASSWORD": "<generated-password>",
         "MINIO_BROWSER": "off",
-        "MINIO_SERVER_URL": "http://minio.railway.internal:9000",
+        "MINIO_SERVER_URL": "http://minio:9000",
     },
     "ingestion-worker": {
-        "DATABASE_URL": "postgresql://<user>:<password>@postgis.railway.internal:5432/<db>",
-        "STAC_API_URL": "http://stac-api.railway.internal:8080",
-        "S3_ENDPOINT_URL": "http://minio.railway.internal:9000",
+        "DATABASE_URL": "postgresql://<user>:<password>@postgis:5432/<db>",
+        "STAC_API_URL": "http://stac-api:8080",
+        "S3_ENDPOINT_URL": "http://minio:9000",
         "S3_ACCESS_KEY": "<access-key>",
         "S3_SECRET_KEY": "<secret-key>",
         "AOI_CONFIG_PATH": "/app/config/aoi/bangalore.geojson",
@@ -263,17 +265,17 @@ ROADMAP: list[dict[str, str]] = [
     {
         "id": "slice6",
         "phase": "Phase 6",
-        "name": "Railway deployment hardening",
+        "name": "Deployment hardening",
         "status": "planned",
     },
     {"id": "slice7", "phase": "Phase 7", "name": "Acceptance & QA", "status": "planned"},
 ]
 
 IN_SCOPE: list[str] = [
-    "Monorepo structure: apps/{frontend,api}, services/{titiler,stac-api,ingestion}, infra/{gateway,railway,docker}, docs, scripts",
+    "Monorepo structure: apps/{frontend,api}, services/{titiler,stac-api,ingestion}, infra/{gateway,docker,selfhosted}, docs, scripts",
     "Dockerfile per deployable service (web gateway, api, titiler, stac-api, ingestion)",
-    "Local docker-compose.yml mirroring the Railway topology (private networking + volumes)",
-    "Railway-ready per-service configuration examples (railway.json + env matrix)",
+    "Local docker-compose.yml mirroring the deployment topology (private networking + volumes)",
+    "Per-service Dockerfiles and a documented env matrix for deployment",
     ".env.example files with placeholders only (no secrets / no default credentials)",
     "Health endpoints + documented health paths for web, api, titiler, stac-api",
     "Shared formatting/linting conventions (ruff/black/isort, prettier, editorconfig)",
@@ -284,7 +286,7 @@ OUT_OF_SCOPE: list[str] = [
     "Raster: COG/SCL handling, TiTiler expressions, masked statistics, index math (Slice 2)",
     "BFF product contracts: /api/config, /api/sources, /api/layers/default, plot CRUD, /api/indices/statistics (Slice 3)",
     "Frontend product UX: MapLibre map, Terra Draw, layer/index panels (Slices 4-5)",
-    "Railway hardening & full smoke test, custom domains (Slice 6)",
+    "Deployment hardening & full smoke test, custom domains (Slice 6)",
     "Wave 2 features, user accounts/roles, ISRO/SAR sources, automated ingestion",
 ]
 
@@ -294,7 +296,7 @@ def service_registry(live_service_id: str = "api") -> list[dict[str, Any]]:
 
     Only the currently-running service (the `api` answering this request) is
     reported as `live`. Every other service is `defined` because it only runs
-    under Docker Compose (local) or as a separate Railway service. This is
+    under Docker Compose (local) or as a separate deployed service. This is
     intentionally honest: we do not fake health for services that are not up.
     """
     out: list[dict[str, Any]] = []

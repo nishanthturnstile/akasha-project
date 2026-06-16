@@ -65,4 +65,34 @@ describe('DateChip — timeline chip behavior', () => {
         expect(queryByTestId('date-chip-cloud-2026-05-11')).toBeNull();
         expect(queryByTestId('date-chip-sensor-2026-05-11')).toBeNull();
     });
+
+    it('uses coverage semantics for context chips', () => {
+        const { getByTestId, queryByTestId } = renderChip({
+            sourceKind: 'context',
+            sensorBadge: 'OCM',
+            date: makeDate({ cloudMaskedPercent: 80, coveragePercent: 76 }),
+        });
+        expect(queryByTestId('date-chip-cloud-2026-05-11')).toBeNull();
+        expect(queryByTestId('date-chip-sensor-2026-05-11')).toBeNull();
+        expect(getByTestId('context-coverage-chip').textContent).toContain('76% coverage');
+    });
+
+    it('marks unavailable dates with the backend reason instead of the cloud glyph', () => {
+        const { getByRole, getByTestId, queryByTestId } = renderChip({
+            date: makeDate({
+                tileAvailable: false,
+                cloudMaskedPercent: 80,
+                unavailableReason: 'Required raster assets are missing for this date: mask.',
+            }),
+        });
+        const button = getByRole('option', {
+            name: /Required raster assets are missing for this date: mask\./,
+        });
+        expect((button as HTMLButtonElement).disabled).toBe(true);
+        expect(button.getAttribute('title')).toBe(
+            'Required raster assets are missing for this date: mask.',
+        );
+        expect(getByTestId('date-chip-unavailable-2026-05-11')).toBeTruthy();
+        expect(queryByTestId('date-chip-cloud-2026-05-11')).toBeNull();
+    });
 });

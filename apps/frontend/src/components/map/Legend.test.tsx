@@ -16,6 +16,13 @@ describe('Legend', () => {
         expect(legend.getAttribute('aria-label')).toContain('NDVI');
     });
 
+    it('renders the NDVI vegetation ramp for precomputed context NDVI', () => {
+        const { getByTestId } = render(<Legend displayMode="NDVI_CONTEXT" sourceKind="context" />);
+        const legend = getByTestId('map-legend');
+        expect(legend.textContent).toContain('NDVI');
+        expect(legend.getAttribute('aria-label')).toContain('NDVI');
+    });
+
     it('renders the SAR backscatter ramp for VV grayscale', () => {
         const { getByTestId } = render(<Legend displayMode="VV_GRAYSCALE" sourceKind="sar" />);
         const legend = getByTestId('map-legend');

@@ -31,6 +31,7 @@ def test_parse_band_meta_reads_path_row_date_and_backgrounds(tmp_path: Path) -> 
                 "BAND3_BACKGROUND_VALUE = 0",
                 "BAND4_BACKGROUND_VALUE = 0",
                 "BAND5_BACKGROUND_VALUE = 0",
+                "VALID_RANGE = 0-10000",
                 "REFLECTANCE_SCALE = 0.0001",
                 "REFLECTANCE_OFFSET = 0",
             ]
@@ -48,6 +49,12 @@ def test_parse_band_meta_reads_path_row_date_and_backgrounds(tmp_path: Path) -> 
         "BAND3": 0,
         "BAND4": 0,
         "BAND5": 0,
+    }
+    assert meta.valid_ranges == {
+        "BAND2": (0.0, 10000.0),
+        "BAND3": (0.0, 10000.0),
+        "BAND4": (0.0, 10000.0),
+        "BAND5": (0.0, 10000.0),
     }
     assert meta.scale == 0.0001
     assert meta.offset == 0
@@ -68,6 +75,36 @@ def test_resourcesat_mask_generation_uses_provisional_classes() -> None:
     mask = build_mask_array(np, analytic)
 
     assert mask.tolist() == [[0, 1, 4, 3, 2]]
+
+
+def test_resourcesat_mask_generation_uses_all_band_valid_range_gap_rule() -> None:
+    # The ResourceSat gap authority stays all-band based: one invalid band is not enough.
+    analytic = np.array(
+        [
+            [[1000, 12000, 12000]],
+            [[1000, 1100, 12000]],
+            [[3000, 3600, 12000]],
+            [[2000, 2600, 12000]],
+        ],
+        dtype="uint16",
+    )
+
+    valid_ranges = {
+        "BAND2": (0.0, 10000.0),
+        "BAND3": (0.0, 10000.0),
+        "BAND4": (0.0, 10000.0),
+        "BAND5": (0.0, 10000.0),
+    }
+
+    mask = build_mask_array(
+        np,
+        analytic,
+        valid_ranges=valid_ranges,
+        cloud_brightness_threshold=10,
+        cloud_swir_threshold=10,
+    )
+
+    assert mask.tolist() == [[1, 1, 0]]
 
 
 def test_selection_manifest_accepts_bhoonidhi_download_candidates(tmp_path: Path) -> None:
@@ -250,7 +287,10 @@ def test_write_manifest_emits_resourcesat_contract(tmp_path: Path) -> None:
     write_manifest(
         deps={"rasterio": FakeRasterio(), "transform_bounds": fake_transform_bounds},
         paths=paths,
-        meta=ResourceSatMeta(raw={"PATH": "99", "ROW": "65"}),
+        meta=ResourceSatMeta(
+            raw={"PATH": "99", "ROW": "65"},
+            valid_ranges={"BAND2": (0.0, 10000.0)},
+        ),
         analytic_intermediate=tmp_path / "analytic_intermediate.tif",
         mask_intermediate=tmp_path / "mask_intermediate.tif",
     )
@@ -264,4 +304,5 @@ def test_write_manifest_emits_resourcesat_contract(tmp_path: Path) -> None:
     assert payload["properties"]["akasha:metrics_provisional"] is True
     assert payload["properties"]["akasha:mask_method"] == MASK_METHOD
     assert payload["classification_classes"][0]["value"] == 0
+    assert payload["band_meta"]["valid_ranges"] == {"BAND2": [0.0, 10000.0]}
     assert payload["bbox"] == pytest.approx(expected_bbox)

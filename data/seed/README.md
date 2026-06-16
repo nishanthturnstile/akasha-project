@@ -1,77 +1,91 @@
-# `data/seed` — Akasha Slice 1 seed assets
+# `data/seed` - Akasha seed assets
 
 Deterministic seed data for the storage/catalog foundation. The ingestion
-worker (`services/ingestion`) consumes these to populate pgSTAC and MinIO.
+worker (`services/ingestion`) consumes these assets to populate pgSTAC and
+MinIO for local and self-hosted deployments.
 
 ```text
 data/seed/
-  bangalore-aoi.geojson                     AOI polygon (configurable; not hard-coded)
-  sample-plot.geojson                       Example named plot (“North field”)
+  bangalore-60km-aoi.geojson                production AOI polygon and composite grid metadata
+  sample-plot.geojson                       example named plot ("North field")
   stac/
-    sentinel-2-l2a-collection.json          STAC Collection (eo/raster/proj/classification)
-    sentinel-2-l2a-sample-item.json         STAC Item for the sample scene
-  rasters/{acquisitionDate}/{mgrsTile}/     operator-provided COGs (NOT committed)
-    analytic.tif                            frozen 9-band uint16 DN reflectance COG
-    scl.tif                                 categorical SCL COG (nearest resampling)
-    prepare_manifest.json                   manifest used for upload/STAC registration
+    resourcesat-2a-liss3-boa-collection.json
+    resourcesat-2a-liss3-boa-sample-item.json
+  rasters/resourcesat-2a-liss3-boa/
+    scene/{date}/{sceneComponent}/          operator-prepared scene COGs (not committed)
+    composite/{aoiId}/{date}/               operator-prepared composite COGs (not committed)
+      analytic.tif                          4-band uint16 BOA reflectance COG
+      mask.tif                              Akasha provisional validity/cloud mask COG
+      prepare_manifest.json                 upload/STAC registration manifest
 ```
 
-## Frozen analytic band order (Wave 1)
+Legacy Sentinel STAC fixtures may still exist while tests cover backwards
+compatibility, but ResourceSat LISS-3 is the production default seed contract.
+
+## ResourceSat LISS-3 Analytic Bands
 
 | Pos | Band | Common name | Used for |
 |---:|---|---|---|
-| 1 | B04 | red | RGB, NDVI |
-| 2 | B08 | nir | NDVI, NDRE, NDMI, NDWI |
-| 3 | B05 | rededge | NDRE |
-| 4 | B06 | rededge | future red-edge |
-| 5 | B07 | rededge | future red-edge |
-| 6 | B11 | swir16 | NDMI |
-| 7 | B12 | swir22 | future moisture/burn |
-| 8 | B03 | green | RGB, NDWI |
-| 9 | B02 | blue | RGB |
+| 1 | BAND2 | green | FCC, NDWI |
+| 2 | BAND3 | red | FCC, NDVI, MSAVI |
+| 3 | BAND4 | nir | FCC, NDVI, MSAVI, NDMI, NDWI |
+| 4 | BAND5 | swir16 | NDMI |
 
-True-colour RGB = analytic bands **[1, 8, 9]** (B04, B03, B02). Reflectance:
-raw uint16 DN; `scale = 0.0001`, `offset = -0.1` (NOT -1000). SCL default
-excluded classes: `0,1,2,3,7,8,9,10,11` (class 6 water kept).
+Default display is FCC with role order `NIR, RED, GREEN`. Reflectance is raw
+uint16 DN with `scale = 0.0001` and `offset = 0.0`.
 
-## Deterministic scene
+## Provisional Mask
 
-Slice 2 uses the real prepared Sentinel-2 L2A scene (see
-[`../../docs/sentinel-2-l2a-cog-prep-runbook.md`](../../docs/sentinel-2-l2a-cog-prep-runbook.md)).
-Source product: `S2B_MSIL2A_20250914T050649_N0511_R019_T43PHP_20250914T074457.SAFE`.
+ResourceSat LISS-3 BOA samples validated so far do not include a native
+quality/cloud/shadow raster. Akasha generates a provisional mask:
+
+| Value | Meaning | Default action |
+|---:|---|---|
+| 0 | gap/background/nodata | exclude |
+| 1 | valid optical pixel | keep |
+| 2 | cloud | exclude |
+| 3 | shadow | exclude |
+| 4 | water | keep |
+
+Default excluded mask classes are `0,2,3`. Metrics using this mask are marked
+`akasha:metrics_provisional = true`.
+
+## Deterministic Sample Composite
 
 ```text
-scene key : sentinel-2-l2a:L2A:43PHP:2025-09-14T05:06:49.024000Z:05.11
-item id   : sentinel-2-l2a_43PHP_20250914_0511
+source id : resourcesat-2a-liss3-boa
+aoi id    : bangalore-60km
+item id   : resourcesat-2a-liss3-boa_bangalore-60km_2026-03-19_composite
+date      : 2026-03-19
 bucket    : akasha-cogs
-keys      : sentinel-2-l2a/2025-09-14/analytic.tif      # legacy sample layout
-            sentinel-2-l2a/2025-09-14/scl.tif
-footprint : EPSG:32643, shape 10980x10980, 10 m, bbox4326
-            [77.7513, 11.6470, 78.7709, 12.6502]
+keys      : resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/analytic.tif
+            resourcesat-2a-liss3-boa/composite/bangalore-60km/2026-03-19/mask.tif
+footprint : bbox4326 [77.023647, 12.537266, 78.131561, 13.61645]
 ```
 
-New manifest-driven Sentinel-2 scenes use dynamic collision-safe keys:
+The checked-in sample STAC item is a contract scaffold. Real deployments should
+replace placeholder/provisional metrics by running the Bhoonidhi download,
+COG-preparation, ingest-manifest, and composite verification flow.
 
-```text
-sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/analytic.tif
-sentinel-2-l2a/{acquisitionDate}/{mgrsTile}/scl.tif
-```
+## Seeding
 
-## Seeding (run on Railway / local Docker — see infra/railway/README.md)
+Run on the deployment or local Docker stack.
 
 ```bash
-# 1) app schema (PostGIS + plots) — from the api service
-python -m app.cli migrate
-# 2) catalog + storage — from the ingestion worker (idempotent)
-python worker.py seed         # pgSTAC migrate -> load collection/item -> MinIO bucket/keys
-python worker.py verify       # checks the 3 Slice 1 exit criteria
+# App schema from the api service.
+python -m app.cli db upgrade
+
+# Catalog + storage from the ingestion worker.
+python worker.py seed
+python worker.py verify
+
+# Prepared real COG ingestion.
+python worker.py ingest-manifest --method upsert
+python worker.py verify-manifest-cogs
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
 ```
 
-Real COGs are operator-provided. The legacy sample seed may create **empty
-placeholder objects** at the sample deterministic keys when `rasters/{date}/*.tif`
-are absent. Production-like ingestion should use prepared manifests under
-`rasters/{date}/{mgrsTile}/prepare_manifest.json` and `python worker.py
-ingest-manifest`, which uploads validated COGs and registers dynamic STAC items.
-
-For the repeatable Sentinel-2 L2A SAFE ZIP → `analytic.tif` + `scl.tif` process,
-see [`../../docs/sentinel-2-l2a-cog-prep-runbook.md`](../../docs/sentinel-2-l2a-cog-prep-runbook.md).
+Real COGs are operator-provided and not committed. Production-like ingestion
+should use prepared manifests under the ResourceSat `rasters/` tree and
+`python worker.py ingest-manifest`, which uploads validated COGs and registers
+STAC items idempotently.

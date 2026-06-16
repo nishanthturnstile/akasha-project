@@ -1,5 +1,5 @@
 # Akasha BFF (api) — dependencies.
-# Pinned for reproducible Railway builds.
+# Pinned for reproducible builds.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-dotenv==1.0.1

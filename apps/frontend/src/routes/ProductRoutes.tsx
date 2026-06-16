@@ -37,6 +37,10 @@ const MarketplacePage = lazyPlaceholderPage('MarketplacePage');
 const AccountSettingsPage = lazy(() => import('@/pages/account/AccountSettingsPage'));
 const ApiSettingsPage = lazy(() => import('@/pages/account/ApiSettingsPage'));
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
+const OnboardingStep1 = lazy(() => import('@/components/onboarding/OnboardingStep1'));
+const OnboardingStep2 = lazy(() => import('@/components/onboarding/OnboardingStep2'));
+const OnboardingFieldCreate = lazy(() => import('@/components/onboarding/OnboardingFieldCreate'));
+const OnboardingStep3 = lazy(() => import('@/components/onboarding/OnboardingStep3'));
 
 function RouteFallback() {
   return (
@@ -58,6 +62,11 @@ export function ProductRoutes() {
   return (
     <Routes>
       <Route path="login" element={ withSuspense(LoginPage) } />
+      {/* Onboarding flow routes */}
+      <Route path="onboarding/step1" element={ withSuspense(OnboardingStep1) } />
+      <Route path="onboarding/step2" element={ withSuspense(OnboardingStep2) } />
+      <Route path="onboarding/field-create" element={ withSuspense(OnboardingFieldCreate) } />
+      <Route path="onboarding/step3" element={ withSuspense(OnboardingStep3) } />
       <Route element={ <AuthGate><AppShell /></AuthGate> }>
         <Route index element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />
         <Route path="map" element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />

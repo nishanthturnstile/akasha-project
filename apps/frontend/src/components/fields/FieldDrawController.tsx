@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
-import { Check, Pencil, Sprout, X } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import type { TerraDraw } from 'terra-draw';
 import { Button } from '@/components/ui/button';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import { cn } from '@/lib/utils';
-import type { Plot, PlotCreatePayload, PlotGeometry, PlotUpdatePayload } from '@/types/api';
+import type { Plot, PlotGeometry, PlotUpdatePayload } from '@/types/api';
 
 export type FieldDrawMode = 'draw' | 'edit' | null;
 
@@ -15,11 +15,13 @@ interface FieldDrawControllerProps {
   map: maplibregl.Map | null;
   mode: FieldDrawMode;
   onCancel: () => void;
-  onCreateField: (payload: PlotCreatePayload) => Promise<Plot | void> | Plot | void;
+  onCreateField?: (payload: { name: string; geometry: PlotGeometry }) => Promise<Plot> | Plot;
   onReleaseTool: (owner: MapToolOwner) => void;
   onRequestTool: (owner: MapToolOwner) => boolean;
   onUpdateField: (plotId: string, payload: PlotUpdatePayload) => Promise<Plot | void> | Plot | void;
   selectedPlot: Plot | null;
+  drawResetKey?: number;
+  onPolygonComplete?: (geometry: PlotGeometry | null) => void;
 }
 
 type TerraDrawFeature = Parameters<TerraDraw['addFeatures']>[0][number];
@@ -55,9 +57,10 @@ export function FieldDrawController({
   onRequestTool,
   onUpdateField,
   selectedPlot,
+  drawResetKey = 0,
+  onPolygonComplete,
 }: FieldDrawControllerProps) {
   const [draftGeometry, setDraftGeometry] = useState<PlotGeometry | null>(null);
-  const [draftName, setDraftName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +70,7 @@ export function FieldDrawController({
   modeRef.current = mode;
   const selectedPlotRef = useRef<Plot | null>(selectedPlot);
   selectedPlotRef.current = selectedPlot;
+  const vertexCountRef = useRef(0);
 
   const owner = mode === 'draw' ? 'field-draw' : mode === 'edit' ? 'field-edit' : null;
   const isActiveOwner = owner != null && activeTool === owner;
@@ -87,34 +91,68 @@ export function FieldDrawController({
         // Cleanup must stay idempotent so draw failures do not blank the map.
       }
     }
+    drawRef.current = null;
     setDraftGeometry(null);
-    setDraftName('');
     setIsSaving(false);
     setError(null);
     if (owner) onReleaseTool(owner);
   }, [onReleaseTool, owner]);
 
   const ensureDraw = useCallback(async (): Promise<TerraDraw | null> => {
+    console.log('[FieldDraw] ensureDraw called, map=', !!map, 'drawRef=', !!drawRef.current);
     if (!map) return null;
     if (!drawRef.current) {
       const [
         { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode },
         { TerraDrawMapLibreGLAdapter },
       ] = await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
+      console.log('[FieldDraw] TerraDraw modules loaded');
       const draw = new TerraDraw({
-        adapter: new TerraDrawMapLibreGLAdapter({ map }),
+        adapter: new TerraDrawMapLibreGLAdapter({ map, prefixId: 'field-draw' }),
         modes: [new TerraDrawPolygonMode(), new TerraDrawSelectMode()],
       });
+      console.log('[FieldDraw] TerraDraw instance created');
       draw.on('finish', (id) => {
+        console.log('[FieldDraw] finish event fired, id=', id, 'modeRef=', modeRef.current);
         if (modeRef.current !== 'draw') return;
-        const feature = draw.getSnapshotFeature(id);
+        let feature;
+        try {
+          feature = draw.getSnapshotFeature(id);
+        } catch {
+          return;
+        }
         if (feature?.geometry.type !== 'Polygon') return;
-        setDraftGeometry(feature.geometry as PlotGeometry);
-        setDraftName((current) => current || `Field ${new Date().toISOString().slice(0, 10)}`);
-        draw.setMode('select');
-        draw.selectFeature(id);
+        const geometry = feature.geometry as PlotGeometry;
+        setDraftGeometry(geometry);
+        onPolygonComplete?.(geometry);
+        // Switch to select mode so the finished shape stays visible but the user
+        // cannot accidentally start a second polygon on the next click.
+        try {
+          draw.setMode('select');
+          draw.selectFeature(id);
+        } catch {
+          // Ignore mode-switch errors during cleanup.
+        }
+        if (map && typeof (map as any).getCanvas === 'function') {
+          map.getCanvas().style.cursor = 'grab';
+        }
       });
       draw.on('change', () => {
+        if (modeRef.current === 'draw') {
+          const snapshot = draw.getSnapshot();
+          const drawing = snapshot.find((f) => f.geometry.type === 'Polygon');
+          const ring = drawing?.geometry?.type === 'Polygon'
+            ? (drawing.geometry as PlotGeometry).coordinates[0]
+            : undefined;
+          const count = ring?.length ?? 0;
+          if (count !== vertexCountRef.current) {
+            vertexCountRef.current = count;
+            if (map) {
+              const canvas = map.getCanvas();
+              canvas.style.cursor = count >= 4 ? 'grab' : 'crosshair';
+            }
+          }
+        }
         if (modeRef.current !== 'edit') return;
         const geometry = latestPolygon(draw);
         if (geometry) setDraftGeometry(geometry);
@@ -151,13 +189,23 @@ export function FieldDrawController({
     void (async () => {
       const draw = await ensureDraw();
       if (!draw || cancelled) return;
-      draw.clear();
+      try {
+        draw.clear();
+      } catch {
+        // Ignore clear errors when Terra Draw is temporarily disabled.
+      }
       setDraftGeometry(null);
-      setDraftName('');
       setError(null);
 
       if (mode === 'draw') {
-        draw.setMode('polygon');
+        try {
+          draw.setMode('polygon');
+        } catch {
+          // Ignore mode-switch errors.
+        }
+        if (map && typeof (map as any).getCanvas === 'function') {
+          map.getCanvas().style.cursor = 'crosshair';
+        }
         return;
       }
 
@@ -176,8 +224,12 @@ export function FieldDrawController({
         setError('Unable to load the selected field into the editor.');
         return;
       }
-      draw.setMode('select');
-      draw.selectFeature(selectedPlot.id);
+      try {
+        draw.setMode('select');
+        draw.selectFeature(selectedPlot.id);
+      } catch {
+        // Ignore mode-switch errors during cleanup.
+      }
       setDraftGeometry(selectedPlot.geometry);
     })();
 
@@ -190,6 +242,28 @@ export function FieldDrawController({
     return () => stopDraw();
   }, [stopDraw]);
 
+  useEffect(() => {
+    if (drawResetKey === 0) return;
+    const draw = drawRef.current;
+    if (!draw) return;
+    // Soft-reset: clear the current sketch and return to polygon mode
+    // so the user can immediately start a fresh drawing.
+    try {
+      draw.clear();
+    } catch {
+      /* ignore */
+    }
+    try {
+      draw.setMode('polygon');
+    } catch {
+      /* ignore */
+    }
+    setDraftGeometry(null);
+    onPolygonComplete?.(null);
+    vertexCountRef.current = 0;
+    if (map) map.getCanvas().style.cursor = 'crosshair';
+  }, [drawResetKey, map, onPolygonComplete]);
+
   const title = mode === 'draw' ? 'Save new field' : 'Save boundary edit';
   const hint = useMemo(() => {
     if (error) return error;
@@ -199,15 +273,17 @@ export function FieldDrawController({
     return draftGeometry ? 'Adjust the selected field, then save the boundary.' : 'Select and adjust the field boundary on the map.';
   }, [draftGeometry, error, mode]);
 
+  const [fieldName, setFieldName] = useState('');
+
   const save = async () => {
     if (!draftGeometry || !mode) return;
     setIsSaving(true);
     setError(null);
     try {
       if (mode === 'draw') {
-        const name = draftName.trim();
-        if (!name) {
-          setError('Field name is required.');
+        const name = fieldName.trim() || 'Untitled field';
+        if (!onCreateField) {
+          setError('Create field handler is not available.');
           return;
         }
         await onCreateField({ name, geometry: draftGeometry });
@@ -231,49 +307,50 @@ export function FieldDrawController({
 
   return (
     <div
-      className={ cn('glass flex w-[320px] max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-md p-3', className) }
+      className={ cn('pointer-events-none flex w-[320px] max-w-[calc(100vw-2rem)] flex-col gap-3', className) }
       data-testid="field-draw-controller"
     >
-      <div className="flex items-start gap-2">
-        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-pill bg-primary/10 text-primary">
-          { mode === 'draw' ? <Sprout className="size-4" strokeWidth={ 1.75 } /> : <Pencil className="size-4" strokeWidth={ 1.75 } /> }
+      <div className="pointer-events-auto glass flex flex-col gap-3 rounded-md p-3">
+        <div className="flex items-start gap-2">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-pill bg-primary/10 text-primary">
+            <Pencil className="size-4" strokeWidth={ 1.75 } />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display text-[14px] font-semibold tracking-[-0.01em] text-foreground">
+              { title }
+            </h2>
+            <p className={ cn('mt-1 text-[12px] leading-4 text-muted-foreground', error && 'text-destructive') }>
+              { hint }
+            </p>
+          </div>
         </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="font-display text-[14px] font-semibold tracking-[-0.01em] text-foreground">
-            { title }
-          </h2>
-          <p className={ cn('mt-1 text-[12px] leading-4 text-muted-foreground', error && 'text-destructive') }>
-            { hint }
-          </p>
-        </div>
-      </div>
 
-      { mode === 'draw' && draftGeometry && (
-        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-muted-foreground">
-          Field name
+        { mode === 'draw' && (
           <input
-            value={ draftName }
-            onChange={ (event) => setDraftName(event.target.value) }
-            className="h-9 rounded-md border border-input bg-background/65 px-3 text-[13px] text-foreground shadow-e1 focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+            type="text"
+            value={ fieldName }
+            onChange={ (e) => setFieldName(e.target.value) }
+            placeholder="Field name"
+            className="w-full rounded-sm border border-border bg-background px-2 py-1 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary"
             data-testid="field-draw-name"
           />
-        </label>
-      ) }
+        ) }
 
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={ () => { stopDraw(); onCancel(); } }>
-          <X className="size-4" strokeWidth={ 1.75 } /> Cancel
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          onClick={ () => void save() }
-          disabled={ !draftGeometry || isSaving || (mode === 'edit' && !canEditSelectedPlot) }
-          data-testid="field-draw-save"
-        >
-          <Check className="size-4" strokeWidth={ 1.75 } />
-          { isSaving ? 'Saving…' : 'Save' }
-        </Button>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={ () => { stopDraw(); onCancel(); } }>
+            <X className="size-4" strokeWidth={ 1.75 } /> Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={ () => void save() }
+            disabled={ !draftGeometry || isSaving || (mode === 'edit' && !canEditSelectedPlot) }
+            data-testid="field-draw-save"
+          >
+            <Check className="size-4" strokeWidth={ 1.75 } />
+            { isSaving ? 'Saving…' : 'Save' }
+          </Button>
+        </div>
       </div>
     </div>
   );

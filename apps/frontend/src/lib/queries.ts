@@ -50,6 +50,14 @@ import {
   logout,
   refreshSession,
   updatePlot,
+  listSeasons,
+  createSeason,
+  updateSeason,
+  deleteSeason,
+  listFields,
+  createField,
+  updateField,
+  deleteField,
 } from '@/lib/api';
 import type {
   CloudMaskOptions,
@@ -66,6 +74,10 @@ import type {
   ScoutTaskPayload,
   ScoutTaskUpdatePayload,
   UploadedDataset,
+  SeasonCreatePayload,
+  SeasonUpdatePayload,
+  FieldCreatePayload,
+  FieldUpdatePayload,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -129,7 +141,14 @@ export const queryKeys = {
   notifications: (unreadOnly: boolean) => ['notifications', unreadOnly] as const,
   notificationUnreadCount: ['notifications', 'unread-count'] as const,
   assistantStatus: ['assistant', 'status'] as const,
+<<<<<<< HEAD
   imagerySourceMonitoring: ['monitoring', 'imagery-sources'] as const,
+=======
+  seasons: ['seasons'] as const,
+  season: (seasonId: string) => ['seasons', seasonId] as const,
+  fields: ['fields'] as const,
+  field: (fieldId: string) => ['fields', fieldId] as const,
+>>>>>>> 9e39cad (Update frontend changes)
 };
 
 interface LoginVariables {
@@ -598,5 +617,75 @@ export function useExportFieldReportCsv() {
   return useMutation({
     mutationFn: ({ plotId, options }: FieldReportExportVariables) =>
       exportFieldReportCsv(plotId, options),
+  });
+}
+
+// --------------------------------------------------------------------------
+// Seasons hooks
+// --------------------------------------------------------------------------
+export function useSeasons() {
+  return useQuery({ queryKey: queryKeys.seasons, queryFn: listSeasons });
+}
+
+export function useCreateSeason() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SeasonCreatePayload) => createSeason(payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.seasons }),
+  });
+}
+
+export function useUpdateSeason() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ seasonId, payload }: { seasonId: string; payload: SeasonUpdatePayload }) =>
+      updateSeason(seasonId, payload),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.season(data.id) });
+    },
+  });
+}
+
+export function useDeleteSeason() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteSeason,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.seasons }),
+  });
+}
+
+// --------------------------------------------------------------------------
+// Fields hooks
+// --------------------------------------------------------------------------
+export function useFields() {
+  return useQuery({ queryKey: queryKeys.fields, queryFn: listFields });
+}
+
+export function useCreateField() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: FieldCreatePayload) => createField(payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fields }),
+  });
+}
+
+export function useUpdateField() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fieldId, payload }: { fieldId: string; payload: FieldUpdatePayload }) =>
+      updateField(fieldId, payload),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.field(data.id) });
+    },
+  });
+}
+
+export function useDeleteField() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteField,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fields }),
   });
 }

@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  Crosshair,
   Layers,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
   Sprout,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react';
@@ -32,7 +33,8 @@ export interface AllFieldsPanelProps {
   onRetry?: () => void;
   selectedPlotId?: string | null;
   onSelect?: (plot: Plot) => void;
-  onFocus?: (plot: Plot) => void;
+  onEdit?: (plot: Plot) => void;
+  onDelete?: (plot: Plot) => void;
   onAdd?: () => void;
   onImport?: () => void;
   className?: string;
@@ -153,12 +155,14 @@ function FieldCard({
   plot,
   selected,
   onSelect,
-  onFocus,
+  onEdit,
+  onDelete,
 }: {
   plot: Plot;
   selected: boolean;
   onSelect?: (plot: Plot) => void;
-  onFocus?: (plot: Plot) => void;
+  onEdit?: (plot: Plot) => void;
+  onDelete?: (plot: Plot) => void;
 }) {
   const status = plot.status ? STATUS_COPY[plot.status] : null;
 
@@ -206,21 +210,38 @@ function FieldCard({
           <span className="rounded-md bg-background/45 px-2 py-1 font-mono text-[12px] leading-none text-foreground tnum">
             { formatArea(plot.areaHa) }
           </span>
-          <Button
-            type="button"
-            variant={ selected ? 'secondary' : 'ghost' }
-            size="sm"
-            onClick={ () => {
-              onSelect?.(plot);
-              onFocus?.(plot);
-            } }
-            disabled={ !onFocus }
-            aria-label={ `Focus field ${plot.name}` }
-            data-testid={ `field-card-focus-${plot.id}` }
-            className="h-7 px-2 text-[12px]"
-          >
-            <Crosshair className="size-3.5" strokeWidth={ 1.75 } /> Focus
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={ (e) => {
+                e.stopPropagation();
+                onEdit?.(plot);
+              } }
+              disabled={ !onEdit }
+              aria-label={ `Edit field ${plot.name}` }
+              data-testid={ `field-card-edit-${plot.id}` }
+              className="size-7"
+            >
+              <Pencil className="size-3.5" strokeWidth={ 1.75 } />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={ (e) => {
+                e.stopPropagation();
+                onDelete?.(plot);
+              } }
+              disabled={ !onDelete }
+              aria-label={ `Delete field ${plot.name}` }
+              data-testid={ `field-card-delete-${plot.id}` }
+              className="size-7 text-destructive hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" strokeWidth={ 1.75 } />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -240,7 +261,8 @@ export function AllFieldsPanel({
   onRetry,
   selectedPlotId = null,
   onSelect,
-  onFocus,
+  onEdit,
+  onDelete,
   onAdd,
   onImport,
   className,
@@ -302,7 +324,8 @@ export function AllFieldsPanel({
               plot={ plot }
               selected={ plot.id === selectedPlotId }
               onSelect={ onSelect }
-              onFocus={ onFocus }
+              onEdit={ onEdit }
+              onDelete={ onDelete }
             />
           )) }
         </div>

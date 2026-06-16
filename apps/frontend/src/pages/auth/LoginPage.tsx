@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
-  const returnTo = params.get('returnTo') || '/monitoring/field-analytics';
+  const returnTo = params.get('returnTo') || '/onboarding/step1';
 
   if (account.isSuccess) {
     return <Navigate to={ returnTo } replace />;

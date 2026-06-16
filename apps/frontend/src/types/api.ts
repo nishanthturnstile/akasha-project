@@ -732,6 +732,57 @@ export interface AssistantStatus {
   limitations: string[];
 }
 
+export interface Season {
+  id: string;
+  userId: string;
+  name: string;
+  startDate: string | null;
+  endDate: string | null;
+  canDelete: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface SeasonCreatePayload {
+  name: string;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+export interface SeasonUpdatePayload {
+  name?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+export interface Field {
+  id: string;
+  userId: string;
+  name: string;
+  areaHa: number | null;
+  geometry: PlotGeometry;
+  groupId: string | null;
+  seasonIds: string[];
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface FieldCreatePayload {
+  name: string;
+  geometry: PlotGeometry;
+  areaHa?: number | null;
+  groupId?: string | null;
+  seasonIds?: string[];
+}
+
+export interface FieldUpdatePayload {
+  name?: string | null;
+  geometry?: PlotGeometry | null;
+  areaHa?: number | null;
+  groupId?: string | null;
+  seasonIds?: string[] | null;
+}
+
 /** Standard BFF error envelope: { error: { code, message, details } }. */
 export interface ApiErrorShape {
   error: {

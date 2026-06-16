@@ -42,6 +42,12 @@ export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
 export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
 export type SourceAvailabilityStatus = 'active' | 'gated';
 
+/** EOS-style grouped LAYER picker: a labelled category of display modes. */
+export interface LayerGroup {
+  label: string;
+  modes: string[];
+}
+
 export interface Source {
   id: string;
   label: string;
@@ -50,6 +56,8 @@ export interface Source {
   displayModes?: string[];
   defaultDisplayMode?: string;
   displayMode?: string;
+  /** Optional category grouping for the LAYER picker; null/absent ⇒ flat list. */
+  layerGroups?: LayerGroup[] | null;
   description?: string;
   attribution?: string;
   supportedIndices?: string[];

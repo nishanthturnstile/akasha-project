@@ -141,14 +141,11 @@ export const queryKeys = {
   notifications: (unreadOnly: boolean) => ['notifications', unreadOnly] as const,
   notificationUnreadCount: ['notifications', 'unread-count'] as const,
   assistantStatus: ['assistant', 'status'] as const,
-<<<<<<< HEAD
   imagerySourceMonitoring: ['monitoring', 'imagery-sources'] as const,
-=======
   seasons: ['seasons'] as const,
   season: (seasonId: string) => ['seasons', seasonId] as const,
   fields: ['fields'] as const,
   field: (fieldId: string) => ['fields', fieldId] as const,
->>>>>>> 9e39cad (Update frontend changes)
 };
 
 interface LoginVariables {

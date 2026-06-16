@@ -55,6 +55,11 @@ class IndexDef:
     formula_kind: FormulaKind
     role_a: SpectralRole
     role_b: SpectralRole
+    # Display colorization for index map tiles (TiTiler colormap_name + rescale).
+    # display_colormap is a rio-tiler/TiTiler colormap name; display_rescale is the
+    # (min, max) index-value range the colormap is stretched across.
+    display_colormap: str = "rdylgn"
+    display_rescale: tuple[float, float] = (-1.0, 1.0)
 
     @property
     def formula(self) -> str:
@@ -69,19 +74,39 @@ class IndexDef:
     def required_roles(self) -> tuple[SpectralRole, ...]:
         return (self.role_a, self.role_b)
 
+    @property
+    def display_rescale_str(self) -> str:
+        """rescale formatted as the "min,max" string TiTiler expects."""
+        lo, hi = self.display_rescale
+        return f"{lo},{hi}"
+
 
 # Supported indices (data-ingestion-and-satellite-rules.md § Supported index formulas).
 INDEX_REGISTRY: dict[str, IndexDef] = {
-    "NDVI": IndexDef("NDVI", "NDVI", "normalized_difference", "NIR", "RED"),
-    "MSAVI": IndexDef("MSAVI", "MSAVI", "msavi", "NIR", "RED"),
-    "NDRE": IndexDef("NDRE", "NDRE", "normalized_difference", "NIR", "RED_EDGE"),
-    "NDMI": IndexDef("NDMI", "NDMI (vegetation moisture)", "normalized_difference", "NIR", "SWIR1"),
+    "NDVI": IndexDef(
+        "NDVI", "NDVI", "normalized_difference", "NIR", "RED",
+        display_colormap="rdylgn", display_rescale=(-0.2, 0.9),
+    ),
+    "MSAVI": IndexDef(
+        "MSAVI", "MSAVI", "msavi", "NIR", "RED",
+        display_colormap="rdylgn", display_rescale=(0.0, 1.0),
+    ),
+    "NDRE": IndexDef(
+        "NDRE", "NDRE", "normalized_difference", "NIR", "RED_EDGE",
+        display_colormap="rdylgn", display_rescale=(-0.2, 0.9),
+    ),
+    "NDMI": IndexDef(
+        "NDMI", "NDMI (vegetation moisture)", "normalized_difference", "NIR", "SWIR1",
+        display_colormap="rdbu", display_rescale=(-0.5, 0.6),
+    ),
     "NDWI_GREEN_NIR": IndexDef(
         "NDWI_GREEN_NIR",
         "Water NDWI (McFeeters)",
         "normalized_difference",
         "GREEN",
         "NIR",
+        display_colormap="rdbu",
+        display_rescale=(-0.5, 0.6),
     ),
 }
 
@@ -145,3 +170,36 @@ def fcc_band_positions(band_names: list[str], band_role_mapping: dict[str, str])
     """Return 1-based positions for false-colour composite (NIR, Red, Green)."""
     role_positions = role_to_position(band_names, band_role_mapping)
     return [role_positions[role] for role in FCC_ROLE_ORDER]
+
+
+def _corrected_band(position: int, scale: float, offset: float) -> str:
+    """TiTiler/numexpr sub-expression for one reflectance-corrected band.
+
+    TiTiler expressions run on raw DN, so the per-band reflectance correction
+    (dn * scale + offset) is baked into the expression. The offset does NOT cancel
+    in a normalized-difference denominator, so it must be applied per band here —
+    keeping display tiles consistent with the BFF statistics engine.
+    """
+    return f"({scale}*b{position}{offset:+})"
+
+
+def index_tile_expression(
+    band_names: list[str],
+    band_role_mapping: dict[str, str],
+    index_def: IndexDef,
+    *,
+    scale: float = DEFAULT_SCALE,
+    offset: float = DEFAULT_OFFSET,
+) -> str:
+    """Build a TiTiler band-math expression for a colorized index display tile.
+
+    Resolves the index's spectral roles to 1-based band positions, then emits a
+    reflectance-corrected normalized-difference (or MSAVI) expression. Raises
+    KeyError if the asset lacks a band required for the index.
+    """
+    pos_a, pos_b, _names = index_band_positions(band_names, band_role_mapping, index_def)
+    a = _corrected_band(pos_a, scale, offset)
+    b = _corrected_band(pos_b, scale, offset)
+    if index_def.formula_kind == "msavi":
+        return f"(2*{a}+1-sqrt((2*{a}+1)**2-8*({a}-{b})))/2"
+    return f"({a}-{b})/({a}+{b})"

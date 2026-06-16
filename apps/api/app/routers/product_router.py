@@ -35,7 +35,7 @@ from ..raster.errors import (
     rate_limited,
     upstream_error,
 )
-from .raster.indices import (
+from ..raster.indices import (
     DEFAULT_INDEX,
     SUPPORTED_INDICES,
     fcc_band_positions,
@@ -43,8 +43,8 @@ from .raster.indices import (
     index_tile_expression,
     rgb_band_positions,
 )
-from .raster.models import StatisticsRequest, StatisticsResponse
-from .raster.service import compute_statistics
+from ..raster.models import StatisticsRequest, StatisticsResponse
+from ..raster.service import compute_statistics
 
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
 

@@ -581,17 +581,17 @@ export default function MapPage() {
           activeAction={ fieldMode === 'draw' ? 'draw' : null }
           isMapAvailable={ Boolean(map) }
           // Request ownership of the field-draw tool before toggling draw mode
-          onDrawField={() => {
+          onDrawField={ () => {
             requestMapTool('field-draw');
             setFieldMode((current) => (current === 'draw' ? null : 'draw'));
-          }}
+          } }
           // Request ownership of the field-edit tool before toggling edit mode
-          onEditSelectedField={() => {
+          onEditSelectedField={ () => {
             requestMapTool('field-edit');
             setFieldMode((current) => (current === 'edit' ? null : 'edit'));
-          }}
+          } }
           onImportGeoJSON={ () => undefined }
-          onExportGeoJSON={ () => undefined }
+          onExportGeoJSON={ () => void exportGeoJson() }
           onDeleteSelectedField={ () => void deleteSelectedField() }
         />
       </div>
@@ -634,20 +634,6 @@ export default function MapPage() {
           />
         ) }
         { showIndexPanel && (
-<<<<<<< HEAD
-          <IndexPanel
-            selectedPlot={ selectedPlot }
-            selectedDate={ selectedDate }
-            sourceId={ effectiveSourceId }
-            displayMode={ selectedDisplayMode }
-            supportedIndices={ analyticsSupportedIndices }
-            cloudMask={ effectiveCloudMask }
-            sourceMaskMethod={ selectedSource?.maskMethod ?? null }
-            sourceMetricsProvisional={ Boolean(selectedSource?.metricsProvisional) }
-            periodFrom={ periodFrom }
-            periodTo={ periodTo }
-          />
-=======
           <div className="hidden xl:block">
             <IndexPanel
               selectedPlot={ selectedPlot }
@@ -655,12 +641,13 @@ export default function MapPage() {
               sourceId={ effectiveSourceId }
               displayMode={ selectedDisplayMode }
               supportedIndices={ analyticsSupportedIndices }
-              cloudMask={ cloudMask }
+              cloudMask={ effectiveCloudMask }
+              sourceMaskMethod={ selectedSource?.maskMethod ?? null }
+              sourceMetricsProvisional={ Boolean(selectedSource?.metricsProvisional) }
               periodFrom={ periodFrom }
               periodTo={ periodTo }
             />
           </div>
->>>>>>> 9e39cad (Update frontend changes)
         ) }
       </div>
 

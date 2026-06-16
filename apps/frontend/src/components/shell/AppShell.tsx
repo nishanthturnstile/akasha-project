@@ -280,141 +280,143 @@ export function AppShell() {
                   )) }
                 </div>
 
-                <div className="space-y-3 px-4 py-4">
-                  { seasonsQ.isLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading seasons…</p>
-                  ) : seasonsQ.error ? (
-                    <p className="text-sm text-destructive">Failed to load seasons</p>
-                  ) : (seasonsQ.data ?? []).length === 0 ? (
-                    <Card className="border-border/60 bg-card/90 shadow-sm">
-                      <CardContent>
-                        <p className="text-sm font-medium text-foreground">
-                          There are no { seasonTab === 'planned' ? 'planned' : seasonTab === 'ended' ? 'ended' : 'active' } seasons.
-                        </p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Create a new season to manage your crop schedule.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="space-y-3">
-                      {(seasonsQ.data ?? []).map((season) => {
-                        const seasonFields = (fieldsQ.data ?? []).filter((f) =>
-                          f.seasonIds?.includes(season.id),
-                        );
-                        const isEditing = editingSeasonId === season.id;
-                        return (
-                          <Card key={season.id} className="border-border/60 bg-card/90 shadow-sm">
-                            <CardHeader>
-                              {isEditing ? (
-                                <div className="space-y-2">
-                                  <input
-                                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                  />
-                                  <div className="flex gap-2">
-                                    <input
-                                      type="date"
-                                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-                                      value={editStartDate}
-                                      onChange={(e) => setEditStartDate(e.target.value)}
-                                    />
-                                    <input
-                                      type="date"
-                                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-                                      value={editEndDate}
-                                      onChange={(e) => setEditEndDate(e.target.value)}
-                                    />
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <CardTitle>{season.name}</CardTitle>
-                                  <p className="text-sm text-muted-foreground">
-                                    {season.startDate ?? '—'} → {season.endDate ?? '—'}
-                                  </p>
-                                </>
-                              )}
-                            </CardHeader>
-                            <CardContent className="pt-0">
-                              <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
-                                <span>Fields:</span>
-                                <span className="text-foreground font-semibold">
-                                  {seasonFields.length}
-                                </span>
-                              </div>
-                              {seasonFields.length > 0 && (
-                                <ul className="mt-1 space-y-0.5">
-                                  {seasonFields.map((f) => (
-                                    <li key={f.id} className="text-xs text-muted-foreground">
-                                      · {f.name}
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="max-h-104 overflow-y-auto px-4 py-4 pr-3 scroll-smooth">
+                  <div className="space-y-3 pr-1 pb-3">
+                    { seasonsQ.isLoading ? (
+                      <p className="text-sm text-muted-foreground">Loading seasons…</p>
+                    ) : seasonsQ.error ? (
+                      <p className="text-sm text-destructive">Failed to load seasons</p>
+                    ) : (seasonsQ.data ?? []).length === 0 ? (
+                      <Card className="border-border/60 bg-card/90 shadow-sm">
+                        <CardContent>
+                          <p className="text-sm font-medium text-foreground">
+                            There are no { seasonTab === 'planned' ? 'planned' : seasonTab === 'ended' ? 'ended' : 'active' } seasons.
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Create a new season to manage your crop schedule.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="space-y-3">
+                        {(seasonsQ.data ?? []).map((season) => {
+                          const seasonFields = (fieldsQ.data ?? []).filter((f) =>
+                            f.seasonIds?.includes(season.id),
+                          );
+                          const isEditing = editingSeasonId === season.id;
+                          return (
+                            <Card key={season.id} className="border-border/60 bg-card/90 shadow-sm">
+                              <CardHeader>
                                 {isEditing ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
-                                      onClick={async () => {
-                                        await updateSeason.mutateAsync({
-                                          seasonId: season.id,
-                                          payload: {
-                                            name: editName,
-                                            startDate: editStartDate || null,
-                                            endDate: editEndDate || null,
-                                          },
-                                        });
-                                        setEditingSeasonId(null);
-                                      }}
-                                    >
-                                      Save
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
-                                      onClick={() => setEditingSeasonId(null)}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </>
+                                  <div className="space-y-2">
+                                    <input
+                                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+                                      value={editName}
+                                      onChange={(e) => setEditName(e.target.value)}
+                                    />
+                                    <div className="flex gap-2">
+                                      <input
+                                        type="date"
+                                        className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                                        value={editStartDate}
+                                        onChange={(e) => setEditStartDate(e.target.value)}
+                                      />
+                                      <input
+                                        type="date"
+                                        className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                                        value={editEndDate}
+                                        onChange={(e) => setEditEndDate(e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
                                 ) : (
                                   <>
-                                    <button
-                                      type="button"
-                                      className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
-                                      onClick={() => {
-                                        setEditingSeasonId(season.id);
-                                        setEditName(season.name);
-                                        setEditStartDate(season.startDate ?? '');
-                                        setEditEndDate(season.endDate ?? '');
-                                      }}
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
-                                      onClick={async () => {
-                                        if (window.confirm('Delete this season?')) {
-                                          await deleteSeason.mutateAsync(season.id);
-                                        }
-                                      }}
-                                    >
-                                      Delete
-                                    </button>
+                                    <CardTitle>{season.name}</CardTitle>
+                                    <p className="text-sm text-muted-foreground">
+                                      {season.startDate ?? '—'} → {season.endDate ?? '—'}
+                                    </p>
                                   </>
                                 )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )}
+                              </CardHeader>
+                              <CardContent className="pt-0">
+                                <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
+                                  <span>Fields:</span>
+                                  <span className="text-foreground font-semibold">
+                                    {seasonFields.length}
+                                  </span>
+                                </div>
+                                {seasonFields.length > 0 && (
+                                  <ul className="mt-1 space-y-0.5">
+                                    {seasonFields.map((f) => (
+                                      <li key={f.id} className="text-xs text-muted-foreground">
+                                        · {f.name}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {isEditing ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={async () => {
+                                          await updateSeason.mutateAsync({
+                                            seasonId: season.id,
+                                            payload: {
+                                              name: editName,
+                                              startDate: editStartDate || null,
+                                              endDate: editEndDate || null,
+                                            },
+                                          });
+                                          setEditingSeasonId(null);
+                                        }}
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={() => setEditingSeasonId(null)}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={() => {
+                                          setEditingSeasonId(season.id);
+                                          setEditName(season.name);
+                                          setEditStartDate(season.startDate ?? '');
+                                          setEditEndDate(season.endDate ?? '');
+                                        }}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                        onClick={async () => {
+                                          if (window.confirm('Delete this season?')) {
+                                            await deleteSeason.mutateAsync(season.id);
+                                          }
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ) }

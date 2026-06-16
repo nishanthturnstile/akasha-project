@@ -64,7 +64,7 @@ class Settings:
     default_source_id: str = field(
         default_factory=lambda: _get("DEFAULT_SOURCE_ID", "resourcesat-2a-liss3-boa")
     )
-    default_aoi_id: str = field(default_factory=lambda: _get("DEFAULT_AOI_ID", "bangalore"))
+    default_aoi_id: str = field(default_factory=lambda: _get("DEFAULT_AOI_ID", ""))
     aoi_config_path: str = field(
         default_factory=lambda: _get("AOI_CONFIG_PATH", "data/seed/bangalore-60km-aoi.geojson")
     )
@@ -103,6 +103,9 @@ class Settings:
     )
     source_freshness_stale_days: int = field(
         default_factory=lambda: _get_int("SOURCE_FRESHNESS_STALE_DAYS", 45)
+    )
+    source_coverage_threshold_percent: int = field(
+        default_factory=lambda: _get_int("SOURCE_COVERAGE_THRESHOLD_PERCENT", 95)
     )
     max_request_body_bytes: int = field(
         default_factory=lambda: _get_int("MAX_REQUEST_BODY_BYTES", 1_048_576)

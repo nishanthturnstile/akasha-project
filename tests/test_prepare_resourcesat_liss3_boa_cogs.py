@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 
 from scripts.prepare_resourcesat_liss3_boa_cogs import (
+    AWIFS_BHOONIDHI_COLLECTION,
+    AWIFS_SOURCE_ID,
     MASK_METHOD,
     PreparedPaths,
     ResourceSatMeta,
@@ -12,6 +14,7 @@ from scripts.prepare_resourcesat_liss3_boa_cogs import (
     acquisition_datetime_from_text,
     build_mask_array,
     load_selected_products,
+    mask_method_for_source,
     output_dir_for_product,
     parse_band_meta,
     scene_component,
@@ -306,3 +309,81 @@ def test_write_manifest_emits_resourcesat_contract(tmp_path: Path) -> None:
     assert payload["classification_classes"][0]["value"] == 0
     assert payload["band_meta"]["valid_ranges"] == {"BAND2": [0.0, 10000.0]}
     assert payload["bbox"] == pytest.approx(expected_bbox)
+
+
+def test_write_manifest_uses_awifs_specific_mask_method(tmp_path: Path) -> None:
+    expected_bbox = [77.0, 11.0, 78.0, 12.0]
+
+    class FakeCrs:
+        def to_string(self) -> str:
+            return "EPSG:32643"
+
+    class FakeDataset:
+        def __init__(self, count: int, descriptions: tuple[str, ...]) -> None:
+            self.count = count
+            self.descriptions = descriptions
+
+        crs = FakeCrs()
+        bounds = (799980, 1290240, 909780, 1400040)
+        res = (56, 56)
+        transform = (56, 0, 799980, 0, -56, 1400040, 0, 0, 1)
+        width = 1961
+        height = 1961
+        dtypes = ("uint16",)
+        nodata = 0
+
+        def __enter__(self) -> "FakeDataset":
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def overviews(self, _band: int) -> list[int]:
+            return [2, 4]
+
+    class FakeRasterio:
+        def open(self, path: Path) -> FakeDataset:
+            if Path(path).name == "mask.tif":
+                return FakeDataset(1, ("mask",))
+            return FakeDataset(4, ("BAND2", "BAND3", "BAND4", "BAND5"))
+
+    def fake_transform_bounds(*_args: object, **_kwargs: object) -> list[float]:
+        return expected_bbox
+
+    product_dir = tmp_path / "product"
+    product_dir.mkdir()
+    (product_dir / "BAND_META.txt").write_text("PATH=99\nROW=65\n", encoding="utf-8")
+    product = SelectedProduct(
+        product_id="AWIFS_PRODUCT",
+        source_path=tmp_path / "AWIFS_PRODUCT.zip",
+        acquisition_datetime="2026-03-19T00:00:00Z",
+        acquisition_date="2026-03-19",
+        path="99",
+        row="65",
+    )
+    paths = PreparedPaths(
+        product=product,
+        product_dir=product_dir,
+        output_dir=tmp_path / "out",
+        analytic_cog=tmp_path / "out" / "analytic.tif",
+        mask_cog=tmp_path / "out" / "mask.tif",
+        manifest=tmp_path / "out" / "prepare_manifest.json",
+    )
+
+    write_manifest(
+        deps={"rasterio": FakeRasterio(), "transform_bounds": fake_transform_bounds},
+        paths=paths,
+        meta=ResourceSatMeta(raw={"PATH": "99", "ROW": "65"}),
+        analytic_intermediate=tmp_path / "analytic_intermediate.tif",
+        mask_intermediate=tmp_path / "mask_intermediate.tif",
+        source_id=AWIFS_SOURCE_ID,
+        collection=AWIFS_BHOONIDHI_COLLECTION,
+    )
+
+    payload = json.loads(paths.manifest.read_text(encoding="utf-8"))
+    assert payload["source_id"] == AWIFS_SOURCE_ID
+    assert payload["collection"] == AWIFS_BHOONIDHI_COLLECTION
+    assert payload["mask_method"] == mask_method_for_source(AWIFS_SOURCE_ID)
+    assert payload["properties"]["akasha:mask_method"] == mask_method_for_source(AWIFS_SOURCE_ID)
+    assert "AWiFS" in payload["mask_method"]
+    assert "LISS-3 BOA sample" not in payload["mask_method"]

@@ -52,7 +52,7 @@
   "akasha:expected_assets": ["analytic", "mask"],
   "akasha:mask_asset": "mask",
   "akasha:default_excluded_mask_classes": [0, 2, 3],
-  "akasha:mask_method": "Akasha threshold mask v1 (no native quality layer found in validated ResourceSat BOA sample; provisional).",
+  "akasha:mask_method": "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA (pending AWiFS-specific native quality-layer validation; provisional).",
   "akasha:metrics_provisional": true,
   "akasha:reflectance": {
     "scale": 0.0001,

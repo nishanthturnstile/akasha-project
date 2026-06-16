@@ -29,11 +29,19 @@ SOURCE_PROFILES = {
         "collection": BHOONIDHI_COLLECTION,
         "label": "ResourceSat LISS-3",
         "resolution": 24.0,
+        "mask_method": (
+            "Akasha threshold mask v1 (no native quality layer found in validated "
+            "LISS-3 BOA sample; provisional)."
+        ),
     },
     AWIFS_SOURCE_ID: {
         "collection": AWIFS_BHOONIDHI_COLLECTION,
         "label": "ResourceSat AWiFS",
         "resolution": 56.0,
+        "mask_method": (
+            "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
+            "(pending AWiFS-specific native quality-layer validation; provisional)."
+        ),
     },
 }
 SOURCE_ALIASES = {
@@ -62,6 +70,11 @@ BAND_ROLE_MAPPING = {
     "NIR": "BAND4",
     "SWIR1": "BAND5",
 }
+AOI_COMPOSITE_GRID_CRS_KEYS = (
+    "compositeGridCrs",
+    "composite_grid_crs",
+    "akasha:composite_grid_crs",
+)
 
 
 def source_id_from_manifest(manifest: dict[str, Any]) -> str:
@@ -81,6 +94,26 @@ def source_profile(source_id: str) -> dict[str, Any]:
 
 def default_resolution(source_id: str) -> float:
     return float(source_profile(source_id)["resolution"])
+
+
+def mask_method_for_source(source_id: str) -> str:
+    method = source_profile(source_id).get("mask_method")
+    return str(method or MASK_METHOD)
+
+
+def aoi_composite_grid_crs(aoi: dict[str, Any] | None, default: str = "EPSG:32643") -> str:
+    if not aoi:
+        return default
+    containers = [aoi]
+    props = aoi.get("properties")
+    if isinstance(props, dict):
+        containers.insert(0, props)
+    for container in containers:
+        for key in AOI_COMPOSITE_GRID_CRS_KEYS:
+            value = container.get(key)
+            if value:
+                return str(value)
+    return default
 
 
 @dataclass(frozen=True)
@@ -309,12 +342,26 @@ def _manifest_datetime(manifest: dict[str, Any]) -> str:
     return text if "T" in text else f"{text}T00:00:00Z"
 
 
+def _manifest_aoi_id(manifest: dict[str, Any]) -> str | None:
+    props = manifest.get("properties") if isinstance(manifest.get("properties"), dict) else {}
+    value = (
+        manifest.get("aoi_id")
+        or manifest.get("aoiId")
+        or manifest.get("akasha:aoi_id")
+        or props.get("akasha:aoi_id")
+        or props.get("aoi_id")
+        or props.get("aoiId")
+    )
+    return str(value) if value else None
+
+
 def scene_manifest_paths_for_window(
     manifest_paths: list[Path],
     *,
     window_start: str,
     window_end: str,
     source_id: str = SOURCE_ID,
+    aoi_id: str | None = None,
 ) -> list[Path]:
     source_id = SOURCE_ALIASES.get(source_id, source_id)
     selected: list[Path] = []
@@ -330,6 +377,9 @@ def scene_manifest_paths_for_window(
         ):
             continue
         if source_id_from_manifest(manifest) != source_id:
+            continue
+        manifest_aoi_id = _manifest_aoi_id(manifest)
+        if aoi_id and manifest_aoi_id and manifest_aoi_id != aoi_id:
             continue
         acquisition_date = _manifest_datetime(manifest)[:10]
         if window_start <= acquisition_date <= window_end:
@@ -509,8 +559,9 @@ def _write_intermediate_rasters(
     with rasterio.open(mask_path, "w", **mask_profile) as dst:
         dst.write(mask, 1)
         dst.set_band_description(1, "mask")
-        dst.update_tags(1, name="mask", description=MASK_METHOD, classes=json.dumps(MASK_CLASSES))
-        dst.update_tags(AKASHA_MASK_METHOD=MASK_METHOD, AKASHA_COMPOSITE="true")
+        mask_method = mask_method_for_source(source_id)
+        dst.update_tags(1, name="mask", description=mask_method, classes=json.dumps(MASK_CLASSES))
+        dst.update_tags(AKASHA_MASK_METHOD=mask_method, AKASHA_COMPOSITE="true")
 
 
 def _translate_to_cog(
@@ -844,6 +895,7 @@ def _write_composite_manifest(
     mask_summary = _raster_summary(deps, mask_cog)
     composite_date = composite_datetime[:10]
     profile = source_profile(source_id)
+    mask_method = mask_method_for_source(source_id)
     payload: dict[str, Any] = {
         "source_id": source_id,
         "collection": profile["collection"],
@@ -866,7 +918,7 @@ def _write_composite_manifest(
         "contributing_scenes": metrics["contributing_scenes"],
         "analytic_band_order": ANALYTIC_BAND_ORDER,
         "band_role_mapping": BAND_ROLE_MAPPING,
-        "mask_method": MASK_METHOD,
+        "mask_method": mask_method,
         "classification_classes": MASK_CLASSES,
         "outputs": {
             "analytic": analytic_summary,
@@ -885,7 +937,7 @@ def _write_composite_manifest(
             "akasha:coverage_percent": metrics["coverage_percent"],
             "akasha:usable_pixel_percent": metrics["usable_pixel_percent"],
             "akasha:cloud_masked_percent": metrics["cloud_masked_percent"],
-            "akasha:mask_method": MASK_METHOD,
+            "akasha:mask_method": mask_method,
             "akasha:metrics_provisional": True,
             "akasha:band_role_mapping": BAND_ROLE_MAPPING,
         },
@@ -919,7 +971,7 @@ def build_resource_sat_composite(
     source_profile(source_id)
     resolution = default_resolution(source_id) if resolution is None else resolution
     aoi_id = str(aoi.get("id") or aoi.get("properties", {}).get("id") or "unknown-aoi")
-    crs = str(aoi.get("properties", {}).get("compositeGridCrs") or "EPSG:32643")
+    crs = aoi_composite_grid_crs(aoi)
     grid = grid_from_aoi(
         deps=deps,
         aoi=aoi,

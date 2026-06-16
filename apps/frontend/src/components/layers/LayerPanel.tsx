@@ -57,11 +57,7 @@ export function LayerPanel(props: LayerPanelProps) {
   const selectedSource = sources?.find((s) => s.id === selectedSourceId);
   const isSar = selectedSource?.kind === 'sar';
   const sceneCount = selectedDateMetadata?.sceneCount;
-  const showNearestRadarPass =
-    isSar &&
-    selectedSourceId === 'sentinel-1-grd' &&
-    selectedDate != null &&
-    selectedDate !== '2026-04-27';
+  const showNearestRadarPass = isSar && selectedDate != null;
 
   if (collapsed) {
     return (

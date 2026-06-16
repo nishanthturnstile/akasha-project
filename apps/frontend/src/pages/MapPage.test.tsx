@@ -331,7 +331,11 @@ describe('MapPage native source behavior', () => {
       expect(screen.queryByTestId('index-panel')).toBeNull();
     });
 
-    expect(screen.queryByTestId('nearest-pass-note')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
+        'Nearest radar pass: 2026-04-26.',
+      );
+    });
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
         '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',

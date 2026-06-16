@@ -14,7 +14,7 @@ describe('MapViewProvider selected field state', () => {
     act(() => result.current.setSelectedPlotId('plot-1'));
     expect(result.current.selectedPlotId).toBe('plot-1');
 
-    act(() => result.current.setSource('sentinel-1-grd'));
+    act(() => result.current.setSource('eos-04-sar-mrs-l2b'));
     expect(result.current.selectedPlotId).toBe('plot-1');
 
     act(() => result.current.clearSelectedPlot());

@@ -174,7 +174,7 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
         "AKASHA_RGB_RESCALE": "0,3000",
         "DEFAULT_SOURCE_ID": "resourcesat-2a-liss3-boa",
-        "DEFAULT_AOI_ID": "bangalore",
+        "DEFAULT_AOI_ID": "",
         "AOI_CONFIG_PATH": "/app/data/seed/bangalore-60km-aoi.geojson",
         "AOI_CONFIG_DIR": "/app/data/seed/aois",
         "BASEMAP_PROVIDER": "esri",
@@ -238,7 +238,7 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "S3_ENDPOINT_URL": "http://minio:9000",
         "S3_ACCESS_KEY": "<access-key>",
         "S3_SECRET_KEY": "<secret-key>",
-        "AOI_CONFIG_PATH": "/app/config/aoi/bangalore.geojson",
+        "AOI_CONFIG_PATH": "/app/data/seed/bangalore-60km-aoi.geojson",
     },
 }
 

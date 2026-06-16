@@ -280,14 +280,39 @@ async def _render_sar_vv_grayscale_tile(
             sceneCount=len(assets_for_date),
             supportedSceneCount=1,
         )
+    assets = assets_for_date[0]
+    vv_position = _vv_band_position(
+        assets,
+        source_id=source_id,
+        acquisition_date=acquisition_date,
+    )
     url = tiles.build_sar_vv_grayscale_tile_url(
-        backscatter_href=assets_for_date[0]["backscatterHref"],
+        backscatter_href=assets["backscatterHref"],
+        vv_position=vv_position,
         z=z,
         x=x,
         y=y,
     )
     body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
+
+
+def _vv_band_position(
+    assets: dict[str, Any], *, source_id: str, acquisition_date: str
+) -> int:
+    band_names = [str(name) for name in assets.get("bandNames", [])]
+    for index, name in enumerate(band_names, start=1):
+        normalized = name.strip().upper()
+        if normalized == "VV" or normalized.startswith("VV_") or normalized.startswith("VV-"):
+            return index
+    raise bad_request(
+        "Display mode 'VV_GRAYSCALE' requires a VV backscatter polarization.",
+        code="MISSING_VV_POLARIZATION",
+        sourceId=source_id,
+        acquisitionDate=acquisition_date,
+        itemId=assets.get("itemId"),
+        availablePolarizations=band_names,
+    )
 
 
 async def _render_context_tile(

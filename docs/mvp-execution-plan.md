@@ -55,20 +55,20 @@ Deliverables:
 - Convert or place first analytic COG and SCL COG.
 - Register one STAC item with correct asset metadata.
 - Configure TiTiler to read MinIO via S3-compatible GDAL settings.
-- Render one true-colour tile through TiTiler.
+- Render one source-appropriate display tile through TiTiler.
 - Compute one cloud-masked NDVI statistic for a known polygon.
 > Cloud-masked index statistics are computed in the **BFF (FastAPI) using rasterio/rio-tiler**, not by
-> plain TiTiler `/cog/statistics`. The BFF reads the analytic COG window and the SCL COG window for the
-> request polygon, applies per-band scale/offset, applies the SCL mask, then computes
-> min/max/mean/stddev and the pixel-percentage fields. **TiTiler serves RGB display tiles (and
+> plain TiTiler `/cog/statistics`. The BFF reads the analytic COG window and the source-specific mask
+> COG window for the request polygon, applies per-band scale/offset, applies the mask, then computes
+> min/max/mean/stddev and the pixel-percentage fields. **TiTiler serves source display tiles (and
 > optional index *display* overlays) only — it is not used for masked statistics**, because vanilla
 > TiTiler `/cog/statistics` takes a single `url` and cannot apply a categorical mask from a second COG.
 
-Prompt inputs — Include: data-ingestion: COG layout/band order/RGB bands/formulas/reflectance correction/SCL masking/stats engine; architecture: raster flows/runtime decisions; execution Phase 2
+Prompt inputs — Include: data-ingestion: COG layout/source band order/display bands/formulas/reflectance correction/mask handling/stats engine; architecture: raster flows/runtime decisions; execution Phase 2
 Slice mapping: Phase 2 → Slice 2
 Prompt inputs — Exclude: full frontend UX, auth, custom domains, future sources
-Validation: one RGB tile returns a PNG; one `/api/indices/statistics` returns valid JSON with NDVI stats; result is compared against QGIS/notebook reference.
-Do not proceed until: Tile renders with sensible RGB rescale, statistics are offset-corrected and SCL-masked, and result is compared against QGIS/notebook reference.
+Validation: one source display tile returns a PNG; one `/api/indices/statistics` returns valid JSON with NDVI stats; result is compared against QGIS/notebook reference.
+Do not proceed until: Tile renders with sensible source display rescale, statistics are offset-corrected and source-mask-aware, and result is compared against QGIS/notebook reference.
 
 Exit criteria:
 

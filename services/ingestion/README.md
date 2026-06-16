@@ -48,9 +48,10 @@ python worker.py verify-composite \
 ```
 
 For multiple AOIs, place one GeoJSON file per AOI under `AOI_CONFIG_DIR` and
-select with `--aoi <id> --aoi-dir <dir>`. If the AOI feature has
-`properties.compositeGridCrs`, `build-composite` and `verify-composite` use it
-as the composite grid CRS unless `--expected-crs` is passed explicitly.
+select with `--aoi <id> --aoi-dir <dir>`. If the AOI carries
+`compositeGridCrs`, `composite_grid_crs`, or `akasha:composite_grid_crs` either
+at top level or under `properties`, `build-composite` and `verify-composite`
+use it as the composite grid CRS unless `--expected-crs` is passed explicitly.
 `verify-composite` also checks that the selected AOI id matches the
 `prepare_manifest.json` `aoi_id`, so a Bangalore composite cannot accidentally
 pass a Mysore verification run. Run verification once per source/AOI pair:
@@ -82,8 +83,7 @@ python worker.py prepare-context-cog \
   --source cartosat-3-gated \
   --input /srv/akasha/data/raw/cartosat/CARTOSAT3_ORDER_42.tif \
   --product-id CARTOSAT3_ORDER_42 \
-  --acquisition-datetime 2026-04-16T05:30:00Z \
-  --gsd 1.1
+  --acquisition-datetime 2026-04-16T05:30:00Z
 
 python worker.py verify-manifest-cogs --collection-id cartosat-3-gated
 python worker.py ingest-manifest --collection-id cartosat-3-gated --method upsert
@@ -112,11 +112,16 @@ manifest has this shape:
       "height": 10980,
       "dtype": "uint16",
       "band_count": 3,
+      "gsd": 1.1,
       "descriptions": ["red", "green", "blue"]
     }
   }
 }
 ```
+
+Cartosat-3 manifests default to 1.1 m class GSD metadata. Pass `--gsd` only
+when the licensed product/order metadata specifies a different delivered
+resolution.
 
 This path registers only a `visual` asset. It does not enable crop indices,
 field-level analytics, cloud metrics, or Bhoonidhi automation for Cartosat.

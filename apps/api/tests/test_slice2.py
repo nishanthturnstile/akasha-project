@@ -331,7 +331,7 @@ def test_config_endpoint_ignores_missing_optional_aoi_dir(tmp_path, monkeypatch)
     )
     monkeypatch.setattr(settings, "aoi_config_path", str(primary), raising=False)
     monkeypatch.setattr(settings, "aoi_config_dir", str(tmp_path / "missing-aois"), raising=False)
-    monkeypatch.setattr(settings, "default_aoi_id", "bangalore-60km", raising=False)
+    monkeypatch.setattr(settings, "default_aoi_id", "", raising=False)
 
     r = client.get("/api/config")
 
@@ -437,11 +437,10 @@ def test_phase5_gated_collection_contracts_are_loadable():
     assert cartosat["akasha:crop_indices_enabled"] is False
 
 
-def test_dates_endpoint_returns_real_scene():
+def test_legacy_sentinel_seed_dates_are_removed_from_production_seed():
     r = client.get("/api/sources/sentinel-2-l2a/dates")
     assert r.status_code == 200
-    dates = r.json()
-    assert any(d["acquisitionDate"] == "2025-09-14" for d in dates)
+    assert r.json() == []
 
 
 def test_registered_empty_source_returns_empty_dates_and_clear_default_layer():
@@ -1343,6 +1342,26 @@ def test_sentinel1_tile_builder_uses_vv_bidx_and_default_rescale(monkeypatch):
     )
 
 
+def test_sar_tile_builder_can_select_non_first_vv_band(monkeypatch):
+    from app.raster import tiles
+
+    monkeypatch.setenv("AKASHA_SAR_VV_RESCALE", "-24,4")
+    url = tiles.build_sar_vv_grayscale_tile_url(
+        backscatter_href="s3://akasha-cogs/sar/backscatter.tif",
+        vv_position=2,
+        z=3,
+        x=4,
+        y=5,
+        titiler_url="http://titiler.internal:8000",
+    )
+
+    assert url == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fsar%2Fbackscatter.tif&bidx=2&"
+        "rescale=-24%2C4&colormap_name=gray"
+    )
+
+
 def test_sentinel1_display_tile_route_uses_backscatter_asset(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import tiles
@@ -1415,6 +1434,83 @@ def test_eos04_sar_display_tile_route_uses_backscatter_asset(monkeypatch):
         "url=s3%3A%2F%2Fakasha-cogs%2Feos-04%2Fa%2Fbackscatter.tif&bidx=1&"
         "rescale=-25%2C5&colormap_name=gray"
     )
+
+
+def test_sar_vv_tile_route_uses_actual_vv_band_position(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    captured = {}
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "nisar-a",
+                "backscatterHref": "s3://akasha-cogs/nisar/a/backscatter.tif",
+                "bandNames": ["VH_dB", "VV_dB"],
+                "nodata": -9999.0,
+                "epsg": 32643,
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+            }
+        ],
+    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+
+    r = client.get("/api/tiles/nisar-ssar-beta-gcov/2026-04-26/VV_GRAYSCALE/3/4/5.png")
+
+    assert r.status_code == 200
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fnisar%2Fa%2Fbackscatter.tif&bidx=2&"
+        "rescale=-25%2C5&colormap_name=gray"
+    )
+
+
+def test_sar_vv_tile_route_rejects_non_vv_backscatter_without_leaking_href(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import tiles
+
+    monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "eos04-hh-hv",
+                "backscatterHref": "s3://secret-bucket/eos-04/backscatter.tif",
+                "bandNames": ["HH_dB", "HV_dB"],
+                "nodata": -9999.0,
+                "epsg": 32643,
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        tiles,
+        "fetch_tile",
+        lambda _url: (_ for _ in ()).throw(AssertionError("must fail before TiTiler")),
+    )
+
+    r = client.get("/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/3/4/5.png")
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "MISSING_VV_POLARIZATION"
+    assert body["error"]["details"] == {
+        "sourceId": "eos-04-sar-mrs-l2b",
+        "acquisitionDate": "2026-04-26",
+        "itemId": "eos04-hh-hv",
+        "availablePolarizations": ["HH_dB", "HV_dB"],
+    }
+    assert "s3://" not in r.text
+    assert "secret-bucket" not in r.text
 
 
 def test_sentinel1_tile_route_rejects_unsupported_display_mode():

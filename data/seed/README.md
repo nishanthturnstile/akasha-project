@@ -19,8 +19,9 @@ data/seed/
       prepare_manifest.json                 upload/STAC registration manifest
 ```
 
-Legacy Sentinel STAC fixtures may still exist while tests cover backwards
-compatibility, but ResourceSat LISS-3 is the production default seed contract.
+Legacy Sentinel resolvers remain available behind explicit opt-in/runtime data,
+but Sentinel STAC fixtures are no longer part of production seed artifacts.
+ResourceSat LISS-3 is the production default seed contract.
 
 ## ResourceSat LISS-3 Analytic Bands
 

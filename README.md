@@ -1,10 +1,11 @@
 # Akasha
 
-Geospatial platform for browsing true-colour Sentinel-2 L2A (and ISRO ResourceSat
-LISS-3) imagery over an Area of Interest (Bangalore) and computing cloud-masked
-vegetation-index statistics (NDVI/NDRE/NDMI/NDWI/MSAVI) for user-drawn plots and
+Geospatial platform for browsing ISRO ResourceSat LISS-3 FCC composites over
+the Bangalore 60 km Area of Interest and computing cloud-masked
+vegetation-index statistics (NDVI/NDMI/NDWI/MSAVI) for user-drawn plots and
 fields. Deployed on self-hosted Coolify (Azure VM), and fully portable to local
-Docker Compose / on-prem.
+Docker Compose / on-prem. Legacy Sentinel support remains for explicit
+regression or migration work, but it is not production-selectable by default.
 
 > **Status: Slice 4 implementation in progress.** Slice 0 (skeleton), Slice 1
 > (storage/catalog), Slice 2 (raster de-risk), and Slice 3 (BFF product + plot
@@ -38,10 +39,10 @@ apps/
   frontend/          Canonical React + Vite + TypeScript SPA
   api/               Canonical FastAPI BFF (/api product, plot, auth, fields/seasons, ops APIs)
 services/
-  titiler/           TiTiler image/config (RGB display tiles)
+  titiler/           TiTiler image/config (source display tiles)
   stac-api/          stac-fastapi-pgstac wrapper/config
   ingestion/         Python ingestion worker + STAC/MinIO seed loader + Bhoonidhi (ISRO) client
-  ingestion-sar/     Sentinel-1/SAR preprocessing runtime
+  ingestion-sar/     SAR preprocessing runtime; Sentinel-1 path is legacy-only
 infra/
   gateway/           Caddy reverse proxy + multi-stage web Dockerfile
   selfhosted/        Coolify compose + env template + setup notes (self-hosted)
@@ -217,9 +218,10 @@ python scripts/validate_slice1.py
 python scripts/validate_slice2.py
 ```
 
-Domain invariants seeded by this flow: frozen analytic band order
-`[B04,B08,B05,B06,B07,B11,B12,B03,B02]`; true-colour RGB = bands `[1,8,9]`;
-reflectance `scale 0.0001` / `offset -0.1`. See
+Domain invariants seeded by this flow: ResourceSat LISS-3 analytic band order
+`[BAND2,BAND3,BAND4,BAND5]`; FCC display = `NIR,RED,GREEN` (`bidx=3,2,1`);
+reflectance `scale 0.0001` / `offset 0.0`; Akasha provisional mask keeps
+classes `{1,4}`. See
 [`data/seed/README.md`](data/seed/README.md) and
 [`infra/selfhosted/README.md`](infra/selfhosted/README.md) for the seed layout
 and the deployment equivalents of these commands.

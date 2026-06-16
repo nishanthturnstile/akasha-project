@@ -774,6 +774,8 @@ def test_build_awifs_stac_item_uses_awifs_collection_and_resolution() -> None:
     assert item["collection"] == "resourcesat-2a-awifs-boa"
     assert item["properties"]["instruments"] == ["awifs"]
     assert item["properties"]["gsd"] == 56
+    assert "AWiFS" in item["properties"]["akasha:mask_method"]
+    assert "LISS-3 BOA sample" not in item["properties"]["akasha:mask_method"]
     assert item["assets"]["analytic"]["gsd"] == 56
     assert item["assets"]["analytic"]["title"].startswith("ResourceSat-2A AWiFS BOA")
     assert item["assets"]["analytic"]["raster:bands"][0]["spatial_resolution"] == 56

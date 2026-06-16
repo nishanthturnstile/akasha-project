@@ -69,8 +69,6 @@ def test_prepare_context_cog_writes_cartosat_visual_manifest(tmp_path: Path) -> 
             "2026-04-16T05:30:00Z",
             "--output-root",
             str(output_root),
-            "--gsd",
-            "1.1",
             "--skip-validation",
         ]
     )
@@ -88,6 +86,7 @@ def test_prepare_context_cog_writes_cartosat_visual_manifest(tmp_path: Path) -> 
     assert manifest["outputs"]["visual"]["path"] == "visual.tif"
     assert manifest["outputs"]["visual"]["band_count"] == 3
     assert manifest["outputs"]["visual"]["descriptions"] == ["red", "green", "blue"]
+    assert manifest["gsd"] == 1.1
     assert manifest["outputs"]["visual"]["gsd"] == 1.1
 
 

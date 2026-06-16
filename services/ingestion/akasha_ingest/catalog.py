@@ -153,6 +153,16 @@ RESOURCESAT_MASK_METHOD = (
     "Akasha threshold mask v1 (no native quality layer found in validated "
     "ResourceSat BOA sample; provisional)."
 )
+RESOURCESAT_MASK_METHOD_BY_SOURCE = {
+    config.RESOURCESAT_LISS3_COLLECTION_ID: (
+        "Akasha threshold mask v1 (no native quality layer found in validated "
+        "LISS-3 BOA sample; provisional)."
+    ),
+    config.RESOURCESAT_AWIFS_COLLECTION_ID: (
+        "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
+        "(pending AWiFS-specific native quality-layer validation; provisional)."
+    ),
+}
 
 RESOURCESAT_BOA_SOURCE_META = {
     config.RESOURCESAT_LISS3_COLLECTION_ID: {
@@ -664,6 +674,12 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
         source_meta["default_gsd"],
     )
     cloud_cover = _first(manifest.get("eo:cloud_cover"), props.get("eo:cloud_cover"))
+    mask_method = _first(
+        manifest.get("mask_method"),
+        manifest.get("akasha:mask_method"),
+        props.get("akasha:mask_method"),
+        RESOURCESAT_MASK_METHOD_BY_SOURCE.get(scene.source_id, RESOURCESAT_MASK_METHOD),
+    )
 
     item_props: dict[str, Any] = {
         "datetime": scene.acquisition_datetime,
@@ -713,7 +729,7 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
         ),
         "akasha:band_role_mapping": dict(RESOURCESAT_BAND_ROLE_MAPPING),
         "akasha:mask_asset": "mask",
-        "akasha:mask_method": RESOURCESAT_MASK_METHOD,
+        "akasha:mask_method": mask_method,
         "akasha:date_metrics_kind": "optical",
         "akasha:usable_pixel_percent": _first(
             props.get("akasha:usable_pixel_percent"),

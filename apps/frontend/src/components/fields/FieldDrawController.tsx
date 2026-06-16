@@ -140,7 +140,7 @@ export function FieldDrawController({
         } catch {
           // Ignore mode-switch errors during cleanup.
         }
-        if (map && typeof (map as any).getCanvas === 'function') {
+        if (map && typeof map.getCanvas === 'function') {
           map.getCanvas().style.cursor = 'grab';
         }
       });
@@ -210,7 +210,7 @@ export function FieldDrawController({
         } catch {
           // Ignore mode-switch errors.
         }
-        if (map && typeof (map as any).getCanvas === 'function') {
+        if (map && typeof map.getCanvas === 'function') {
           map.getCanvas().style.cursor = 'crosshair';
         }
         return;

@@ -8,7 +8,8 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { useMapUrlState } from '@/hooks/useMapUrlState';
-import { MapViewProvider, useMapView } from '@/state/mapViewContext';
+import { MapViewProvider } from '@/state/mapViewContext';
+import { useMapView } from '@/state/useMapView';
 
 function LocationProbe() {
     const location = useLocation();

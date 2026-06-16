@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 
 from ..auth import CurrentUser, get_current_user
-from ..raster.errors import AkashaError, field_backend_unavailable, not_found
+from ..raster.errors import AkashaError, bad_request, field_backend_unavailable, not_found
 from ..repositories import fields_repo
 from ..schemas.fields import FieldCreate, FieldResponse, FieldUpdate
 
@@ -20,6 +20,20 @@ logger = logging.getLogger("akasha.api.fields")
 router = APIRouter(prefix="/api", tags=["fields"], dependencies=[Depends(get_current_user)])
 
 MAX_NAME_LENGTH = 100
+
+
+def _validate_field_name(value: str | None) -> str | None:
+    if value is None:
+        return value
+    cleaned = value.strip()
+    if not cleaned:
+        raise bad_request("Field name must not be blank.", code="INVALID_NAME")
+    if len(cleaned) > MAX_NAME_LENGTH:
+        raise bad_request(
+            f"Field name exceeds {MAX_NAME_LENGTH} characters.",
+            code="INVALID_NAME",
+        )
+    return cleaned
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -52,10 +66,11 @@ async def create_field(
     payload: FieldCreate,
     user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
+    name = _validate_field_name(payload.name)
     return await _run_blocking(
         fields_repo.create_field,
         user.id,
-        payload.name,
+        name,
         payload.geometry,
         payload.areaHa,
         payload.groupId,
@@ -78,6 +93,8 @@ async def update_field(
     user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     data = payload.model_dump(by_alias=True, exclude_unset=True)
+    if "name" in data:
+        data["name"] = _validate_field_name(data["name"])
     field = await _run_blocking(fields_repo.update_field, field_id, user.id, **data)
     if field is None:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", fieldId=field_id)

@@ -1,7 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { describe, expect, it } from 'vitest';
-import { MapViewProvider, useMapView } from '@/state/mapViewContext';
+import { MapViewProvider } from '@/state/mapViewContext';
+import { useMapView } from '@/state/useMapView';
 
 function wrapper({ children }: PropsWithChildren) {
   return <MapViewProvider>{ children }</MapViewProvider>;

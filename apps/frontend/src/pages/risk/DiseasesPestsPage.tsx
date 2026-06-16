@@ -1,4 +1,4 @@
-import { useMapView } from '@/state/mapViewContext';
+import { useMapView } from '@/state/useMapView';
 import { useFieldRiskSummary, usePlots } from '@/lib/queries';
 import { reportErrorMessage, fmt } from '@/pages/reports/reportUtils';
 import type { RiskLevel } from '@/types/api';

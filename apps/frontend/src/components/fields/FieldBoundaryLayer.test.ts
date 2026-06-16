@@ -6,7 +6,7 @@ import {
   buildFieldBoundaryFeatureCollection,
   removeFieldBoundaryLayer,
   upsertFieldBoundaryLayer,
-} from '@/components/fields/FieldBoundaryLayer';
+} from '@/components/fields/fieldBoundaryLayerHelpers';
 import type { Plot } from '@/types/api';
 
 const plot: Plot = {

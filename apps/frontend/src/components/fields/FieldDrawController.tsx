@@ -70,6 +70,8 @@ export function FieldDrawController({
   modeRef.current = mode;
   const selectedPlotRef = useRef<Plot | null>(selectedPlot);
   selectedPlotRef.current = selectedPlot;
+  const onPolygonCompleteRef = useRef<typeof onPolygonComplete>(onPolygonComplete);
+  onPolygonCompleteRef.current = onPolygonComplete;
   const vertexCountRef = useRef(0);
 
   const owner = mode === 'draw' ? 'field-draw' : mode === 'edit' ? 'field-edit' : null;
@@ -131,7 +133,7 @@ export function FieldDrawController({
         if (feature?.geometry.type !== 'Polygon') return;
         const geometry = feature.geometry as PlotGeometry;
         setDraftGeometry(geometry);
-        onPolygonComplete?.(geometry);
+        onPolygonCompleteRef.current?.(geometry);
         // Switch to select mode so the finished shape stays visible but the user
         // cannot accidentally start a second polygon on the next click.
         try {

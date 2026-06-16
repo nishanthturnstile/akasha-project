@@ -1,5 +1,8 @@
 """Pydantic schemas for API request/response models."""
 
+# Re-exported intentionally as a convenience package surface.
+# ruff: noqa: F401
+
 from .account import (
     AccountMe as AccountMeSchema,
 )

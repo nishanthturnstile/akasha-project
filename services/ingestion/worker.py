@@ -42,6 +42,19 @@ REQUIRED_ENV: list[str] = [
 ]
 
 
+def _runtime_root() -> Path:
+    """Find the repo/container root that contains copied seed data and scripts."""
+    here = Path(__file__).resolve()
+    for base in (Path.cwd(), *here.parents, Path("/app")):
+        if (base / "data" / "seed").is_dir() or (base / "scripts").is_dir():
+            return base
+    return here.parent
+
+
+def _default_raster_output_root() -> Path:
+    return _runtime_root() / "data" / "seed" / "rasters"
+
+
 def _redact(name: str, value: str) -> str:
     if not value:
         return "<unset>"
@@ -341,7 +354,7 @@ def cmd_build_composite(args: argparse.Namespace) -> int:
 
 
 def cmd_prepare_context_cog(args: argparse.Namespace) -> int:
-    script = Path(__file__).resolve().parents[2] / "scripts" / "prepare_context_cog.py"
+    script = _runtime_root() / "scripts" / "prepare_context_cog.py"
     command = [
         sys.executable,
         str(script),
@@ -1019,7 +1032,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_context.add_argument("--acquisition-datetime", required=True)
     p_context.add_argument(
         "--output-root",
-        default=str(Path(__file__).resolve().parents[2] / "data" / "seed" / "rasters"),
+        default=str(_default_raster_output_root()),
     )
     p_context.add_argument("--gsd", type=float, default=None)
     p_context.add_argument("--overwrite", action="store_true")

@@ -321,6 +321,26 @@ def test_config_endpoint_lists_configured_aois_and_selects_default(tmp_path, mon
     assert body["aois"][1]["compositeGridCrs"] == "EPSG:32643"
 
 
+def test_config_endpoint_ignores_missing_optional_aoi_dir(tmp_path, monkeypatch):
+    from app.config import settings
+
+    primary = tmp_path / "bangalore-60km.geojson"
+    primary.write_text(
+        json.dumps(_aoi_feature("bangalore-60km", 77.0, 12.0, 78.0, 13.0)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "aoi_config_path", str(primary), raising=False)
+    monkeypatch.setattr(settings, "aoi_config_dir", str(tmp_path / "missing-aois"), raising=False)
+    monkeypatch.setattr(settings, "default_aoi_id", "bangalore-60km", raising=False)
+
+    r = client.get("/api/config")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["aoi"]["id"] == "bangalore-60km"
+    assert [aoi["id"] for aoi in body["aois"]] == ["bangalore-60km"]
+
+
 def test_sources_endpoint_contract():
     r = client.get("/api/sources")
     assert r.status_code == 200

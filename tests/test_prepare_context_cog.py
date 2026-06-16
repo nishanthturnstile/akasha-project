@@ -124,3 +124,31 @@ def test_worker_prepare_context_cog_delegates_to_repo_script(monkeypatch, tmp_pa
     assert "--source" in command
     assert "cartosat-3-gated" in command
     assert "--skip-validation" in command
+
+
+def test_worker_parser_defaults_work_from_flat_container_layout(
+    monkeypatch, tmp_path: Path
+) -> None:
+    app_root = tmp_path / "app"
+    (app_root / "data" / "seed").mkdir(parents=True)
+    (app_root / "scripts").mkdir()
+
+    monkeypatch.setattr(worker, "__file__", str(app_root / "worker.py"))
+    monkeypatch.chdir(app_root)
+
+    parser = worker.build_parser()
+    args = parser.parse_args(
+        [
+            "prepare-context-cog",
+            "--source",
+            "cartosat-3-gated",
+            "--input",
+            "visual.tif",
+            "--product-id",
+            "CARTOSAT3_ORDER_42",
+            "--acquisition-datetime",
+            "2026-04-16T05:30:00Z",
+        ]
+    )
+
+    assert Path(args.output_root) == app_root / "data" / "seed" / "rasters"

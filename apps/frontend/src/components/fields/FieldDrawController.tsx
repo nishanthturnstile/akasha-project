@@ -99,21 +99,28 @@ export function FieldDrawController({
   }, [onReleaseTool, owner]);
 
   const ensureDraw = useCallback(async (): Promise<TerraDraw | null> => {
-    console.log('[FieldDraw] ensureDraw called, map=', !!map, 'drawRef=', !!drawRef.current);
     if (!map) return null;
     if (!drawRef.current) {
       const [
         { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode },
         { TerraDrawMapLibreGLAdapter },
       ] = await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
-      console.log('[FieldDraw] TerraDraw modules loaded');
       const draw = new TerraDraw({
         adapter: new TerraDrawMapLibreGLAdapter({ map, prefixId: 'field-draw' }),
-        modes: [new TerraDrawPolygonMode(), new TerraDrawSelectMode()],
+        modes: [
+          new TerraDrawPolygonMode({
+            styles: {
+              fillColor: '#3b82f6',
+              fillOpacity: 0.25,
+              outlineColor: '#2563eb',
+              outlineOpacity: 1,
+              outlineWidth: 3,
+            },
+          }),
+          new TerraDrawSelectMode(),
+        ],
       });
-      console.log('[FieldDraw] TerraDraw instance created');
       draw.on('finish', (id) => {
-        console.log('[FieldDraw] finish event fired, id=', id, 'modeRef=', modeRef.current);
         if (modeRef.current !== 'draw') return;
         let feature;
         try {

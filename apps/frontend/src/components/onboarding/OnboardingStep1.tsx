@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
 import { useCreateSeason } from '@/lib/queries';
 
@@ -57,17 +58,17 @@ export default function OnboardingStep1() {
             className="w-full rounded-md border border-border bg-background px-3 py-2"
           />
           <div className="flex gap-2">
-            <input
-              type="date"
+            <DatePicker
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2"
+              onChange={setStartDate}
+              placeholder="Start Date"
+              className="w-full"
             />
-            <input
-              type="date"
+            <DatePicker
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2"
+              onChange={setEndDate}
+              placeholder="End Date"
+              className="w-full"
             />
           </div>
           {error && (

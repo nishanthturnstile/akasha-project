@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
@@ -36,27 +36,32 @@ export default function OnboardingFieldCreate() {
 
   const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
 
-  const requestMapTool = (owner: MapToolOwner): boolean => {
-    if (!activeMapTool || activeMapTool === owner) {
-      setActiveMapTool(owner);
-      return true;
-    }
-    return false;
-  };
+  const requestMapTool = useCallback((owner: MapToolOwner): boolean => {
+    setActiveMapTool((current) => {
+      if (!current || current === owner) {
+        return owner;
+      }
+      return current;
+    });
+    return true;
+  }, []);
 
-  const releaseMapTool = (owner: MapToolOwner) => {
+  const releaseMapTool = useCallback((owner: MapToolOwner) => {
     setActiveMapTool((current) => (current === owner ? null : current));
-  };
+  }, []);
 
   // Clicking the map when no tool is active initiates draw mode.
   useEffect(() => {
     if (!map || fieldMode) return;
-    const handleClick = () => setFieldMode('draw');
+    const handleClick = () => {
+      requestMapTool('field-draw');
+      setFieldMode('draw');
+    };
     map.on('click', handleClick);
     return () => {
       map.off('click', handleClick);
     };
-  }, [map, fieldMode]);
+  }, [map, fieldMode, requestMapTool]);
 
   const basemapResolution = useMemo(() => {
     if (!configQ.data) return { basemapConfig: null, basemapError: null };

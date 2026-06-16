@@ -11,8 +11,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, Request, Response
 
-from .config import settings
-from .raster.errors import AkashaError
+from ..config import settings
+from ..raster.errors import AkashaError
 
 DEV_USER_ID = "00000000-0000-4000-8000-000000000001"
 DEV_TEAM_ID = "00000000-0000-4000-8000-000000000010"
@@ -47,18 +47,13 @@ class CurrentTeam:
 
 
 def deployment_auth_required() -> bool:
-    # Independent "we are really deployed" signal that auth cannot be disabled
-    # on a hosted deployment even if APP_ENV is misconfigured. The Coolify
-    # control plane (self-hosted Azure VM) injects COOLIFY_* runtime variables;
-    # operators on a bare Docker host can set AKASHA_DEPLOYMENT explicitly.
     return any(
         os.environ.get(name)
         for name in (
-            "AKASHA_DEPLOYMENT",
-            "COOLIFY_URL",
-            "COOLIFY_FQDN",
-            "COOLIFY_RESOURCE_UUID",
-            "COOLIFY_CONTAINER_NAME",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_PUBLIC_DOMAIN",
         )
     )
 
@@ -196,7 +191,7 @@ def get_current_user(request: Request) -> CurrentUser:
         raise unauthorized()
     token_hash = hash_token(raw_token)
     try:
-        from .repositories import auth_repo  # noqa: PLC0415
+        from ..repositories import auth_repo  # noqa: PLC0415
 
         context = auth_repo.get_session_context(token_hash)
     except AkashaError:

@@ -161,12 +161,7 @@ def load_aoi_configs() -> list[dict[str, Any]]:
     if raw_dir:
         directory = _resolve_aoi_dir(raw_dir)
         if not directory.is_dir():
-            raise AkashaError(
-                "AOI_CONFIG_NOT_FOUND",
-                "Configured AOI directory was not found.",
-                500,
-                {"path": raw_dir},
-            )
+            return _dedupe_aois(aois)
         for path in sorted(
             item
             for pattern in ("*.geojson", "*.json")

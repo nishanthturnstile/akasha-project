@@ -213,7 +213,7 @@ services:
       AKASHA_COLLECTION_ID: "${AKASHA_COLLECTION_ID:-resourcesat-2a-liss3-boa}"
       SEED_DATA_DIR: "/app/data/seed"
       AOI_CONFIG_PATH: "${AOI_CONFIG_PATH:-/app/data/seed/bangalore-60km-aoi.geojson}"
-      AOI_CONFIG_DIR: "${AOI_CONFIG_DIR:-/app/data/seed/aois}"
+      AOI_CONFIG_DIR: "${AOI_CONFIG_DIR:-}"
       BHOONIDHI_API_BASE: "${BHOONIDHI_API_BASE:-https://bhoonidhi-api.nrsc.gov.in}"
       BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
       BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"

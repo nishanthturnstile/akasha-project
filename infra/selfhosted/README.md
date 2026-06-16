@@ -204,9 +204,9 @@ rolling current window. For a manual one-off window, set
 `AKASHA_SYNC_WINDOW_START` and `AKASHA_SYNC_WINDOW_END`, then run
 `sudo systemctl start akasha-bhoonidhi-sync.service`.
 
-For additional AOIs, place GeoJSON files under `AOI_CONFIG_DIR` (default
-`/app/data/seed/aois`) using filenames such as `mysore-60km.geojson`, then pass
-the matching id to ingestion commands:
+For additional AOIs, set `AOI_CONFIG_DIR` to a directory containing one GeoJSON
+file per AOI, using filenames such as `mysore-60km.geojson`, then pass the
+matching id to ingestion commands:
 
 ```bash
 python worker.py bhoonidhi-search --source resourcesat-2a-liss3-boa --aoi mysore-60km --aoi-dir /app/data/seed/aois

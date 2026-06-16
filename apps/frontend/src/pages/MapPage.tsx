@@ -39,9 +39,9 @@ import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMapView } from '@/state/mapViewContext';
+import { useMapView } from '@/state/useMapView';
 import { useMapUrlState } from '@/hooks/useMapUrlState';
-import type { CloudMaskOptions, Plot, PlotGeometry, Source } from '@/types/api';
+import type { CloudMaskOptions, GeoJsonPosition, Plot, PlotGeometry, Source } from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -79,7 +79,7 @@ function FullScreenError({ message, onRetry }: { message: string; onRetry: () =>
       className="flex h-screen w-screen items-center justify-center bg-background"
       data-testid="app-error"
     >
-      <div className="glass flex w-[360px] max-w-[90vw] flex-col items-start gap-3 p-6">
+      <div className="glass flex w-90 max-w-[90vw] flex-col items-start gap-3 p-6">
         <div className="flex items-center gap-2 text-destructive">
           <AlertTriangle className="size-5" strokeWidth={ 1.75 } />
           <h1 className="font-display text-lg font-semibold tracking-[-0.01em]">
@@ -95,11 +95,15 @@ function FullScreenError({ message, onRetry }: { message: string; onRetry: () =>
   );
 }
 
+function toLngLat(position: GeoJsonPosition): [number, number] {
+  return [position[0], position[1]];
+}
+
 function geometryCoordinates(geometry: PlotGeometry): [number, number][] {
   if (geometry.type === 'Polygon') {
-    return geometry.coordinates.flat() as [number, number][];
+    return geometry.coordinates.flat().map(toLngLat);
   }
-  return geometry.coordinates.flat(2) as [number, number][];
+  return geometry.coordinates.flat(2).map(toLngLat);
 }
 
 function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
@@ -548,7 +552,7 @@ export default function MapPage() {
   const showIndexPanel = analyticsEnabled;
 
   return (
-    <div className="relative h-full min-h-[640px] w-full overflow-hidden bg-background" data-testid="map-page">
+    <div className="relative h-full min-h-160 w-full overflow-hidden bg-background" data-testid="map-page">
       {/* Accessibility: bypass the map canvas (WCAG 2.4.1). */ }
       <a
         href="#timeline-bar"
@@ -597,7 +601,7 @@ export default function MapPage() {
         onRequestTool={ requestMapTool }
         onReleaseTool={ releaseMapTool }
         onPolygonComplete={ (geometry) => setDraftGeometry(geometry) }
-        className="absolute right-4 top-[280px] z-popover max-[760px]:right-4 max-[760px]:top-[37.5rem]"
+        className="absolute right-4 top-70 z-popover max-[760px]:right-4 max-[760px]:top-150"
       />
 
       {/* Top chrome: field context · layers · search · theme · all-fields trigger */ }
@@ -641,9 +645,10 @@ export default function MapPage() {
       />
 
       {/* Left: field tools */ }
-      <div className="absolute left-4 top-[68px] z-toolbar">
+      <div className="absolute left-4 top-17 z-toolbar">
         <PlotToolbar
           activeAction={ fieldMode === 'draw' ? 'draw' : null }
+          hasSelectedField={ Boolean(selectedPlot) }
           isMapAvailable={ Boolean(map) }
           // Request ownership of the field-draw tool before toggling draw mode
           onDrawField={ () => {
@@ -658,11 +663,12 @@ export default function MapPage() {
           onImportGeoJSON={ () => undefined }
           onExportGeoJSON={ () => void exportGeoJson() }
           onDeleteSelectedField={ () => void deleteSelectedField() }
+          selectedFieldName={ selectedPlot?.name }
         />
       </div>
 
       {/* Right: stacked panels — All Fields dropdown above, field details below */ }
-      <div className="absolute right-4 top-[68px] z-panel flex max-w-[360px] flex-col gap-3">
+      <div className="absolute right-4 top-17 z-panel flex max-w-90 flex-col gap-3">
         { allFieldsOpen && (
           <AllFieldsPanel
             plots={ plotsQ.data }

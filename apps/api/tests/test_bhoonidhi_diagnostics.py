@@ -54,7 +54,7 @@ def test_diagnostic_start_rejects_when_credentials_missing(monkeypatch, tmp_path
 
 
 def test_diagnostic_start_returns_job_id_and_status_url(monkeypatch, tmp_path):
-    from app import bhoonidhi_diagnostics as diagnostics
+    from app.routers import bhoonidhi_router as diagnostics
 
     _enable_diagnostics(monkeypatch, tmp_path)
     diagnostics.clear_jobs_for_tests()
@@ -82,7 +82,7 @@ def test_diagnostic_status_unknown_job_returns_standard_not_found(monkeypatch, t
 
 
 def test_product_inspector_reports_bands_quality_candidates_and_missing_roles(tmp_path):
-    from app.bhoonidhi_diagnostics import inspect_downloaded_product
+    from app.routers.bhoonidhi_router import inspect_downloaded_product
 
     archive_path = tmp_path / "resourcesat_product.zip"
     with zipfile.ZipFile(archive_path, "w") as zf:
@@ -113,7 +113,7 @@ def test_product_inspector_reports_bands_quality_candidates_and_missing_roles(tm
 
 
 def test_job_runner_sanitizes_paths_and_tokens(monkeypatch, tmp_path):
-    from app import bhoonidhi_diagnostics as diagnostics
+    from app.routers import bhoonidhi_router as diagnostics
 
     _enable_diagnostics(monkeypatch, tmp_path)
     diagnostics.clear_jobs_for_tests()

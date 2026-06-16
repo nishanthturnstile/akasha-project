@@ -5,7 +5,7 @@ import {
     useParams,
     useSearchParams,
 } from 'react-router-dom';
-import { useMapView } from '@/state/mapViewContext';
+import { useMapView } from '@/state/useMapView';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 

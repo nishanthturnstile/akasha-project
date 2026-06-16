@@ -6,10 +6,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from app import account, auth_routes
 from app.auth import CurrentUser, TeamMembership, get_current_user
 from app.config import settings
 from app.main import app
+from app.routers import account_router as account
+from app.routers import auth_router as auth_routes
 from fastapi.testclient import TestClient
 
 client = TestClient(app)

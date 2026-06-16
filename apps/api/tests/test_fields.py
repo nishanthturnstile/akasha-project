@@ -11,9 +11,9 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from app import fields_repo
 from app.auth import DEV_USER_ID
 from app.main import app
+from app.repositories import fields_repo
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -83,7 +83,8 @@ class FakeSeasonStore:
 
     def list_fields(self, user_id: str) -> list[dict]:
         ordered = sorted(self.rows.values(), key=lambda r: r["_seq"], reverse=True)
-        return [{k: v for k, v in r.items() if not k.startswith("_")} for r in ordered if r["userId"] == user_id]
+        return [{k: v for k, v in r.items() if not k.startswith("_")}
+                 for r in ordered if r["userId"] == user_id]
 
     def get_field(self, field_id: str, user_id: str) -> dict | None:
         row = self.rows.get(field_id)
@@ -244,3 +245,20 @@ def test_field_without_seasons_returns_empty(store):
     body = r.json()
     assert body["seasonIds"] == []
     assert body["seasons"] == []
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("   ", "Field name must not be blank."),
+        ("x" * 101, "Field name exceeds 100 characters."),
+    ],
+)
+def test_invalid_field_name_uses_standard_error_shape(store, name, message):
+    r = client.post("/api/fields", json={"name": name, "geometry": VALID_POLY})
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "INVALID_NAME"
+    assert body["error"]["message"] == message
+    assert "Traceback" not in r.text

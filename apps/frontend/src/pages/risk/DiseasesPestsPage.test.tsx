@@ -3,7 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import DiseasesPestsPage from '@/pages/risk/DiseasesPestsPage';
 import { MemoryRouter } from 'react-router-dom';
-import { MapViewProvider, type MapViewState } from '@/state/mapViewContext';
+import { MapViewProvider } from '@/state/mapViewContext';
+import type { MapViewState } from '@/state/mapViewState';
 
 function jsonResponse(payload: unknown, status = 200) {
   return {

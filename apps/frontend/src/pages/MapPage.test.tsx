@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import MapPage from '@/pages/MapPage';
-import { MapViewProvider, type MapViewState } from '@/state/mapViewContext';
+import { MapViewProvider } from '@/state/mapViewContext';
+import type { MapViewState } from '@/state/mapViewState';
 import type { FieldStatisticsResponse, FieldTrendResponse, Plot, SceneDate } from '@/types/api';
 
 vi.mock('@/components/map/MapLayerManager', () => ({

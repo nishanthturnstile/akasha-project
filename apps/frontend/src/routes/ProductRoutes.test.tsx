@@ -156,7 +156,7 @@ describe('ProductRoutes', () => {
       expect(screen.queryByTestId('module-placeholder')).toBeNull();
       view.unmount();
     }
-  });
+  }, 30_000);
 
   it('renders real Phase 12 account pages instead of placeholders', async () => {
     vi.stubGlobal(

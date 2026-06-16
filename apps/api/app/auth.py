@@ -196,7 +196,7 @@ def get_current_user(request: Request) -> CurrentUser:
         raise unauthorized()
     token_hash = hash_token(raw_token)
     try:
-        from . import auth_repo  # noqa: PLC0415
+        from .repositories import auth_repo  # noqa: PLC0415
 
         context = auth_repo.get_session_context(token_hash)
     except AkashaError:

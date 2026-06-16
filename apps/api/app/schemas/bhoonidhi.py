@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from app.api_models import ApiModel
+from ..api_models import ApiModel
 
 RESOURCESAT_LISS3_BOA_COLLECTION = "ResourceSat-2A_LISS3_BOA"
 

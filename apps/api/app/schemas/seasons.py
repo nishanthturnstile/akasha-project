@@ -9,6 +9,8 @@ from pydantic import field_validator
 
 from ..api_models import ApiModel
 
+MAX_NAME_LENGTH = 100
+
 
 class SeasonCreate(ApiModel):
     name: str
@@ -22,8 +24,8 @@ class SeasonCreate(ApiModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("Season name must not be blank.")
-        if len(cleaned) > 120:
-            raise ValueError("Season name exceeds 120 characters.")
+        if len(cleaned) > MAX_NAME_LENGTH:
+            raise ValueError(f"Season name exceeds {MAX_NAME_LENGTH} characters.")
         return cleaned
 
     @field_validator("end_date")
@@ -51,8 +53,8 @@ class SeasonUpdate(ApiModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("Season name must not be blank.")
-        if len(cleaned) > 120:
-            raise ValueError("Season name exceeds 120 characters.")
+        if len(cleaned) > MAX_NAME_LENGTH:
+            raise ValueError(f"Season name exceeds {MAX_NAME_LENGTH} characters.")
         return cleaned
 
     @field_validator("end_date")

@@ -161,12 +161,12 @@ export function PlotToolbar({
               'size-9 text-muted-foreground transition-[background-color,color,box-shadow,transform]',
               active && 'bg-primary/15 text-foreground shadow-e1',
               tool.tone === 'destructive' &&
-                !disabled &&
-                'hover:bg-destructive/10 hover:text-destructive',
+              !disabled &&
+              'hover:bg-destructive/10 hover:text-destructive',
             ) }
             data-testid={ `field-toolbar-${tool.id}` }
           >
-            <Icon className="size-[18px]" strokeWidth={ 1.75 } aria-hidden="true" />
+            <Icon className="size-4.5" strokeWidth={ 1.75 } aria-hidden="true" />
             <span className="sr-only">{ tool.label }</span>
           </Button>
         );

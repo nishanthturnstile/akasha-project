@@ -3,8 +3,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.routers import data_manager_router as data_manager, field_group_router as field_groups, operation_router as operations, scout_task_router as scout_tasks
 from app.main import app
+from app.routers import (
+    data_manager_router as data_manager,
+)
+from app.routers import (
+    field_group_router as field_groups,
+)
+from app.routers import (
+    operation_router as operations,
+)
+from app.routers import (
+    scout_task_router as scout_tasks,
+)
 from fastapi.testclient import TestClient
 
 client = TestClient(app)

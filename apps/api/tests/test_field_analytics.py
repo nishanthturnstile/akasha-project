@@ -7,6 +7,7 @@ import pytest
 from app.config import settings
 from app.main import app
 from app.routers import analytics_router as field_analytics
+from app.schemas.analytics import FieldStatisticsRequest
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -284,3 +285,10 @@ def test_field_index_overlay_rejects_unsupported_index(monkeypatch):
     )
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "UNSUPPORTED_INDEX"
+
+
+def test_field_statistics_request_uses_configured_defaults():
+    payload = FieldStatisticsRequest()
+
+    assert payload.source_id == settings.default_source_id
+    assert payload.index_type == "NDVI"

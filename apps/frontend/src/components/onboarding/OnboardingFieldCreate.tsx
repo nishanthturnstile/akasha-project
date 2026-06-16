@@ -13,7 +13,11 @@ import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 
 import type maplibregl from 'maplibre-gl';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
-import type { PlotGeometry } from '@/types/api';
+import type { GeoJsonPosition, PlotGeometry } from '@/types/api';
+
+function toLngLatRing(ring: GeoJsonPosition[]): [number, number][] {
+  return ring.map(([lng, lat]) => [lng, lat]);
+}
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
@@ -115,9 +119,7 @@ export default function OnboardingFieldCreate() {
         setSaveError('Field must be a single polygon.');
         return;
       }
-      const areaMeters = polygonAreaMeters(
-        polygon.coordinates[0].map(([lng, lat]) => [lng, lat] as [number, number]),
-      );
+      const areaMeters = polygonAreaMeters(toLngLatRing(polygon.coordinates[0] ?? []));
       const created = await createFieldMutation.mutateAsync({
         name: fieldName.trim() || 'Field',
         geometry: {

@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app import product
 from app.main import app
 from app.raster import tiles
 from app.raster.indices import get_index, index_tile_expression
+from app.routers import product_router as product
 from fastapi.testclient import TestClient
 
 client = TestClient(app)

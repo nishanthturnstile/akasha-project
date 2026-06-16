@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from app.routers import analytics_router as field_analytics, field_exports_router as field_exports
 from app.config import settings
 from app.main import app
+from app.routers import analytics_router as field_analytics
+from app.routers import field_exports_router as field_exports
 from fastapi.testclient import TestClient
 
 client = TestClient(app)

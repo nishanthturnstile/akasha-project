@@ -80,7 +80,7 @@ async def create_season(
         payload.name,
         payload.start_date,
         payload.end_date,
-        field_ids=payload.fieldIds,
+        field_ids=payload.field_ids,
     )
 
 
@@ -119,6 +119,9 @@ async def update_season(
             code="NO_UPDATE_FIELDS",
         )
     data = payload.model_dump(by_alias=True, exclude_unset=True)
+    for api_key, repo_key in (("startDate", "start_date"), ("endDate", "end_date")):
+        if api_key in data:
+            data[repo_key] = data.pop(api_key)
     season = await _run_blocking(
         seasons_repo.update_season,
         season_id,

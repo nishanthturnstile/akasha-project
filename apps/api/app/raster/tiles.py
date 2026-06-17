@@ -49,6 +49,36 @@ def _transparent_png() -> bytes:
 # remain server-side.
 TRANSPARENT_PNG = _transparent_png()
 
+MASKED_OVERLAY_RGBA = (208, 213, 221, 255)
+
+_OVERLAY_COLOR_STOPS: dict[str, tuple[tuple[float, tuple[int, int, int]], ...]] = {
+    "NDVI": (
+        (0.0, (215, 48, 39)),
+        (0.5, (254, 224, 139)),
+        (1.0, (26, 152, 80)),
+    ),
+    "NDRE": (
+        (0.0, (215, 48, 39)),
+        (0.5, (254, 224, 139)),
+        (1.0, (26, 152, 80)),
+    ),
+    "MSAVI": (
+        (0.0, (215, 48, 39)),
+        (0.5, (254, 224, 139)),
+        (1.0, (26, 152, 80)),
+    ),
+    "NDMI": (
+        (0.0, (138, 90, 34)),
+        (0.5, (216, 201, 138)),
+        (1.0, (31, 111, 139)),
+    ),
+    "NDWI_GREEN_NIR": (
+        (0.0, (202, 168, 106)),
+        (0.5, (232, 224, 176)),
+        (1.0, (22, 96, 168)),
+    ),
+}
+
 
 def titiler_base_url() -> str:
     return os.environ.get("TITILER_URL", "").strip().rstrip("/")
@@ -110,6 +140,118 @@ def render_rgb_tile(
         raise upstream_error(
             "Direct RGB tile render failed.", code="RGB_TILE_RENDER_ERROR"
         ) from exc
+
+
+def _rgba_png(width: int, height: int, rgba: bytes) -> bytes:
+    """Encode an RGBA image buffer into a PNG without extra dependencies."""
+    if width <= 0 or height <= 0:
+        return TRANSPARENT_PNG
+    stride = width * 4
+    if len(rgba) != stride * height:
+        raise ValueError("RGBA buffer size does not match width*height*4.")
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack("!IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    scanlines = bytearray()
+    for row in range(height):
+        start = row * stride
+        scanlines.append(0)
+        scanlines.extend(rgba[start : start + stride])
+    idat = zlib.compress(bytes(scanlines))
+    return (
+        signature
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", idat)
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def _interpolate_palette(
+    normalized_values,
+    stops: tuple[tuple[float, tuple[int, int, int]], ...],
+):
+    import numpy as np
+
+    rgb = np.zeros(normalized_values.shape + (3,), dtype=np.uint8)
+    if len(stops) < 2:
+        return rgb
+
+    for idx, (left_stop, right_stop) in enumerate(zip(stops, stops[1:])):
+        left_value, left_color = left_stop
+        right_value, right_color = right_stop
+        if idx == len(stops) - 2:
+            segment = (normalized_values >= left_value) & (normalized_values <= right_value)
+        else:
+            segment = (normalized_values >= left_value) & (normalized_values < right_value)
+        if not np.any(segment):
+            continue
+        width = max(right_value - left_value, 1e-6)
+        factor = (normalized_values[segment] - left_value) / width
+        for channel in range(3):
+            rgb[..., channel][segment] = np.clip(
+                np.round(
+                    left_color[channel]
+                    + (right_color[channel] - left_color[channel]) * factor
+                ),
+                0,
+                255,
+            ).astype(np.uint8)
+
+    low_color = np.array(stops[0][1], dtype=np.uint8)
+    high_color = np.array(stops[-1][1], dtype=np.uint8)
+    rgb[normalized_values <= stops[0][0]] = low_color
+    rgb[normalized_values >= stops[-1][0]] = high_color
+    return rgb
+
+
+def render_field_index_overlay_png(
+    *,
+    index_type: str,
+    index_values,
+    valid_mask,
+    masked_mask,
+) -> tuple[bytes, str]:
+    """Render a field-clipped index overlay as RGBA PNG.
+
+    `valid_mask` identifies pixels to colorize from `index_values`. `masked_mask`
+    identifies pixels inside the field that should render as light-grey
+    cloud/nodata holes. Everything else stays fully transparent.
+    """
+    import numpy as np
+
+    values = np.asarray(index_values, dtype="float64")
+    valid = np.asarray(valid_mask, dtype=bool)
+    masked = np.asarray(masked_mask, dtype=bool)
+    if values.ndim != 2 or valid.shape != values.shape or masked.shape != values.shape:
+        raise ValueError("Overlay inputs must be 2D arrays with matching shapes.")
+    if values.size == 0:
+        return TRANSPARENT_PNG, "image/png"
+
+    height, width = values.shape
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+
+    if np.any(masked):
+        rgba[masked] = MASKED_OVERLAY_RGBA
+
+    finite_valid = valid & np.isfinite(values)
+    if np.any(finite_valid):
+        from .indices import get_index
+
+        index_def = get_index(index_type)
+        lo, hi = index_def.display_rescale
+        normalized = np.clip((values - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+        palette = _OVERLAY_COLOR_STOPS.get(index_type.upper(), _OVERLAY_COLOR_STOPS["NDVI"])
+        rgb = _interpolate_palette(normalized, palette)
+        rgba[finite_valid, :3] = rgb[finite_valid]
+        rgba[finite_valid, 3] = 255
+
+    invalid_valid = valid & ~np.isfinite(values)
+    if np.any(invalid_valid):
+        rgba[invalid_valid] = MASKED_OVERLAY_RGBA
+
+    if not np.any(rgba[..., 3]):
+        return TRANSPARENT_PNG, "image/png"
+    return _rgba_png(width, height, rgba.tobytes()), "image/png"
 
 
 def default_sar_vv_rescale() -> str:

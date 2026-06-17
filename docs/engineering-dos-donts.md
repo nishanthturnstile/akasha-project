@@ -8,14 +8,15 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 
 ### Do
 
-- Do show the source-native satellite display by default (ResourceSat FCC in production); indices are requested after plot selection/drawing.
+- Do show the configured basemap by default and use ResourceSat as the field analytics source.
+- Do default ResourceSat field monitoring to a field-clipped NDVI overlay once a field is selected or drawn.
 - Do keep source/date selection visible and show AOI cloud/usable-pixel percentages.
 - Do report valid-pixel and cloud-masked percentages with every index result.
 - Do provide clear empty/error messages when no usable optical image exists.
 
 ### Don't
 
-- Don't show NDVI or any index as the default map layer.
+- Don't auto-render the full ResourceSat FCC scene in the normal crop-monitoring flow.
 - Don't imply NDVI is a full crop-health diagnosis by itself.
 - Don't hide cloud/no-data limitations from the user.
 - Don't build user accounts/roles in Wave 1 unless explicitly re-scoped.

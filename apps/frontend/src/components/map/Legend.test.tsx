@@ -13,6 +13,7 @@ describe('Legend', () => {
         const legend = getByTestId('map-legend');
         expect(legend.getAttribute('data-display-mode')).toBe('NDVI');
         expect(legend.textContent).toContain('NDVI');
+        expect(legend.textContent).toContain('Cloud / no data');
         expect(legend.getAttribute('aria-label')).toContain('NDVI');
     });
 

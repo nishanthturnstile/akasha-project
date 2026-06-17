@@ -382,6 +382,8 @@ def test_sources_endpoint_contract():
     # FCC base imagery + optical index display modes (EOS-style LAYER picker).
     assert rs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert rs["defaultDisplayMode"] == "FCC"
+    assert rs["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert rs["defaultMapDisplayMode"] == "NDVI"
     assert [g["label"] for g in rs["layerGroups"]] == [
         "Imagery",
         "Vegetation Indices",
@@ -510,10 +512,8 @@ def test_layers_default_tile_template_is_same_origin_api_route():
     body = r.json()
     assert body["sourceId"] == "resourcesat-2a-liss3-boa"
     assert body["acquisitionDate"] == "2026-03-19"
-    assert body["displayMode"] == "FCC"
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
-    )
+    assert body["displayMode"] == "NDVI"
+    assert body["tileUrlTemplate"] is None
 
 
 def _stac_item(item_id, acquisition_date, bbox, analytic_href, scl_href, usable=80.0):
@@ -984,9 +984,8 @@ def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite
     body = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa").json()
 
     assert body["acquisitionDate"] == "2026-04-18"
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/resourcesat-2a-liss3-boa/2026-04-18/FCC/{z}/{x}/{y}.png"
-    )
+    assert body["displayMode"] == "NDVI"
+    assert body["tileUrlTemplate"] is None
 
 
 def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_missing(
@@ -1128,15 +1127,16 @@ def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
     assert body["cloudMaskedPercent"] is None
 
 
-def test_layers_default_supports_resourcesat_fcc():
+def test_layers_default_uses_resourcesat_ndvi_overlay_mode():
     r = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa")
     assert r.status_code == 200
     body = r.json()
     assert body["sourceId"] == "resourcesat-2a-liss3-boa"
-    assert body["displayMode"] == "FCC"
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
-    )
+    assert body["displayMode"] == "NDVI"
+    assert body["defaultDisplayMode"] == "FCC"
+    assert body["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert body["defaultMapDisplayMode"] == "NDVI"
+    assert body["tileUrlTemplate"] is None
 
 
 def test_context_source_default_layer_uses_declared_display_asset(monkeypatch):
@@ -1236,20 +1236,22 @@ def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
         ],
     )
 
-    def fake_fetch_tile(url):
-        captured["url"] = url
+    def fake_render_rgb_tile(**kwargs):
+        captured.update(kwargs)
         return b"png-bytes", "image/png"
 
-    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+    monkeypatch.setattr(tiles, "render_rgb_tile", fake_render_rgb_tile)
 
     r = client.get("/api/tiles/sentinel-2-l2a/2026-01-15/rgb/3/4/5.png")
     assert r.status_code == 200
     assert r.content == b"png-bytes"
-    assert captured["url"] == (
-        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
-        "url=s3%3A%2F%2Fakasha-cogs%2Fa%2Fanalytic.tif&bidx=1&bidx=8&bidx=9&"
-        "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
-    )
+    assert captured == {
+        "analytic_href": "s3://akasha-cogs/a/analytic.tif",
+        "rgb_positions": [1, 8, 9],
+        "z": 3,
+        "x": 4,
+        "y": 5,
+    }
 
 
 def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
@@ -1279,20 +1281,22 @@ def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
         ],
     )
 
-    def fake_fetch_tile(url):
-        captured["url"] = url
+    def fake_render_rgb_tile(**kwargs):
+        captured.update(kwargs)
         return b"png-bytes", "image/png"
 
-    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+    monkeypatch.setattr(tiles, "render_rgb_tile", fake_render_rgb_tile)
 
     r = client.get("/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/3/4/5.png")
     assert r.status_code == 200
     assert r.content == b"png-bytes"
-    assert captured["url"] == (
-        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
-        "url=s3%3A%2F%2Fakasha-cogs%2Fresourcesat%2Fanalytic.tif&bidx=3&bidx=2&bidx=1&"
-        "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
-    )
+    assert captured == {
+        "analytic_href": "s3://akasha-cogs/resourcesat/analytic.tif",
+        "rgb_positions": [3, 2, 1],
+        "z": 3,
+        "x": 4,
+        "y": 5,
+    }
 
 
 def test_ndvi_context_tile_route_uses_declared_context_asset(monkeypatch):

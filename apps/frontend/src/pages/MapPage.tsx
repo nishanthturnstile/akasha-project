@@ -253,6 +253,35 @@ function sanitizeCloudMaskForSource(
   };
 }
 
+function mapDisplayModesForSource(source: Source | null | undefined): string[] {
+  const modes = source?.mapDisplayModes;
+  if (modes && modes.length > 0) return modes;
+  return source?.displayModes ?? [];
+}
+
+function defaultMapDisplayModeForSource(
+  source: Source | null | undefined,
+  fallback: string | null | undefined,
+): string {
+  return (
+    source?.defaultMapDisplayMode ??
+    source?.defaultDisplayMode ??
+    mapDisplayModesForSource(source)[0] ??
+    fallback ??
+    'FCC'
+  );
+}
+
+function resolveDisplayMode(
+  requested: string | null | undefined,
+  availableModes: string[],
+  fallback: string,
+): string {
+  if (!requested) return fallback;
+  const normalized = requested.trim().toUpperCase();
+  return availableModes.find((mode) => mode.toUpperCase() === normalized) ?? fallback;
+}
+
 export default function MapPage() {
   useMapUrlState();
   const configQ = useConfig();
@@ -374,15 +403,25 @@ export default function MapPage() {
   );
 
   const sourceDisplayModes = selectedSource?.displayModes ?? ['FCC'];
-  const selectedDisplayMode =
-    displayModeOverride ??
-    selectedSource?.displayMode ??
-    selectedSource?.defaultDisplayMode ??
-    sourceDisplayModes[0] ??
-    (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
-      ? defaultLayerQ.data.displayMode
-      : undefined) ??
-    'FCC';
+  const sourceMapDisplayModes = mapDisplayModesForSource(selectedSource);
+  const defaultMapDisplayMode = defaultMapDisplayModeForSource(
+    selectedSource,
+    defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
+      ? defaultLayerQ.data.defaultMapDisplayMode ?? defaultLayerQ.data.displayMode ?? null
+      : null,
+  );
+  const selectedDisplayMode = resolveDisplayMode(
+    displayModeOverride ?? selectedSource?.displayMode ?? null,
+    sourceMapDisplayModes.length > 0 ? sourceMapDisplayModes : sourceDisplayModes,
+    defaultMapDisplayMode,
+  );
+
+  useEffect(() => {
+    if (!selectedSource || !displayModeOverride) return;
+    if (displayModeOverride !== selectedDisplayMode) {
+      view.setDisplayMode(selectedDisplayMode);
+    }
+  }, [displayModeOverride, selectedDisplayMode, selectedSource, view]);
 
   // EOS-style: when an index layer is selected, hide the full-scene Akasha raster so
   // the basemap satellite imagery shows AROUND the field, and paint the colorized
@@ -434,6 +473,7 @@ export default function MapPage() {
     if (!visible || !compareEnabled || !compareDate) return null;
     if (compareDate === selectedDate) return null;
     if (!effectiveSourceId) return null;
+    if (isIndexLayer) return null;
     const meta = datesQ.data?.find((d) => d.acquisitionDate === compareDate);
     if (!meta?.tileAvailable) return null;
     return {
@@ -448,6 +488,7 @@ export default function MapPage() {
     compareDate,
     visible,
     effectiveSourceId,
+    isIndexLayer,
     selectedDate,
     selectedDisplayMode,
     datesQ.data,
@@ -608,7 +649,15 @@ export default function MapPage() {
 
   const config = configQ.data;
   const sourceAttribution = selectedSource?.attribution ?? selectedSource?.provider;
-  const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
+  const attribution =
+    scene?.attribution ??
+    (indexOverlay
+      ? sourceAttribution
+      : basemapResolution.basemapConfig.provider === 'osm'
+        ? basemapResolution.basemapConfig.attribution
+        : basemapResolution.basemapConfig.provider === 'esri'
+          ? 'ArcGIS basemap'
+          : sourceAttribution ?? 'Satellite imagery');
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
   const analyticsSupportedIndices = sourceSupportedIndices;
   const sourceAnalysisLevel = selectedSource?.analysisLevel ?? 'field';
@@ -818,12 +867,13 @@ export default function MapPage() {
           sources={ sourcesQ.data }
           activeSourceId={ effectiveSourceId }
           onSelectSource={ view.setSource }
-          displayModes={ sourceDisplayModes }
+          displayModes={ sourceMapDisplayModes.length > 0 ? sourceMapDisplayModes : sourceDisplayModes }
           displayMode={ selectedDisplayMode }
           onDisplayModeChange={ view.setDisplayMode }
           cloudMask={ cloudMask }
           onCloudMaskChange={ view.setCloudMask }
           cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
+          compareAvailable={ !isIndexLayer }
           compareEnabled={ compareEnabled }
           onCompareEnabledChange={ view.setCompareEnabled }
           comparableDates={ comparableDates }
@@ -847,7 +897,7 @@ export default function MapPage() {
         * stacked in a single bottom-left column so they never overlap each other.
         * Raised above the attribution line so the two never collide at any width. */ }
       <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
-        { visible && legendOpen && (
+        { visible && legendOpen && (scene || indexOverlay) && (
           <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } />
         ) }
         <MapControls

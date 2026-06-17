@@ -13,8 +13,10 @@ const sources: Source[] = [
         label: 'ResourceSat-2A LISS-3 BOA',
         provider: 'ISRO/NRSC Bhoonidhi',
         kind: 'optical',
-        displayModes: ['FCC'],
+        displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
         defaultDisplayMode: 'FCC',
+        mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        defaultMapDisplayMode: 'NDVI',
         supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
         availableMaskOptions: ['clouds', 'cloudShadows'],
         metricsProvisional: true,
@@ -91,8 +93,8 @@ function baseProps(overrides: Partial<Parameters<typeof LayerControlBar>[0]> = {
         sources,
         activeSourceId: 'resourcesat-2a-liss3-boa',
         onSelectSource: vi.fn(),
-        displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI'],
-        displayMode: 'FCC',
+        displayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        displayMode: 'NDVI',
         onDisplayModeChange: vi.fn(),
         cloudMask,
         onCloudMaskChange: vi.fn(),
@@ -137,7 +139,7 @@ describe('LayerControlBar', () => {
         expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
             'ResourceSat-2A LISS-3 BOA',
         );
-        expect(screen.getByTestId('layer-display-trigger').textContent).toContain('FCC');
+        expect(screen.getByTestId('layer-display-trigger').textContent).toContain('NDVI');
         expect(screen.getByTestId('layer-cloud-mask-trigger')).toBeTruthy();
         expect(screen.getByTestId('layer-bar-cluster')).toBeTruthy();
         expect(screen.getByTestId('layer-bar-collapse')).toBeTruthy();
@@ -178,8 +180,8 @@ describe('LayerControlBar', () => {
             <LayerControlBar
                 { ...baseProps({
                     activeSourceId: 'resourcesat-2a-liss3-boa',
-                    displayModes: ['FCC'],
-                    displayMode: 'FCC',
+                    displayModes: ['NDVI'],
+                    displayMode: 'NDVI',
                     exportSourceId: 'resourcesat-2a-liss3-boa',
                     exportCloudMask: { clouds: true, cloudShadows: true, cirrus: false },
                 }) }
@@ -192,5 +194,17 @@ describe('LayerControlBar', () => {
         expect(screen.getByTestId('cloud-mask-clouds')).toBeTruthy();
         expect(screen.getByTestId('cloud-mask-cloudShadows')).toBeTruthy();
         expect(screen.queryByTestId('cloud-mask-cirrus')).toBeNull();
+    });
+
+    it('hides compare controls when the active mode is field-overlay only', () => {
+        renderBar(
+            <LayerControlBar
+                { ...baseProps({
+                    compareAvailable: false,
+                }) }
+            />,
+        );
+
+        expect(screen.queryByTestId('compare-control')).toBeNull();
     });
 });

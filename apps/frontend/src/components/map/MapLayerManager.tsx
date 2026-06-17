@@ -80,7 +80,7 @@ function applyIndexOverlay(map: maplibregl.Map, overlay: IndexOverlay | null): v
     id: INDEX_OVERLAY_LAYER_ID,
     type: 'raster',
     source: INDEX_OVERLAY_SOURCE_ID,
-    paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
+    paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
   });
 }
 

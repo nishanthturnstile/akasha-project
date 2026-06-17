@@ -181,13 +181,20 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     dates = catalog.list_dates(source_id)
     selectable_dates = [d for d in dates if bool(d.get("tileAvailable", True))]
     date_pool = selectable_dates or dates
+    map_display_modes = list(source.get("mapDisplayModes", source["displayModes"]))
+    default_map_display_mode = str(
+        source.get("defaultMapDisplayMode", source["defaultDisplayMode"])
+    )
     if not date_pool:
-        display_mode = source["defaultDisplayMode"]
+        display_mode = default_map_display_mode
         return {
             "sourceId": source_id,
             "acquisitionDate": None,
             "displayMode": display_mode,
             "displayModes": source["displayModes"],
+            "defaultDisplayMode": source["defaultDisplayMode"],
+            "mapDisplayModes": map_display_modes,
+            "defaultMapDisplayMode": default_map_display_mode,
             "kind": source["kind"],
             "tileUrlTemplate": None,
             "bounds": None,
@@ -205,14 +212,22 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     date = next((d for d in date_pool if d["isLatestUsable"]), date_pool[0])
     acquisition_date = date["acquisitionDate"]
     items = catalog.items_for_date(source_id, acquisition_date)
-    display_mode = source["defaultDisplayMode"]
+    display_mode = default_map_display_mode
+    tile_url_template = (
+        None
+        if display_mode in catalog.supported_indices(source_id)
+        else catalog.tile_url_template(source_id, acquisition_date)
+    )
     return {
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
         "displayMode": display_mode,
         "displayModes": source["displayModes"],
+        "defaultDisplayMode": source["defaultDisplayMode"],
+        "mapDisplayModes": map_display_modes,
+        "defaultMapDisplayMode": default_map_display_mode,
         "kind": source["kind"],
-        "tileUrlTemplate": catalog.tile_url_template(source_id, acquisition_date),
+        "tileUrlTemplate": tile_url_template,
         "bounds": catalog.merged_bbox(items),
         "minzoom": 8,
         "maxzoom": 14,

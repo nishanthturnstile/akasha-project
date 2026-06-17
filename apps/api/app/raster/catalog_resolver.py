@@ -86,6 +86,8 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         # is intentionally absent (only NDVI/MSAVI vegetation + NDMI moisture).
         "displayModes": ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
         "defaultDisplayMode": "FCC",
+        "mapDisplayModes": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+        "defaultMapDisplayMode": "NDVI",
         "layerGroups": [
             {"label": "Imagery", "modes": ["FCC"]},
             {"label": "Vegetation Indices", "modes": ["NDVI", "MSAVI"]},
@@ -441,6 +443,8 @@ def source_payload(source_id: str) -> dict[str, Any]:
         "maskAsset": source.get("maskAsset"),
         "displayModes": list(source["displayModes"]),
         "defaultDisplayMode": source["defaultDisplayMode"],
+        "mapDisplayModes": list(source.get("mapDisplayModes", source["displayModes"])),
+        "defaultMapDisplayMode": source.get("defaultMapDisplayMode", source["defaultDisplayMode"]),
         # EOS-style grouped LAYER picker; None for sources without categories
         # (frontend then falls back to a flat displayModes list).
         "layerGroups": source.get("layerGroups"),

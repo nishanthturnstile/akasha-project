@@ -1,8 +1,12 @@
 """Selected-field native analytics route tests."""
 from __future__ import annotations
 
+import struct
+import zlib
+from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 from app.config import settings
 from app.main import app
@@ -63,6 +67,39 @@ def _stats_response(
             "warnings": [],
         },
     }
+
+
+def _decode_rgba_png(png: bytes) -> tuple[int, int, list[tuple[int, int, int, int]]]:
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+    cursor = 8
+    width = height = 0
+    idat = bytearray()
+    while cursor < len(png):
+        length = struct.unpack("!I", png[cursor : cursor + 4])[0]
+        cursor += 4
+        kind = png[cursor : cursor + 4]
+        cursor += 4
+        data = png[cursor : cursor + length]
+        cursor += length + 4
+        if kind == b"IHDR":
+            width, height = struct.unpack("!II", data[:8])
+        elif kind == b"IDAT":
+            idat.extend(data)
+        elif kind == b"IEND":
+            break
+
+    raw = zlib.decompress(bytes(idat))
+    pixels: list[tuple[int, int, int, int]] = []
+    stride = width * 4
+    offset = 0
+    for _row in range(height):
+        assert raw[offset] == 0
+        offset += 1
+        row = raw[offset : offset + stride]
+        offset += stride
+        for col in range(0, len(row), 4):
+            pixels.append(tuple(row[col : col + 4]))
+    return width, height, pixels
 
 
 def test_field_statistics_uses_field_repository_for_field_ids(monkeypatch):
@@ -266,22 +303,32 @@ def test_field_index_overlay_renders_clipped_png(monkeypatch):
         lambda *_: [
             {
                 "analyticHref": "s3://akasha-cogs/x/analytic.tif",
+                "maskHref": "s3://akasha-cogs/x/mask.tif",
                 "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
                 "bandRoleMapping": {
                     "GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5",
                 },
                 "scale": 0.0001,
                 "offset": 0.0,
+                "excludedMaskClasses": [0, 2, 3],
+                "nodataPolicy": "mask_only",
             }
         ],
     )
-    captured: dict[str, Any] = {}
-
-    def fake_overlay(**kwargs):
-        captured.update(kwargs)
-        return b"PNGCLIP", "image/png"
-
-    monkeypatch.setattr(field_analytics.tiles, "fetch_feature_overlay", fake_overlay)
+    monkeypatch.setattr(
+        field_analytics,
+        "read_index_windows",
+        lambda **_: SimpleNamespace(
+            band_arrays={
+                2: np.array([[2000, 5000], [1000, 0]], dtype=np.uint16),
+                3: np.array([[6000, 5000], [7000, 0]], dtype=np.uint16),
+            },
+            mask=np.array([[1, 2], [1, 0]], dtype=np.uint8),
+            geometry_mask=np.array([[True, True], [True, True]], dtype=bool),
+            nodata=0,
+            intersects=True,
+        ),
+    )
 
     r = client.get(
         "/api/fields/plot-1/overlay/ndvi.png"
@@ -289,12 +336,13 @@ def test_field_index_overlay_renders_clipped_png(monkeypatch):
     )
 
     assert r.status_code == 200
-    assert r.content == b"PNGCLIP"
     assert r.headers["content-type"] == "image/png"
-    # The field polygon is sent to TiTiler as the clip feature; NDVI colormap applied.
-    assert captured["feature"]["geometry"]["type"] == "Polygon"
-    assert captured["colormap_name"] == "rdylgn"
-    assert "b3" in captured["expression"] and "b2" in captured["expression"]
+    width, height, pixels = _decode_rgba_png(r.content)
+    assert (width, height) == (2, 2)
+    assert pixels[1] == (208, 213, 221, 255)
+    assert pixels[3] == (208, 213, 221, 255)
+    assert pixels[0][3] == 255 and pixels[0][:3] != (208, 213, 221)
+    assert pixels[2][3] == 255 and pixels[2][1] >= pixels[2][0]
 
 
 def test_field_index_overlay_rejects_unsupported_index(monkeypatch):

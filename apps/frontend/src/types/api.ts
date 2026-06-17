@@ -55,6 +55,8 @@ export interface Source {
   kind?: SourceKind;
   displayModes?: string[];
   defaultDisplayMode?: string;
+  mapDisplayModes?: string[];
+  defaultMapDisplayMode?: string;
   displayMode?: string;
   /** Optional category grouping for the LAYER picker; null/absent ⇒ flat list. */
   layerGroups?: LayerGroup[] | null;
@@ -220,6 +222,8 @@ export interface DefaultLayer {
   kind?: SourceKind;
   displayModes?: string[];
   defaultDisplayMode?: string;
+  mapDisplayModes?: string[];
+  defaultMapDisplayMode?: string;
   description?: string;
   supportedIndices?: string[];
   /** Same-origin `/api/tiles/.../{z}/{x}/{y}.png` template — never a COG/MinIO/TiTiler URL. */

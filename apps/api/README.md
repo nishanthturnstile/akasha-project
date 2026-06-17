@@ -30,9 +30,10 @@ importing the app never requires them.
 | GET | `/api/config` | AOI, map defaults, limits, supported indices. |
 | GET | `/api/sources` | Satellite/product sources (STAC collections). |
 | GET | `/api/sources/{id}/dates` | Acquisition/composite dates + coverage/usable-pixel %. |
-| GET | `/api/layers/default` | Default source/date + same-origin display tile template. |
-| GET | `/api/tiles/{sourceId}/{date}/{displayMode}/{z}/{x}/{y}.png` | BFF to TiTiler proxy; ResourceSat default is FCC (`bidx=3,2,1`). COG url/creds stay server-side. |
+| GET | `/api/layers/default` | Default source/date + same-origin display metadata. ResourceSat map default is field-clipped NDVI, so `tileUrlTemplate` can be `null`. |
+| GET | `/api/tiles/{sourceId}/{date}/{displayMode}/{z}/{x}/{y}.png` | Same-origin scene tiles for display-capable modes (for example FCC, SAR grayscale, context rasters). COG url/creds stay server-side. |
 | GET | `/api/tiles/{sourceId}/{date}/rgb/{z}/{x}/{y}.png` | Legacy RGB route for sources that support true-colour RGB. |
+| GET | `/api/fields/{plotId}/overlay/{indexType}.png` | Field-clipped, mask-aware index overlay PNG rendered in the BFF. |
 | POST | `/api/indices/statistics` | Source-mask-aware, offset-corrected index stats computed in the BFF (reads analytic + mask COG windows with rasterio). |
 
 TiTiler serves display tiles only; masked statistics are computed in the BFF.

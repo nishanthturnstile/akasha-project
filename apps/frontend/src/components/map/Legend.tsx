@@ -16,6 +16,7 @@ interface RampSpec {
     ticks: string[];
     /** Optional one-line caption beneath the ramp. */
     caption?: string;
+    maskedLabel?: string;
 }
 
 // Normalized-difference vegetation/water/moisture indices share a diverging
@@ -23,11 +24,12 @@ interface RampSpec {
 // the meaning toward water so it reads blue at the high end. Ranges match the
 // canonical (a-b)/(a+b) domain of [-1, 1].
 const NDVI_RAMP: RampSpec = {
-    title: 'NDVI · vegetation',
+    title: 'NDVI heatmap',
     gradient:
-        'linear-gradient(90deg,#9b4a1e 0%,#b9822f 25%,#e6d36a 50%,#86c44f 75%,#1f7a34 100%)',
-    ticks: ['-1', '0', '+1'],
-    caption: 'Bare / built ▸ dense canopy',
+        'linear-gradient(90deg,#d73027 0%,#fdae61 28%,#fee08b 52%,#a6d96a 76%,#1a9850 100%)',
+    ticks: ['Low', 'Mid', 'High'],
+    caption: 'Stress ▸ healthy canopy',
+    maskedLabel: 'Cloud / no data',
 };
 
 const NDRE_RAMP: RampSpec = {
@@ -164,6 +166,16 @@ export function Legend({ displayMode, sourceKind, className }: LegendProps) {
             </div>
             { ramp.caption && (
                 <p className="mt-1 text-[10px] leading-3 text-muted-foreground">{ ramp.caption }</p>
+            ) }
+            { ramp.maskedLabel && (
+                <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span
+                        aria-hidden="true"
+                        className="size-2.5 rounded-sm ring-1 ring-inset ring-border/60"
+                        style={ { backgroundColor: '#d0d5dd' } }
+                    />
+                    <span>{ ramp.maskedLabel }</span>
+                </div>
             ) }
         </div>
     );

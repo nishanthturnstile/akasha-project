@@ -19,9 +19,17 @@ from ..config import settings
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
-from ..raster.indices import DEFAULT_INDEX, get_index, index_tile_expression
+from ..raster.geo_validate import validate_polygon
+from ..raster.indices import DEFAULT_INDEX, get_index
 from ..raster.models import IndexStatisticsModel, PixelCounts
-from ..raster.service import compute_statistics
+from ..raster.raster_reader import read_index_windows
+from ..raster.service import (
+    _candidate_assets_for_geometry,
+    _excluded_mask_classes_for_assets,
+    _index_band_positions,
+    compute_statistics,
+)
+from ..raster.statistics_core import MASK_NODATA_CLASS, correct_reflectance
 from ..repositories import fields_repo
 from ..routers.product_router import _enforce_index_rate_limit
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
@@ -236,6 +244,8 @@ def _index_overlay_response(
     acquisition_date: str,
     index_type: str,
 ) -> tuple[bytes, str]:
+    import numpy as np
+
     supported = catalog.supported_indices(source_id)
     if index_type not in supported:
         raise bad_request(
@@ -246,44 +256,72 @@ def _index_overlay_response(
             supported=supported,
         )
     assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
-    if len(assets_for_date) != 1:
+    geom_facts = validate_polygon(
+        plot["geometry"],
+        max_area_ha=settings.max_polygon_area_ha,
+        max_vertices=settings.max_polygon_vertices,
+    )
+    candidate_assets = _candidate_assets_for_geometry(
+        assets_for_date=assets_for_date,
+        geometry_bounds=geom_facts.get("bounds"),
+    )
+    if len(candidate_assets) != 1:
         raise bad_request(
             "Field index overlay requires exactly one resolved analytic asset.",
             code="INDEX_OVERLAY_ASSET_UNAVAILABLE",
-            sceneCount=len(assets_for_date),
+            sceneCount=len(candidate_assets),
         )
-    assets = assets_for_date[0]
+    assets = candidate_assets[0]
     index_def = get_index(index_type)
-    try:
-        expression = index_tile_expression(
-            assets["bandNames"],
-            assets.get("bandRoleMapping", {}),
-            index_def,
-            scale=float(assets.get("scale", 0.0001)),
-            offset=float(assets.get("offset", -0.1)),
-        )
-    except KeyError as exc:
-        raise bad_request(
-            "STAC analytic asset is missing a band required for this index.",
-            code="MISSING_INDEX_BANDS",
-            indexType=index_type,
-            missingRole=str(exc).strip("'"),
-            availableBands=assets.get("bandNames", []),
-            bandRoleMapping=assets.get("bandRoleMapping", {}),
-        ) from exc
-    feature = {
-        "type": "Feature",
-        "properties": {"plotId": plot.get("id"), "name": plot.get("name")},
-        "geometry": plot["geometry"],
-    }
-    return tiles.fetch_feature_overlay(
+    pos_a, pos_b, _resolved_bands = _index_band_positions(assets, index_def, index_type)
+    read = read_index_windows(
         analytic_href=assets["analyticHref"],
-        feature=feature,
-        expression=expression,
-        rescale=index_def.display_rescale_str,
-        colormap_name=index_def.display_colormap,
-        width=1024,
-        height=1024,
+        mask_href=assets["maskHref"],
+        geometry=plot["geometry"],
+        positions=[pos_a, pos_b],
+    )
+    if not read.intersects:
+        return tiles.TRANSPARENT_PNG, "image/png"
+
+    band_a = np.asarray(read.band_arrays[pos_a])
+    band_b = np.asarray(read.band_arrays[pos_b])
+    geom = np.asarray(read.geometry_mask, dtype=bool)
+    source_mask = np.asarray(read.mask)
+
+    if str(assets.get("nodataPolicy") or "selected_band_or_mask") == "mask_only":
+        analytic_nodata = np.zeros(band_a.shape, dtype=bool)
+    else:
+        analytic_nodata = (band_a == read.nodata) | (band_b == read.nodata)
+
+    mask_nodata = source_mask == MASK_NODATA_CLASS
+    nodata_mask = geom & (analytic_nodata | mask_nodata)
+    coverage_mask = geom & ~nodata_mask
+
+    excluded = _excluded_mask_classes_for_assets(assets=assets, override=None)
+    excluded_within_coverage = tuple(cls for cls in excluded if cls != MASK_NODATA_CLASS)
+    masked_within_coverage = coverage_mask & np.isin(source_mask, excluded_within_coverage)
+    valid_mask = coverage_mask & ~masked_within_coverage
+
+    scale = float(assets.get("scale", 0.0001))
+    offset = float(assets.get("offset", 0.0))
+    band_a_ref = correct_reflectance(band_a, scale, offset)
+    band_b_ref = correct_reflectance(band_b, scale, offset)
+    values = np.full(band_a.shape, np.nan, dtype="float64")
+    if index_def.formula_kind == "msavi":
+        term = 2 * band_a_ref + 1
+        radicand = term**2 - 8 * (band_a_ref - band_b_ref)
+        good = radicand >= 0
+        values[good] = (term[good] - np.sqrt(radicand[good])) / 2
+    else:
+        denominator = band_a_ref + band_b_ref
+        good = denominator != 0
+        values[good] = (band_a_ref[good] - band_b_ref[good]) / denominator[good]
+
+    return tiles.render_field_index_overlay_png(
+        index_type=index_type,
+        index_values=values,
+        valid_mask=valid_mask,
+        masked_mask=nodata_mask | masked_within_coverage,
     )
 
 

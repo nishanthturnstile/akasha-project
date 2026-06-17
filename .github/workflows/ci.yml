@@ -45,6 +45,58 @@ jobs:
         working-directory: apps/api
         run: python -m pytest -q
 
+  api-migrations:
+    name: API Alembic migration checks
+    runs-on: ubuntu-latest
+    services:
+      postgis:
+        image: postgis/postgis:16-3.5
+        env:
+          POSTGRES_USER: akasha
+          POSTGRES_PASSWORD: akasha
+          POSTGRES_DB: akasha
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U akasha -d akasha"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://akasha:akasha@localhost:5432/akasha
+      S3_ENDPOINT_URL: http://127.0.0.1:9000
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            apps/api/requirements-dev.txt
+            apps/api/requirements.txt
+
+      - name: Install API dependencies
+        run: python -m pip install -r apps/api/requirements-dev.txt
+
+      - name: Verify Alembic has a single head
+        working-directory: apps/api
+        run: python -m app.cli db heads
+
+      - name: Upgrade disposable database to Alembic head
+        working-directory: apps/api
+        run: python -m app.cli db upgrade
+
+      - name: Verify disposable database is current
+        working-directory: apps/api
+        run: python -m app.cli db verify-current
+
+      - name: Check ORM metadata matches Alembic head
+        working-directory: apps/api
+        run: alembic check
+
   frontend:
     name: Frontend lint, test, build
     runs-on: ubuntu-latest

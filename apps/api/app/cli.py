@@ -15,7 +15,12 @@ import argparse
 import os
 import sys
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
+
+from alembic import command
+
+ALEMBIC_ADVISORY_LOCK_ID = 2_026_060_900
 
 
 def _api_root() -> Path:
@@ -28,24 +33,83 @@ def _alembic_config():
     return Config(str(_api_root() / "alembic.ini"))
 
 
-def cmd_db_upgrade(_: argparse.Namespace) -> int:
-    from alembic import command
+def _migration_lock_engine():
+    from .db import get_engine
 
-    command.upgrade(_alembic_config(), "head")
+    return get_engine()
+
+
+def _run_with_migration_lock(action: Callable[[], None]) -> None:
+    from sqlalchemy import text
+
+    with _migration_lock_engine().connect() as conn:
+        conn.execute(
+            text("SELECT pg_advisory_lock(:lock_id)"),
+            {"lock_id": ALEMBIC_ADVISORY_LOCK_ID},
+        )
+        try:
+            action()
+        finally:
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:lock_id)"),
+                {"lock_id": ALEMBIC_ADVISORY_LOCK_ID},
+            )
+
+
+def _script_heads() -> tuple[str, ...]:
+    from alembic.script import ScriptDirectory
+
+    return tuple(ScriptDirectory.from_config(_alembic_config()).get_heads())
+
+
+def _database_current_heads() -> tuple[str, ...]:
+    from alembic.runtime.migration import MigrationContext
+
+    with _migration_lock_engine().connect() as conn:
+        return tuple(MigrationContext.configure(conn).get_current_heads())
+
+
+def _format_heads(heads: tuple[str, ...]) -> str:
+    return ", ".join(heads) if heads else "<none>"
+
+
+def cmd_db_upgrade(_: argparse.Namespace) -> int:
+    _run_with_migration_lock(lambda: command.upgrade(_alembic_config(), "head"))
     print("app-schema Alembic upgrade complete")
     return 0
 
 
 def cmd_db_current(_: argparse.Namespace) -> int:
-    from alembic import command
-
     command.current(_alembic_config())
     return 0
 
 
-def cmd_db_downgrade_base(_: argparse.Namespace) -> int:
-    from alembic import command
+def cmd_db_heads(_: argparse.Namespace) -> int:
+    heads = _script_heads()
+    if len(heads) == 1:
+        print(f"Alembic head: {heads[0]}")
+        return 0
+    if not heads:
+        print("Alembic has no heads")
+        return 1
+    print(f"Alembic has multiple heads: {_format_heads(heads)}")
+    return 1
 
+
+def cmd_db_verify_current(_: argparse.Namespace) -> int:
+    heads = set(_script_heads())
+    current = set(_database_current_heads())
+    if current == heads:
+        print(f"Database schema is at Alembic head: {_format_heads(tuple(sorted(heads)))}")
+        return 0
+
+    print("Database schema is not at Alembic head")
+    print(f"current: {_format_heads(tuple(sorted(current)))}")
+    print(f"head: {_format_heads(tuple(sorted(heads)))}")
+    return 1
+
+
+def cmd_db_downgrade_base(_: argparse.Namespace) -> int:
     command.downgrade(_alembic_config(), "base")
     print("app-schema Alembic downgrade to base complete")
     return 0
@@ -106,6 +170,14 @@ def build_parser() -> argparse.ArgumentParser:
     db_sub.add_parser("current", help="Show current Alembic revision.").set_defaults(
         func=cmd_db_current
     )
+    db_sub.add_parser(
+        "heads",
+        help="Show Alembic script heads and fail on branching.",
+    ).set_defaults(func=cmd_db_heads)
+    db_sub.add_parser(
+        "verify-current",
+        help="Verify the live database is upgraded to this code's Alembic head.",
+    ).set_defaults(func=cmd_db_verify_current)
     db_sub.add_parser(
         "downgrade-base",
         help="Drop API app-schema objects managed by the Alembic baseline.",

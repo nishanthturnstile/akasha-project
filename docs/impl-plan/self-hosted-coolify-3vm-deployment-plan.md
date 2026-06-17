@@ -548,26 +548,13 @@ CORS_ALLOWED_ORIGINS=https://<environment-domain>
 AUTH_MODE=enabled
 AUTH_ALLOW_DISABLED=false
 AUTH_PASSWORD_PEPPER=<generated-secret>
-AUTH_ALLOW_BOOTSTRAP=false
-AUTH_BOOTSTRAP_TOKEN=<one-time-setup-secret>
+AUTH_ALLOW_SIGNUP=false
 AUTH_COOKIE_SECURE=true
 AUTH_SESSION_COOKIE_NAME=akasha_session
 AUTH_SESSION_TTL_MINUTES=480
 AUTH_REMEMBER_TTL_DAYS=30
 AUTH_LOGIN_RATE_LIMIT_PER_MINUTE=10
-AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR=5
-```
-
-For the first production account setup, temporarily set:
-
-```text
-AUTH_ALLOW_BOOTSTRAP=true
-```
-
-After the first admin/user is created, set it back to:
-
-```text
-AUTH_ALLOW_BOOTSTRAP=false
+AUTH_SIGNUP_RATE_LIMIT_PER_HOUR=20
 ```
 
 ### `titiler`
@@ -843,7 +830,7 @@ explicit, on-demand action.
 6. Deploy.
 7. Run app schema migration: `python -m app.cli db upgrade` (api container).
 8. Run seed/verify commands if needed (ingestion-worker container).
-9. Bootstrap the first admin (see "Auth and first admin").
+9. Create/provision the first user (see "Auth and first user").
 10. Run smoke test.
 11. Verify private services are not publicly reachable.
 
@@ -856,7 +843,7 @@ explicit, on-demand action.
 5. Deploy only the staging-tested Git SHA.
 6. Run app schema migration: `python -m app.cli db upgrade` (api container).
 7. Run seed/verify commands if needed (ingestion-worker container).
-8. Bootstrap the first admin (see "Auth and first admin").
+8. Create/provision the first user (see "Auth and first user").
 9. Run smoke test.
 10. Verify private services are not publicly reachable.
 
@@ -998,29 +985,17 @@ If university backup is insufficient, implement:
 - off-host SFTP/NAS storage,
 - monthly restore drill.
 
-## Auth and first admin
+## Auth and first user
 
 Product, plot, and feature endpoints are auth-protected. In every deployed
 environment `AUTH_MODE=enabled`, so unauthenticated requests to `/api/config`,
 `/api/sources`, `/api/layers/default`, tiles, and `/api/indices/statistics`
 return `401`. Only `/health`, `/api/health`, and `/api/_skeleton/*` are open.
 
-First-admin bootstrap (run once per environment, right after the first deploy):
-
-1. Set `AUTH_ALLOW_BOOTSTRAP=true` and a strong `AUTH_BOOTSTRAP_TOKEN`, redeploy
-   the `api` service.
-2. Create the first admin (bootstrap only succeeds while zero password users
-   exist):
-
-   ```bash
-   curl -fsS -X POST https://<domain>/api/auth/bootstrap \
-     -H 'Content-Type: application/json' \
-     -d '{"username":"admin","password":"<strong-password>",
-          "email":"admin@example.edu","displayName":"Akasha Admin",
-          "bootstrapToken":"<AUTH_BOOTSTRAP_TOKEN>"}'
-   ```
-
-3. Set `AUTH_ALLOW_BOOTSTRAP=false`, redeploy `api`. Bootstrap is now closed.
+First-user setup is handled by the standard `/signup` flow when
+`AUTH_ALLOW_SIGNUP=true` is intentionally enabled for that environment. If
+public sign-up should stay closed, provision users through the approved
+operator/user-management process before running authenticated smoke checks.
 
 `AUTH_COOKIE_SECURE=true` requires HTTPS end-to-end. Coolify must terminate TLS
 on **staging as well as production**, or the login session cookie is dropped and

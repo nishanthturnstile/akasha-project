@@ -196,11 +196,10 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "AUTH_SESSION_TTL_MINUTES": "480",
         "AUTH_REMEMBER_TTL_DAYS": "30",
         "AUTH_PASSWORD_PEPPER": "<generated-secret>",
-        "AUTH_ALLOW_BOOTSTRAP": "false",
-        "AUTH_BOOTSTRAP_TOKEN": "<one-time-setup-secret>",
+        "AUTH_ALLOW_SIGNUP": "false",
         "AUTH_COOKIE_SECURE": "true",
         "AUTH_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
-        "AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR": "5",
+        "AUTH_SIGNUP_RATE_LIMIT_PER_HOUR": "20",
     },
     "titiler": {
         "PORT": "8000",

@@ -72,13 +72,47 @@ catalog objects remain owned by the ingestion worker.
 ```bash
 cd apps/api
 python -m app.cli db upgrade   # create/upgrade akasha app schema
+python -m app.cli db heads      # verify this checkout has one Alembic head
+python -m app.cli db current    # show live database revision
+python -m app.cli db verify-current  # verify live DB is at this checkout's head
 python -m app.cli check        # PostGIS + app schema + MinIO liveness
 ```
 
 `python -m app.cli migrate` remains as a compatibility alias for
 `python -m app.cli db upgrade`.
 
-## Run locally (standalone)
+For day-to-day team work, prefer the repository-level helpers so migrations are
+generated inside the Dockerized API runtime and revision IDs stay unique:
+
+```bash
+make db-revision MSG="add crop metadata"
+make db-upgrade
+make db-heads
+make db-check
+```
+
+Every SQLAlchemy model change must be committed with its Alembic revision. Keep
+`dev-akasha-core` and `main` at a single Alembic head; if parallel PRs create a
+branch, rebase and create an explicit Alembic merge revision before merging.
+
+## Run locally
+
+The supported local backend workflow is Docker-first because the API depends on
+native GDAL/rasterio/PostGIS-related libraries that are painful to install
+consistently on Windows:
+
+```bash
+make backend   # Docker backend/gateway/dependencies + FastAPI reload
+make frontend  # Vite frontend reload in a second terminal
+```
+
+Changes under `apps/api/app` hot-reload in the container. Rebuild the API image
+after dependency or Dockerfile changes with `make backend-rebuild`.
+
+### Standalone host run, advanced only
+
+Use this only when your host Python environment already has the required native
+geospatial dependencies installed:
 
 ```bash
 cd apps/api

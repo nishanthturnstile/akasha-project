@@ -11,8 +11,6 @@ from sqlalchemy import case, func, select, update
 from ..db import session_scope
 from ..models import AuthSession, Membership, Team, User
 
-BOOTSTRAP_ADVISORY_LOCK_KEY = 4242421201
-
 
 def _uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
     if value is None or isinstance(value, uuid.UUID):
@@ -214,18 +212,8 @@ def create_user_with_team(
     display_name: str,
     password_hash: str,
     team_name: str,
-    require_no_password_users: bool = False,
 ) -> dict[str, Any] | None:
     with session_scope() as session:
-        if require_no_password_users:
-            session.execute(select(func.pg_advisory_xact_lock(BOOTSTRAP_ADVISORY_LOCK_KEY)))
-            count_stmt = (
-                select(func.count())
-                .select_from(User)
-                .where(User.status == "active", User.password_hash.is_not(None))
-            )
-            if int(session.execute(count_stmt).scalar_one()) != 0:
-                return None
         user = User(
             username=username.strip(),
             email=email.strip().lower(),

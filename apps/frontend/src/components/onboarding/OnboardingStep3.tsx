@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
-import { useSeasons } from '@/lib/queries';
+import { useCompleteOnboarding, useSeasons } from '@/lib/queries';
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
@@ -28,6 +28,7 @@ const CROP_OPTIONS = [
 export default function OnboardingStep3() {
   const navigate = useNavigate();
   const seasonsQ = useSeasons();
+  const completeOnboarding = useCompleteOnboarding();
   const [cropName, setCropName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -45,20 +46,26 @@ export default function OnboardingStep3() {
     navigate('/onboarding/step2');
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (!cropName) {
       setError('Please select a crop');
       return;
     }
-    // Clear onboarding session keys
-    sessionStorage.removeItem(ONBOARDING_SEASON_KEY);
-    sessionStorage.removeItem(ONBOARDING_FIELDS_KEY);
-    navigate('/');
+    setError(null);
+    try {
+      await completeOnboarding.mutateAsync();
+      // Clear onboarding session keys
+      sessionStorage.removeItem(ONBOARDING_SEASON_KEY);
+      sessionStorage.removeItem(ONBOARDING_FIELDS_KEY);
+      navigate('/');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
+    }
   };
 
   return (
     <div className="flex flex-col items-center p-6">
-      <StepIndicator currentStep={3} />
+      <StepIndicator currentStep={ 3 } />
 
       <Card className="w-full max-w-md">
         <CardHeader>
@@ -72,19 +79,19 @@ export default function OnboardingStep3() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Crop name</label>
             <select
-              value={cropName}
-              onChange={(e) => {
+              value={ cropName }
+              onChange={ (e) => {
                 setCropName(e.target.value);
                 setError(null);
-              }}
+              } }
               className="w-full rounded-md border border-border bg-background px-3 py-2"
             >
               <option value="">Select a crop</option>
-              {CROP_OPTIONS.map((crop) => (
-                <option key={crop} value={crop}>
-                  {crop}
+              { CROP_OPTIONS.map((crop) => (
+                <option key={ crop } value={ crop }>
+                  { crop }
                 </option>
-              ))}
+              )) }
             </select>
           </div>
 
@@ -92,7 +99,7 @@ export default function OnboardingStep3() {
             <label className="text-sm font-medium">Start date</label>
             <input
               type="date"
-              value={seasonStartDate ?? ''}
+              value={ seasonStartDate ?? '' }
               readOnly
               className="w-full rounded-md border border-border bg-muted px-3 py-2 text-muted-foreground cursor-not-allowed"
             />
@@ -101,14 +108,18 @@ export default function OnboardingStep3() {
             </p>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          { error && <p className="text-sm text-destructive">{ error }</p> }
 
           <div className="flex justify-between gap-2 pt-2">
-            <Button variant="secondary" onClick={handleCancel}>
+            <Button variant="secondary" onClick={ handleCancel }>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleFinish} disabled={!cropName}>
-              Finish
+            <Button
+              variant="primary"
+              onClick={ handleFinish }
+              disabled={ !cropName || completeOnboarding.isPending }
+            >
+              { completeOnboarding.isPending ? 'Finishing…' : 'Finish' }
             </Button>
           </div>
         </CardContent>

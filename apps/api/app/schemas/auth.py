@@ -22,6 +22,12 @@ class BootstrapPayload(ApiModel):
     bootstrap_token: str | None = Field(default=None, min_length=1, max_length=512)
 
 
+class SignupPayload(ApiModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=1024)
+    display_name: str = Field(min_length=1, max_length=200)
+
+
 class PasswordChangePayload(ApiModel):
     current_password: str = Field(min_length=1, max_length=1024)
     new_password: str = Field(min_length=8, max_length=1024)

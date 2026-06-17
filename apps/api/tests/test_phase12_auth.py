@@ -9,6 +9,7 @@ import pytest
 from app.auth import CurrentUser, TeamMembership, get_current_user
 from app.config import settings
 from app.main import app
+from app.repositories import auth_repo
 from app.routers import account_router as account
 from app.routers import auth_router as auth_routes
 from fastapi.testclient import TestClient
@@ -295,6 +296,155 @@ def test_login_rate_limit_is_coarse_per_client(monkeypatch):
     assert first.status_code == 401
     assert second.status_code == 429
     assert second.json()["error"]["code"] == "RATE_LIMITED"
+
+
+def test_signup_requires_allow_flag(monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "enabled")
+    monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")
+    monkeypatch.setattr(settings, "auth_allow_signup", False, raising=False)
+    auth_routes._AUTH_RATE_BUCKETS.clear()
+
+    response = client.post(
+        "/api/auth/signup",
+        json={
+            "email": "new@example.test",
+            "password": "correct horse battery staple",
+            "displayName": "New User",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_signup_creates_user_team_session_and_returns_onboarding_state(monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "enabled")
+    monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")
+    monkeypatch.setattr(settings, "auth_cookie_secure", False)
+    monkeypatch.setattr(settings, "auth_allow_signup", True, raising=False)
+    auth_routes._AUTH_RATE_BUCKETS.clear()
+    monkeypatch.setattr(
+        auth_routes.auth_repo,
+        "find_user_by_email",
+        lambda email: None,
+        raising=False,
+    )
+    monkeypatch.setattr(auth_routes, "hash_password", lambda password: "hashed-password")
+    created_users = []
+    monkeypatch.setattr(
+        auth_routes.auth_repo,
+        "create_user_with_team",
+        lambda **kwargs: created_users.append(kwargs)
+        or {
+            "userId": "11111111-1111-4111-8111-111111111111",
+            "teamId": "22222222-2222-4222-8222-222222222222",
+        },
+    )
+    monkeypatch.setattr(
+        auth_routes.auth_repo,
+        "memberships_for_user",
+        lambda user_id: [
+            {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "name": "New User's Team",
+                "role": "owner",
+            }
+        ],
+    )
+    created_sessions = []
+    monkeypatch.setattr(
+        auth_routes.auth_repo,
+        "create_session",
+        lambda **kwargs: created_sessions.append(kwargs),
+    )
+
+    response = client.post(
+        "/api/auth/signup",
+        json={
+            "email": " New@Example.Test ",
+            "password": "correct horse battery staple",
+            "displayName": " New User ",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user"]["email"] == "new@example.test"
+    assert payload["user"]["username"] == "new@example.test"
+    assert payload["user"]["displayName"] == "New User"
+    assert payload["user"]["onboardingCompleted"] is False
+    assert payload["currentTeam"] == {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "name": "New User's Team",
+        "role": "owner",
+    }
+    assert created_users == [
+        {
+            "username": "new@example.test",
+            "email": "new@example.test",
+            "display_name": "New User",
+            "password_hash": "hashed-password",
+            "team_name": "New User's Team",
+            "require_no_password_users": False,
+        }
+    ]
+    assert created_sessions[0]["user_id"] == "11111111-1111-4111-8111-111111111111"
+    assert created_sessions[0]["team_id"] == "22222222-2222-4222-8222-222222222222"
+    assert "akasha_session=" in response.headers["set-cookie"].lower()
+
+
+def test_signup_rejects_duplicate_email(monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "enabled")
+    monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")
+    monkeypatch.setattr(settings, "auth_allow_signup", True, raising=False)
+    auth_routes._AUTH_RATE_BUCKETS.clear()
+    monkeypatch.setattr(
+        auth_routes.auth_repo,
+        "find_user_by_email",
+        lambda email: {"id": "existing-user", "email": email},
+        raising=False,
+    )
+
+    response = client.post(
+        "/api/auth/signup",
+        json={
+            "email": "owner@example.test",
+            "password": "correct horse battery staple",
+            "displayName": "Owner",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "EMAIL_ALREADY_REGISTERED"
+
+
+def test_onboarding_complete_marks_current_user_and_returns_account(monkeypatch):
+    team_id = "22222222-2222-4222-8222-222222222222"
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        id="11111111-1111-4111-8111-111111111111",
+        username="owner@example.test",
+        email="owner@example.test",
+        display_name="Owner",
+        role="owner",
+        current_team_id=team_id,
+        memberships=(TeamMembership(id=team_id, name="Owner Team", role="owner"),),
+    )
+    marked = []
+    monkeypatch.setattr(
+        auth_repo,
+        "mark_onboarding_completed",
+        lambda user_id: marked.append(user_id),
+        raising=False,
+    )
+
+    try:
+        response = client.post("/api/account/onboarding-complete")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert marked == ["11111111-1111-4111-8111-111111111111"]
+    assert response.json()["user"]["onboardingCompleted"] is True
 
 
 def test_refresh_fails_if_session_rotation_did_not_persist(monkeypatch):

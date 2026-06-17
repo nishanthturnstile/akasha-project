@@ -44,6 +44,7 @@ import type {
   Field,
   FieldCreatePayload,
   FieldUpdatePayload,
+  SignupPayload,
 } from '@/types/api';
 
 /**
@@ -475,6 +476,9 @@ export const login = (payload: {
 }): Promise<AccountMe> =>
   request<AccountMe>('/api/auth/login', { method: 'POST', body: payload });
 
+export const signup = (payload: SignupPayload): Promise<AccountMe> =>
+  request<AccountMe>('/api/auth/signup', { method: 'POST', body: payload });
+
 export const logout = (): Promise<void> =>
   request<void>('/api/auth/logout', { method: 'POST' });
 
@@ -486,6 +490,9 @@ export const changePassword = (payload: {
   newPassword: string;
 }): Promise<{ changed: boolean }> =>
   request<{ changed: boolean }>('/api/account/password', { method: 'PATCH', body: payload });
+
+export const completeOnboarding = (): Promise<AccountMe> =>
+  request<AccountMe>('/api/account/onboarding-complete', { method: 'POST' });
 
 export const getAccountSettings = (): Promise<Record<string, unknown>> =>
   request<Record<string, unknown>>('/api/account/settings');
@@ -590,4 +597,3 @@ export function composeTileTemplate(
     acquisitionDate,
   )}/${encodeURIComponent(displayMode)}/{z}/{x}/{y}.png`;
 }
-

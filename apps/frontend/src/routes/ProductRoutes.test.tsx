@@ -17,7 +17,13 @@ function renderRoutes(path: string) {
         ok: true,
         status: 200,
         json: async () => ({
-          user: { id: 'u1', username: 'dev', email: 'dev@example.test', displayName: 'Dev' },
+          user: {
+            id: 'u1',
+            username: 'dev',
+            email: 'dev@example.test',
+            displayName: 'Dev',
+            onboardingCompleted: true,
+          },
           currentTeam: { id: 't1', name: 'Team', role: 'owner' },
           memberships: [{ teamId: 't1', teamName: 'Team', role: 'owner' }],
           authMode: 'enabled',
@@ -68,6 +74,57 @@ describe('ProductRoutes', () => {
     renderRoutes('/monitoring/field-analytics');
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Sign in' })).toBeTruthy());
+  });
+
+  it('renders the signup page for new users', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: { code: 'UNAUTHORIZED', message: 'Authentication required.', details: {} },
+        }),
+      }),
+    );
+
+    renderRoutes('/signup');
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Create account' })).toBeTruthy());
+  });
+
+  it('redirects authenticated users without completed onboarding into onboarding', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          user: {
+            id: 'u1',
+            username: 'new@example.test',
+            email: 'new@example.test',
+            displayName: 'New User',
+            onboardingCompleted: false,
+          },
+          currentTeam: { id: 't1', name: 'Team', role: 'owner' },
+          memberships: [{ teamId: 't1', teamName: 'Team', role: 'owner' }],
+          authMode: 'enabled',
+        }),
+      }),
+    );
+
+    renderRoutes('/monitoring/field-analytics');
+
+    await waitFor(() =>
+      expect(screen.getByText("Let's start with creating your first season")).toBeTruthy(),
+    );
+  });
+
+  it('redirects users with completed onboarding away from onboarding routes', async () => {
+    renderRoutes('/onboarding/step1');
+
+    await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), { timeout: 8000 });
   });
 
   it('keeps the legacy map route compatible', async () => {
@@ -165,7 +222,12 @@ describe('ProductRoutes', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          user: { id: 'u1', email: 'dev@example.test', displayName: 'Dev' },
+          user: {
+            id: 'u1',
+            email: 'dev@example.test',
+            displayName: 'Dev',
+            onboardingCompleted: true,
+          },
           currentTeam: { id: 't1', name: 'Team', role: 'owner' },
           memberships: [],
           authMode: 'dev',

@@ -30,6 +30,7 @@ def _user(row: User) -> dict[str, Any]:
         "username": row.username,
         "email": row.email,
         "displayName": row.display_name or row.username or row.email,
+        "onboardingCompleted": bool(row.onboarding_completed),
         "status": row.status,
         "passwordHash": row.password_hash,
         "failedLoginCount": int(row.failed_login_count or 0),
@@ -60,6 +61,13 @@ def active_password_user_count() -> int:
 
 def find_user_by_username(username: str) -> dict[str, Any] | None:
     stmt = select(User).where(func.lower(User.username) == username.strip().lower())
+    with session_scope() as session:
+        row = session.execute(stmt).scalar_one_or_none()
+        return _user(row) if row else None
+
+
+def find_user_by_email(email: str) -> dict[str, Any] | None:
+    stmt = select(User).where(func.lower(User.email) == email.strip().lower())
     with session_scope() as session:
         row = session.execute(stmt).scalar_one_or_none()
         return _user(row) if row else None
@@ -189,6 +197,12 @@ def update_password_hash(user_id: str, password_hash: str) -> None:
         .where(User.id == _uuid(user_id))
         .values(password_hash=password_hash, password_updated_at=func.now())
     )
+    with session_scope() as session:
+        session.execute(stmt)
+
+
+def mark_onboarding_completed(user_id: str) -> None:
+    stmt = update(User).where(User.id == _uuid(user_id)).values(onboarding_completed=True)
     with session_scope() as session:
         session.execute(stmt)
 

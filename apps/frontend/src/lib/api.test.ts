@@ -3,6 +3,7 @@ import {
   ApiError,
   composeTileTemplate,
   assignFieldGroupFields,
+  completeOnboarding,
   createFieldActivity,
   createFieldGroup,
   createApiKey,
@@ -35,6 +36,7 @@ import {
   getSources,
   importPlotsGeoJson,
   markNotificationRead,
+  signup,
   uploadDataset,
   updateReportTemplate,
   updatePlot,
@@ -431,6 +433,8 @@ describe('api client error mapping', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       await getAccountMe();
+      await signup({ email: 'new@example.test', password: 'password123', displayName: 'New User' });
+      await completeOnboarding();
       await listApiKeys();
       await createApiKey('Demo');
       await listNotifications();
@@ -438,6 +442,21 @@ describe('api client error mapping', () => {
       await getAssistantStatus();
 
       expect(fetchMock).toHaveBeenCalledWith('/api/account/me', expect.anything());
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/auth/signup',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            email: 'new@example.test',
+            password: 'password123',
+            displayName: 'New User',
+          }),
+        }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/account/onboarding-complete',
+        expect.objectContaining({ method: 'POST' }),
+      );
       expect(fetchMock).toHaveBeenCalledWith('/api/account/api-keys', expect.anything());
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/notifications/note%201/read',

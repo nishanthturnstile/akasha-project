@@ -21,7 +21,7 @@ from ..auth import (
     require_role,
 )
 from ..raster.errors import AkashaError, not_found, plots_backend_unavailable
-from ..repositories import account_repo
+from ..repositories import account_repo, auth_repo
 from ..schemas.account import AccountMe, ApiKeyCreate, ApiKeyPublic, AssistantStatus, Notification
 
 logger = logging.getLogger("akasha.api.account")
@@ -62,6 +62,31 @@ async def account_me(
             "username": user.username,
             "email": user.email,
             "displayName": user.display_name,
+            "onboardingCompleted": user.onboarding_completed,
+        },
+        current_team={"id": team.id, "name": team.name, "role": team.role},
+        memberships=[
+            {"teamId": item.id, "teamName": item.name, "role": item.role}
+            for item in (user.memberships or ())
+        ],
+        auth_mode="dev" if user.id.startswith("00000000") else "enabled",
+    )
+
+
+@router.post("/account/onboarding-complete", response_model=AccountMe, response_model_by_alias=True)
+async def complete_onboarding(
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(get_current_team),
+) -> AccountMe:
+    if not user.id.startswith("00000000"):
+        await _run_blocking(auth_repo.mark_onboarding_completed, user.id)
+    return AccountMe(
+        user={
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "displayName": user.display_name,
+            "onboardingCompleted": True,
         },
         current_team={"id": team.id, "name": team.name, "role": team.role},
         memberships=[

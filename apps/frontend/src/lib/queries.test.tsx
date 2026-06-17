@@ -4,10 +4,12 @@ import type { PropsWithChildren } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   queryKeys,
+  useCompleteOnboarding,
   useCreateReportTemplate,
   useCreatePlot,
   useDeletePlot,
   useImportPlotsGeoJson,
+  useSignup,
   usePlots,
   useFieldLeaderboard,
   useUpdateReportTemplate,
@@ -27,6 +29,19 @@ const plot: Plot = {
   areaHa: 1,
   createdAt: null,
   updatedAt: null,
+};
+
+const account = {
+  user: {
+    id: 'user-1',
+    username: 'new@example.test',
+    email: 'new@example.test',
+    displayName: 'New User',
+    onboardingCompleted: false,
+  },
+  currentTeam: { id: 'team-1', name: "New User's Team", role: 'owner' },
+  memberships: [{ teamId: 'team-1', teamName: "New User's Team", role: 'owner' }],
+  authMode: 'enabled',
 };
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -51,7 +66,7 @@ function wrapper() {
     <QueryClientProvider client={ queryClient }>{ children }</QueryClientProvider>
   );
 
-  return { Provider, invalidateSpy };
+  return { Provider, invalidateSpy, queryClient };
 }
 
 describe('plot query hooks', () => {
@@ -150,5 +165,38 @@ describe('report query hooks', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.reportTemplates });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.reportTemplate('template-1') });
+  });
+});
+
+describe('auth query hooks', () => {
+  it('caches account data after signup and onboarding completion', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input) === '/api/account/onboarding-complete') {
+          return Promise.resolve(
+            jsonResponse({
+              ...account,
+              user: { ...account.user, onboardingCompleted: true },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse(account));
+      }),
+    );
+    const { Provider, queryClient } = wrapper();
+    const signupHook = renderHook(() => useSignup(), { wrapper: Provider });
+    const completeHook = renderHook(() => useCompleteOnboarding(), { wrapper: Provider });
+
+    const signedUp = await signupHook.result.current.mutateAsync({
+      email: 'new@example.test',
+      password: 'password123',
+      displayName: 'New User',
+    });
+    const completed = await completeHook.result.current.mutateAsync();
+
+    expect(signedUp.user.onboardingCompleted).toBe(false);
+    expect(completed.user.onboardingCompleted).toBe(true);
+    expect(queryClient.getQueryData(queryKeys.accountMe)).toEqual(completed);
   });
 });

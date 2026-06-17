@@ -1,9 +1,14 @@
 import { FormEvent, useState } from 'react';
 import { LockKeyhole, Satellite } from 'lucide-react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { useAccountMe, useLogin } from '@/lib/queries';
+import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
+
+function landingRoute(onboardingCompleted: boolean) {
+  return onboardingCompleted ? MAIN_MONITORING_ROUTE : '/onboarding/step1';
+}
 
 export default function LoginPage() {
   const [params] = useSearchParams();
@@ -13,10 +18,10 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
-  const returnTo = params.get('returnTo') || '/onboarding/step1';
+  const returnTo = params.get('returnTo');
 
   if (account.isSuccess) {
-    return <Navigate to={ returnTo } replace />;
+    return <Navigate to={ returnTo || landingRoute(account.data.user.onboardingCompleted) } replace />;
   }
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -26,7 +31,7 @@ export default function LoginPage() {
       {
         onSuccess: (result) => {
           if (result.user.id) {
-            navigate(returnTo, { replace: true });
+            navigate(returnTo || landingRoute(result.user.onboardingCompleted), { replace: true });
           }
         },
       },
@@ -44,7 +49,7 @@ export default function LoginPage() {
     <main className="grid min-h-screen bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_440px]">
       <section className="relative hidden min-h-0 overflow-hidden border-r border-border bg-[hsl(222_38%_7%)] lg:block">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_25%,hsl(33_96%_56%/.18),transparent_32%),linear-gradient(145deg,hsl(222_40%_8%),hsl(190_28%_10%)_58%,hsl(110_24%_12%))]" />
-        <div className="absolute inset-0 opacity-[0.16] [background-image:repeating-linear-gradient(0deg,transparent_0_23px,hsl(210_28%_92%/.34)_24px),repeating-linear-gradient(90deg,transparent_0_23px,hsl(210_28%_92%/.18)_24px)]" />
+        <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent_0_23px,hsl(210_28%_92%/.34)_24px),repeating-linear-gradient(90deg,transparent_0_23px,hsl(210_28%_92%/.18)_24px)] opacity-[0.16]" />
         <div className="relative flex h-full flex-col justify-between p-10">
           <div className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
@@ -70,7 +75,7 @@ export default function LoginPage() {
       </section>
 
       <section className="flex min-h-screen items-center justify-center px-5 py-8">
-        <div className="w-full max-w-[360px]">
+        <div className="w-full max-w-90">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Satellite className="size-5" strokeWidth={ 1.75 } />
@@ -119,7 +124,7 @@ export default function LoginPage() {
                   checked={ rememberMe }
                   onChange={ (event) => setRememberMe(event.target.checked) }
                   type="checkbox"
-                  className="size-4 rounded border-input accent-[hsl(var(--primary))]"
+                  className="size-4 rounded border-input accent-primary"
                 />
                 Keep me signed in
               </label>
@@ -132,6 +137,12 @@ export default function LoginPage() {
                 { login.isPending ? 'Signing in...' : 'Sign in' }
               </Button>
             </form>
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              New to Akasha?{ ' ' }
+              <Link to="/signup" className="font-medium text-primary hover:underline">
+                Create an account
+              </Link>
+            </p>
           </div>
         </div>
       </section>

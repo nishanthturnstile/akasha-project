@@ -751,6 +751,70 @@ def validate_cog(deps: dict[str, Any], path: Path) -> None:
         raise SystemExit(f"COG validation failed for {path}")
 
 
+def validate_resourcesat_cogs(
+    deps: dict[str, Any],
+    analytic_path: Path,
+    mask_path: Path,
+    *,
+    source_id: str = SOURCE_ID,
+    resolution_tolerance: float = 0.25,
+    require_overviews: bool = True,
+) -> None:
+    validate_cog(deps, analytic_path)
+    validate_cog(deps, mask_path)
+
+    expected_resolution = float(source_profile(source_id)["resolution_meters"])
+    allowed_mask_values = {int(item["value"]) for item in MASK_CLASSES}
+    problems: list[str] = []
+    with deps["rasterio"].open(analytic_path) as analytic, deps["rasterio"].open(mask_path) as mask:
+        if analytic.count != len(ANALYTIC_BANDS):
+            problems.append(f"analytic band count {analytic.count} != {len(ANALYTIC_BANDS)}")
+        if mask.count != 1:
+            problems.append(f"mask band count {mask.count} != 1")
+        if analytic.crs is None or mask.crs is None:
+            problems.append("analytic/mask CRS is missing")
+        elif analytic.crs != mask.crs:
+            problems.append(f"analytic/mask CRS mismatch: {analytic.crs} != {mask.crs}")
+        if analytic.transform != mask.transform:
+            problems.append("analytic/mask transform mismatch")
+        if (analytic.width, analytic.height) != (mask.width, mask.height):
+            problems.append(
+                "analytic/mask dimension mismatch "
+                f"{analytic.width}x{analytic.height} != {mask.width}x{mask.height}"
+            )
+        xres, yres = analytic.res
+        if (
+            abs(float(xres) - expected_resolution) > resolution_tolerance
+            or abs(abs(float(yres)) - expected_resolution) > resolution_tolerance
+        ):
+            problems.append(
+                f"analytic resolution {analytic.res} not within {resolution_tolerance} "
+                f"of {expected_resolution}"
+            )
+        mask_xres, mask_yres = mask.res
+        if (
+            abs(float(mask_xres) - expected_resolution) > resolution_tolerance
+            or abs(abs(float(mask_yres)) - expected_resolution) > resolution_tolerance
+        ):
+            problems.append(
+                f"mask resolution {mask.res} not within {resolution_tolerance} "
+                f"of {expected_resolution}"
+            )
+        if require_overviews:
+            if not analytic.overviews(1):
+                problems.append("analytic COG has no overviews")
+            if not mask.overviews(1):
+                problems.append("mask COG has no overviews")
+        if mask.count:
+            np = deps["np"]
+            mask_values = {int(value) for value in np.unique(mask.read(1, masked=False)).tolist()}
+            invalid_mask_values = sorted(mask_values - allowed_mask_values)
+            if invalid_mask_values:
+                problems.append(f"invalid mask class value(s): {invalid_mask_values}")
+    if problems:
+        raise SystemExit("; ".join(problems))
+
+
 def geometry_from_bbox(bbox: list[float]) -> dict[str, Any]:
     west, south, east, north = bbox
     return {
@@ -983,8 +1047,12 @@ def prepare_one(
         overwrite=args.overwrite,
     )
     if not args.skip_validation:
-        validate_cog(deps, paths.analytic_cog)
-        validate_cog(deps, paths.mask_cog)
+        validate_resourcesat_cogs(
+            deps,
+            paths.analytic_cog,
+            paths.mask_cog,
+            source_id=args.source,
+        )
     write_manifest(
         deps=deps,
         paths=paths,

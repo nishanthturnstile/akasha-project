@@ -15,8 +15,10 @@ const DEFAULT_BASEMAP = {
 };
 
 const PLACE_VALUES = new Set<BasemapPlacesPreference>(['all', 'attributed', 'none']);
+const PROVIDER_VALUES = new Set<BasemapProvider>(['esri', 'osm', 'empty']);
 const MAX_SESSION_SECONDS = 43_200;
 const DEFAULT_REFRESH_SAFETY_MARGIN_SECONDS = 300;
+const OSM_ATTRIBUTION = '© OpenStreetMap contributors';
 
 export class BasemapConfigurationError extends Error {
   readonly code = 'BASEMAP_CONFIGURATION_ERROR';
@@ -37,6 +39,20 @@ export interface EsriBasemapResolvedConfig {
   refreshSafetyMarginSeconds: number;
 }
 
+export interface OsmBasemapResolvedConfig {
+  provider: 'osm';
+  attribution: string;
+}
+
+export interface EmptyBasemapResolvedConfig {
+  provider: 'empty';
+}
+
+export type ResolvedBasemapConfig =
+  | EsriBasemapResolvedConfig
+  | OsmBasemapResolvedConfig
+  | EmptyBasemapResolvedConfig;
+
 function envValue(value: string | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed || trimmed.startsWith('<')) return null;
@@ -56,11 +72,31 @@ function resolveSessionSeconds(value: string | number | undefined): number {
   return Math.min(Math.floor(raw), MAX_SESSION_SECONDS);
 }
 
-export function resolveBasemapConfig(config: AppConfig | undefined): EsriBasemapResolvedConfig {
+function resolveProvider(value: string | undefined): BasemapProvider | null {
+  if (value && PROVIDER_VALUES.has(value as BasemapProvider)) {
+    return value as BasemapProvider;
+  }
+  return null;
+}
+
+export function resolveBasemapConfig(config: AppConfig | undefined): ResolvedBasemapConfig {
   const serverConfig = config?.basemap ?? DEFAULT_BASEMAP;
-  if (serverConfig.provider !== 'esri') {
+  const provider =
+    resolveProvider(envValue(import.meta.env.VITE_BASEMAP_PROVIDER) ?? undefined) ??
+    resolveProvider(serverConfig.provider) ??
+    DEFAULT_BASEMAP.provider;
+
+  if (provider === 'osm') {
+    return { provider: 'osm', attribution: OSM_ATTRIBUTION };
+  }
+
+  if (provider === 'empty') {
+    return { provider: 'empty' };
+  }
+
+  if (provider !== 'esri') {
     throw new BasemapConfigurationError(
-      `Unsupported basemap provider "${serverConfig.provider}". Akasha is configured for Esri basemaps.`,
+      `Unsupported basemap provider "${provider}". Use "esri", "osm", or "empty".`,
     );
   }
   if (serverConfig.usageModel !== 'session') {
@@ -95,7 +131,7 @@ export function resolveBasemapConfig(config: AppConfig | undefined): EsriBasemap
     ),
     sessionDurationSeconds: resolveSessionSeconds(
       envValue(import.meta.env.VITE_ESRI_BASEMAP_SESSION_SECONDS) ??
-        serverConfig.sessionDurationSeconds,
+      serverConfig.sessionDurationSeconds,
     ),
     refreshSafetyMarginSeconds: DEFAULT_REFRESH_SAFETY_MARGIN_SECONDS,
   };

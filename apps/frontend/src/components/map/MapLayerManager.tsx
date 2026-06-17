@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { BasemapSession, BasemapStyle } from '@esri/maplibre-arcgis';
+import { BasemapStyle } from '@esri/maplibre-arcgis';
 import maplibregl from 'maplibre-gl';
-import type { EsriBasemapResolvedConfig } from '@/map/basemap';
+import type { ResolvedBasemapConfig } from '@/map/basemap';
+import { getSharedEsriBasemapSession } from '@/map/esriBasemapSession';
 import {
   applySatelliteLayer,
   applyCompareLayer,
@@ -23,6 +24,25 @@ const EMPTY_MAP_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   sources: {},
   layers: [],
+};
+const OSM_SOURCE_ID = 'osm-raster';
+const OSM_BASEMAP_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    [OSM_SOURCE_ID]: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [
+    {
+      id: 'osm-raster-layer',
+      type: 'raster',
+      source: OSM_SOURCE_ID,
+    },
+  ],
 };
 
 const INDEX_OVERLAY_SOURCE_ID = 'akasha-index-overlay';
@@ -134,7 +154,7 @@ function fitSceneBoundsIfNeeded(map: maplibregl.Map, scene: SatelliteScene): voi
 }
 
 interface MapLayerManagerProps {
-  basemap: EsriBasemapResolvedConfig;
+  basemap: ResolvedBasemapConfig;
   center: [number, number];
   zoom: number;
   scene: SatelliteScene | null;
@@ -222,39 +242,40 @@ export function MapLayerManager({
       onBasemapError?.(normalized);
     };
 
-    const session = BasemapSession.start({
-      token: basemap.apiKey,
-      styleFamily: basemap.styleFamily,
-      duration: basemap.sessionDurationSeconds,
-      autoRefresh: true,
-      safetyMargin: basemap.refreshSafetyMarginSeconds,
-    }).catch((error: unknown) => {
-      reportBasemapError(error);
-      throw error;
-    });
-    void session.then((startedSession) => {
-      startedSession.on('BasemapSessionError', (error) => {
+    if (basemap.provider === 'esri') {
+      const session = getSharedEsriBasemapSession(basemap).catch((error: unknown) => {
+        reportBasemapError(error);
+        throw error;
+      });
+      void session.then((startedSession) => {
+        startedSession.on('BasemapSessionError', (error) => {
+          reportBasemapError(error);
+        });
+      }).catch(() => {
+        // Already reported above. Keep the rejection handled for React/browser logs.
+      });
+
+      const esriStyle = new BasemapStyle({
+        style: basemap.style,
+        session,
+        preferences: { places: basemap.places },
+      });
+
+      esriStyle.on('BasemapStyleLoad', () => {
+        map.once('styledata', applyOverlays);
+      });
+      esriStyle.on('BasemapStyleError', (error) => {
         reportBasemapError(error);
       });
-    }).catch(() => {
-      // Already reported above. Keep the rejection handled for React/browser logs.
-    });
-
-    const esriStyle = new BasemapStyle({
-      style: basemap.style,
-      session,
-      preferences: { places: basemap.places },
-    });
-
-    esriStyle.on('BasemapStyleLoad', () => {
+      void esriStyle.loadStyle().then(() => {
+        if (!disposed) esriStyle.applyTo(map);
+      }).catch(reportBasemapError);
+    } else if (basemap.provider === 'osm') {
       map.once('styledata', applyOverlays);
-    });
-    esriStyle.on('BasemapStyleError', (error) => {
-      reportBasemapError(error);
-    });
-    void esriStyle.loadStyle().then(() => {
-      if (!disposed) esriStyle.applyTo(map);
-    }).catch(reportBasemapError);
+      map.setStyle(OSM_BASEMAP_STYLE);
+    } else {
+      map.once('styledata', applyOverlays);
+    }
 
     return () => {
       disposed = true;

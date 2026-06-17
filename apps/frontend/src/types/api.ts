@@ -11,7 +11,7 @@ export interface AoiConfig {
   bounds: [number, number, number, number];
 }
 
-export type BasemapProvider = 'esri';
+export type BasemapProvider = 'esri' | 'osm' | 'empty';
 export type BasemapUsageModel = 'session';
 export type BasemapPlacesPreference = 'all' | 'attributed' | 'none';
 

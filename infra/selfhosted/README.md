@@ -72,6 +72,7 @@ Repository variables:
 
 - `COOLIFY_STAGING_SERVICE_UUID` — UUID of the `akasha-staging-compose` service stack.
 - `COOLIFY_PRODUCTION_SERVICE_UUID` — UUID of the future `akasha-production-compose` service stack.
+- `VITE_BASEMAP_PROVIDER` — optional frontend basemap provider; use `esri` for staging/production, `osm` for development previews, or `empty` for no-network debugging.
 - `VITE_ESRI_API_KEY` — optional frontend build key, referrer-restricted in ArcGIS.
 - `VITE_ESRI_BASEMAP_STYLE` — optional, defaults to `arcgis/imagery`.
 - `VITE_ESRI_BASEMAP_STYLE_FAMILY` — optional, defaults to `arcgis`.

@@ -65,9 +65,30 @@ def _stats_response(
     }
 
 
+def test_field_statistics_uses_field_repository_for_field_ids(monkeypatch):
+    field = _plot(id="field-1", name="Migrated Field")
+    calls: list[tuple[str, str]] = []
+
+    def fake_get_field(field_id: str, user_id: str) -> dict[str, Any]:
+        calls.append((field_id, user_id))
+        return field
+
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", fake_get_field)
+    monkeypatch.setattr(field_analytics, "compute_statistics", lambda **kwargs: _stats_response())
+
+    r = client.post(
+        "/api/fields/field-1/indices/statistics",
+        json={"sourceId": "resourcesat-2a-liss3-boa", "indexType": "NDVI"},
+    )
+
+    assert r.status_code == 200
+    assert calls[0][0] == "field-1"
+    assert r.json()["plotId"] == "field-1"
+
+
 def test_field_statistics_loads_geometry_server_side(monkeypatch):
     plot = _plot()
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: plot)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: plot)
     calls: list[dict[str, Any]] = []
 
     def fake_compute_statistics(**kwargs):
@@ -102,7 +123,7 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
 
 
 def test_field_statistics_missing_field(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: None)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: None)
     r = client.post("/api/fields/missing/indices/statistics", json={"indexType": "NDVI"})
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "FIELD_NOT_FOUND"
@@ -110,7 +131,7 @@ def test_field_statistics_missing_field(monkeypatch):
 
 
 def test_trend_rejects_invalid_date_range(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     r = client.get(
         "/api/fields/plot-1/analytics/trend?startDate=2026-06-30&endDate=2026-01-01"
     )
@@ -119,7 +140,7 @@ def test_trend_rejects_invalid_date_range(monkeypatch):
 
 
 def test_native_trend_normalizes_points(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog,
         "list_dates",
@@ -154,7 +175,7 @@ def test_native_trend_normalizes_points(monkeypatch):
 
 
 def test_native_trend_rejects_unsupported_index(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     r = client.get(
         "/api/fields/plot-1/analytics/trend"
         "?indexType=BAD&startDate=2026-01-01&endDate=2026-03-01"
@@ -164,7 +185,7 @@ def test_native_trend_rejects_unsupported_index(monkeypatch):
 
 
 def test_trend_without_dates_uses_catalog_defaults_without_internal_leaks(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "list_dates", lambda _: [])
     r = client.get("/api/fields/plot-1/analytics/trend?indexType=NDVI")
     assert r.status_code == 200
@@ -174,7 +195,7 @@ def test_trend_without_dates_uses_catalog_defaults_without_internal_leaks(monkey
 
 
 def test_native_trend_reports_cloud_percent_per_scene(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog, "list_dates", lambda _: [{"acquisitionDate": "2026-01-01"}]
     )
@@ -196,7 +217,7 @@ def test_native_trend_reports_cloud_percent_per_scene(monkeypatch):
 
 
 def test_native_trend_filters_scenes_over_max_cloud_cover(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog,
         "list_dates",
@@ -230,14 +251,14 @@ def test_native_trend_filters_scenes_over_max_cloud_cover(monkeypatch):
 
 
 def test_native_trend_rejects_out_of_range_cloud_cover(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     r = client.get("/api/fields/plot-1/analytics/trend?maxCloudCoverInAoi=150")
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "INVALID_CLOUD_COVER"
 
 
 def test_field_index_overlay_renders_clipped_png(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
     monkeypatch.setattr(
         field_analytics.catalog,
@@ -277,7 +298,7 @@ def test_field_index_overlay_renders_clipped_png(monkeypatch):
 
 
 def test_field_index_overlay_rejects_unsupported_index(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI", "NDMI"])
     r = client.get(
         "/api/fields/plot-1/overlay/ndre.png?sourceId=resourcesat-2a-liss3-boa"

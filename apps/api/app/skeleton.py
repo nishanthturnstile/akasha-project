@@ -151,6 +151,7 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "PUBLIC_DEFAULT_AOI_NAME": "Bangalore",
         "API_UPSTREAM_URL": "http://api:8000",
         "TITILER_UPSTREAM_URL": "http://titiler:8000",
+        "VITE_BASEMAP_PROVIDER": "esri",
         "VITE_ESRI_API_KEY": "<referrer-restricted ArcGIS Location Platform key>",
         "VITE_ESRI_BASEMAP_STYLE": "arcgis/imagery",
         "VITE_ESRI_BASEMAP_STYLE_FAMILY": "arcgis",

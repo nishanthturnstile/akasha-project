@@ -2,6 +2,7 @@ import { render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import type { EsriBasemapResolvedConfig } from '@/map/basemap';
+import { resetSharedEsriBasemapSessionForTests } from '@/map/esriBasemapSession';
 
 const hoisted = vi.hoisted(() => ({
   mapHandlers: new Map<string, Array<(...args: unknown[]) => void>>(),
@@ -9,6 +10,7 @@ const hoisted = vi.hoisted(() => ({
   applyStyle: vi.fn(),
   createBasemapStyle: vi.fn(),
   startSession: vi.fn(),
+  setStyle: vi.fn(),
   applySatelliteLayer: vi.fn(),
   applyCompareLayer: vi.fn(),
   removeCompareLayer: vi.fn(),
@@ -56,6 +58,7 @@ vi.mock('maplibre-gl', () => {
       handlers.push(handler);
       hoisted.mapOnceHandlers.set(eventName, handlers);
     });
+    setStyle = hoisted.setStyle;
     remove = vi.fn();
     getCanvas = vi.fn(() => ({ clientWidth: 800, clientHeight: 600 }));
     getBounds = vi.fn(() => ({
@@ -95,12 +98,23 @@ const BASEMAP: EsriBasemapResolvedConfig = {
   refreshSafetyMarginSeconds: 300,
 };
 
+const OSM_BASEMAP = {
+  provider: 'osm',
+  attribution: '© OpenStreetMap contributors',
+} as const;
+
+const EMPTY_BASEMAP = {
+  provider: 'empty',
+} as const;
+
 afterEach(() => {
+  resetSharedEsriBasemapSessionForTests();
   hoisted.mapHandlers.clear();
   hoisted.mapOnceHandlers.clear();
   hoisted.applyStyle.mockReset();
   hoisted.createBasemapStyle.mockReset();
   hoisted.startSession.mockReset();
+  hoisted.setStyle.mockReset();
   hoisted.applySatelliteLayer.mockReset();
   hoisted.applyCompareLayer.mockReset();
   hoisted.removeCompareLayer.mockReset();
@@ -191,5 +205,96 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
     expect(hoisted.applySatelliteLayer.mock.calls[1][1]).toEqual({
       tileUrlTemplate: '/api/tiles/b/{z}/{x}/{y}.png',
     });
+  });
+
+  it('reuses one Esri session across equivalent map mounts in the same runtime', async () => {
+    hoisted.startSession.mockResolvedValue({ on: vi.fn() });
+    hoisted.applyStyle.mockReturnValue({});
+
+    const first = render(
+      <MapLayerManager
+        basemap={ BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+      />,
+    );
+    await waitFor(() => expect(hoisted.applyStyle).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    render(
+      <MapLayerManager
+        basemap={ BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+      />,
+    );
+
+    await waitFor(() => expect(hoisted.applyStyle).toHaveBeenCalledTimes(2));
+    expect(hoisted.startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses an OSM raster style without starting an Esri session and still applies overlays', () => {
+    render(
+      <MapLayerManager
+        basemap={ OSM_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ { tileUrlTemplate: '/api/tiles/osm-scene/{z}/{x}/{y}.png' } }
+        opacity={ 0.6 }
+        visible
+      />,
+    );
+
+    expect(hoisted.startSession).not.toHaveBeenCalled();
+    expect(hoisted.createBasemapStyle).not.toHaveBeenCalled();
+    expect(hoisted.applyStyle).not.toHaveBeenCalled();
+    expect(hoisted.setStyle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 8,
+        sources: expect.objectContaining({
+          'osm-raster': expect.objectContaining({ type: 'raster' }),
+        }),
+      }),
+    );
+    expect(hoisted.applySatelliteLayer).not.toHaveBeenCalled();
+
+    triggerMapEvent('styledata');
+    expect(hoisted.applySatelliteLayer).toHaveBeenCalledWith(
+      expect.anything(),
+      { tileUrlTemplate: '/api/tiles/osm-scene/{z}/{x}/{y}.png' },
+      { opacity: 0.6, visible: true },
+    );
+  });
+
+  it('uses an empty style without external basemap APIs and still applies overlays', () => {
+    render(
+      <MapLayerManager
+        basemap={ EMPTY_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ { tileUrlTemplate: '/api/tiles/empty-scene/{z}/{x}/{y}.png' } }
+        opacity={ 1 }
+        visible
+      />,
+    );
+
+    expect(hoisted.startSession).not.toHaveBeenCalled();
+    expect(hoisted.createBasemapStyle).not.toHaveBeenCalled();
+    expect(hoisted.applyStyle).not.toHaveBeenCalled();
+    expect(hoisted.setStyle).not.toHaveBeenCalled();
+    expect(hoisted.applySatelliteLayer).not.toHaveBeenCalled();
+
+    triggerMapEvent('styledata');
+    expect(hoisted.applySatelliteLayer).toHaveBeenCalledWith(
+      expect.anything(),
+      { tileUrlTemplate: '/api/tiles/empty-scene/{z}/{x}/{y}.png' },
+      { opacity: 1, visible: true },
+    );
   });
 });

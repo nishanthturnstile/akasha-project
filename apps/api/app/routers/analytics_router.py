@@ -13,7 +13,7 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
 from ..api_models import CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
-from ..auth import CurrentTeam, get_current_team
+from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
 from ..raster import catalog_resolver as catalog
@@ -22,7 +22,7 @@ from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_u
 from ..raster.indices import DEFAULT_INDEX, get_index, index_tile_expression
 from ..raster.models import IndexStatisticsModel, PixelCounts
 from ..raster.service import compute_statistics
-from ..repositories import plots_repo
+from ..repositories import fields_repo
 from ..routers.product_router import _enforce_index_rate_limit
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
 
@@ -52,11 +52,11 @@ async def _run_blocking(func, *args, **kwargs):
         ) from exc
 
 
-async def _get_plot_or_404(plot_id: str, team_id: str | None = None) -> dict[str, Any]:
-    plot = await _run_blocking(plots_repo.get_plot, plot_id, team_id)
-    if plot is None:
-        raise not_found("Field not found.", code="FIELD_NOT_FOUND", plotId=plot_id)
-    return plot
+async def _get_field_or_404(field_id: str, user_id: str) -> dict[str, Any]:
+    field = await _run_blocking(fields_repo.get_field, field_id, user_id)
+    if field is None:
+        raise not_found("Field not found.", code="FIELD_NOT_FOUND", fieldId=field_id)
+    return field
 
 
 def _default_range() -> tuple[date, date]:
@@ -296,10 +296,10 @@ async def post_field_index_statistics(
     plot_id: str,
     request: Request,
     payload: FieldStatisticsRequest = Body(...),
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> FieldStatisticsResponse:
     _enforce_index_rate_limit(request)
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     index_type = _normalize_index(payload.index_type)
 
     def _compute() -> FieldStatisticsResponse:
@@ -341,7 +341,7 @@ async def get_field_analytics_trend(
     cloudShadows: bool = True,
     cirrus: bool = True,
     maxCloudCoverInAoi: float | None = Query(default=None),
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> FieldTrendResponse:
     default_start, default_end = _default_range()
     date_start = startDate or default_start
@@ -350,7 +350,7 @@ async def get_field_analytics_trend(
     _validate_cloud_cover(maxCloudCoverInAoi)
 
     index_type = _normalize_index(indexType)
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     cloud_mask = CloudMaskOptions(
         clouds=clouds,
         cloud_shadows=cloudShadows,
@@ -376,9 +376,9 @@ async def get_field_index_overlay(
     index_type: str,
     sourceId: str = Query(default=settings.default_source_id),
     acquisitionDate: str = Query(...),
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> Response:
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(index_type)
     body, content_type = await _run_blocking(
         _index_overlay_response,

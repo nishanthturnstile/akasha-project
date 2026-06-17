@@ -505,7 +505,15 @@ make dev
 
 ### Map basemap does not load
 
-Add an Esri basemap key to:
+Local development should use OSM by default so repeated reloads do not consume
+ArcGIS Location Platform basemap sessions:
+
+```env
+VITE_BASEMAP_PROVIDER=osm
+```
+
+To validate the hosted ArcGIS basemap path, set the provider to Esri and add a
+referrer-restricted key to:
 
 ```text
 apps/frontend/.env
@@ -514,6 +522,7 @@ apps/frontend/.env
 Example:
 
 ```env
+VITE_BASEMAP_PROVIDER=esri
 VITE_ESRI_API_KEY=<your referrer-restricted key with Basemaps privilege>
 ```
 

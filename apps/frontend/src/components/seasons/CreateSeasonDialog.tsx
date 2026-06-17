@@ -3,6 +3,8 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useCreateSeason, useFields } from '@/lib/queries';
 
@@ -95,20 +97,18 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm">Start date</label>
-                <input
-                  type="date"
-                  className="rounded-md border border-border bg-background px-3 py-2 w-full"
+                <DatePicker
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={setStartDate}
+                  placeholder="Start Date"
                 />
               </div>
               <div>
                 <label className="text-sm">End date</label>
-                <input
-                  type="date"
-                  className="rounded-md border border-border bg-background px-3 py-2 w-full"
+                <DatePicker
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={setEndDate}
+                  placeholder="End Date"
                 />
               </div>
             </div>
@@ -129,7 +129,8 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
                   </div>
                 </div>
 
-                <div className="space-y-2 max-h-40 overflow-y-auto">
+                <ScrollArea className="max-h-48 pr-2">
+                  <div className="space-y-2">
                   {allFields.map((f) => (
                     <div
                       key={f.id}
@@ -149,6 +150,7 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
                     </div>
                   ))}
                 </div>
+                </ScrollArea>
               </div>
             )}
 

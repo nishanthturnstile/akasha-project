@@ -336,23 +336,27 @@ export default function MapPage() {
     }
   }, [plotsQ.data, plotsQ.isLoading, selectedPlotId, view]);
 
-  // On first load, focus a field AND select it so the map opens on the user's
-  // context instead of the default AOI. Prefer the last-selected field (deep link /
-  // persisted state); otherwise fall back to the first available field. Selecting it
-  // is essential: FieldBoundaryLayer only draws the *selected* field, so without this
-  // a fresh session / refresh with no persisted selection lands on "No field selected"
+  // Focus and select a field when the map loads or when the user navigates to a
+  // specific field (e.g. from the season sheet Focus button). On initial load
+  // the last-selected field (deep link / persisted state) wins; otherwise we fall
+  // back to the first available field. FieldBoundaryLayer only draws the
+  // *selected* field, so without this a fresh session lands on "No field selected"
   // and the drawn field is invisible even though it exists.
-  const initialFocusDone = useRef(false);
+  const prevFocusedPlotId = useRef<string | null>(null);
   useEffect(() => {
-    if (initialFocusDone.current) return;
     if (!map || plotsQ.isLoading || !plotsQ.data) return;
-    const focusTarget = selectedPlot ?? plotsQ.data[0] ?? null;
-    if (!focusTarget) return;
     if (!selectedPlotId) {
-      view.setSelectedPlotId(focusTarget.id);
+      const fallback = plotsQ.data[0] ?? null;
+      if (fallback) {
+        view.setSelectedPlotId(fallback.id);
+      }
+      return;
     }
+    const focusTarget = selectedPlot;
+    if (!focusTarget) return;
+    if (prevFocusedPlotId.current === selectedPlotId) return;
     focusPlot(map, focusTarget);
-    initialFocusDone.current = true;
+    prevFocusedPlotId.current = selectedPlotId;
   }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, view]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.

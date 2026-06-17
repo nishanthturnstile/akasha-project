@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MapViewProvider } from '@/state/mapViewContext';
 import { AppShell } from '@/components/shell/AppShell';
 
 function renderShell(path = '/weather/forecast') {
@@ -22,19 +23,21 @@ function renderShell(path = '/weather/forecast') {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return render(
-    <QueryClientProvider client={ queryClient }>
-      <MemoryRouter initialEntries={ [path] }>
-        <Routes>
-          <Route element={ <AppShell /> }>
-            <Route path="weather/forecast" element={ <div data-testid="forecast-page">Forecast</div> } />
-            <Route
-              path="monitoring/field-analytics"
-              element={ <div data-testid="field-analytics-page">Field analytics</div> }
-            />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <MapViewProvider>
+      <QueryClientProvider client={ queryClient }>
+        <MemoryRouter initialEntries={ [path] }>
+          <Routes>
+            <Route element={ <AppShell /> }>
+              <Route path="weather/forecast" element={ <div data-testid="forecast-page">Forecast</div> } />
+              <Route
+                path="monitoring/field-analytics"
+                element={ <div data-testid="field-analytics-page">Field analytics</div> }
+              />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </MapViewProvider>,
   );
 }
 

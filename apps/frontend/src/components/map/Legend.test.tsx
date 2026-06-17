@@ -41,4 +41,9 @@ describe('Legend', () => {
         );
         expect(getByTestId('map-legend').textContent).toContain('False colour');
     });
+
+    it('shows a false-colour key for FCC', () => {
+        const { getByTestId } = render(<Legend displayMode="FCC" sourceKind="optical" />);
+        expect(getByTestId('map-legend').textContent).toContain('False colour');
+    });
 });

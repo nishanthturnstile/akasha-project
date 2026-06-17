@@ -14,6 +14,7 @@ Minimal product surface needed to verify the raster proof path end-to-end:
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 import os
 import time
 from datetime import date, timedelta
@@ -258,12 +259,15 @@ async def _render_rgb_tile(
             availableBands=assets.get("bandNames", []),
         ) from exc
     if len(assets_for_date) == 1:
-        url = tiles.build_rgb_tile_url(
-            analytic_href=assets["analyticHref"],
-            rgb_positions=positions,
-            z=z,
-            x=x,
-            y=y,
+        body, content_type = await anyio.to_thread.run_sync(
+            partial(
+                tiles.render_rgb_tile,
+                analytic_href=assets["analyticHref"],
+                rgb_positions=positions,
+                z=z,
+                x=x,
+                y=y,
+            )
         )
     else:
         url = tiles.build_mosaic_rgb_tile_url(
@@ -273,7 +277,7 @@ async def _render_rgb_tile(
             x=x,
             y=y,
         )
-    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+        body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
 
 
@@ -389,12 +393,15 @@ async def _render_fcc_tile(
         ) from exc
 
     if len(assets_for_date) == 1:
-        url = tiles.build_rgb_tile_url(
-            analytic_href=assets["analyticHref"],
-            rgb_positions=positions,
-            z=z,
-            x=x,
-            y=y,
+        body, content_type = await anyio.to_thread.run_sync(
+            partial(
+                tiles.render_rgb_tile,
+                analytic_href=assets["analyticHref"],
+                rgb_positions=positions,
+                z=z,
+                x=x,
+                y=y,
+            )
         )
     else:
         url = tiles.build_mosaic_rgb_tile_url(
@@ -404,7 +411,7 @@ async def _render_fcc_tile(
             x=x,
             y=y,
         )
-    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+        body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
 
 

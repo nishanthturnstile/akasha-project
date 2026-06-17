@@ -109,6 +109,10 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
         case 'VV_GRAYSCALE':
         case 'VH_GRAYSCALE':
             return SAR_RAMP;
+        case 'FCC':
+        case 'FALSE_COLOR':
+        case 'FALSE_COLOUR':
+            return FALSE_COLOR_RAMP;
         default:
             break;
     }

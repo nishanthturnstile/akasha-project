@@ -1,4 +1,4 @@
-"""TiTiler RGB tile URL building + same-origin proxy (Slice 2 — Phase 2).
+"""TiTiler URL building plus direct RGB tile rendering helpers.
 
 The BFF exposes a friendly same-origin route
     GET /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png
@@ -19,6 +19,7 @@ import urllib.request
 import zlib
 
 from .errors import mosaic_tiles_unavailable, raster_backend_unavailable, upstream_error
+from .raster_reader import gdal_s3_options, rasterio_aws_session
 
 # TiTiler 1.0 COG tile route. WebMercatorQuad is the default tile matrix set.
 TILE_MATRIX_SET = "WebMercatorQuad"
@@ -60,6 +61,55 @@ def default_rgb_rescale() -> str:
     (scale 0.0001). Overridable via AKASHA_RGB_RESCALE ("min,max").
     """
     return os.environ.get("AKASHA_RGB_RESCALE", "0,3000")
+
+
+def _parse_rescale_ranges(rescale: str, band_count: int) -> tuple[tuple[float, float], ...]:
+    parts = [part.strip() for part in rescale.split(",")]
+    if len(parts) != 2:
+        raise ValueError(f"invalid rescale range: {rescale!r}")
+    lower = float(parts[0])
+    upper = float(parts[1])
+    return tuple((lower, upper) for _ in range(band_count))
+
+
+def render_rgb_tile(
+    *,
+    analytic_href: str,
+    rgb_positions: list[int],
+    z: int,
+    x: int,
+    y: int,
+    rescale: str | None = None,
+) -> tuple[bytes, str]:
+    """Render a single-scene RGB/FCC tile directly in the BFF with rio-tiler.
+
+    This bypasses the TiTiler HTTP endpoint for single-scene RGB/FCC requests.
+    It keeps the same browser contract while avoiding TiTiler's intermittent
+    HTTP 500 "Read failed" responses for valid interior tiles on some COGs.
+    """
+    try:
+        import rasterio  # lazy
+        from rio_tiler.io import Reader  # lazy
+    except ImportError as exc:  # pragma: no cover - environment guard
+        raise raster_backend_unavailable(
+            "Raster stack (rio-tiler/rasterio) is not installed in this environment.",
+            reason=str(exc),
+        ) from exc
+
+    if not rgb_positions:
+        raise upstream_error("RGB tile request is missing band positions.", code="MISSING_RGB_BANDS")
+
+    stretch = _parse_rescale_ranges(rescale or default_rgb_rescale(), len(rgb_positions))
+    try:
+        with rasterio.Env(rasterio_aws_session(), **gdal_s3_options()):
+            with Reader(analytic_href) as cog:
+                image = cog.tile(x, y, z, indexes=tuple(rgb_positions))
+                image.rescale(stretch)
+                return image.render(img_format="PNG"), "image/png"
+    except Exception as exc:  # noqa: BLE001
+        raise upstream_error(
+            "Direct RGB tile render failed.", code="RGB_TILE_RENDER_ERROR"
+        ) from exc
 
 
 def default_sar_vv_rescale() -> str:

@@ -1,25 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
-import {
-  ApiError,
-  composeTileTemplate,
-  exportAllPlotsGeoJson,
-  exportPlotGeoJson,
-  type PlotGeoJsonImportPayload,
-} from '@/lib/api';
+import { ApiError, composeTileTemplate } from '@/lib/api';
 import {
   useConfig,
-  useCreatePlot,
+  useCreateField,
   useDates,
   useDefaultLayer,
-  useDeletePlot,
-  useImportPlotsGeoJson,
-  usePlots,
+  useDeleteField,
+  useFields,
   useSources,
-  useUpdatePlot,
+  useUpdateField,
 } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
+import { polygonAreaMeters } from '@/lib/measure';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 import { AllFieldsPanel } from '@/components/fields/AllFieldsPanel';
@@ -41,7 +35,15 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/useMapView';
 import { useMapUrlState } from '@/hooks/useMapUrlState';
-import type { CloudMaskOptions, GeoJsonPosition, Plot, PlotGeometry, Source } from '@/types/api';
+import type {
+  CloudMaskOptions,
+  Field,
+  FieldUpdatePayload,
+  GeoJsonPosition,
+  Plot,
+  PlotGeometry,
+  Source,
+} from '@/types/api';
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -141,6 +143,58 @@ function geoJsonFilename(plot: Plot | null): string {
   return `${safeName || 'field'}.geojson`;
 }
 
+/** Recompute a field's area (hectares) from its outer ring — the Field API trusts
+ *  the client-supplied area, so we derive it instead of sending a stale value. */
+function fieldAreaHa(geometry: PlotGeometry): number {
+  const ring =
+    geometry.type === 'Polygon'
+      ? geometry.coordinates[0] ?? []
+      : geometry.coordinates[0]?.[0] ?? [];
+  const meters = polygonAreaMeters(ring.map(([lng, lat]) => [lng, lat] as [number, number]));
+  return meters / 10000;
+}
+
+interface ExportFeature {
+  type: 'Feature';
+  properties: { id: string; name: string; areaHa: number | null };
+  geometry: PlotGeometry;
+}
+
+function fieldToFeature(field: Plot): ExportFeature {
+  return {
+    type: 'Feature',
+    properties: { id: field.id, name: field.name, areaHa: field.areaHa ?? null },
+    geometry: field.geometry,
+  };
+}
+
+interface GeoJsonFeatureLike {
+  type?: string;
+  geometry?: PlotGeometry;
+  properties?: { name?: string | null } | null;
+  features?: GeoJsonFeatureLike[];
+}
+
+/** Pull polygon/multipolygon features out of a FeatureCollection, Feature, or raw
+ *  geometry so an imported GeoJSON file can be turned into Field records. */
+function extractImportFields(input: GeoJsonFeatureLike): { name: string; geometry: PlotGeometry }[] {
+  const features: GeoJsonFeatureLike[] =
+    input?.type === 'FeatureCollection'
+      ? input.features ?? []
+      : input?.type === 'Feature'
+        ? [input]
+        : [{ type: 'Feature', geometry: input as unknown as PlotGeometry, properties: null }];
+  const result: { name: string; geometry: PlotGeometry }[] = [];
+  features.forEach((feature, index) => {
+    const geometry = feature?.geometry;
+    if (geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon')) {
+      const name = feature?.properties?.name?.trim() || `Imported field ${index + 1}`;
+      result.push({ name, geometry });
+    }
+  });
+  return result;
+}
+
 type LngLat = [number, number];
 type ImageCorners = [LngLat, LngLat, LngLat, LngLat];
 
@@ -236,15 +290,10 @@ export default function MapPage() {
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const plotsQ = usePlots();
-  const createPlotMutation = useCreatePlot();
-  const updatePlotMutation = useUpdatePlot();
-  const importPlotsMutation = useImportPlotsGeoJson();
-  const deletePlotMutation = useDeletePlot({
-    onDeleted: (plotId) => {
-      if (plotId === selectedPlotId) view.clearSelectedPlot();
-    },
-  });
+  const plotsQ = useFields();
+  const createFieldMutation = useCreateField();
+  const updateFieldMutation = useUpdateField();
+  const deleteFieldMutation = useDeleteField();
 
   const selectedPlot = useMemo(() => {
     if (!selectedPlotId) return null;
@@ -258,17 +307,24 @@ export default function MapPage() {
     }
   }, [plotsQ.data, plotsQ.isLoading, selectedPlotId, view]);
 
-  // Focus the last-selected field on first load so a refresh keeps the map
-  // centred on the user's context instead of the default AOI.
+  // On first load, focus a field AND select it so the map opens on the user's
+  // context instead of the default AOI. Prefer the last-selected field (deep link /
+  // persisted state); otherwise fall back to the first available field. Selecting it
+  // is essential: FieldBoundaryLayer only draws the *selected* field, so without this
+  // a fresh session / refresh with no persisted selection lands on "No field selected"
+  // and the drawn field is invisible even though it exists.
   const initialFocusDone = useRef(false);
   useEffect(() => {
     if (initialFocusDone.current) return;
-    if (!map || plotsQ.isLoading) return;
-    if (selectedPlot) {
-      focusPlot(map, selectedPlot);
-      initialFocusDone.current = true;
+    if (!map || plotsQ.isLoading || !plotsQ.data) return;
+    const focusTarget = selectedPlot ?? plotsQ.data[0] ?? null;
+    if (!focusTarget) return;
+    if (!selectedPlotId) {
+      view.setSelectedPlotId(focusTarget.id);
     }
-  }, [map, plotsQ.isLoading, selectedPlot]);
+    focusPlot(map, focusTarget);
+    initialFocusDone.current = true;
+  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, view]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
@@ -473,19 +529,32 @@ export default function MapPage() {
 
   const importGeoJsonFile = async (file: File) => {
     const text = await file.text();
-    const payload = JSON.parse(text) as PlotGeoJsonImportPayload;
-    const result = await importPlotsMutation.mutateAsync(payload);
-    const first = result.imported[0];
-    if (first) {
-      view.setSelectedPlotId(first.id);
-      focusPlot(map, first);
+    const parsed = JSON.parse(text) as GeoJsonFeatureLike;
+    const fields = extractImportFields(parsed);
+    let firstCreated: Field | null = null;
+    for (const field of fields) {
+      const created = await createFieldMutation.mutateAsync({
+        name: field.name,
+        geometry: field.geometry,
+        areaHa: fieldAreaHa(field.geometry),
+        seasonIds: [],
+      });
+      firstCreated ??= created;
+    }
+    if (firstCreated) {
+      view.setSelectedPlotId(firstCreated.id);
+      focusPlot(map, firstCreated);
     }
   };
 
-  const exportGeoJson = async () => {
-    const blob = selectedPlot
-      ? await exportPlotGeoJson(selectedPlot.id)
-      : await exportAllPlotsGeoJson();
+  const exportGeoJson = () => {
+    const data = selectedPlot
+      ? fieldToFeature(selectedPlot)
+      : {
+        type: 'FeatureCollection' as const,
+        features: (plotsQ.data ?? []).map(fieldToFeature),
+      };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/geo+json' });
     downloadBlob(blob, geoJsonFilename(selectedPlot));
   };
 
@@ -493,7 +562,8 @@ export default function MapPage() {
     if (!selectedPlot) return;
     const confirmed = window.confirm(`Delete field "${selectedPlot.name}"?`);
     if (!confirmed) return;
-    await deletePlotMutation.mutateAsync(selectedPlot.id);
+    await deleteFieldMutation.mutateAsync(selectedPlot.id);
+    view.clearSelectedPlot();
   };
 
   if (configQ.isLoading) return <FullScreenLoading />;
@@ -587,13 +657,26 @@ export default function MapPage() {
         selectedPlot={ selectedPlot }
         onCancel={ () => setFieldMode(null) }
         onCreateField={ async (payload) => {
-          const created = await createPlotMutation.mutateAsync(payload);
+          const created = await createFieldMutation.mutateAsync({
+            name: payload.name,
+            geometry: payload.geometry,
+            areaHa: fieldAreaHa(payload.geometry),
+            seasonIds: [],
+          });
           view.setSelectedPlotId(created.id);
           focusPlot(map, created);
           return created;
         } }
         onUpdateField={ async (plotId, payload) => {
-          const updated = await updatePlotMutation.mutateAsync({ plotId, payload });
+          const fieldPayload: FieldUpdatePayload = {
+            name: payload.name ?? null,
+            geometry: payload.geometry ?? null,
+            areaHa: payload.geometry ? fieldAreaHa(payload.geometry) : null,
+          };
+          const updated = await updateFieldMutation.mutateAsync({
+            fieldId: plotId,
+            payload: fieldPayload,
+          });
           view.setSelectedPlotId(updated.id);
           focusPlot(map, updated);
           return updated;
@@ -689,7 +772,7 @@ export default function MapPage() {
             onDelete={ (plot) => {
               const confirmed = window.confirm(`Delete field "${plot.name}"?`);
               if (!confirmed) return;
-              deletePlotMutation.mutateAsync(plot.id).then(() => {
+              deleteFieldMutation.mutateAsync(plot.id).then(() => {
                 view.clearSelectedPlot();
                 if (map && config) {
                   map.flyTo({

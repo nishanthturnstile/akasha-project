@@ -11,7 +11,7 @@ function AuthEvents() {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      if (location.pathname === '/login') return;
+      if (location.pathname === '/login' || location.pathname === '/signup') return;
       const returnTo = `${location.pathname}${location.search}${location.hash}`;
       queryClient.clear();
       navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });

@@ -271,7 +271,7 @@ function stubAkashaFetch({
         );
       }
 
-      if (path === '/api/plots') {
+      if (path === '/api/fields') {
         return Promise.resolve(jsonResponse(plots));
       }
 

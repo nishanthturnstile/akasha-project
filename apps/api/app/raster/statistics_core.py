@@ -102,6 +102,7 @@ def compute_index_statistics(
     offset: float = DEFAULT_OFFSET,
     nodata: float | int = 0,
     excluded_mask_classes: tuple[int, ...] = DEFAULT_EXCLUDED_SCL_CLASSES,
+    analytic_nodata_policy: str = "selected_band_or_mask",
 ) -> IndexStatistics:
     """Compute source-mask-aware, offset-corrected index statistics.
 
@@ -136,10 +137,15 @@ def compute_index_statistics(
     total_pixels = int(geom.sum())
 
     # --- coverage / nodata -------------------------------------------------
-    # A pixel is nodata (out of coverage) if either analytic band equals the
-    # nodata value OR the source mask marks it as no_data (class 0).
-    analytic_nodata = (a == nodata) | (b == nodata)
     mask_nodata = mask == MASK_NODATA_CLASS
+    if analytic_nodata_policy == "mask_only":
+        analytic_nodata = np.zeros(a.shape, dtype=bool)
+    elif analytic_nodata_policy == "selected_band_or_mask":
+        # Sentinel-style products still use selected-band nodata in addition
+        # to the source categorical mask.
+        analytic_nodata = (a == nodata) | (b == nodata)
+    else:
+        raise ValueError(f"unknown analytic_nodata_policy: {analytic_nodata_policy}")
     nodata_mask = geom & (analytic_nodata | mask_nodata)
     coverage_mask = geom & ~nodata_mask
 

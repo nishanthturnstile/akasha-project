@@ -217,6 +217,9 @@ class BhoonidhiClient:
             except (BhoonidhiAuthError, urllib.error.HTTPError) as exc:
                 if isinstance(exc, urllib.error.HTTPError) and exc.code not in {401, 403}:
                     raise
+                stale_session = self.session
+                if stale_session is not None:
+                    self._logout_session(stale_session, ignore_errors=True)
                 self.session = None
         return self._password_token()
 
@@ -280,12 +283,32 @@ class BhoonidhiClient:
     def logout(self, *, ignore_errors: bool = False) -> None:
         try:
             if self.session:
-                self._request_json("POST", "/auth/logout", {}, auth=True)
+                self._logout_session(self.session, ignore_errors=ignore_errors)
         except Exception:  # noqa: BLE001
             if not ignore_errors:
                 raise
         finally:
             self.session = None
+
+    def _logout_session(self, session: TokenSession, *, ignore_errors: bool) -> None:
+        try:
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {session.access_token}",
+            }
+            req = self._request(
+                "/auth/logout",
+                method="POST",
+                body=_json_bytes({}),
+                headers=headers,
+                auth=False,
+            )
+            with self.opener.open(req, timeout=30) as resp:
+                resp.read()
+        except Exception:  # noqa: BLE001
+            if not ignore_errors:
+                raise
 
     def search(
         self,

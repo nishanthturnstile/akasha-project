@@ -158,7 +158,7 @@ python -m app.cli migrate
 ```bash
 python worker.py seed
 python worker.py verify
-python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
 ```
 
 After deploying a Bhoonidhi ingestion change, run the repeatable staging validator from a
@@ -232,7 +232,7 @@ Catalog/storage seed and verification from `ingestion-worker`:
 ```bash
 python worker.py seed
 python worker.py verify
-python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
 ```
 
 ## Scheduled Bhoonidhi sync

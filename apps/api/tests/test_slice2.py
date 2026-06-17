@@ -16,7 +16,9 @@ import json
 import numpy as np
 import pytest
 from app.main import app
+from app.raster import catalog_resolver as catalog
 from app.raster import indices
+from app.raster.errors import AkashaError
 from app.raster.statistics_core import compute_index_statistics, correct_reflectance
 from fastapi.testclient import TestClient
 
@@ -147,6 +149,26 @@ def test_ndvi_reference_with_offset_and_masking():
     assert s["validPixelPercent"] == pytest.approx(75.0)
     assert s["cloudMaskedPercent"] == pytest.approx(12.5)
     assert s["coveragePercent"] == pytest.approx(87.5)
+
+
+def test_mask_only_nodata_policy_keeps_single_zero_band_pixels():
+    stats = compute_index_statistics(
+        index_type="NDVI",
+        band_a_dn=np.array([[0, 5000]], dtype="uint16"),
+        band_b_dn=np.array([[1000, 2000]], dtype="uint16"),
+        mask=np.array([[1, 1]], dtype="uint8"),
+        geometry_mask=np.array([[True, True]]),
+        scale=0.0001,
+        offset=0.0,
+        nodata=0,
+        excluded_mask_classes=(0, 2, 3),
+        analytic_nodata_policy="mask_only",
+    ).as_dict()
+
+    assert stats["nodataPixels"] == 0
+    assert stats["coveragePixels"] == 2
+    assert stats["validPixels"] == 2
+    assert stats["coveragePercent"] == 100.0
 
 
 def test_offset_does_not_cancel_in_ndvi():
@@ -293,7 +315,7 @@ def _aoi_feature(aoi_id: str, west: float, south: float, east: float, north: flo
     }
 
 
-def test_config_endpoint_lists_configured_aois_and_selects_default(tmp_path, monkeypatch):
+def test_config_endpoint_lists_configured_aois_and_keeps_path_aoi_default(tmp_path, monkeypatch):
     from app.config import settings
 
     primary = tmp_path / "bangalore-60km.geojson"
@@ -316,7 +338,7 @@ def test_config_endpoint_lists_configured_aois_and_selects_default(tmp_path, mon
 
     assert r.status_code == 200
     body = r.json()
-    assert body["aoi"]["id"] == "mysore-60km"
+    assert body["aoi"]["id"] == "bangalore-60km"
     assert [aoi["id"] for aoi in body["aois"]] == ["bangalore-60km", "mysore-60km"]
     assert body["aois"][1]["compositeGridCrs"] == "EPSG:32643"
 
@@ -358,19 +380,22 @@ def test_sources_endpoint_contract():
     }
     assert rs["maskAsset"] == "mask"
     # FCC base imagery + optical index display modes (EOS-style LAYER picker).
-    assert rs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI"]
+    assert rs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert rs["defaultDisplayMode"] == "FCC"
     assert [g["label"] for g in rs["layerGroups"]] == [
         "Imagery",
         "Vegetation Indices",
         "Moisture Indices",
+        "Water Index",
     ]
+    assert rs["layerGroups"][3]["modes"] == ["NDWI_GREEN_NIR"]
     assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
     assert rs["metricsProvisional"] is True
     assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
     assert sources["resourcesat-2a-awifs-boa"]["analysisLevel"] == "regional"
     assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
     assert sources["resourcesat-2a-liss4-mx70-l2"]["analysisLevel"] == "context"
+    assert sources["resourcesat-2a-liss4-mx70-l2"]["supportedIndices"] == []
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["availabilityStatus"] == "gated"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
@@ -427,6 +452,17 @@ def test_phase5_gated_collection_contracts_are_loadable():
         collection = catalog.get_collection(source_id)
         assert collection["id"] == source_id
         assert collection.get("akasha:availability_status") == "gated"
+
+
+def test_latest_items_for_empty_registered_source_returns_typed_error(monkeypatch):
+    monkeypatch.setattr(catalog, "list_dates", lambda source_id: [])
+
+    with pytest.raises(AkashaError) as exc:
+        catalog.latest_items("resourcesat-2a-awifs-boa")
+
+    assert exc.value.code == "SOURCE_HAS_NO_DATES"
+    assert exc.value.status_code == 404
+    assert exc.value.details["sourceId"] == "resourcesat-2a-awifs-boa"
 
     eos = catalog.get_collection("eos-06-ocm-lac-ndvi-8day-360m")
     assert eos["akasha:source_kind"] == "context"
@@ -1744,6 +1780,65 @@ def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
     assert body["statistics"]["mean"] == pytest.approx(0.5)
     assert body["metadata"]["nativeExcludedMaskClasses"] == [0, 2, 3]
     assert body["metadata"]["metricsProvisional"] is True
+
+
+def test_resourcesat_statistics_uses_mask_only_nodata_policy(monkeypatch):
+    from app.raster import service
+    from app.raster.raster_reader import WindowRead
+
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "resourcesat-composite",
+                "analyticHref": "s3://akasha-cogs/resourcesat/analytic.tif",
+                "maskHref": "s3://akasha-cogs/resourcesat/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2",
+                    "RED": "BAND3",
+                    "NIR": "BAND4",
+                    "SWIR1": "BAND5",
+                },
+                "maskMethod": "Akasha threshold mask v1",
+                "excludedMaskClasses": [0, 2, 3],
+                "nodataPolicy": "mask_only",
+                "metricsProvisional": True,
+                "scale": 0.0001,
+                "offset": 0.0,
+                "nodata": 0,
+                "bbox": [78.19, 12.09, 78.22, 12.12],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        service,
+        "read_index_windows",
+        lambda **_kwargs: WindowRead(
+            band_arrays={
+                2: np.array([[0, 5000]], dtype="uint16"),
+                3: np.array([[1000, 2000]], dtype="uint16"),
+            },
+            mask=np.array([[1, 1]], dtype="uint8"),
+            geometry_mask=np.array([[True, True]]),
+            nodata=0,
+            height=1,
+            width=2,
+            intersects=True,
+        ),
+    )
+
+    body = service.compute_statistics(
+        geometry=IN_FOOTPRINT_POLY,
+        source_id="resourcesat-2a-liss3-boa",
+        acquisition_date="2026-03-19",
+        index_type="NDVI",
+    )
+
+    assert body["pixelCounts"]["nodataPixels"] == 0
+    assert body["pixelCounts"]["coveragePixels"] == 2
+    assert body["pixelCounts"]["validPixels"] == 2
 
 
 def test_statistics_multi_scene_date_uses_intersecting_scene_not_first(monkeypatch):

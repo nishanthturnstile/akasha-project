@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type React from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import type { CloudMaskOptions, Plot } from '@/types/api';
@@ -47,6 +47,18 @@ function activateTab(testId: string) {
     fireEvent.click(trigger);
     return trigger;
 }
+
+function jsonResponse(payload: unknown) {
+    return {
+        ok: true,
+        status: 200,
+        json: async () => payload,
+    };
+}
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
 
 describe('IndexPanel tabbed analytics (Phase F)', () => {
     it('renders the empty-state guidance when no field is selected', () => {
@@ -150,7 +162,93 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
             'Provisional mask: Akasha threshold mask v1',
         );
         expect(screen.getByTestId('analytics-index-NDVI')).toBeTruthy();
+        expect(screen.getByTestId('analytics-index-NDWI_GREEN_NIR').textContent).toBe('NDWI');
         expect(screen.queryByTestId('analytics-index-NDRE')).toBeNull();
+    });
+
+    it('uses response-level mask provenance and masked pixel count for statistics', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-03-19',
+                            cloudMask,
+                            statistics: {
+                                min: 0.1,
+                                max: 0.8,
+                                mean: 0.42,
+                                stddev: 0.12,
+                                validPixelPercent: 91,
+                                cloudMaskedPercent: 6,
+                                coveragePercent: 97,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 3,
+                                coveragePixels: 97,
+                                maskedPixels: 6,
+                                validPixels: 91,
+                            },
+                            maskedPixels: 6,
+                            maskMethod: 'Akasha threshold mask v1',
+                            metricsProvisional: true,
+                            metadata: {
+                                formula: '(BAND4 - BAND3) / (BAND4 + BAND3)',
+                                bands: ['BAND4', 'BAND3'],
+                                warnings: [],
+                            },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDVI',
+                            startDate: '2025-09-20',
+                            endDate: '2026-03-19',
+                            points: [],
+                            metadata: {
+                                formula: '(BAND4 - BAND3) / (BAND4 + BAND3)',
+                                bands: ['BAND4', 'BAND3'],
+                            },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-03-19"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="FCC"
+                supportedIndices={ ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        expect(await screen.findByText('0.42')).toBeTruthy();
+        expect(screen.getByText('Akasha provisional-mask analytics')).toBeTruthy();
+        expect(screen.getByTestId('analytics-masked-pixels').textContent).toContain('6');
+        expect(screen.getByTestId('analytics-mask-method').textContent).toContain(
+            'Provisional mask: Akasha threshold mask v1',
+        );
     });
 
     it('switches to Activities tab and shows the empty state with a disabled add button', () => {

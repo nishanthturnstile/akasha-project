@@ -235,7 +235,7 @@ function stubAkashaFetch({
               provider: 'ISRO/NRSC Bhoonidhi',
               kind: 'optical',
               supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
-              displayModes: ['FCC', 'NDVI'],
+              displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
               defaultDisplayMode: 'FCC',
               attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
             },
@@ -457,6 +457,32 @@ describe('MapPage selected-field native analytics', () => {
         .filter(([input]) => String(input) === '/api/fields/plot-1/indices/statistics')
         .map(([, init]) => (typeof init?.body === 'string' ? init.body : ''))
         .find((body) => body.includes('"indexType":"NDVI"'));
+      expect(statsCall).toBeTruthy();
+    });
+  });
+
+  it('syncs the field statistics index when the native display mode changes', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    fireEvent.click(await screen.findByTestId('layer-display-trigger'));
+    fireEvent.click(await screen.findByTestId('display-mode-MSAVI'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toContain(
+        '/api/fields/plot-1/overlay/MSAVI.png',
+      );
+    });
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      const statsCall = calls
+        .filter(([input]) => String(input) === '/api/fields/plot-1/indices/statistics')
+        .map(([, init]) => (typeof init?.body === 'string' ? init.body : ''))
+        .find((body) => body.includes('"indexType":"MSAVI"'));
       expect(statsCall).toBeTruthy();
     });
   });

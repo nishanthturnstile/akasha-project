@@ -40,10 +40,10 @@ export default function OnboardingStep1() {
   };
 
   return (
-    <div className="flex flex-col items-center p-6">
+    <div className="flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-4">
       <StepIndicator currentStep={1} />
 
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md shrink-0">
         <CardHeader>
           <CardTitle>Let's start with creating your first season</CardTitle>
         </CardHeader>
@@ -87,7 +87,7 @@ export default function OnboardingStep1() {
       <img
         src="/images/onboarding1.png"
         alt="Create season illustration"
-        className="mt-4 max-w-full h-auto"
+        className="mt-2 max-h-[25vh] w-auto object-contain shrink-0"
       />
     </div>
   );

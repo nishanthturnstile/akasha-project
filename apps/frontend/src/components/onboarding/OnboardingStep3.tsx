@@ -64,10 +64,10 @@ export default function OnboardingStep3() {
   };
 
   return (
-    <div className="flex flex-col items-center p-6">
+    <div className="flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-4">
       <StepIndicator currentStep={ 3 } />
 
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md shrink-0">
         <CardHeader>
           <CardTitle>Add crop</CardTitle>
         </CardHeader>

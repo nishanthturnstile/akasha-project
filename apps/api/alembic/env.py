@@ -44,7 +44,18 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     from sqlalchemy import create_engine
 
-    connectable = create_engine(get_database_url(), pool_pre_ping=True, future=True)
+    # Pin the session search_path to ``public`` so Alembic's ``default_schema_name``
+    # is deterministic. Otherwise, when the database role name matches the API schema
+    # (e.g. role ``akasha`` + schema ``akasha`` in CI), ``$user`` resolves to the
+    # ``akasha`` schema and Alembic treats those tables as the unnamed default schema.
+    # Combined with ``include_name`` that excludes the default schema, autogenerate
+    # would then see an empty database and report every ORM table as newly added.
+    connectable = create_engine(
+        get_database_url(),
+        pool_pre_ping=True,
+        future=True,
+        connect_args={"options": "-csearch_path=public"},
+    )
 
     with connectable.connect() as connection:
         context.configure(

@@ -23,7 +23,8 @@ services:
       context: ../..
       dockerfile: infra/gateway/Dockerfile
       args:
-        VITE_ESRI_API_KEY: "${VITE_ESRI_API_KEY:-}"
+        VITE_BASEMAP_PROVIDER: "${VITE_BASEMAP_PROVIDER:-osm}"
+        VITE_ESRI_PUBLIC_ACCESS: "${VITE_ESRI_API_KEY:-}"
         VITE_ESRI_BASEMAP_STYLE: "${VITE_ESRI_BASEMAP_STYLE:-arcgis/imagery}"
         VITE_ESRI_BASEMAP_STYLE_FAMILY: "${VITE_ESRI_BASEMAP_STYLE_FAMILY:-arcgis}"
         VITE_ESRI_BASEMAP_PLACES: "${VITE_ESRI_BASEMAP_PLACES:-none}"

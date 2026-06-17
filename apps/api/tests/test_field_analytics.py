@@ -1,6 +1,7 @@
 """Selected-field native analytics route tests."""
 from __future__ import annotations
 
+import json
 import struct
 import zlib
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ import numpy as np
 import pytest
 from app.config import settings
 from app.main import app
+from app.raster import tiles
 from app.routers import analytics_router as field_analytics
 from app.schemas.analytics import FieldStatisticsRequest
 from fastapi.testclient import TestClient
@@ -343,6 +345,184 @@ def test_field_index_overlay_renders_clipped_png(monkeypatch):
     assert pixels[3] == (208, 213, 221, 255)
     assert pixels[0][3] == 255 and pixels[0][:3] != (208, 213, 221)
     assert pixels[2][3] == 255 and pixels[2][1] >= pixels[2][0]
+
+
+def test_field_index_overlay_returns_true_window_corners_and_reference_stretch(monkeypatch):
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "resolve_assets_for_date",
+        lambda *_: [
+            {
+                "analyticHref": "s3://akasha-cogs/x/analytic.tif",
+                "maskHref": "s3://akasha-cogs/x/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5",
+                },
+                "scale": 0.0001,
+                "offset": 0.0,
+                "excludedMaskClasses": [0, 2, 3],
+                "nodataPolicy": "mask_only",
+            }
+        ],
+    )
+    true_corners = [[77.001, 13.002], [77.103, 13.001], [77.104, 12.9], [77.0, 12.901]]
+    monkeypatch.setattr(
+        field_analytics,
+        "read_index_windows",
+        lambda **_: SimpleNamespace(
+            band_arrays={
+                2: np.array([[2000, 2000], [2000, 2000]], dtype=np.uint16),
+                3: np.array([[6000, 6000], [6000, 6000]], dtype=np.uint16),
+            },
+            mask=np.array([[1, 1], [1, 1]], dtype=np.uint8),
+            geometry_mask=np.array([[True, True], [True, True]], dtype=bool),
+            nodata=0,
+            intersects=True,
+            footprint_corners=true_corners,
+        ),
+    )
+
+    r = client.get(
+        "/api/fields/plot-1/overlay/ndvi.png"
+        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+    )
+
+    assert r.status_code == 200
+    assert r.headers["x-akasha-overlay-corners"] == json.dumps(true_corners, separators=(",", ":"))
+    assert r.headers["x-akasha-overlay-stretch"] == "-1.0,1.0"
+
+
+def test_ndvi_overlay_uses_reference_heatmap_colors():
+    png, _content_type = tiles.render_field_index_overlay_png(
+        index_type="NDVI",
+        index_values=np.array([[-0.5, 0.08, 0.22, 0.37, 0.52, 0.67, 0.82, 0.95]]),
+        valid_mask=np.ones((1, 8), dtype=bool),
+        masked_mask=np.zeros((1, 8), dtype=bool),
+    )
+
+    width, height, pixels = _decode_rgba_png(png)
+    assert (width, height) == (8, 1)
+    assert [pixel[:3] for pixel in pixels] == [
+        (19, 24, 125),   # water / non-vegetation
+        (128, 70, 26),   # bare soil
+        (213, 0, 35),    # poor vegetation
+        (255, 83, 13),   # low-medium growth
+        (250, 201, 9),   # moderate growth
+        (111, 202, 7),   # healthy crop
+        (22, 153, 43),   # very healthy crop
+        (0, 88, 37),     # dense / excellent vegetation
+    ]
+
+
+def test_reproject_index_overlay_web_mercator_is_north_up_supersampled_and_clipped():
+    rasterio = pytest.importorskip("rasterio")
+    pytest.importorskip("pyproj")
+    from rasterio.transform import from_origin
+    from rasterio.warp import transform_bounds
+
+    # 10x10 ResourceSat-like window: UTM 43N, 24 m pixels.
+    src_transform = from_origin(500000, 1450000, 24, 24)
+    src_crs = rasterio.crs.CRS.from_epsg(32643)
+    index_values = np.full((10, 10), 0.5, dtype="float64")
+    data_valid = np.ones((10, 10), dtype=bool)
+    data_masked = np.zeros((10, 10), dtype=bool)
+
+    left, top = 500000.0, 1450000.0
+    right, bottom = left + 240.0, top - 240.0
+    west, south, east, north = transform_bounds(src_crs, "EPSG:4326", left, bottom, right, top)
+    # Inner polygon covering the central half of the window (in lng/lat).
+    px0, px1 = west + (east - west) * 0.25, west + (east - west) * 0.75
+    py0, py1 = south + (north - south) * 0.25, south + (north - south) * 0.75
+    geometry = {
+        "type": "Polygon",
+        "coordinates": [[[px0, py0], [px1, py0], [px1, py1], [px0, py1], [px0, py0]]],
+    }
+
+    rgba, corners = tiles.reproject_index_overlay_web_mercator(
+        index_type="NDVI",
+        index_values=index_values,
+        data_valid=data_valid,
+        data_masked=data_masked,
+        src_transform=src_transform,
+        src_crs=src_crs,
+        geometry=geometry,
+    )
+
+    out_h, out_w = rgba.shape[:2]
+    # Supersampled finer than the native 10x10 window.
+    assert out_h > 10 and out_w > 10
+
+    # North-up Web Mercator rectangle (TL, TR, BR, BL) once expressed in lng/lat.
+    (tl, tr, br, bl) = corners
+    assert tl[1] == pytest.approx(tr[1])
+    assert bl[1] == pytest.approx(br[1])
+    assert tl[0] == pytest.approx(bl[0])
+    assert tr[0] == pytest.approx(br[0])
+
+    # Inside the polygon → opaque colorized; outside → fully transparent.
+    assert rgba[out_h // 2, out_w // 2, 3] == 255
+    assert rgba[0, 0, 3] == 0
+    assert rgba[out_h - 1, out_w - 1, 3] == 0
+
+
+def test_field_index_point_returns_precise_value_for_hover(monkeypatch):
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "resolve_assets_for_date",
+        lambda *_: [
+            {
+                "analyticHref": "s3://akasha-cogs/x/analytic.tif",
+                "maskHref": "s3://akasha-cogs/x/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5",
+                },
+                "scale": 0.0001,
+                "offset": 0.0,
+                "excludedMaskClasses": [0, 2, 3],
+                "nodataPolicy": "mask_only",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "read_index_windows",
+        lambda **_: SimpleNamespace(
+            band_arrays={
+                2: np.array([[2000]], dtype=np.uint16),
+                3: np.array([[6000]], dtype=np.uint16),
+            },
+            mask=np.array([[1]], dtype=np.uint8),
+            geometry_mask=np.array([[True]], dtype=bool),
+            nodata=0,
+            intersects=True,
+            footprint_corners=[[77, 12], [77.1, 12], [77.1, 11.9], [77, 11.9]],
+        ),
+    )
+
+    r = client.get(
+        "/api/fields/plot-1/indices/point"
+        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+        "&indexType=NDVI&lng=77.05&lat=12.05"
+    )
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "plotId": "plot-1",
+        "sourceId": "resourcesat-2a-liss3-boa",
+        "acquisitionDate": "2026-03-19",
+        "indexType": "NDVI",
+        "lng": 77.05,
+        "lat": 12.05,
+        "value": 0.5,
+        "masked": False,
+        "maskClass": 1,
+    }
 
 
 def test_field_index_overlay_rejects_unsupported_index(monkeypatch):

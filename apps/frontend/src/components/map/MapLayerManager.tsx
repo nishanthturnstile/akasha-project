@@ -15,6 +15,7 @@ import {
   type MapLayerHost,
   type SatelliteScene,
 } from '@/lib/satelliteLayer';
+import type { ImageCorners } from '@/types/api';
 
 /** MapLibre's Map satisfies the narrow MapLayerHost structural surface at runtime. */
 const asHost = (m: maplibregl.Map): MapLayerHost => m as unknown as MapLayerHost;
@@ -52,7 +53,9 @@ const INDEX_OVERLAY_LAYER_ID = 'akasha-index-overlay-layer';
  *  polygon) georeferenced to the field's lng/lat bbox corners. */
 export interface IndexOverlay {
   url: string;
-  coordinates: [[number, number], [number, number], [number, number], [number, number]];
+  coordinates: ImageCorners;
+  sourceUrl?: string;
+  stretch?: [number, number] | null;
 }
 
 function removeIndexOverlay(map: maplibregl.Map): void {

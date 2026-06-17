@@ -454,7 +454,7 @@ async def _render_index_tile(
             assets.get("bandRoleMapping", {}),
             index_def,
             scale=float(assets.get("scale", 0.0001)),
-            offset=float(assets.get("offset", -0.1)),
+            offset=float(assets.get("offset", 0.0)),
         )
     except KeyError as exc:
         raise upstream_error(

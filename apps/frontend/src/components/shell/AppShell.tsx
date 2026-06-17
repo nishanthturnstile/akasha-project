@@ -119,13 +119,6 @@ export function AppShell() {
     [effectiveSeasonId, sortedSeasons],
   );
 
-  // Initialise current season once seasons load.
-  useEffect(() => {
-    if (!currentSeasonId && sortedSeasons.length > 0) {
-      setCurrentSeasonId(sortedSeasons[0].id);
-    }
-  }, [currentSeasonId, sortedSeasons]);
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -310,7 +303,7 @@ export function AppShell() {
 
               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60">
                 <div className="flex items-center gap-2">
-                  {(['active', 'planned', 'ended'] as const).map((tab) => (
+                  { (['active', 'planned', 'ended'] as const).map((tab) => (
                     <button
                       key={ tab }
                       type="button"
@@ -351,14 +344,14 @@ export function AppShell() {
                     </Card>
                   ) : (
                     <div className="space-y-3">
-                      {sortedSeasons.map((season) => {
+                      { sortedSeasons.map((season) => {
                         const seasonFields = (fieldsQ.data ?? []).filter((f) =>
                           f.seasonIds?.includes(season.id),
                         );
-                        const isCurrent = currentSeasonId === season.id;
+                        const isCurrent = effectiveSeasonId === season.id;
                         return (
                           <Card
-                            key={season.id}
+                            key={ season.id }
                             className={ cn(
                               'border-border/60 bg-card/90 shadow-sm cursor-pointer transition-colors duration-fast',
                               isCurrent && 'border-primary/50 ring-1 ring-primary/20',
@@ -368,25 +361,25 @@ export function AppShell() {
                             <CardHeader>
                               <div className="flex items-center justify-between gap-2">
                                 <CardTitle className={ cn(isCurrent && 'text-primary') }>
-                                  {season.name}
+                                  { season.name }
                                 </CardTitle>
-                                {isCurrent && (
+                                { isCurrent && (
                                   <span className="text-[10px] font-medium uppercase text-primary tracking-wider">
                                     Active
                                   </span>
-                                )}
+                                ) }
                               </div>
                               <div className="mt-2 flex gap-2">
                                 <div className="flex-1 rounded-md border border-border/60 bg-background/50 px-2 py-1.5">
                                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Start</p>
                                   <p className="text-xs font-medium text-foreground tnum">
-                                    {season.startDate ? formatDate(season.startDate) : '—'}
+                                    { season.startDate ? formatDate(season.startDate) : '—' }
                                   </p>
                                 </div>
                                 <div className="flex-1 rounded-md border border-border/60 bg-background/50 px-2 py-1.5">
                                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">End</p>
                                   <p className="text-xs font-medium text-foreground tnum">
-                                    {season.endDate ? formatDate(season.endDate) : '—'}
+                                    { season.endDate ? formatDate(season.endDate) : '—' }
                                   </p>
                                 </div>
                               </div>
@@ -395,44 +388,44 @@ export function AppShell() {
                               <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
                                 <span>Fields:</span>
                                 <span className="text-foreground font-semibold">
-                                  {seasonFields.length}
+                                  { seasonFields.length }
                                 </span>
                               </div>
-                              {seasonFields.length > 0 && (
+                              { seasonFields.length > 0 && (
                                 <div className="mt-2 space-y-1.5">
-                                  {seasonFields.map((f) => (
+                                  { seasonFields.map((f) => (
                                     <div
-                                        key={f.id}
-                                        className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5"
-                                      >
-                                        <GeometryPreview
-                                          geometry={f.geometry}
-                                          width={36}
-                                          height={36}
-                                          className="shrink-0 rounded-sm border border-border/40"
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                          <p className="truncate text-xs font-medium text-foreground">{f.name}</p>
-                                          <p className="text-[11px] text-muted-foreground tnum">
-                                            {f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—'}
-                                          </p>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            view.setSelectedPlotId(f.id);
-                                            setSeasonSheetOpen(false);
-                                            navigate(`/monitoring/field-analytics/field/${f.id}`);
-                                          }}
-                                          className="shrink-0 rounded border border-border/60 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors duration-fast"
-                                        >
-                                          Focus
-                                        </button>
+                                      key={ f.id }
+                                      className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5"
+                                    >
+                                      <GeometryPreview
+                                        geometry={ f.geometry }
+                                        width={ 36 }
+                                        height={ 36 }
+                                        className="shrink-0 rounded-sm border border-border/40"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-xs font-medium text-foreground">{ f.name }</p>
+                                        <p className="text-[11px] text-muted-foreground tnum">
+                                          { f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—' }
+                                        </p>
                                       </div>
-                                  ))}
+                                      <button
+                                        type="button"
+                                        onClick={ (e) => {
+                                          e.stopPropagation();
+                                          view.setSelectedPlotId(f.id);
+                                          setSeasonSheetOpen(false);
+                                          navigate(`/monitoring/field-analytics/field/${f.id}`);
+                                        } }
+                                        className="shrink-0 rounded border border-border/60 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors duration-fast"
+                                      >
+                                        Focus
+                                      </button>
+                                    </div>
+                                  )) }
                                 </div>
-                              )}
+                              ) }
                               <div className="mt-3 flex gap-2">
                                 <button
                                   type="button"
@@ -452,9 +445,9 @@ export function AppShell() {
                             </CardContent>
                           </Card>
                         );
-                      })}
+                      }) }
                     </div>
-                  )}
+                  ) }
                 </div>
               </ScrollArea>
             </SheetContent>

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
-import { ApiError, composeTileTemplate } from '@/lib/api';
+import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
 import {
   useConfig,
   useCreateField,
@@ -19,7 +19,7 @@ import type { SatelliteScene } from '@/lib/satelliteLayer';
 import { AllFieldsPanel } from '@/components/fields/AllFieldsPanel';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
-import { MapLayerManager } from '@/components/map/MapLayerManager';
+import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
 import { MeasureTool } from '@/components/map/MeasureTool';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
@@ -43,6 +43,8 @@ import type {
   Plot,
   PlotGeometry,
   Source,
+  FieldIndexPointResponse,
+  ImageCorners,
 } from '@/types/api';
 
 function messageFor(error: unknown): string {
@@ -196,7 +198,6 @@ function extractImportFields(input: GeoJsonFeatureLike): { name: string; geometr
 }
 
 type LngLat = [number, number];
-type ImageCorners = [LngLat, LngLat, LngLat, LngLat];
 
 /** Lng/lat bounding-box corners (TL, TR, BR, BL) for a field's geometry —
  *  used to georeference the clipped index overlay image on the map. */
@@ -500,20 +501,68 @@ export default function MapPage() {
     selectedSource?.attribution,
   ]);
 
-  // EOS-style field-clipped index overlay: a same-origin PNG (colorized index,
-  // transparent outside the polygon) the map paints over the field only.
-  const indexOverlay = useMemo(() => {
+  const requestedIndexOverlay = useMemo(() => {
     if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
     const corners = geometryBboxCorners(selectedPlot.geometry);
     if (!corners) return null;
-    const params = new URLSearchParams({
+    return {
+      plotId: selectedPlot.id,
       sourceId: effectiveSourceId,
       acquisitionDate: selectedDate,
+      indexType: selectedDisplayMode,
+      fallbackCoordinates: corners,
+    };
+  }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode]);
+
+  const [indexOverlay, setIndexOverlay] = useState<IndexOverlay | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!requestedIndexOverlay) {
+      setIndexOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return null;
+      });
+      return;
+    }
+    setIndexOverlay((current) => {
+      if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+      return null;
     });
-    const url =
-      `${window.location.origin}/api/fields/${selectedPlot.id}` +
-      `/overlay/${selectedDisplayMode}.png?${params.toString()}`;
-    return { url, coordinates: corners };
+    void getFieldIndexOverlayImage(
+      requestedIndexOverlay.plotId,
+      {
+        sourceId: requestedIndexOverlay.sourceId,
+        acquisitionDate: requestedIndexOverlay.acquisitionDate,
+        indexType: requestedIndexOverlay.indexType,
+      },
+      requestedIndexOverlay.fallbackCoordinates,
+    ).then((overlay) => {
+      if (disposed) {
+        if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
+        return;
+      }
+      setIndexOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return overlay;
+      });
+    }).catch(() => {
+      if (!disposed) setIndexOverlay(null);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [requestedIndexOverlay]);
+
+  const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
+    if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
+    return getFieldIndexPoint(selectedPlot.id, {
+      sourceId: effectiveSourceId,
+      acquisitionDate: selectedDate,
+      indexType: selectedDisplayMode,
+      lng,
+      lat,
+    });
   }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
@@ -860,7 +909,10 @@ export default function MapPage() {
 
       {/* Right: coordinate readout, measure, and consolidated layer-control bar (above timeline). */ }
       <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
-        <CoordinateReadout map={ map } />
+        <CoordinateReadout
+          map={ map }
+          indexLookup={ isIndexLayer && selectedPlot && selectedDate && effectiveSourceId ? indexLookup : undefined }
+        />
         <MeasureTool
           activeTool={ activeMapTool }
           map={ map }

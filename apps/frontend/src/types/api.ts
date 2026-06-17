@@ -377,6 +377,27 @@ export interface FieldStatisticsResponse {
   };
 }
 
+export type ImageCorners = [[number, number], [number, number], [number, number], [number, number]];
+
+export interface FieldIndexOverlayImage {
+  url: string;
+  sourceUrl: string;
+  coordinates: ImageCorners;
+  stretch: [number, number] | null;
+}
+
+export interface FieldIndexPointResponse {
+  plotId: string;
+  sourceId: string;
+  acquisitionDate: string;
+  indexType: string;
+  lng: number;
+  lat: number;
+  value: number | null;
+  masked: boolean;
+  maskClass: number | null;
+}
+
 export interface FieldTrendPoint {
   acquisitionDate: string;
   sceneId?: string | null;

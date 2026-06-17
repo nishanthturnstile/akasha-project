@@ -931,7 +931,7 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
             props.get("akasha:metrics_provisional", source.get("metricsProvisional", False))
         ),
         "scale": float(first.get("scale", 0.0001)),
-        "offset": float(first.get("offset", -0.1)),
+        "offset": float(first.get("offset", source.get("reflectanceOffset", 0.0))),
         "nodata": first.get("nodata", 0),
         "epsg": analytic.get("proj:epsg") or item.get("properties", {}).get("proj:epsg"),
         "bbox": item.get("bbox"),

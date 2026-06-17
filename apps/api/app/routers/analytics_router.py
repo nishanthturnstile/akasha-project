@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
+import math
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -29,7 +31,7 @@ from ..raster.service import (
     _index_band_positions,
     compute_statistics,
 )
-from ..raster.statistics_core import MASK_NODATA_CLASS, correct_reflectance
+from ..raster.statistics_core import MASK_NODATA_CLASS, correct_reflectance, evaluate_index_values
 from ..repositories import fields_repo
 from ..routers.product_router import _enforce_index_rate_limit
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
@@ -237,15 +239,76 @@ def _native_trend_response(
     )
 
 
-def _index_overlay_response(
+def _compute_index_window(
+    *,
+    assets: dict[str, Any],
+    geometry: dict[str, Any],
+    index_type: str,
+) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
+    import numpy as np
+
+    index_def = get_index(index_type)
+    pos_a, pos_b, _resolved_bands = _index_band_positions(assets, index_def, index_type)
+    read = read_index_windows(
+        analytic_href=assets["analyticHref"],
+        mask_href=assets["maskHref"],
+        geometry=geometry,
+        positions=[pos_a, pos_b],
+    )
+    if not read.intersects:
+        return read, None, None, None, None, None, None, None
+
+    band_a = np.asarray(read.band_arrays[pos_a])
+    band_b = np.asarray(read.band_arrays[pos_b])
+    geom = np.asarray(read.geometry_mask, dtype=bool)
+    source_mask = np.asarray(read.mask)
+
+    if str(assets.get("nodataPolicy") or "selected_band_or_mask") == "mask_only":
+        analytic_nodata = np.zeros(band_a.shape, dtype=bool)
+    else:
+        analytic_nodata = (band_a == read.nodata) | (band_b == read.nodata)
+
+    mask_nodata = source_mask == MASK_NODATA_CLASS
+    nodata_mask = geom & (analytic_nodata | mask_nodata)
+    coverage_mask = geom & ~nodata_mask
+
+    excluded = _excluded_mask_classes_for_assets(assets=assets, override=None)
+    excluded_within_coverage = tuple(cls for cls in excluded if cls != MASK_NODATA_CLASS)
+    masked_within_coverage = coverage_mask & np.isin(source_mask, excluded_within_coverage)
+    valid_mask = coverage_mask & ~masked_within_coverage
+
+    # Per-pixel masks that DO NOT pre-clip to the polygon. The crisp polygon clip
+    # is applied at the fine reprojected output grid for the overlay so the edge
+    # hugs the boundary instead of stair-stepping at the native pixel size.
+    data_nodata = analytic_nodata | mask_nodata
+    data_masked = ~data_nodata & np.isin(source_mask, excluded_within_coverage)
+    data_valid = ~data_nodata & ~data_masked
+
+    scale = float(assets.get("scale", 0.0001))
+    offset = float(assets.get("offset", 0.0))
+    band_a_ref = correct_reflectance(band_a, scale, offset)
+    band_b_ref = correct_reflectance(band_b, scale, offset)
+    values, _good = evaluate_index_values(index_def.formula_kind, band_a_ref, band_b_ref)
+
+    return (
+        read,
+        values,
+        valid_mask,
+        nodata_mask | masked_within_coverage,
+        source_mask,
+        geom,
+        data_valid,
+        data_masked,
+    )
+
+
+def _resolve_single_field_asset(
     *,
     plot: dict[str, Any],
     source_id: str,
     acquisition_date: str,
     index_type: str,
-) -> tuple[bytes, str]:
-    import numpy as np
-
+) -> dict[str, Any]:
     supported = catalog.supported_indices(source_id)
     if index_type not in supported:
         raise bad_request(
@@ -271,58 +334,137 @@ def _index_overlay_response(
             code="INDEX_OVERLAY_ASSET_UNAVAILABLE",
             sceneCount=len(candidate_assets),
         )
-    assets = candidate_assets[0]
-    index_def = get_index(index_type)
-    pos_a, pos_b, _resolved_bands = _index_band_positions(assets, index_def, index_type)
-    read = read_index_windows(
-        analytic_href=assets["analyticHref"],
-        mask_href=assets["maskHref"],
-        geometry=plot["geometry"],
-        positions=[pos_a, pos_b],
+    return candidate_assets[0]
+
+
+def _index_overlay_response(
+    *,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+) -> tuple[bytes, str, dict[str, str]]:
+    assets = _resolve_single_field_asset(
+        plot=plot,
+        source_id=source_id,
+        acquisition_date=acquisition_date,
+        index_type=index_type,
     )
+    (
+        read,
+        values,
+        valid_mask,
+        masked_mask,
+        _source_mask,
+        _geom,
+        data_valid,
+        data_masked,
+    ) = _compute_index_window(
+        assets=assets,
+        geometry=plot["geometry"],
+        index_type=index_type,
+    )
+    lo, hi = tiles.overlay_display_range(index_type)
+    headers = {"X-Akasha-Overlay-Stretch": f"{lo},{hi}"}
     if not read.intersects:
-        return tiles.TRANSPARENT_PNG, "image/png"
+        footprint_corners = getattr(read, "footprint_corners", None)
+        if footprint_corners:
+            headers["X-Akasha-Overlay-Corners"] = json.dumps(
+                footprint_corners, separators=(",", ":")
+            )
+        return tiles.TRANSPARENT_PNG, "image/png", headers
 
-    band_a = np.asarray(read.band_arrays[pos_a])
-    band_b = np.asarray(read.band_arrays[pos_b])
-    geom = np.asarray(read.geometry_mask, dtype=bool)
-    source_mask = np.asarray(read.mask)
+    window_transform = getattr(read, "window_transform", None)
+    window_crs = getattr(read, "crs", None)
+    if window_transform is not None and window_crs is not None:
+        # EOS-style pixel-perfect path: reproject to north-up Web Mercator,
+        # supersample for a smooth heatmap, and clip crisply to the polygon.
+        rgba, corners = tiles.reproject_index_overlay_web_mercator(
+            index_type=index_type,
+            index_values=values,
+            data_valid=data_valid,
+            data_masked=data_masked,
+            src_transform=window_transform,
+            src_crs=window_crs,
+            geometry=plot["geometry"],
+        )
+        headers["X-Akasha-Overlay-Corners"] = json.dumps(corners, separators=(",", ":"))
+        return tiles.encode_rgba_png(rgba), "image/png", headers
 
-    if str(assets.get("nodataPolicy") or "selected_band_or_mask") == "mask_only":
-        analytic_nodata = np.zeros(band_a.shape, dtype=bool)
-    else:
-        analytic_nodata = (band_a == read.nodata) | (band_b == read.nodata)
-
-    mask_nodata = source_mask == MASK_NODATA_CLASS
-    nodata_mask = geom & (analytic_nodata | mask_nodata)
-    coverage_mask = geom & ~nodata_mask
-
-    excluded = _excluded_mask_classes_for_assets(assets=assets, override=None)
-    excluded_within_coverage = tuple(cls for cls in excluded if cls != MASK_NODATA_CLASS)
-    masked_within_coverage = coverage_mask & np.isin(source_mask, excluded_within_coverage)
-    valid_mask = coverage_mask & ~masked_within_coverage
-
-    scale = float(assets.get("scale", 0.0001))
-    offset = float(assets.get("offset", 0.0))
-    band_a_ref = correct_reflectance(band_a, scale, offset)
-    band_b_ref = correct_reflectance(band_b, scale, offset)
-    values = np.full(band_a.shape, np.nan, dtype="float64")
-    if index_def.formula_kind == "msavi":
-        term = 2 * band_a_ref + 1
-        radicand = term**2 - 8 * (band_a_ref - band_b_ref)
-        good = radicand >= 0
-        values[good] = (term[good] - np.sqrt(radicand[good])) / 2
-    else:
-        denominator = band_a_ref + band_b_ref
-        good = denominator != 0
-        values[good] = (band_a_ref[good] - band_b_ref[good]) / denominator[good]
-
-    return tiles.render_field_index_overlay_png(
+    # Fallback (no georeferencing metadata, e.g. synthetic tests): native render.
+    footprint_corners = getattr(read, "footprint_corners", None)
+    if footprint_corners:
+        headers["X-Akasha-Overlay-Corners"] = json.dumps(
+            footprint_corners, separators=(",", ":")
+        )
+    body, content_type = tiles.render_field_index_overlay_png(
         index_type=index_type,
         index_values=values,
         valid_mask=valid_mask,
-        masked_mask=nodata_mask | masked_within_coverage,
+        masked_mask=masked_mask,
     )
+    return body, content_type, headers
+
+
+def _point_row_col(read: Any, lng: float, lat: float) -> tuple[int, int]:
+    transform = getattr(read, "window_transform", None)
+    crs = getattr(read, "crs", None)
+    if transform is None or crs is None:
+        return 0, 0
+    from rasterio.warp import transform as transform_coords  # lazy
+
+    xs, ys = transform_coords("EPSG:4326", crs, [lng], [lat])
+    inv = ~transform
+    col_f, row_f = inv * (xs[0], ys[0])
+    return int(math.floor(row_f)), int(math.floor(col_f))
+
+
+def _field_index_point_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+    lng: float,
+    lat: float,
+) -> dict[str, Any]:
+    import numpy as np
+
+    assets = _resolve_single_field_asset(
+        plot=plot,
+        source_id=source_id,
+        acquisition_date=acquisition_date,
+        index_type=index_type,
+    )
+    read, values, valid_mask, masked_mask, source_mask, _geom, _dv, _dm = _compute_index_window(
+        assets=assets,
+        geometry=plot["geometry"],
+        index_type=index_type,
+    )
+
+    base = {
+        "plotId": plot_id,
+        "sourceId": source_id,
+        "acquisitionDate": acquisition_date,
+        "indexType": index_type,
+        "lng": lng,
+        "lat": lat,
+    }
+    if not read.intersects or values is None:
+        return {**base, "value": None, "masked": True, "maskClass": None}
+
+    row, col = _point_row_col(read, lng, lat)
+    if row < 0 or col < 0 or row >= values.shape[0] or col >= values.shape[1]:
+        return {**base, "value": None, "masked": True, "maskClass": None}
+
+    mask_class = int(np.asarray(source_mask)[row, col])
+    is_valid = bool(np.asarray(valid_mask)[row, col])
+    is_masked = bool(np.asarray(masked_mask)[row, col]) or not is_valid
+    value = None
+    if not is_masked and np.isfinite(values[row, col]):
+        value = round(float(values[row, col]), 6)
+    return {**base, "value": value, "masked": is_masked, "maskClass": mask_class}
 
 
 @router.post(
@@ -418,11 +560,35 @@ async def get_field_index_overlay(
 ) -> Response:
     plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(index_type)
-    body, content_type = await _run_blocking(
+    body, content_type, headers = await _run_blocking(
         _index_overlay_response,
         plot=plot,
         source_id=sourceId,
         acquisition_date=acquisitionDate,
         index_type=normalized_index,
     )
-    return Response(content=body, media_type=content_type)
+    return Response(content=body, media_type=content_type, headers=headers)
+
+
+@router.get("/fields/{plot_id}/indices/point")
+async def get_field_index_point(
+    plot_id: str,
+    sourceId: str = Query(default=settings.default_source_id),
+    acquisitionDate: str = Query(...),
+    indexType: str = Query(default=DEFAULT_INDEX),
+    lng: float = Query(...),
+    lat: float = Query(...),
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    plot = await _get_field_or_404(plot_id, user.id)
+    normalized_index = _normalize_index(indexType)
+    return await _run_blocking(
+        _field_index_point_response,
+        plot_id=plot_id,
+        plot=plot,
+        source_id=sourceId,
+        acquisition_date=acquisitionDate,
+        index_type=normalized_index,
+        lng=lng,
+        lat=lat,
+    )

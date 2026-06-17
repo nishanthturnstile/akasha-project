@@ -18,7 +18,7 @@ vi.mock('@/components/map/MapLayerManager', () => ({
     basemap: { style?: string; places?: string };
     scene: { tileUrlTemplate?: string; attribution?: string } | null;
     sceneB?: { tileUrlTemplate?: string } | null;
-    indexOverlay?: { url?: string } | null;
+    indexOverlay?: { url?: string; coordinates?: unknown } | null;
     visible: boolean;
   }) => (
     <div
@@ -26,6 +26,7 @@ vi.mock('@/components/map/MapLayerManager', () => ({
       data-tile-template={ scene?.tileUrlTemplate ?? '' }
       data-compare-tile-template={ sceneB?.tileUrlTemplate ?? '' }
       data-index-overlay-url={ indexOverlay?.url ?? '' }
+      data-index-overlay-coordinates={ JSON.stringify(indexOverlay?.coordinates ?? null) }
       data-attribution={ scene?.attribution ?? '' }
       data-basemap-style={ basemap.style ?? '' }
       data-basemap-places={ basemap.places ?? '' }
@@ -192,6 +193,11 @@ function stubAkashaFetch({
 } = {}) {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
+  vi.stubGlobal('URL', {
+    ...URL,
+    createObjectURL: vi.fn(() => 'blob:akasha-index-overlay'),
+    revokeObjectURL: vi.fn(),
+  });
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -291,6 +297,19 @@ function stubAkashaFetch({
 
       if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
         return Promise.resolve(jsonResponse(fieldTrend));
+      }
+
+      if (path.startsWith('/api/fields/plot-1/overlay/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'Content-Type': 'image/png',
+            'X-Akasha-Overlay-Corners': '[[77.001,13.002],[77.103,13.001],[77.104,12.9],[77,12.901]]',
+            'X-Akasha-Overlay-Stretch': '-1.0,1.0',
+          }),
+          blob: async () => new Blob(['png'], { type: 'image/png' }),
+        });
       }
 
       if (path.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')) {
@@ -415,8 +434,9 @@ describe('MapPage selected-field native analytics', () => {
     await waitFor(() => {
       const manager = screen.getByTestId('map-layer-manager');
       expect(manager.getAttribute('data-tile-template')).toBe('');
-      expect(manager.getAttribute('data-index-overlay-url')).toContain(
-        '/api/fields/plot-1/overlay/NDVI.png',
+      expect(manager.getAttribute('data-index-overlay-url')).toBe('blob:akasha-index-overlay');
+      expect(manager.getAttribute('data-index-overlay-coordinates')).toBe(
+        '[[77.001,13.002],[77.103,13.001],[77.104,12.9],[77,12.901]]',
       );
     });
     expect(screen.getByTestId('layer-display-trigger').textContent).toContain('NDVI');
@@ -452,8 +472,8 @@ describe('MapPage selected-field native analytics', () => {
     fireEvent.click(await screen.findByTestId('display-mode-MSAVI'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toContain(
-        '/api/fields/plot-1/overlay/MSAVI.png',
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
       );
     });
 
@@ -481,16 +501,22 @@ describe('MapPage selected-field native analytics', () => {
     renderMapPage({ selectedPlotId: 'plot-1' });
 
     await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toContain(
-        'acquisitionDate=2026-03-19',
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      expect(calls.some(([input]) => String(input).includes('acquisitionDate=2026-03-19'))).toBe(
+        true,
       );
     });
 
     fireEvent.click(screen.getByTestId('date-chip-2026-03-01'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toContain(
-        'acquisitionDate=2026-03-01',
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      expect(calls.some(([input]) => String(input).includes('acquisitionDate=2026-03-01'))).toBe(
+        true,
       );
     });
   });
@@ -503,9 +529,7 @@ describe('MapPage selected-field native analytics', () => {
     await waitFor(() => {
       const manager = screen.getByTestId('map-layer-manager');
       expect(manager.getAttribute('data-tile-template')).toBe('');
-      expect(manager.getAttribute('data-index-overlay-url')).toContain(
-        '/api/fields/plot-1/overlay/NDVI.png',
-      );
+      expect(manager.getAttribute('data-index-overlay-url')).toBe('blob:akasha-index-overlay');
     });
     expect(screen.getByTestId('layer-display-trigger').textContent).toContain('NDVI');
   });

@@ -23,6 +23,9 @@ import type {
   UploadedDataset,
   FieldGroup,
   FieldGroupPayload,
+  FieldIndexOverlayImage,
+  FieldIndexPointResponse,
+  ImageCorners,
   ConnectionStatus,
   FieldRiskSummaryResponse,
   AccountMe,
@@ -190,6 +193,31 @@ async function requestBlob(path: string, options: RequestOptions = {}): Promise<
   return new Blob([blob], { type: res.headers.get('Content-Type') ?? 'application/geo+json' });
 }
 
+function parseOverlayCorners(header: string | null): ImageCorners | null {
+  if (!header) return null;
+  try {
+    const parsed = JSON.parse(header) as unknown;
+    if (!Array.isArray(parsed) || parsed.length !== 4) return null;
+    const corners = parsed.map((corner) => {
+      if (!Array.isArray(corner) || corner.length < 2) return null;
+      const lng = Number(corner[0]);
+      const lat = Number(corner[1]);
+      return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+    });
+    if (corners.some((corner) => corner === null)) return null;
+    return corners as ImageCorners;
+  } catch {
+    return null;
+  }
+}
+
+function parseOverlayStretch(header: string | null): [number, number] | null {
+  if (!header) return null;
+  const [lo, hi] = header.split(',').map((part) => Number(part.trim()));
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  return [lo, hi];
+}
+
 function filenameFromContentDisposition(header: string | null, fallback: string): string {
   if (!header) return fallback;
   const quoted = header.match(/filename="([^"]+)"/i);
@@ -326,6 +354,52 @@ export const getFieldTrend = (
   }
   return request<FieldTrendResponse>(
     `/api/fields/${encodeURIComponent(plotId)}/analytics/trend?${params.toString()}`,
+  );
+};
+
+export const getFieldIndexOverlayImage = async (
+  plotId: string,
+  options: { sourceId: string; acquisitionDate: string; indexType: string },
+  fallbackCoordinates: ImageCorners,
+): Promise<FieldIndexOverlayImage> => {
+  const params = new URLSearchParams({
+    sourceId: options.sourceId,
+    acquisitionDate: options.acquisitionDate,
+  });
+  const sourceUrl = `/api/fields/${encodeURIComponent(plotId)}/overlay/${encodeURIComponent(
+    options.indexType,
+  )}.png?${params.toString()}`;
+  const headers = new Headers({ Accept: 'image/png' });
+  const res = await fetchApi(sourceUrl, { headers });
+  const blob = await res.blob();
+  const typedBlob = blob.type ? blob : new Blob([blob], { type: 'image/png' });
+  return {
+    url: URL.createObjectURL(typedBlob),
+    sourceUrl,
+    coordinates: parseOverlayCorners(res.headers.get('X-Akasha-Overlay-Corners')) ?? fallbackCoordinates,
+    stretch: parseOverlayStretch(res.headers.get('X-Akasha-Overlay-Stretch')),
+  };
+};
+
+export const getFieldIndexPoint = (
+  plotId: string,
+  options: {
+    sourceId: string;
+    acquisitionDate: string;
+    indexType: string;
+    lng: number;
+    lat: number;
+  },
+): Promise<FieldIndexPointResponse> => {
+  const params = new URLSearchParams({
+    sourceId: options.sourceId,
+    acquisitionDate: options.acquisitionDate,
+    indexType: options.indexType,
+    lng: String(options.lng),
+    lat: String(options.lat),
+  });
+  return request<FieldIndexPointResponse>(
+    `/api/fields/${encodeURIComponent(plotId)}/indices/point?${params.toString()}`,
   );
 };
 

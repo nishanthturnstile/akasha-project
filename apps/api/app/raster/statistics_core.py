@@ -167,7 +167,7 @@ def compute_index_statistics(
     if valid_pixels > 0:
         a_ref = correct_reflectance(a[valid_mask], scale, offset)
         b_ref = correct_reflectance(b[valid_mask], scale, offset)
-        index_vals, good = _evaluate_index(index_def.formula_kind, a_ref, b_ref)
+        index_vals, good = evaluate_index_values(index_def.formula_kind, a_ref, b_ref)
         if not good.all():
             warnings.append(
                 f"{int((~good).sum())} valid pixel(s) could not be evaluated for {index_type} and "
@@ -208,11 +208,18 @@ def compute_index_statistics(
     )
 
 
-def _evaluate_index(
+def evaluate_index_values(
     formula_kind: str,
     a_ref: np.ndarray,
     b_ref: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Evaluate one index formula on reflectance-corrected arrays.
+
+    Returns `(values, good_mask)` where `good_mask` marks pixels whose formula
+    denominator/radicand was mathematically valid. Keeping this helper exported
+    lets statistics, overlay rendering, and hover point-readout share exactly the
+    same formula implementation.
+    """
     if formula_kind == "msavi":
         term = 2 * a_ref + 1
         radicand = term**2 - 8 * (a_ref - b_ref)

@@ -34,6 +34,9 @@ class WindowRead:
     height: int
     width: int
     intersects: bool
+    footprint_corners: list[list[float]] | None = None  # TL, TR, BR, BL in lng/lat
+    window_transform: Any | None = None
+    crs: Any | None = None
 
 
 def gdal_s3_options() -> dict[str, str]:
@@ -109,6 +112,7 @@ def read_index_windows(
         import rasterio  # lazy
         from rasterio.features import bounds as feature_bounds
         from rasterio.features import geometry_mask
+        from rasterio.warp import transform as transform_coords
         from rasterio.warp import transform_geom
         from rasterio.windows import Window
     except ImportError as exc:  # pragma: no cover - environment guard
@@ -143,6 +147,22 @@ def read_index_windows(
                     return WindowRead({}, None, None, a_ds.nodata or 0, 0, 0, intersects=False)
                 win = Window(col_off, row_off, width, height)
                 wt = a_ds.window_transform(win)
+                native_corners = [
+                    wt * (0, 0),
+                    wt * (width, 0),
+                    wt * (width, height),
+                    wt * (0, height),
+                ]
+                xs, ys = transform_coords(
+                    a_ds.crs,
+                    "EPSG:4326",
+                    [pt[0] for pt in native_corners],
+                    [pt[1] for pt in native_corners],
+                )
+                footprint_corners = [
+                    [round(float(lng), 10), round(float(lat), 10)]
+                    for lng, lat in zip(xs, ys, strict=True)
+                ]
                 band_arrays: dict[int, Any] = {}
                 for pos in positions:
                     band_arrays[pos] = a_ds.read(pos, window=win)
@@ -187,4 +207,7 @@ def read_index_windows(
         height=height,
         width=width,
         intersects=True,
+        footprint_corners=footprint_corners,
+        window_transform=wt,
+        crs=analytic_crs,
     )

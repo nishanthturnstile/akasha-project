@@ -49,6 +49,24 @@ describe('CoordinateReadout', () => {
         expect(readout.textContent).toContain('77.5946° E');
     });
 
+    it('shows a precise index value when a hover lookup is provided', async () => {
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+            cb(0);
+            return 1;
+        });
+        const { map, emit } = createMockMap();
+        const lookup = vi.fn().mockResolvedValue({ indexType: 'NDVI', value: 0.45, masked: false });
+        const { findByTestId } = render(<CoordinateReadout map={ map } indexLookup={ lookup } />);
+
+        act(() => {
+            emit('mousemove', { lngLat: { lng: 77.5946, lat: 12.9716 } as maplibregl.LngLat });
+        });
+
+        const readout = await findByTestId('coordinate-readout');
+        expect(lookup).toHaveBeenCalledWith({ lng: 77.5946, lat: 12.9716 });
+        expect(readout.textContent).toContain('NDVI 0.45');
+    });
+
     it('uses S/W hemispheres for negative coordinates', () => {
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
             cb(0);

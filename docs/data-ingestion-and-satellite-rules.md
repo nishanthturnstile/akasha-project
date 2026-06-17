@@ -179,7 +179,7 @@ STAC registration uses upsert semantics.
    items.
 5. `worker.py build-composite` builds AOI/date composites from validated scenes.
 6. `worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi
-   bangalore-60km --require-catalog-item` verifies the runtime assets.
+   bangalore-60km` verifies the runtime COGs and dated STAC item.
 
 ## Date-Level Serving Rules
 

@@ -8,6 +8,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy.exc import IntegrityError
 
 from ..auth import (
     CurrentUser,
@@ -30,7 +31,13 @@ from ..auth import (
 from ..config import settings
 from ..raster.errors import AkashaError, bad_request
 from ..repositories import auth_repo
-from ..schemas.auth import AccountMe, BootstrapPayload, LoginPayload, PasswordChangePayload
+from ..schemas.auth import (
+    AccountMe,
+    BootstrapPayload,
+    LoginPayload,
+    PasswordChangePayload,
+    SignupPayload,
+)
 
 router = APIRouter(prefix="/api", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -144,6 +151,7 @@ def account_me_payload(user: CurrentUser) -> AccountMe:
             "username": user.username,
             "email": user.email,
             "displayName": user.display_name,
+            "onboardingCompleted": user.onboarding_completed,
         },
         current_team={"id": team.id, "name": team.name, "role": team.role},
         memberships=[
@@ -174,6 +182,13 @@ def _create_login_session(
     )
     set_session_cookie(response, raw, expires_at)
     return raw
+
+
+def _signup_team_name(display_name: str) -> str:
+    clean_name = display_name.strip()
+    if clean_name.endswith("s"):
+        return f"{clean_name}' Team"
+    return f"{clean_name}'s Team"
 
 
 @router.post("/auth/login", response_model=AccountMe, response_model_by_alias=True)
@@ -216,6 +231,71 @@ async def login(payload: LoginPayload, request: Request, response: Response) -> 
         display_name=user["displayName"],
         username=user.get("username"),
         role=memberships[0]["role"],
+        onboarding_completed=bool(user.get("onboardingCompleted", False)),
+        current_team_id=memberships[0]["id"],
+        memberships=tuple(
+            TeamMembership(id=item["id"], name=item["name"], role=item["role"])
+            for item in memberships
+        ),
+    )
+    return account_me_payload(current)
+
+
+@router.post("/auth/signup", response_model=AccountMe, response_model_by_alias=True)
+async def signup(payload: SignupPayload, request: Request, response: Response) -> AccountMe:
+    ensure_auth_enabled_configured()
+    _enforce_auth_rate_limit(
+        request,
+        scope="signup",
+        limit=settings.auth_signup_rate_limit_per_hour,
+        window_seconds=3600.0,
+    )
+    if not settings.auth_allow_signup:
+        raise forbidden("Sign-up is not enabled.")
+    email = payload.email
+    display_name = payload.display_name
+    if auth_repo.find_user_by_email(email) is not None:
+        raise bad_request(
+            "An account with this email already exists.",
+            code="EMAIL_ALREADY_REGISTERED",
+        )
+    try:
+        created = auth_repo.create_user_with_team(
+            username=email,
+            email=email,
+            display_name=display_name,
+            password_hash=hash_password(payload.password),
+            team_name=_signup_team_name(display_name),
+            require_no_password_users=False,
+        )
+    except IntegrityError as exc:
+        raise bad_request(
+            "An account with this email already exists.",
+            code="EMAIL_ALREADY_REGISTERED",
+        ) from exc
+    if created is None:
+        raise AkashaError(
+            "SIGNUP_UNAVAILABLE",
+            "Sign-up is temporarily unavailable.",
+            503,
+        )
+    memberships = auth_repo.memberships_for_user(created["userId"])
+    if not memberships:
+        raise forbidden("No team membership is available for this user.")
+    _create_login_session(
+        response=response,
+        request=request,
+        user_id=created["userId"],
+        team_id=memberships[0]["id"],
+        remember=False,
+    )
+    current = CurrentUser(
+        id=created["userId"],
+        email=email,
+        display_name=display_name,
+        username=email,
+        role=memberships[0]["role"],
+        onboarding_completed=False,
         current_team_id=memberships[0]["id"],
         memberships=tuple(
             TeamMembership(id=item["id"], name=item["name"], role=item["role"])

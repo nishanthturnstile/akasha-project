@@ -107,6 +107,7 @@ def compute_statistics(
         offset=assets["offset"],
         nodata=read.nodata,
         excluded_mask_classes=tuple(excluded),
+        analytic_nodata_policy=str(assets.get("nodataPolicy") or "selected_band_or_mask"),
     )
 
     return build_response(

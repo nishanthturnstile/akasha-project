@@ -303,6 +303,55 @@ def test_client_reauthenticates_and_retries_search_401():
     ]
 
 
+def test_client_logs_out_stale_session_when_refresh_is_rejected_before_password_retry():
+    opener = FakeOpener(
+        [
+            http_error(401),
+            json_response({}),
+            json_response(
+                {
+                    "access_token": "token-b",
+                    "refresh_token": "refresh-b",
+                    "expires_in": 1200,
+                }
+            ),
+            json_response({"features": [{"id": "product-2", "properties": {"Online": "Y"}}]}),
+        ]
+    )
+    client = bhoonidhi.BhoonidhiClient(
+        user_id="user",
+        password="pw",
+        opener=opener,
+        now=lambda: 1000.0,
+        max_retries=1,
+    )
+    client.session = bhoonidhi.TokenSession(
+        access_token="stale-token",
+        refresh_token="refresh-a",
+        expires_at=900.0,
+    )
+
+    items = client.search(
+        collection=bhoonidhi.RESOURCESAT_LISS3_BHOONIDHI_COLLECTION,
+        datetime_range="2026-01-01T00:00:00Z/2026-02-01T23:59:59Z",
+        intersects={"type": "Polygon", "coordinates": []},
+    )
+
+    assert [item["id"] for item in items] == ["product-2"]
+    logout_requests = [req for req in opener.requests if req.full_url.endswith("/auth/logout")]
+    assert len(logout_requests) == 1
+    assert logout_requests[0].headers["Authorization"] == "Bearer stale-token"
+    token_payloads = [
+        json.loads(req.data.decode("utf-8"))
+        for req in opener.requests
+        if req.full_url.endswith("/auth/token")
+    ]
+    assert [payload["grant_type"] for payload in token_payloads] == [
+        "refresh_token",
+        "password",
+    ]
+
+
 def test_client_follows_search_next_links_with_rate_delay(monkeypatch):
     monkeypatch.setattr(config, "BHOONIDHI_SEARCH_RPS", "2")
     opener = FakeOpener(
@@ -931,6 +980,101 @@ def test_worker_bhoonidhi_download_caps_manifest_products(monkeypatch, tmp_path)
     assert [row["item_id"] for row in download_manifest["candidates"]] == ["RS_A", "RS_B"]
     assert download_manifest["download"]["deferred_product_ids"] == ["RS_C"]
     assert download_manifest["download"]["max_downloads"] == 2
+
+
+def test_bhoonidhi_sync_prepare_command_uses_temp_root_derived_work_dir(
+    monkeypatch,
+    tmp_path,
+):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(config, "BHOONIDHI_TEMP_ROOT", str(tmp_path / "temp-root"))
+    monkeypatch.setattr(config, "BHOONIDHI_RAW_ROOT", str(tmp_path / "raw-root"))
+    monkeypatch.setattr(config, "raster_source_root", lambda: tmp_path / "rasters")
+
+    def fake_prepare_script_path(_worker_path: Path) -> Path:
+        return tmp_path / "prepare_resourcesat_liss3_boa_cogs.py"
+
+    def fake_run(command, check):
+        captured["command"] = command
+        captured["check"] = check
+
+    monkeypatch.setattr(sync, "prepare_script_path", fake_prepare_script_path)
+    monkeypatch.setattr(worker.subprocess, "run", fake_run)
+    args = SimpleNamespace(
+        source="resourcesat-2a-liss3-boa",
+        aoi="bangalore-60km",
+        out_dir=None,
+        raw_root=None,
+        skip_prepare_validation=False,
+        overwrite=False,
+        keep_intermediate=False,
+    )
+
+    worker._run_prepare_script(args, tmp_path / "download_manifest.json")
+
+    command = captured["command"]
+    assert captured["check"] is True
+    assert "--work-dir" in command
+    work_dir = Path(command[command.index("--work-dir") + 1])
+    assert work_dir == (
+        tmp_path
+        / "temp-root"
+        / "resourcesat-2a-liss3-boa"
+        / "bangalore-60km"
+        / "prepare"
+    )
+
+
+def test_worker_verify_composite_requires_catalog_item_by_default(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "prepare_manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_verify_composite_manifest(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(ok=True, detail="ok", checks=["checked"], problems=[])
+
+    monkeypatch.setattr(config, "STAC_API_URL", "http://stac-api")
+    monkeypatch.setattr(composite, "require_raster_deps", lambda: object())
+    monkeypatch.setattr(composite, "verify_composite_manifest", fake_verify_composite_manifest)
+
+    result = worker.main(
+        [
+            "verify-composite",
+            "--manifest",
+            str(manifest_path),
+        ]
+    )
+
+    assert result == 0
+    assert captured["require_catalog_item"] is True
+    assert captured["stac_api_url"] == "http://stac-api"
+
+
+def test_worker_verify_composite_local_only_opts_out_of_catalog_check(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "prepare_manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_verify_composite_manifest(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(ok=True, detail="ok", checks=["checked"], problems=[])
+
+    monkeypatch.setattr(composite, "require_raster_deps", lambda: object())
+    monkeypatch.setattr(composite, "verify_composite_manifest", fake_verify_composite_manifest)
+
+    result = worker.main(
+        [
+            "verify-composite",
+            "--manifest",
+            str(manifest_path),
+            "--local-only",
+        ]
+    )
+
+    assert result == 0
+    assert captured["require_catalog_item"] is False
 
 
 def test_worker_bhoonidhi_download_writes_failure_manifest(monkeypatch, tmp_path):

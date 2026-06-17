@@ -50,6 +50,7 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         "maskAsset": "scl",
         "maskMethod": "Sentinel-2 Scene Classification Layer (SCL).",
         "excludedMaskClasses": [0, 1, 2, 3, 7, 8, 9, 10, 11],
+        "nodataPolicy": "selected_band_or_mask",
         "displayModes": ["RGB", "NDVI", "NDRE", "MSAVI", "NDMI"],
         "defaultDisplayMode": "RGB",
         # EOS-style grouped LAYER picker. Each mode is a valid display mode above.
@@ -80,14 +81,16 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "maskAsset": "mask",
         "excludedMaskClasses": [0, 2, 3],
+        "nodataPolicy": "mask_only",
         # FCC base imagery + optical indices. LISS-3 has no red-edge band, so NDRE
         # is intentionally absent (only NDVI/MSAVI vegetation + NDMI moisture).
-        "displayModes": ["FCC", "NDVI", "MSAVI", "NDMI"],
+        "displayModes": ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
         "defaultDisplayMode": "FCC",
         "layerGroups": [
             {"label": "Imagery", "modes": ["FCC"]},
             {"label": "Vegetation Indices", "modes": ["NDVI", "MSAVI"]},
             {"label": "Moisture Indices", "modes": ["NDMI"]},
+            {"label": "Water Index", "modes": ["NDWI_GREEN_NIR"]},
         ],
         "description": (
             "ResourceSat-2A LISS-3 BOA crop analytics source with Akasha-generated "
@@ -143,6 +146,7 @@ _SOURCE_REGISTRY.update(
             "supportedIndices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
             "bandRoleMapping": {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5"},
             "maskAsset": "mask",
+            "nodataPolicy": "mask_only",
             "displayModes": ["FCC"],
             "defaultDisplayMode": "FCC",
             "description": "Gated regional ResourceSat-2A AWiFS BOA context source.",
@@ -171,7 +175,7 @@ _SOURCE_REGISTRY.update(
             "kind": "optical",
             "collectionId": "ResourceSat-2A_LISS4-MX70_L2",
             "expectedAssets": ["analytic", "mask"],
-            "supportedIndices": ["NDVI", "MSAVI"],
+            "supportedIndices": [],
             "bandRoleMapping": {"RED": "BAND3", "NIR": "BAND4"},
             "maskAsset": "mask",
             "displayModes": ["FCC"],
@@ -184,7 +188,12 @@ _SOURCE_REGISTRY.update(
             "resolutionMeters": 5.8,
             "analysisLevel": "context",
             "refreshPolicy": "Gated until access, calibration, and band metadata are validated.",
-            "limitations": ["FCC/indices depend on downloaded product band metadata."],
+            "limitations": [
+                "Context-only until downloaded LISS-4 product metadata confirms calibrated "
+                "red/NIR bands and mask behavior.",
+                "Potential NDVI/MSAVI support remains gated and is not enabled for field "
+                "analytics.",
+            ],
             "maskMethod": "Pending Akasha mask validation.",
             "excludedMaskClasses": [0, 2, 3],
             "availableMaskOptions": ["clouds", "cloudShadows"],
@@ -790,6 +799,12 @@ def get_item_for_date(source_id: str, acquisition_date: str) -> dict[str, Any]:
 
 def latest_items(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
     dates = list_dates(source_id)
+    if not dates:
+        raise not_found(
+            f"No acquisition dates are available for source '{source_id}'.",
+            code="SOURCE_HAS_NO_DATES",
+            sourceId=source_id,
+        )
     chosen = next((d for d in dates if d["isLatestUsable"]), dates[0])
     return items_for_date(source_id, chosen["acquisitionDate"])
 
@@ -907,6 +922,7 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
         "bandRoleMapping": band_role_mapping,
         "maskMethod": source.get("maskMethod"),
         "excludedMaskClasses": source.get("excludedMaskClasses"),
+        "nodataPolicy": source.get("nodataPolicy", "selected_band_or_mask"),
         "metricsProvisional": bool(
             props.get("akasha:metrics_provisional", source.get("metricsProvisional", False))
         ),

@@ -37,15 +37,20 @@ const MarketplacePage = lazyPlaceholderPage('MarketplacePage');
 const AccountSettingsPage = lazy(() => import('@/pages/account/AccountSettingsPage'));
 const ApiSettingsPage = lazy(() => import('@/pages/account/ApiSettingsPage'));
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
+const SignupPage = lazy(() => import('@/pages/auth/SignupPage'));
 const OnboardingStep1 = lazy(() => import('@/components/onboarding/OnboardingStep1'));
 const OnboardingStep2 = lazy(() => import('@/components/onboarding/OnboardingStep2'));
 const OnboardingFieldCreate = lazy(() => import('@/components/onboarding/OnboardingFieldCreate'));
 const OnboardingStep3 = lazy(() => import('@/components/onboarding/OnboardingStep3'));
 
+function onboardingRoute(Component: ComponentType) {
+  return <AuthGate onboardingOnly>{ withSuspense(Component) }</AuthGate>;
+}
+
 function RouteFallback() {
   return (
     <div className="flex h-full items-center justify-center bg-background" data-testid="route-loading">
-      <div className="glass scan-sweep h-20 w-[280px] max-w-[80vw]" />
+      <div className="glass scan-sweep h-20 w-70 max-w-[80vw]" />
     </div>
   );
 }
@@ -62,12 +67,13 @@ export function ProductRoutes() {
   return (
     <Routes>
       <Route path="login" element={ withSuspense(LoginPage) } />
-      {/* Onboarding flow routes */}
-      <Route path="onboarding/step1" element={ withSuspense(OnboardingStep1) } />
-      <Route path="onboarding/step2" element={ withSuspense(OnboardingStep2) } />
-      <Route path="onboarding/field-create" element={ withSuspense(OnboardingFieldCreate) } />
-      <Route path="onboarding/step3" element={ withSuspense(OnboardingStep3) } />
-      <Route element={ <AuthGate><AppShell /></AuthGate> }>
+      <Route path="signup" element={ withSuspense(SignupPage) } />
+      {/* Onboarding flow routes */ }
+      <Route path="onboarding/step1" element={ onboardingRoute(OnboardingStep1) } />
+      <Route path="onboarding/step2" element={ onboardingRoute(OnboardingStep2) } />
+      <Route path="onboarding/field-create" element={ onboardingRoute(OnboardingFieldCreate) } />
+      <Route path="onboarding/step3" element={ onboardingRoute(OnboardingStep3) } />
+      <Route element={ <AuthGate requireOnboardingComplete><AppShell /></AuthGate> }>
         <Route index element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />
         <Route path="map" element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />
         <Route

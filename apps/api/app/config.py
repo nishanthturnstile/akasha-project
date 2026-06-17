@@ -158,10 +158,14 @@ class Settings:
     auth_allow_bootstrap: bool = field(
         default_factory=lambda: _get_bool("AUTH_ALLOW_BOOTSTRAP", False)
     )
+    auth_allow_signup: bool = field(default_factory=lambda: _get_bool("AUTH_ALLOW_SIGNUP", False))
     auth_bootstrap_token: str = field(default_factory=lambda: _get("AUTH_BOOTSTRAP_TOKEN", ""))
     auth_cookie_secure: bool = field(default_factory=lambda: _get_bool("AUTH_COOKIE_SECURE", True))
     auth_login_rate_limit_per_minute: int = field(
         default_factory=lambda: _get_int("AUTH_LOGIN_RATE_LIMIT_PER_MINUTE", 10)
+    )
+    auth_signup_rate_limit_per_hour: int = field(
+        default_factory=lambda: _get_int("AUTH_SIGNUP_RATE_LIMIT_PER_HOUR", 20)
     )
     auth_bootstrap_rate_limit_per_hour: int = field(
         default_factory=lambda: _get_int("AUTH_BOOTSTRAP_RATE_LIMIT_PER_HOUR", 5)

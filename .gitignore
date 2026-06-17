@@ -13,6 +13,10 @@ __pycache__/
 .venv/
 venv/
 alembic/
+!apps/api/alembic/
+!apps/api/alembic/**
+apps/api/alembic/**/__pycache__/
+apps/api/alembic/**/*.pyc
 
 # ---- Node / frontend ----
 node_modules/

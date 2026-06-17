@@ -179,6 +179,11 @@ class User(UuidPkMixin, TimestampMixin, Base):
     password_hash: Mapped[str | None] = mapped_column(Text)
     display_name: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'active'"))
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failed_login_count: Mapped[int] = mapped_column(

@@ -43,8 +43,7 @@ python worker.py bhoonidhi-sync \
 
 python worker.py verify-composite \
   --source resourcesat-2a-liss3-boa \
-  --aoi bangalore-60km \
-  --require-catalog-item
+  --aoi bangalore-60km
 ```
 
 For multiple AOIs, place one GeoJSON file per AOI under `AOI_CONFIG_DIR` and
@@ -60,9 +59,11 @@ pass a Mysore verification run. Run verification once per source/AOI pair:
 python worker.py verify-composite \
   --source resourcesat-2a-liss3-boa \
   --aoi mysore-60km \
-  --aoi-dir /srv/akasha/config/aois \
-  --require-catalog-item
+  --aoi-dir /srv/akasha/config/aois
 ```
+
+`verify-composite` requires the dated composite STAC item by default. Use
+`--local-only` only for explicit local file/COG validation before catalog ingest.
 
 `bhoonidhi-sync` records download, conversion, composite, storage upload, and
 STAC registration failures in `BHOONIDHI_LEDGER_PATH`. The BFF monitoring

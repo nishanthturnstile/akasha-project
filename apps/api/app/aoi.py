@@ -173,20 +173,15 @@ def load_aoi_configs() -> list[dict[str, Any]]:
 
 
 def select_default_aoi(aois: list[dict[str, Any]]) -> dict[str, Any]:
-    """Select the backward-compatible singular AOI from loaded AOI config."""
-    default_id = settings.default_aoi_id.strip()
-    if default_id:
-        match = next((aoi for aoi in aois if aoi["id"] == default_id), None)
-        if match:
-            return match
+    """Return the AOI loaded from AOI_CONFIG_PATH for `/api/config.aoi`."""
     return aois[0]
 
 
 def load_aoi_config() -> dict[str, Any]:
     """Load the selected AOI as the public `/api/config.aoi` shape.
 
-    The backward-compatible `aoi` field remains singular. If multiple AOIs are
-    configured, `DEFAULT_AOI_ID` selects one; otherwise the first AOI from
-    `AOI_CONFIG_PATH` remains the default.
+    The backward-compatible `aoi` field remains singular and is always the AOI
+    loaded from `AOI_CONFIG_PATH`; additional directory AOIs are exposed only
+    through `aois`.
     """
     return select_default_aoi(load_aoi_configs())

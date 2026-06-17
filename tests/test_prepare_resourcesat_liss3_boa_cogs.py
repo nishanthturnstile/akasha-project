@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import scripts.prepare_resourcesat_liss3_boa_cogs as prep
 from scripts.prepare_resourcesat_liss3_boa_cogs import (
     AWIFS_BHOONIDHI_COLLECTION,
     AWIFS_SOURCE_ID,
@@ -387,3 +388,112 @@ def test_write_manifest_uses_awifs_specific_mask_method(tmp_path: Path) -> None:
     assert payload["properties"]["akasha:mask_method"] == mask_method_for_source(AWIFS_SOURCE_ID)
     assert "AWiFS" in payload["mask_method"]
     assert "LISS-3 BOA sample" not in payload["mask_method"]
+
+
+class _FakeCrs:
+    def __init__(self, value: str = "EPSG:32643") -> None:
+        self.value = value
+
+    def to_string(self) -> str:
+        return self.value
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _FakeCrs) and self.value == other.value
+
+
+class _FakeResourceSatDataset:
+    def __init__(
+        self,
+        *,
+        count: int,
+        crs: _FakeCrs | None = None,
+        transform: tuple[int, int, int, int, int, int] = (24, 0, 799980, 0, -24, 1290288),
+        width: int = 2,
+        height: int = 2,
+        res: tuple[float, float] = (24.0, 24.0),
+        overviews: list[int] | None = None,
+        mask_values: np.ndarray | None = None,
+    ) -> None:
+        self.count = count
+        self.crs = _FakeCrs() if crs is None else crs
+        self.transform = transform
+        self.width = width
+        self.height = height
+        self.res = res
+        self._overviews = [2, 4] if overviews is None else overviews
+        self._mask_values = (
+            np.array([[0, 1], [2, 4]], dtype="uint8") if mask_values is None else mask_values
+        )
+
+    def __enter__(self) -> "_FakeResourceSatDataset":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def overviews(self, _band: int) -> list[int]:
+        return self._overviews
+
+    def read(self, _band: int, masked: bool = False) -> np.ndarray:
+        return self._mask_values
+
+
+class _FakeResourceSatRasterio:
+    def __init__(self, analytic: _FakeResourceSatDataset, mask: _FakeResourceSatDataset) -> None:
+        self.analytic = analytic
+        self.mask = mask
+
+    def open(self, path: Path) -> _FakeResourceSatDataset:
+        return self.mask if Path(path).name == "mask.tif" else self.analytic
+
+
+def _strict_validation_deps(
+    analytic: _FakeResourceSatDataset,
+    mask: _FakeResourceSatDataset,
+) -> dict[str, object]:
+    return {
+        "np": np,
+        "rasterio": _FakeResourceSatRasterio(analytic, mask),
+        "cog_validate": lambda *_args, **_kwargs: (True, [], []),
+    }
+
+
+def test_validate_resourcesat_cogs_accepts_strict_liss3_outputs(tmp_path: Path) -> None:
+    analytic = _FakeResourceSatDataset(count=4)
+    mask = _FakeResourceSatDataset(count=1)
+
+    prep.validate_resourcesat_cogs(
+        _strict_validation_deps(analytic, mask),
+        tmp_path / "analytic.tif",
+        tmp_path / "mask.tif",
+        source_id="resourcesat-2a-liss3-boa",
+    )
+
+
+def test_validate_resourcesat_cogs_rejects_mask_transform_mismatch(tmp_path: Path) -> None:
+    analytic = _FakeResourceSatDataset(count=4)
+    mask = _FakeResourceSatDataset(count=1, transform=(24, 0, 799980, 0, -24, 1290312))
+
+    with pytest.raises(SystemExit, match="analytic/mask transform mismatch"):
+        prep.validate_resourcesat_cogs(
+            _strict_validation_deps(analytic, mask),
+            tmp_path / "analytic.tif",
+            tmp_path / "mask.tif",
+            source_id="resourcesat-2a-liss3-boa",
+        )
+
+
+def test_validate_resourcesat_cogs_rejects_invalid_mask_classes(tmp_path: Path) -> None:
+    analytic = _FakeResourceSatDataset(count=4)
+    mask = _FakeResourceSatDataset(
+        count=1,
+        mask_values=np.array([[1, 5], [0, 4]], dtype="uint8"),
+    )
+
+    with pytest.raises(SystemExit, match=r"invalid mask class value\(s\): \[5\]"):
+        prep.validate_resourcesat_cogs(
+            _strict_validation_deps(analytic, mask),
+            tmp_path / "analytic.tif",
+            tmp_path / "mask.tif",
+            source_id="resourcesat-2a-liss3-boa",
+        )

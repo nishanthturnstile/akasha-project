@@ -434,7 +434,7 @@ def cmd_verify_composite(args: argparse.Namespace) -> int:
         expected_resolution=args.expected_resolution,
         resolution_tolerance=args.resolution_tolerance,
         require_overviews=not args.allow_missing_overviews,
-        require_catalog_item=args.require_catalog_item,
+        require_catalog_item=not args.local_only,
         stac_api_url=args.stac_api_url or config.STAC_API_URL,
     )
     for check in result.checks:
@@ -451,6 +451,12 @@ def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> No
     script = sync.prepare_script_path(Path(__file__).resolve())
     output_root = config.raster_source_root() / args.source
     raw_root = Path(args.raw_root or config.BHOONIDHI_RAW_ROOT) / args.source
+    work_dir = (
+        Path(args.out_dir or config.BHOONIDHI_TEMP_ROOT)
+        / args.source
+        / _aoi_id(None, args.aoi)
+        / "prepare"
+    )
     command = [
         sys.executable,
         str(script),
@@ -460,6 +466,8 @@ def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> No
         str(download_manifest),
         "--raw-dir",
         str(raw_root),
+        "--work-dir",
+        str(work_dir),
         "--output-root",
         str(output_root),
         "--skip-validation" if args.skip_prepare_validation else "",
@@ -1109,7 +1117,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify_composite.add_argument(
         "--require-catalog-item",
         action="store_true",
-        help="Also require the dated composite item to be present in STAC API.",
+        help="Deprecated: catalog item verification is required unless --local-only is set.",
+    )
+    p_verify_composite.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Only verify local composite files; skip the default STAC catalog item check.",
     )
     p_verify_composite.add_argument("--stac-api-url", default=None)
     p_verify_composite.set_defaults(func=cmd_verify_composite)

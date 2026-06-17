@@ -22,6 +22,10 @@ function toLngLatRing(ring: GeoJsonPosition[]): [number, number][] {
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
 
+// Zoom in closer than the AOI overview default so users can draw a field boundary
+// straight away without manually zooming.
+const ONBOARDING_DRAW_ZOOM = 18;
+
 /**
  * Onboarding field-create screen: full-screen modal with the map and draw controls.
  * Creates a Field via the Field API linked to the onboarding season.
@@ -161,7 +165,7 @@ export default function OnboardingFieldCreate() {
         <MapLayerManager
           basemap={ basemapResolution.basemapConfig! }
           center={ configQ.data.aoi.center }
-          zoom={ configQ.data.aoi.zoom }
+          zoom={ Math.max(configQ.data.aoi.zoom, ONBOARDING_DRAW_ZOOM) }
           scene={ null }
           opacity={ 1 }
           visible={ true }

@@ -47,8 +47,10 @@ import {
   getSources,
   importPlotsGeoJson,
   login,
+  signup,
   logout,
   refreshSession,
+  completeOnboarding,
   updatePlot,
   listSeasons,
   createSeason,
@@ -78,6 +80,7 @@ import type {
   SeasonUpdatePayload,
   FieldCreatePayload,
   FieldUpdatePayload,
+  SignupPayload,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -482,6 +485,14 @@ export function useLogin() {
   });
 }
 
+export function useSignup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SignupPayload) => signup(payload),
+    onSuccess: (account) => queryClient.setQueryData(queryKeys.accountMe, account),
+  });
+}
+
 export function useLogout() {
   // The cached account/session state is intentionally cleared by the caller
   // AFTER it navigates away from protected routes. Clearing here (on success)
@@ -504,6 +515,14 @@ export function useChangePassword() {
   return useMutation({
     mutationFn: (payload: { currentPassword: string; newPassword: string }) =>
       changePassword(payload),
+  });
+}
+
+export function useCompleteOnboarding() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: completeOnboarding,
+    onSuccess: (account) => queryClient.setQueryData(queryKeys.accountMe, account),
   });
 }
 

@@ -96,6 +96,7 @@ services:
       AUTH_ALLOW_DISABLED: "false"
       AUTH_PASSWORD_PEPPER: "${AUTH_PASSWORD_PEPPER}"
       AUTH_ALLOW_BOOTSTRAP: "${AUTH_ALLOW_BOOTSTRAP:-true}"
+      AUTH_ALLOW_SIGNUP: "${AUTH_ALLOW_SIGNUP:-true}"
       AUTH_BOOTSTRAP_TOKEN: "${AUTH_BOOTSTRAP_TOKEN}"
       AUTH_COOKIE_SECURE: "false"
     expose:
@@ -269,7 +270,7 @@ services:
     # One-shot: prints config and exits. Run seeding/verify on demand, e.g.:
     #   docker compose run --rm ingestion-worker python worker.py seed
     #   docker compose run --rm ingestion-worker python worker.py verify
-    #   docker compose run --rm ingestion-worker python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+    #   docker compose run --rm ingestion-worker python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
     restart: "no"
 
   ingestion-sar:

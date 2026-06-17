@@ -33,6 +33,7 @@ class CurrentUser:
     display_name: str
     username: str | None = None
     role: str = "owner"
+    onboarding_completed: bool = False
     current_team_id: str | None = None
     session_token_hash: str | None = None
     session_remember_me: bool = False
@@ -177,6 +178,7 @@ def _dev_user() -> CurrentUser:
         display_name="Akasha Dev User",
         username="dev",
         role=membership.role,
+        onboarding_completed=True,
         current_team_id=membership.id,
         memberships=(membership,),
     )
@@ -220,6 +222,7 @@ def get_current_user(request: Request) -> CurrentUser:
         display_name=user["displayName"],
         username=user.get("username"),
         role=selected.role,
+        onboarding_completed=bool(user.get("onboardingCompleted", False)),
         current_team_id=selected.id,
         session_token_hash=token_hash,
         session_remember_me=bool(context.get("rememberMe", False)),

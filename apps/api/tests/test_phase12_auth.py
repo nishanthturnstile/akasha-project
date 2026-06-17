@@ -13,6 +13,7 @@ from app.repositories import auth_repo
 from app.routers import account_router as account
 from app.routers import auth_router as auth_routes
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 client = TestClient(app)
 
@@ -34,6 +35,7 @@ def test_dev_auth_me_and_api_keys_do_not_leak_hash(monkeypatch):
     me = client.get("/api/account/me")
     assert me.status_code == 200
     assert me.json()["authMode"] == "dev"
+    assert me.json()["user"]["onboardingCompleted"] is True
     assert "password_hash" not in me.text
 
     created = client.post("/api/account/api-keys", json={"name": "Demo"})
@@ -404,6 +406,56 @@ def test_signup_rejects_duplicate_email(monkeypatch):
         lambda email: {"id": "existing-user", "email": email},
         raising=False,
     )
+
+    response = client.post(
+        "/api/auth/signup",
+        json={
+            "email": "owner@example.test",
+            "password": "correct horse battery staple",
+            "displayName": "Owner",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "EMAIL_ALREADY_REGISTERED"
+
+
+def test_signup_rejects_blank_or_invalid_identity(monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "enabled")
+    monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")
+    monkeypatch.setattr(settings, "auth_allow_signup", True, raising=False)
+    auth_routes._AUTH_RATE_BUCKETS.clear()
+
+    blank_name = client.post(
+        "/api/auth/signup",
+        json={"email": "new@example.test", "password": "password123", "displayName": "   "},
+    )
+    invalid_email = client.post(
+        "/api/auth/signup",
+        json={"email": "not-an-email", "password": "password123", "displayName": "New"},
+    )
+
+    assert blank_name.status_code == 422
+    assert invalid_email.status_code == 422
+
+
+def test_signup_maps_integrity_race_to_duplicate_email(monkeypatch):
+    monkeypatch.setattr(settings, "auth_mode", "enabled")
+    monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")
+    monkeypatch.setattr(settings, "auth_allow_signup", True, raising=False)
+    auth_routes._AUTH_RATE_BUCKETS.clear()
+    monkeypatch.setattr(
+        auth_routes.auth_repo,
+        "find_user_by_email",
+        lambda email: None,
+        raising=False,
+    )
+    monkeypatch.setattr(auth_routes, "hash_password", lambda password: "hashed-password")
+
+    def raise_integrity_error(**kwargs):
+        raise IntegrityError("duplicate", params=None, orig=Exception("duplicate"))
+
+    monkeypatch.setattr(auth_routes.auth_repo, "create_user_with_team", raise_integrity_error)
 
     response = client.post(
         "/api/auth/signup",

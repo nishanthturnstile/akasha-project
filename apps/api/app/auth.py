@@ -178,6 +178,7 @@ def _dev_user() -> CurrentUser:
         display_name="Akasha Dev User",
         username="dev",
         role=membership.role,
+        onboarding_completed=True,
         current_team_id=membership.id,
         memberships=(membership,),
     )

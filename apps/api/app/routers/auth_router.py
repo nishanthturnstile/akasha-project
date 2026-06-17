@@ -8,6 +8,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy.exc import IntegrityError
 
 from ..auth import (
     CurrentUser,
@@ -251,21 +252,27 @@ async def signup(payload: SignupPayload, request: Request, response: Response) -
     )
     if not settings.auth_allow_signup:
         raise forbidden("Sign-up is not enabled.")
-    email = payload.email.strip().lower()
-    display_name = payload.display_name.strip()
+    email = payload.email
+    display_name = payload.display_name
     if auth_repo.find_user_by_email(email) is not None:
         raise bad_request(
             "An account with this email already exists.",
             code="EMAIL_ALREADY_REGISTERED",
         )
-    created = auth_repo.create_user_with_team(
-        username=email,
-        email=email,
-        display_name=display_name,
-        password_hash=hash_password(payload.password),
-        team_name=_signup_team_name(display_name),
-        require_no_password_users=False,
-    )
+    try:
+        created = auth_repo.create_user_with_team(
+            username=email,
+            email=email,
+            display_name=display_name,
+            password_hash=hash_password(payload.password),
+            team_name=_signup_team_name(display_name),
+            require_no_password_users=False,
+        )
+    except IntegrityError as exc:
+        raise bad_request(
+            "An account with this email already exists.",
+            code="EMAIL_ALREADY_REGISTERED",
+        ) from exc
     if created is None:
         raise AkashaError(
             "SIGNUP_UNAVAILABLE",

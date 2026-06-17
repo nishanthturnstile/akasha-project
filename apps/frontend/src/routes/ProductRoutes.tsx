@@ -50,7 +50,7 @@ function onboardingRoute(Component: ComponentType) {
 function RouteFallback() {
   return (
     <div className="flex h-full items-center justify-center bg-background" data-testid="route-loading">
-      <div className="glass scan-sweep h-20 w-[280px] max-w-[80vw]" />
+      <div className="glass scan-sweep h-20 w-70 max-w-[80vw]" />
     </div>
   );
 }

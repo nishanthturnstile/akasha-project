@@ -93,6 +93,12 @@ describe('ProductRoutes', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Create account' })).toBeTruthy());
   });
 
+  it('redirects authenticated users away from signup', async () => {
+    renderRoutes('/signup');
+
+    await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), { timeout: 8000 });
+  });
+
   it('redirects authenticated users without completed onboarding into onboarding', async () => {
     vi.stubGlobal(
       'fetch',

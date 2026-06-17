@@ -1,16 +1,26 @@
 import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { LockKeyhole, Satellite, Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
-import { useSignup } from '@/lib/queries';
+import { useAccountMe, useSignup } from '@/lib/queries';
+import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
+
+function landingRoute(onboardingCompleted: boolean) {
+    return onboardingCompleted ? MAIN_MONITORING_ROUTE : '/onboarding/step1';
+}
 
 export default function SignupPage() {
     const navigate = useNavigate();
+    const account = useAccountMe();
     const signup = useSignup();
     const [displayName, setDisplayName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+
+    if (account.isSuccess) {
+        return <Navigate to={ landingRoute(account.data.user.onboardingCompleted) } replace />;
+    }
 
     const submit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();

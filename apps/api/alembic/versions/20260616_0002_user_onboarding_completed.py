@@ -23,6 +23,20 @@ def upgrade() -> None:
         ADD COLUMN IF NOT EXISTS onboarding_completed boolean NOT NULL DEFAULT false
         """
     )
+    op.execute(
+        f"""
+        UPDATE {AKASHA_SCHEMA}.users
+        SET onboarding_completed = true
+        WHERE password_hash IS NOT NULL
+        """
+    )
+    op.execute(
+        f"""
+        ALTER TABLE {AKASHA_SCHEMA}.users
+        ALTER COLUMN onboarding_completed SET DEFAULT false,
+        ALTER COLUMN onboarding_completed SET NOT NULL
+        """
+    )
 
 
 def downgrade() -> None:

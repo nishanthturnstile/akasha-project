@@ -219,16 +219,24 @@ export default function OnboardingFieldCreate() {
           </div>
         </div>
 
-        {/* Field name input when geometry is ready */ }
+        {/* Field name card when geometry is ready */ }
         { draftGeometry && (
           <div className="absolute left-1/2 top-24 z-40 -translate-x-1/2 w-72">
-            <input
-              placeholder="Field name"
-              value={ fieldName }
-              onChange={ (e) => setFieldName(e.target.value) }
-              className="w-full rounded-md border border-border bg-background px-3 py-2 shadow-lg"
-              autoFocus
-            />
+            <div className="rounded-lg border border-border bg-card p-4 shadow-lg space-y-3">
+              <input
+                placeholder="Field name"
+                value={ fieldName }
+                onChange={ (e) => setFieldName(e.target.value) }
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={ handleClose }>Cancel</Button>
+                <Button variant="primary" onClick={ saveField } disabled={ !draftGeometry || createFieldMutation.isPending }>
+                  { createFieldMutation.isPending ? 'Saving…' : 'Save' }
+                </Button>
+              </div>
+            </div>
           </div>
         ) }
 
@@ -244,13 +252,7 @@ export default function OnboardingFieldCreate() {
           </div>
         ) }
 
-        {/* Bottom action bar */ }
-        <div className="glass absolute inset-x-0 bottom-0 z-50 flex items-center justify-end gap-2 px-4 py-3">
-          <Button variant="ghost" onClick={ handleClose }>Cancel</Button>
-          <Button variant="primary" onClick={ saveField } disabled={ !draftGeometry || createFieldMutation.isPending }>
-            { createFieldMutation.isPending ? 'Saving…' : 'Save' }
-          </Button>
-        </div>
+        {/* Bottom action bar removed — buttons are in the field name card */ }
       </div>
     </div>
   );

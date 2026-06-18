@@ -302,6 +302,8 @@ export default function MapPage() {
     legendOpen,
     periodFrom,
     periodTo,
+    overlaysVisible,
+    focusNonce,
   } = view;
 
   const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
@@ -345,6 +347,7 @@ export default function MapPage() {
   // *selected* field, so without this a fresh session lands on "No field selected"
   // and the drawn field is invisible even though it exists.
   const prevFocusedPlotId = useRef<string | null>(null);
+  const prevFocusNonce = useRef(0);
   useEffect(() => {
     if (!map || plotsQ.isLoading || !plotsQ.data) return;
     if (!selectedPlotId) {
@@ -356,10 +359,12 @@ export default function MapPage() {
     }
     const focusTarget = selectedPlot;
     if (!focusTarget) return;
-    if (prevFocusedPlotId.current === selectedPlotId) return;
+    const nonceBumped = focusNonce !== prevFocusNonce.current;
+    if (!nonceBumped && prevFocusedPlotId.current === selectedPlotId) return;
     focusPlot(map, focusTarget);
     prevFocusedPlotId.current = selectedPlotId;
-  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, view]);
+    prevFocusNonce.current = focusNonce;
+  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, view]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
@@ -607,13 +612,22 @@ export default function MapPage() {
   // Wrapper to request tool ownership and start drawing a field
   const handleAddField = () => {
     if (!map) {
-      // Map not ready – do nothing or could show a warning
       return;
     }
-    // Ensure we have ownership of the field-draw tool before activating draw mode
     requestMapTool('field-draw');
     setFieldMode('draw');
   };
+
+  // Activate draw mode when Global View "Add field" button sets pendingAction
+  useEffect(() => {
+    if (view.pendingAction === 'create-field') {
+      view.setPendingAction(null);
+      if (map) {
+        requestMapTool('field-draw');
+        setFieldMode('draw');
+      }
+    }
+  }, [view, view.pendingAction, map]);
 
   const releaseMapTool = (owner: MapToolOwner) => {
     setActiveMapTool((current) => (current === owner ? null : current));
@@ -793,7 +807,7 @@ export default function MapPage() {
       />
 
       {/* Top chrome: field context · layers · search · theme · all-fields trigger */ }
-      <FieldContextHeader
+      { overlaysVisible && <FieldContextHeader
         selectedPlot={ selectedPlot }
         fieldCount={ plotsQ.data?.length ?? 0 }
         allFieldsOpen={ allFieldsOpen }
@@ -806,9 +820,9 @@ export default function MapPage() {
           selectedPlot ? setFieldMode((current) => (current === 'edit' ? null : 'edit')) : undefined
         }
         onOpenCommand={ () => setCommandOpen(true) }
-      />
+      />  }
 
-      <CommandPalette
+      { overlaysVisible && <CommandPalette
         open={ commandOpen }
         onOpenChange={ setCommandOpen }
         sources={ sourcesQ.data }
@@ -817,23 +831,26 @@ export default function MapPage() {
         onSelectSource={ view.setSource }
         onSelectDate={ view.setDate }
         onToggleLayers={ view.toggleLayers }
-      />
+      />  }
 
-      <input
-        ref={ fileInputRef }
-        type="file"
-        accept=".geojson,application/geo+json,application/json"
-        className="hidden"
-        data-testid="field-import-input"
-        onChange={ (event) => {
-          const file = event.target.files?.[0];
-          event.currentTarget.value = '';
-          if (file) void importGeoJsonFile(file);
-        } }
-      />
+      { overlaysVisible && (
+        <input
+          ref={ fileInputRef }
+          type="file"
+          accept=".geojson,application/geo+json,application/json"
+          className="hidden"
+          data-testid="field-import-input"
+          onChange={ (event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = '';
+            if (file) void importGeoJsonFile(file);
+          } }
+        />
+      ) }
 
       {/* Left: field tools */ }
-      <div className="absolute left-4 top-17 z-toolbar">
+      { overlaysVisible && (
+        <div className="absolute left-4 top-17 z-toolbar">
         <PlotToolbar
           activeAction={ fieldMode === 'draw' ? 'draw' : null }
           hasSelectedField={ Boolean(selectedPlot) }
@@ -853,10 +870,9 @@ export default function MapPage() {
           onDeleteSelectedField={ () => void deleteSelectedField() }
           selectedFieldName={ selectedPlot?.name }
         />
-      </div>
+      </div>  ) }
 
-      {/* Right: stacked panels — All Fields dropdown above, field details below */ }
-      <div className="absolute right-4 top-17 z-panel flex max-w-90 flex-col gap-3">
+      { overlaysVisible && <div className="absolute right-4 top-17 z-panel flex max-w-90 flex-col gap-3">
         { allFieldsOpen && (
           <AllFieldsPanel
             plots={ plotsQ.data }
@@ -910,10 +926,9 @@ export default function MapPage() {
             />
           </div>
         ) }
-      </div>
+      </div>  }
 
-      {/* Right: coordinate readout, measure, and consolidated layer-control bar (above timeline). */ }
-      <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
+      { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <CoordinateReadout
           map={ map }
           indexLookup={ isIndexLayer && selectedPlot && selectedDate && effectiveSourceId ? indexLookup : undefined }
@@ -952,13 +967,13 @@ export default function MapPage() {
           collapsed={ view.layerBarCollapsed }
           onCollapsedChange={ view.setLayerBarCollapsed }
         />
-      </div>
+      </div>  }
 
       {/* Left: legend + navigation map controls (zoom / compass / locate / fullscreen),
         * stacked in a single bottom-left column so they never overlap each other.
         * Raised above the attribution line so the two never collide at any width. */ }
       <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
-        { visible && legendOpen && (scene || indexOverlay) && (
+        { overlaysVisible && visible && legendOpen && (scene || indexOverlay) && (
           <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } resolvedSourceId={ indexOverlay?.resolvedSourceId } />
         ) }
         <MapControls
@@ -972,17 +987,15 @@ export default function MapPage() {
         />
       </div>
 
-      {/* Map attribution — its own thin line pinned just above the timeline so it
-        * never overlaps the floating control clusters on any screen size. */ }
-      <div
+      { overlaysVisible && <div
         className="pointer-events-none absolute bottom-[calc(var(--timeline-height)+0.5rem)] left-4 z-toolbar max-w-[calc(100vw-2rem)] truncate rounded-sm bg-[hsl(var(--panel)/0.55)] px-1.5 py-0.5 text-[11px] text-foreground/80 backdrop-blur-sm"
         data-testid="attribution"
       >
         { attribution }
-      </div>
+      </div> }
 
       {/* Bottom: temporal filmstrip */ }
-      <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
+      { overlaysVisible && <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
         <TimelineBar
           dates={ activeTimelineDates }
           selectedDate={ selectedDate }
@@ -1001,7 +1014,7 @@ export default function MapPage() {
           periodTo={ periodTo }
           onPeriodChange={ view.setPeriod }
         />
-      </div>
+      </div>  }
     </div>
   );
 }

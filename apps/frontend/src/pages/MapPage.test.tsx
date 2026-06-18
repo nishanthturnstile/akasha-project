@@ -43,7 +43,7 @@ function renderMapPage(initialState?: Partial<MapViewState>) {
   return render(
     <QueryClientProvider client={ queryClient }>
       <TooltipProvider>
-        <MapViewProvider initialState={ initialState }>
+        <MapViewProvider initialState={ { overlaysVisible: true, ...initialState } }>
           <MapPage />
         </MapViewProvider>
       </TooltipProvider>

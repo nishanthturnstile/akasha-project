@@ -45,6 +45,7 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
         name: name.trim(),
         startDate: startDate || null,
         endDate: endDate || null,
+        fieldIds: selectedFieldIds,
       });
       onOpenChange(false);
     } catch (err) {

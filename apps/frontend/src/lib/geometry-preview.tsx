@@ -62,13 +62,23 @@ export function GeometryPreview({
   width = 80,
   height = 80,
 }: GeometryPreviewProps) {
+  if (!geometry || !geometry.type || !geometry.coordinates) {
+    return (
+      <div
+        className={className}
+        style={{ width, height, background: 'hsl(var(--muted))' }}
+        aria-label="No geometry available"
+      />
+    );
+  }
+
   const { viewBox, paths } = geometryToSvg(geometry);
 
   if (paths.length === 0) {
     return (
       <div
         className={className}
-        style={{ width, height }}
+        style={{ width, height, background: 'hsl(var(--muted))' }}
         aria-label="No geometry available"
       />
     );
@@ -84,13 +94,21 @@ export function GeometryPreview({
       role="img"
       preserveAspectRatio="xMidYMid meet"
     >
+      <rect
+        x={viewBox.split(' ')[0]}
+        y={viewBox.split(' ')[1]}
+        width={viewBox.split(' ')[2]}
+        height={viewBox.split(' ')[3]}
+        fill="hsl(var(--muted))"
+      />
       {paths.map((p, i) => (
         <path
           key={i}
           d={p.d}
-          fill="hsl(var(--primary) / 0.15)"
+          fill="hsl(var(--primary) / 0.2)"
           stroke="hsl(var(--primary))"
-          strokeWidth={Math.max(width / 200, 0.5)}
+          strokeWidth={Math.max(width / 40, 2)}
+          strokeLinejoin="round"
         />
       ))}
     </svg>

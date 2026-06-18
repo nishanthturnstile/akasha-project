@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
+import GlobalViewPanel from '@/components/fields/GlobalViewPanel';
 import { GeometryPreview } from '@/lib/geometry-preview';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
@@ -91,11 +92,16 @@ export function AppShell() {
   const [seasonSheetOpen, setSeasonSheetOpen] = useState(false);
   const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
+  const [globalViewOpen, setGlobalViewOpen] = useState(false);
 
   const seasonsQ = useSeasons();
   const deleteSeason = useDeleteSeason();
   const updateSeason = useUpdateSeason();
   const fieldsQ = useFields();
+
+  useEffect(() => {
+    view.setOverlaysVisible(!globalViewOpen);
+  }, [globalViewOpen, view]);
 
   const sortedSeasons = useMemo(() => {
     const data = seasonsQ.data;
@@ -169,15 +175,20 @@ export function AppShell() {
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
-          fields={ (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(editSeasonTarget.id)) }
+          allFields={ fieldsQ.data ?? [] }
           open={ !!editSeasonTarget }
           onOpenChange={ () => setEditSeasonId(null) }
           onSave={ (seasonId, payload) => { updateSeason.mutate({ seasonId, payload }); setEditSeasonId(null); } }
-          onDeleteField={ () => { /* stub: will wire to deleteField mutation */ } }
         />
       ) }
       <div
-        className="grid h-screen w-screen grid-cols-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_var(--rail-w)] lg:grid-rows-1"
+        className={ cn(
+          'grid h-screen w-screen overflow-hidden bg-background text-foreground lg:grid-rows-1',
+          'grid-cols-1 grid-rows-[auto_minmax(0,1fr)]',
+          globalViewOpen
+            ? 'lg:grid-cols-[minmax(0,1fr)_20rem_var(--rail-w)]'
+            : 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]',
+        ) }
         style={ { '--rail-w': railWidth } as CSSProperties }
         data-testid="product-shell"
         data-rail-collapsed={ railCollapsed ? 'true' : 'false' }
@@ -223,6 +234,10 @@ export function AppShell() {
         <section className="relative min-h-0 min-w-0 overflow-hidden" data-testid="shell-content">
           <Outlet />
         </section>
+
+        { globalViewOpen && (
+          <GlobalViewPanel onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
+        ) }
 
         <aside
           className="hidden border-l border-border bg-background/96 lg:flex lg:min-h-0 lg:flex-col"
@@ -296,7 +311,7 @@ export function AppShell() {
 
           {/* Sheet: all seasons list */ }
           <SheetRoot open={ seasonSheetOpen } onOpenChange={ setSeasonSheetOpen }>
-            <SheetContent side="right" className="max-w-sm">
+            <SheetContent side="right" className="flex flex-col max-w-sm">
               <SheetHeader>
                 <SheetTitle>Seasons</SheetTitle>
               </SheetHeader>
@@ -325,7 +340,7 @@ export function AppShell() {
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1 px-4 py-4">
+              <ScrollArea className="min-h-0 flex-1 px-4 py-4">
                 <div className="space-y-3 pr-1">
                   { seasonsQ.isLoading ? (
                     <p className="text-sm text-muted-foreground">Loading seasons…</p>
@@ -391,41 +406,46 @@ export function AppShell() {
                                   { seasonFields.length }
                                 </span>
                               </div>
-                              { seasonFields.length > 0 && (
+                              {seasonFields.length > 0 ? (
                                 <div className="mt-2 space-y-1.5">
                                   { seasonFields.map((f) => (
-                                    <div
-                                      key={ f.id }
-                                      className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5"
-                                    >
-                                      <GeometryPreview
-                                        geometry={ f.geometry }
-                                        width={ 36 }
-                                        height={ 36 }
-                                        className="shrink-0 rounded-sm border border-border/40"
-                                      />
-                                      <div className="min-w-0 flex-1">
-                                        <p className="truncate text-xs font-medium text-foreground">{ f.name }</p>
-                                        <p className="text-[11px] text-muted-foreground tnum">
-                                          { f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—' }
-                                        </p>
+                                    <div key={f.id} className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5">
+                                        <GeometryPreview
+                                          geometry={f.geometry}
+                                          width={48}
+                                          height={48}
+                                          className="shrink-0 rounded-sm border border-border/40 bg-muted/30"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate text-xs font-medium text-foreground">{f.name}</p>
+                                          <p className="text-[11px] text-muted-foreground tnum">
+                                            {f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—'}
+                                          </p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={ (e) => {
+                                            e.stopPropagation();
+                                            view.setSelectedPlotId(f.id);
+                                            setSeasonSheetOpen(false);
+                                            navigate(`/monitoring/field-analytics/field/${f.id}`);
+                                          } }
+                                          className="shrink-0 rounded border border-border/60 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors duration-fast"
+                                        >
+                                          Focus
+                                        </button>
                                       </div>
-                                      <button
-                                        type="button"
-                                        onClick={ (e) => {
-                                          e.stopPropagation();
-                                          view.setSelectedPlotId(f.id);
-                                          setSeasonSheetOpen(false);
-                                          navigate(`/monitoring/field-analytics/field/${f.id}`);
-                                        } }
-                                        className="shrink-0 rounded border border-border/60 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors duration-fast"
-                                      >
-                                        Focus
-                                      </button>
-                                    </div>
                                   )) }
                                 </div>
-                              ) }
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
+                                  className="mt-2 w-full rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:bg-accent/40 transition-colors duration-fast"
+                                >
+                                  + Add field
+                                </button>
+                              )}
                               <div className="mt-3 flex gap-2">
                                 <button
                                   type="button"
@@ -465,7 +485,7 @@ export function AppShell() {
                 const slug = slugFor(group.label);
                 const isExpanded = expandedGroups.has(group.label);
                 const panelId = `nav-group-panel-${slug}`;
-                if (railCollapsed) {
+                  if (railCollapsed) {
                   // Collapsed rail: render every item as an icon-only NavLink (no group headers).
                   return (
                     <section
@@ -478,6 +498,30 @@ export function AppShell() {
                       </h2>
                       { group.items.map((item) => {
                         const Icon = item.icon;
+                        if (item.label === 'Global view') {
+                          return (
+                            <Tooltip key={ item.path }>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={ () => setGlobalViewOpen(true) }
+                                  data-testid={ testIdFor(item.label) }
+                                  data-active={ globalViewOpen || undefined }
+                                  aria-label={ item.label }
+                                  className={ cn(
+                                    'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                    globalViewOpen && 'bg-primary/15 text-foreground',
+                                  ) }
+                                >
+                                  <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                { item.label }
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        }
                         return (
                           <Tooltip key={ item.path }>
                             <TooltipTrigger asChild>
@@ -485,10 +529,11 @@ export function AppShell() {
                                 to={ item.path }
                                 data-testid={ testIdFor(item.label) }
                                 aria-label={ item.label }
+                                onClick={ () => setGlobalViewOpen(false) }
                                 className={ ({ isActive }) =>
                                   cn(
                                     'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                    isActive && 'bg-primary/15 text-foreground shadow-e1',
+                                    isActive && !globalViewOpen && 'bg-primary/15 text-foreground shadow-e1',
                                   )
                                 }
                               >
@@ -536,15 +581,40 @@ export function AppShell() {
                       <div id={ panelId } className="mt-1 flex flex-col gap-1">
                         { group.items.map((item) => {
                           const Icon = item.icon;
+                          if (item.label === 'Global view') {
+                            return (
+                              <button
+                                key={ item.path }
+                                type="button"
+                                onClick={ () => setGlobalViewOpen(true) }
+                                data-testid={ testIdFor(item.label) }
+                                data-active={ globalViewOpen || undefined }
+                                className={ cn(
+                                  'group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-left transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                  globalViewOpen
+                                    ? 'bg-primary/15 text-foreground'
+                                    : 'text-muted-foreground',
+                                ) }
+                              >
+                                <Icon
+                                  className="size-4 shrink-0"
+                                  strokeWidth={ 1.75 }
+                                  aria-hidden="true"
+                                />
+                                <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                              </button>
+                            );
+                          }
                           return (
                             <NavLink
                               key={ item.path }
                               to={ item.path }
                               data-testid={ testIdFor(item.label) }
+                              onClick={ () => setGlobalViewOpen(false) }
                               className={ ({ isActive }) =>
                                 cn(
                                   'group flex items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                  isActive && 'bg-primary/15 text-foreground shadow-e1',
+                                  isActive && !globalViewOpen && 'bg-primary/15 text-foreground shadow-e1',
                                 )
                               }
                             >

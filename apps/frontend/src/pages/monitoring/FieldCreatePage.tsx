@@ -1,38 +1,33 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { cn } from '@/lib/utils';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { MapControls } from '@/components/map/MapControls';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { polygonAreaMeters } from '@/lib/measure';
-import { useConfig, useCreateField } from '@/lib/queries';
+import { useConfig, useCreateField, useSeasons } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 
 import type maplibregl from 'maplibre-gl';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import type { GeoJsonPosition, PlotGeometry } from '@/types/api';
+import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 
 function toLngLatRing(ring: GeoJsonPosition[]): [number, number][] {
   return ring.map(([lng, lat]) => [lng, lat]);
 }
 
-const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
-const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
+const DRAW_ZOOM = 18;
 
-// Zoom in closer than the AOI overview default so users can draw a field boundary
-// straight away without manually zooming.
-const ONBOARDING_DRAW_ZOOM = 18;
-
-/**
- * Onboarding field-create screen: full-screen modal with the map and draw controls.
- * Creates a Field via the Field API linked to the onboarding season.
- */
-export default function OnboardingFieldCreate() {
+export default function FieldCreatePage() {
   const navigate = useNavigate();
   const configQ = useConfig();
+  const seasonsQ = useSeasons();
   const createFieldMutation = useCreateField();
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
@@ -40,16 +35,16 @@ export default function OnboardingFieldCreate() {
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [draftGeometry, setDraftGeometry] = useState<PlotGeometry | null>(null);
   const [fieldName, setFieldName] = useState('');
-  const [drawResetKey] = useState(0);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [createSeasonOpen, setCreateSeasonOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const drawResetKey = 0;
 
-  const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
+  const allSeasons = useMemo(() => seasonsQ.data ?? [], [seasonsQ.data]);
 
   const requestMapTool = useCallback((owner: MapToolOwner): boolean => {
     setActiveMapTool((current) => {
-      if (!current || current === owner) {
-        return owner;
-      }
+      if (!current || current === owner) return owner;
       return current;
     });
     return true;
@@ -59,7 +54,6 @@ export default function OnboardingFieldCreate() {
     setActiveMapTool((current) => (current === owner ? null : current));
   }, []);
 
-  // Clicking the map when no tool is active initiates draw mode.
   useEffect(() => {
     if (!map || fieldMode) return;
     const handleClick = () => {
@@ -67,9 +61,7 @@ export default function OnboardingFieldCreate() {
       setFieldMode('draw');
     };
     map.on('click', handleClick);
-    return () => {
-      map.off('click', handleClick);
-    };
+    return () => { map.off('click', handleClick); };
   }, [map, fieldMode, requestMapTool]);
 
   const basemapResolution = useMemo(() => {
@@ -105,7 +97,7 @@ export default function OnboardingFieldCreate() {
     );
   }
 
-  const handleClose = () => navigate('/onboarding/step2');
+  const handleClose = () => navigate('/monitoring/field-analytics');
 
   const saveField = async () => {
     setSaveError(null);
@@ -113,8 +105,8 @@ export default function OnboardingFieldCreate() {
       setSaveError('Please draw a field boundary first');
       return;
     }
-    if (!seasonId) {
-      setSaveError('No season found. Please go back and create a season first.');
+    if (!selectedSeasonId) {
+      setSaveError('Please select a season');
       return;
     }
     try {
@@ -126,24 +118,11 @@ export default function OnboardingFieldCreate() {
       const areaMeters = polygonAreaMeters(toLngLatRing(polygon.coordinates[0] ?? []));
       const created = await createFieldMutation.mutateAsync({
         name: fieldName.trim() || 'Field',
-        geometry: {
-          type: 'Polygon',
-          coordinates: polygon.coordinates,
-        },
+        geometry: { type: 'Polygon', coordinates: polygon.coordinates },
         areaHa: areaMeters / 10000,
-        seasonIds: [seasonId],
+        seasonIds: [selectedSeasonId],
       });
-      // Persist field ID in sessionStorage so Step2 can show it
-      const existing = (() => {
-        try {
-          const raw = sessionStorage.getItem(ONBOARDING_FIELDS_KEY);
-          return raw ? (JSON.parse(raw) as string[]) : [];
-        } catch {
-          return [];
-        }
-      })();
-      sessionStorage.setItem(ONBOARDING_FIELDS_KEY, JSON.stringify([...existing, created.id]));
-      navigate('/onboarding/step2');
+      navigate(`/monitoring/field-analytics/field/${created.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save field';
       setSaveError(message);
@@ -152,20 +131,69 @@ export default function OnboardingFieldCreate() {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
-      {/* Top bar */ }
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } />
+
+      {/* Top bar */}
       <div className="glass z-50 flex items-center justify-center px-4 py-3 relative">
-        <h2 className="font-display text-lg font-semibold">Add field</h2>
-        <button aria-label="Close" onClick={ handleClose } className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground">
-          <X className="size-5" strokeWidth={ 1.75 } />
+        <button
+          aria-label="Back"
+          onClick={ handleClose }
+          className="absolute left-4 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-5" strokeWidth={ 1.75 } />
         </button>
+        <h2 className="font-display text-lg font-semibold">Add field</h2>
       </div>
 
-      {/* Map area */ }
+      {/* Season selector bar */}
+      <div className="z-50 flex flex-col border-b border-border/60 bg-background/95">
+        <div className="flex items-center gap-3 px-4 py-2">
+          <label className="text-sm font-medium text-foreground shrink-0">Season</label>
+          { allSeasons.length === 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={ () => setCreateSeasonOpen(true) }
+            >
+              Create season
+            </Button>
+          ) }
+        </div>
+        { allSeasons.length > 0 && (
+          <ScrollArea className="max-h-32 border-t border-border/40">
+            <div className="flex flex-col gap-0.5 px-3 py-2">
+              { allSeasons.map((s) => (
+                <button
+                  key={ s.id }
+                  type="button"
+                  onClick={ () => setSelectedSeasonId(selectedSeasonId === s.id ? null : s.id) }
+                  className={ cn(
+                    'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-fast',
+                    selectedSeasonId === s.id
+                      ? 'bg-primary/15 text-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+                  ) }
+                >
+                  <div className={ cn(
+                    'size-3 shrink-0 rounded-full border-2',
+                    selectedSeasonId === s.id
+                      ? 'border-primary bg-primary'
+                      : 'border-muted-foreground/40',
+                  ) } />
+                  <span className="truncate">{ s.name }</span>
+                </button>
+              )) }
+            </div>
+          </ScrollArea>
+        ) }
+      </div>
+
+      {/* Map area */}
       <div className="relative flex-1">
         <MapLayerManager
           basemap={ basemapResolution.basemapConfig! }
           center={ configQ.data.aoi.center }
-          zoom={ Math.max(configQ.data.aoi.zoom, ONBOARDING_DRAW_ZOOM) }
+          zoom={ Math.max(configQ.data.aoi.zoom, DRAW_ZOOM) }
           scene={ null }
           opacity={ 1 }
           visible={ true }
@@ -194,7 +222,7 @@ export default function OnboardingFieldCreate() {
           onPolygonComplete={ (geometry) => setDraftGeometry(geometry) }
         />
 
-        {/* Left controls */ }
+        {/* Left controls */}
         <div className="absolute left-4 top-20 z-toolbar flex flex-col items-start gap-3">
           <MapControls
             map={ map }
@@ -208,18 +236,17 @@ export default function OnboardingFieldCreate() {
               activeAction={ fieldMode === 'draw' ? 'draw' : null }
               isMapAvailable={ Boolean(map) }
               onDrawField={ () => {
-                // Request ownership of the field-draw tool before entering draw mode
                 requestMapTool('field-draw');
                 setFieldMode((current) => (current === 'draw' ? null : 'draw'));
               } }
-              onEditSelectedField={ () => setFieldMode((current) => (current === 'edit' ? null : 'edit')) }
+              onEditSelectedField={ () => undefined }
               onImportGeoJSON={ () => undefined }
               onExportGeoJSON={ () => undefined }
             />
           </div>
         </div>
 
-        {/* Field name card when geometry is ready */ }
+        {/* Field name card when geometry is ready */}
         { draftGeometry && (
           <div className="absolute left-1/2 top-24 z-40 -translate-x-1/2 w-72">
             <div className="rounded-lg border border-border bg-card p-4 shadow-lg space-y-3">
@@ -227,12 +254,16 @@ export default function OnboardingFieldCreate() {
                 placeholder="Field name"
                 value={ fieldName }
                 onChange={ (e) => setFieldName(e.target.value) }
-                className="w-full rounded-md border border-border bg-background px-3 py-2"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 autoFocus
               />
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={ handleClose }>Cancel</Button>
-                <Button variant="primary" onClick={ saveField } disabled={ !draftGeometry || createFieldMutation.isPending }>
+                <Button
+                  variant="primary"
+                  onClick={ saveField }
+                  disabled={ !draftGeometry || !selectedSeasonId || createFieldMutation.isPending }
+                >
                   { createFieldMutation.isPending ? 'Saving…' : 'Save' }
                 </Button>
               </div>
@@ -240,19 +271,19 @@ export default function OnboardingFieldCreate() {
           </div>
         ) }
 
-        {/* Bottom center hint */ }
-        <div className="absolute left-1/2 bottom-24 z-40 -translate-x-1/2">
-          <div className="glass rounded-full px-4 py-2 text-sm">Put a dot on the map to start drawing</div>
-        </div>
+        {/* Bottom center hint */}
+        { !draftGeometry && (
+          <div className="absolute left-1/2 bottom-24 z-40 -translate-x-1/2">
+            <div className="glass rounded-full px-4 py-2 text-sm">Put a dot on the map to start drawing</div>
+          </div>
+        ) }
 
-        {/* Error toast */ }
+        {/* Error toast */}
         { saveError && (
           <div className="absolute left-1/2 bottom-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
             { saveError }
           </div>
         ) }
-
-        {/* Bottom action bar removed — buttons are in the field name card */ }
       </div>
     </div>
   );

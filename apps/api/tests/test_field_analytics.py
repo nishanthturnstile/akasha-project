@@ -417,6 +417,61 @@ def test_ndvi_overlay_uses_reference_heatmap_colors():
     ]
 
 
+# ---------------------------------------------------------------------------
+# Cross-stack NDVI palette contract
+# Canonical source of truth: tiles._NDVI_REFERENCE_CLASSES
+# Frontend mirror: apps/frontend/src/lib/indexRamp.ts  NDVI_INDEX_RAMP.classes
+# If you change colors here you MUST update the frontend hex values and vice-versa.
+# ---------------------------------------------------------------------------
+
+def test_ndvi_reference_classes_canonical_rgb_values():
+    """Directly verify _NDVI_REFERENCE_CLASSES RGB tuples without rendering.
+
+    This is the authoritative cross-stack contract test.  The frontend mirrors
+    these values as CSS hex strings in NDVI_INDEX_RAMP (indexRamp.ts).
+
+    Canonical mapping (RGB → hex):
+        (19,  24,  125) → #13187d   water / non-vegetation
+        (128, 70,  26)  → #80461a   bare soil
+        (213, 0,   35)  → #d50023   stressed / poor vegetation
+        (255, 83,  13)  → #ff530d   sparse crop / low-medium growth
+        (250, 201, 9)   → #fac909   sub-canopy / moderate growth
+        (111, 202, 7)   → #6fca07   moderate / healthy crop
+        (22,  153, 43)  → #16992b   healthy / very healthy crop
+        (0,   88,  37)  → #005825   peak vigour / dense vegetation
+    """
+    expected_rgb: list[tuple[int, int, int]] = [
+        (19, 24, 125),   # water / non-vegetation — hex #13187d
+        (128, 70, 26),   # bare soil              — hex #80461a
+        (213, 0, 35),    # stressed               — hex #d50023
+        (255, 83, 13),   # sparse crop            — hex #ff530d
+        (250, 201, 9),   # sub-canopy             — hex #fac909
+        (111, 202, 7),   # moderate               — hex #6fca07
+        (22, 153, 43),   # healthy                — hex #16992b
+        (0, 88, 37),     # peak vigour            — hex #005825
+    ]
+    assert len(tiles._NDVI_REFERENCE_CLASSES) == 8, "Expected exactly 8 NDVI classes"
+    actual_rgb = [cls[2] for cls in tiles._NDVI_REFERENCE_CLASSES]
+    assert actual_rgb == expected_rgb
+
+
+def test_ndvi_reference_classes_boundaries():
+    """Verify NDVI class boundaries match the documented [low, high) intervals."""
+    expected_bounds: list[tuple[float, float]] = [
+        (-1.0, 0.0),
+        (0.0, 0.15),
+        (0.15, 0.30),
+        (0.30, 0.45),
+        (0.45, 0.60),
+        (0.60, 0.75),
+        (0.75, 0.90),
+        (0.90, 1.0),
+    ]
+    actual_bounds = [(cls[0], cls[1]) for cls in tiles._NDVI_REFERENCE_CLASSES]
+    assert actual_bounds == pytest.approx(expected_bounds)
+
+
+
 def test_reproject_index_overlay_web_mercator_is_north_up_supersampled_and_clipped():
     rasterio = pytest.importorskip("rasterio")
     pytest.importorskip("pyproj")

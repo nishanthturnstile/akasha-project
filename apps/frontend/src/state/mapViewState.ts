@@ -41,6 +41,10 @@ export interface MapViewState {
     headerVisible: boolean;
     /** Bottom action bar visibility (Cancel / Save buttons). */
     bottomBarVisible: boolean;
+    /** Pending user action to be picked up by MapPage. */
+    pendingAction: 'create-field' | null;
+    /** Monotonic counter bumped on explicit focus requests (bypasses duplicate guard). */
+    focusNonce: number;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -66,6 +70,8 @@ export const initialMapViewState: MapViewState = {
     overlaysVisible: false,
     headerVisible: true,
     bottomBarVisible: true,
+    pendingAction: null,
+    focusNonce: 0,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -88,6 +94,8 @@ export interface MapViewContextValue extends MapViewState {
     setOverlaysVisible: (visible: boolean) => void;
     setHeaderVisible: (visible: boolean) => void;
     setBottomBarVisible: (visible: boolean) => void;
+    setPendingAction: (action: 'create-field' | null) => void;
+    setFocusNonce: (nonce: number) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

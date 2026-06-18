@@ -559,3 +559,153 @@ describe('IndexPanel — LISS-4 provenance UI (Phase E)', () => {
         expect(note.textContent).toBe(customNote);
     });
 });
+
+describe('IndexPanel — cloud/masked clarity label', () => {
+    it('shows "Cloud / masked" label for the masked-percent metric when metricsProvisional is false', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-04-27',
+                            cloudMask,
+                            statistics: {
+                                min: 0.2,
+                                max: 0.7,
+                                mean: 0.45,
+                                stddev: 0.1,
+                                validPixelPercent: 92,
+                                cloudMaskedPercent: 5,
+                                coveragePercent: 97,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 3,
+                                coveragePixels: 97,
+                                maskedPixels: 5,
+                                validPixels: 92,
+                            },
+                            metricsProvisional: false,
+                            maskMethod: 'SCL cloud mask',
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'], warnings: [] },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDVI',
+                            startDate: '2025-10-29',
+                            endDate: '2026-04-27',
+                            points: [],
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        // Wait for stats to load, then check the label
+        await screen.findByText('0.45');
+        expect(screen.getByText('Cloud / masked')).toBeTruthy();
+    });
+
+    it('shows "Masked" label for the masked-percent metric when metricsProvisional is true', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-04-27',
+                            cloudMask,
+                            statistics: {
+                                min: 0.15,
+                                max: 0.65,
+                                mean: 0.38,
+                                stddev: 0.09,
+                                validPixelPercent: 88,
+                                cloudMaskedPercent: 8,
+                                coveragePercent: 96,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 4,
+                                coveragePixels: 96,
+                                maskedPixels: 8,
+                                validPixels: 88,
+                            },
+                            metricsProvisional: true,
+                            maskMethod: 'Akasha threshold mask v1',
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'], warnings: [] },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDVI',
+                            startDate: '2025-10-29',
+                            endDate: '2026-04-27',
+                            points: [],
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        // Wait for stats to load, then check the label
+        await screen.findByText('0.38');
+        expect(screen.getByText('Masked')).toBeTruthy();
+    });
+});

@@ -72,6 +72,7 @@ class FieldIdEntry(ApiModel):
     id: str
     name: str
     canRemove: bool
+    isMapped: bool
 
 
 class SeasonResponse(ApiModel):

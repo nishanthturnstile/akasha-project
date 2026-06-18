@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { vi } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FieldContextHeader } from '@/components/map/FieldContextHeader';
@@ -30,9 +31,6 @@ const plot: Plot = {
 function renderHeader(overrides: Partial<Parameters<typeof FieldContextHeader>[0]> = {}) {
     const props = {
         selectedPlot: plot,
-        fieldCount: 5,
-        onToggleAllFields: vi.fn(),
-        allFieldsOpen: false,
         onBack: vi.fn(),
         onEditGeometry: vi.fn(),
         onOpenCommand: vi.fn(),
@@ -64,49 +62,16 @@ describe('FieldContextHeader', () => {
         expect(screen.getByTestId('field-header-name').textContent).toBe('No field selected');
     });
 
-    it('wires the back / edit / all-fields / command callbacks', () => {
+    it('wires the back / edit / command callbacks', () => {
         const props = renderHeader();
 
         fireEvent.click(screen.getByTestId('field-header-back'));
         fireEvent.click(screen.getByTestId('field-header-edit'));
-        fireEvent.click(screen.getByTestId('all-fields-trigger'));
         fireEvent.click(screen.getByTestId('command-trigger'));
 
         expect(props.onBack).toHaveBeenCalledTimes(1);
         expect(props.onEditGeometry).toHaveBeenCalledTimes(1);
-        expect(props.onToggleAllFields).toHaveBeenCalledTimes(1);
         expect(props.onOpenCommand).toHaveBeenCalledTimes(1);
-    });
-
-    it('shows the field count badge and toggles the All-fields aria-expanded state', () => {
-        const { rerender } = render(
-            <FieldContextHeader
-                selectedPlot={ plot }
-                fieldCount={ 12 }
-                onToggleAllFields={ vi.fn() }
-                allFieldsOpen={ false }
-                onBack={ vi.fn() }
-                onEditGeometry={ vi.fn() }
-                onOpenCommand={ vi.fn() }
-            />,
-        );
-
-        const trigger = screen.getByTestId('all-fields-trigger');
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-        expect(trigger.textContent).toContain('12');
-
-        rerender(
-            <FieldContextHeader
-                selectedPlot={ plot }
-                fieldCount={ 12 }
-                onToggleAllFields={ vi.fn() }
-                allFieldsOpen={ true }
-                onBack={ vi.fn() }
-                onEditGeometry={ vi.fn() }
-                onOpenCommand={ vi.fn() }
-            />,
-        );
-        expect(screen.getByTestId('all-fields-trigger').getAttribute('aria-expanded')).toBe('true');
     });
 
     it('disables the Overview placeholder (plan-gated entry-point)', () => {

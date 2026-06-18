@@ -2,7 +2,16 @@ import { MoreVertical, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { GeometryPreview } from '@/lib/geometry-preview';
+import { cn } from '@/lib/utils';
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogRoot,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useDeleteField, useFields, useSeasons, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
 import type { Field } from '@/types/api';
@@ -72,56 +81,61 @@ function FieldMenu({
 
 function FieldCard({
   field,
-  seasonNames,
   onEdit,
   onDelete,
   onSelect,
+  selected,
 }: {
   field: Field;
-  seasonNames: Record<string, string>;
   onEdit: (field: Field) => void;
   onDelete: (field: Field) => void;
   onSelect?: (field: Field) => void;
+  selected?: boolean;
 }) {
-  const fieldSeasonNames = field.seasonIds
-    ?.map((sid) => seasonNames[sid])
-    .filter(Boolean) ?? [];
-
   return (
     <div
-      className="flex cursor-pointer items-center gap-3 rounded-lg border border-border/70 bg-card/35 px-3 py-2.5 transition-colors duration-fast hover:bg-accent/10"
+      className={ cn(
+        'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-fast',
+        selected
+          ? 'border-primary border-2 bg-primary/5'
+          : 'border-border/70 bg-card/35 hover:bg-accent/10',
+      ) }
       onClick={ () => onSelect?.(field) }
       role="button"
       tabIndex={ 0 }
       onKeyDown={ (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(field); } } }
     >
-      <GeometryPreview
-        geometry={field.geometry}
-        width={48}
-        height={48}
-        className="shrink-0 rounded-sm border border-border/40 bg-muted/30"
-      />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">{field.name}</p>
-        <p className="text-xs text-muted-foreground tnum">
-          {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
-        </p>
-        {fieldSeasonNames.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {fieldSeasonNames.map((name) => (
-              <span
-                key={name}
-                className="inline-block rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary/80"
-              >
-                {name}
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-sm font-medium text-foreground">{field.name}</p>
+          <p className="shrink-0 text-xs text-muted-foreground tnum">
+            {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
+          </p>
+        </div>
       </div>
       <FieldMenu field={field} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
+}
+
+const LAST_FIELD_KEY = 'akasha.lastFieldPerSeason';
+
+export function getLastFieldPerSeason(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_FIELD_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+export function setLastFieldForSeason(seasonId: string, fieldId: string) {
+  try {
+    const map = getLastFieldPerSeason();
+    map[seasonId] = fieldId;
+    localStorage.setItem(LAST_FIELD_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage unavailable
+  }
 }
 
 const EMPTY_CTA_BUTTONS = [
@@ -135,9 +149,11 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
   const deleteField = useDeleteField();
   const updateField = useUpdateField();
   const view = useMapView();
+  const { selectedPlotId } = view;
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [editingField, setEditingField] = useState<Field | null>(null);
+  const [deletingField, setDeletingField] = useState<Field | null>(null);
 
   const allFields = useMemo(() => fieldsQ.data ?? [], [fieldsQ.data]);
   const allSeasons = useMemo(() => seasonsQ.data ?? [], [seasonsQ.data]);
@@ -173,13 +189,8 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
     });
   }, [seasonFields, normalizedQuery, seasonNames]);
 
-  const handleDelete = async (field: Field) => {
-    if (!window.confirm(`Delete field "${field.name}"? This action cannot be undone.`)) return;
-    try {
-      await deleteField.mutateAsync(field.id);
-    } catch {
-      // error handled by query state
-    }
+  const handleDelete = (field: Field) => {
+    setDeletingField(field);
   };
 
   return (
@@ -273,15 +284,18 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           ) : (
             <div className="space-y-2">
               {filteredFields.map((field) => (
-                <FieldCard
+                  <FieldCard
                   key={field.id}
                   field={field}
-                  seasonNames={seasonNames}
+                  selected={field.id === selectedPlotId}
                   onEdit={setEditingField}
                   onDelete={handleDelete}
                   onSelect={ (f) => {
+                    if (seasonId) setLastFieldForSeason(seasonId, f.id);
                     view.setSelectedPlotId(f.id);
                     view.setFocusNonce(Date.now());
+                    onClose();
+                    navigate(`/monitoring/field-analytics/field/${f.id}`);
                   } }
                 />
               ))}
@@ -309,10 +323,33 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           field={editingField}
           open={!!editingField}
           onOpenChange={(open) => { if (!open) setEditingField(null); }}
-          onSave={(fieldId, name) => updateField.mutate({ fieldId, payload: { name } })}
+          onSave={(fieldId, name, geometry) => updateField.mutate({ fieldId, payload: { name, ...(geometry ? { geometry } : {}) } })}
           onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
         />
       )}
+
+      <AlertDialogRoot open={!!deletingField} onOpenChange={(open) => { if (!open) setDeletingField(null); }}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete field?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{deletingField?.name}"? This action cannot be undone.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (!deletingField) return;
+              try {
+                await deleteField.mutateAsync(deletingField.id);
+              } catch {
+                // error handled by query state
+              }
+              setDeletingField(null);
+            }}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </>
   );
 }

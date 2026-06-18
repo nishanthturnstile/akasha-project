@@ -18,13 +18,21 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogRoot,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
-import GlobalViewPanel from '@/components/fields/GlobalViewPanel';
-import { GeometryPreview } from '@/lib/geometry-preview';
+import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
 import { queryClient } from '@/lib/queryClient';
@@ -92,7 +100,8 @@ export function AppShell() {
   const [seasonSheetOpen, setSeasonSheetOpen] = useState(false);
   const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
-  const [globalViewOpen, setGlobalViewOpen] = useState(false);
+  const [globalViewOpen, setGlobalViewOpen] = useState(true);
+  const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
 
   const seasonsQ = useSeasons();
   const deleteSeason = useDeleteSeason();
@@ -103,6 +112,13 @@ export function AppShell() {
     view.setOverlaysVisible(!globalViewOpen);
   }, [globalViewOpen, view]);
 
+  // Clear persisted field selection on mount (unless deep-linked to a specific field)
+  useEffect(() => {
+    if (!location.pathname.includes('/field/')) {
+      view.clearSelectedPlot();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sortedSeasons = useMemo(() => {
     const data = seasonsQ.data;
     if (!Array.isArray(data)) return [];
@@ -111,9 +127,36 @@ export function AppShell() {
     );
   }, [seasonsQ.data]);
 
+  const filteredSeasons = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return sortedSeasons.filter((s) => {
+      if (!s.startDate && !s.endDate) return seasonTab === 'active';
+      const start = s.startDate ? new Date(s.startDate) : null;
+      const end = s.endDate ? new Date(s.endDate) : null;
+      if (seasonTab === 'active') {
+        if (start && start > today) return false;
+        if (end && end < today) return false;
+        return true;
+      }
+      if (seasonTab === 'planned') {
+        return start != null && start > today;
+      }
+      if (seasonTab === 'ended') {
+        return end != null && end < today;
+      }
+      return true;
+    });
+  }, [sortedSeasons, seasonTab]);
+
   const editSeasonTarget = useMemo(
     () => (editSeasonId ? sortedSeasons.find((s) => s.id === editSeasonId) ?? null : null),
     [editSeasonId, sortedSeasons],
+  );
+
+  const deletingSeason = useMemo(
+    () => (deletingSeasonId ? sortedSeasons.find((s) => s.id === deletingSeasonId) ?? null : null),
+    [deletingSeasonId, sortedSeasons],
   );
 
   const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
@@ -171,7 +214,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={ 200 }>
-      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } />
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ setCurrentSeasonId } />
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
@@ -346,20 +389,24 @@ export function AppShell() {
                     <p className="text-sm text-muted-foreground">Loading seasons…</p>
                   ) : seasonsQ.error ? (
                     <p className="text-sm text-destructive">Failed to load seasons</p>
-                  ) : sortedSeasons.length === 0 ? (
+                  ) : filteredSeasons.length === 0 ? (
                     <Card className="border-border/60 bg-card/90 shadow-sm">
                       <CardContent>
                         <p className="text-sm font-medium text-foreground">
-                          There are no { seasonTab === 'planned' ? 'planned' : seasonTab === 'ended' ? 'ended' : 'active' } seasons.
+                          No { seasonTab } seasons yet
                         </p>
                         <p className="mt-2 text-sm text-muted-foreground">
-                          Create a new season to manage your crop schedule.
+                          { seasonTab === 'active'
+                            ? 'Create a new season to get started.'
+                            : seasonTab === 'planned'
+                              ? 'Schedule a future season with a start date beyond today.'
+                              : 'Seasons with an end date in the past will appear here.' }
                         </p>
                       </CardContent>
                     </Card>
                   ) : (
                     <div className="space-y-3">
-                      { sortedSeasons.map((season) => {
+                      { filteredSeasons.map((season) => {
                         const seasonFields = (fieldsQ.data ?? []).filter((f) =>
                           f.seasonIds?.includes(season.id),
                         );
@@ -371,11 +418,25 @@ export function AppShell() {
                               'border-border/60 bg-card/90 shadow-sm cursor-pointer transition-colors duration-fast',
                               isCurrent && 'border-primary/50 ring-1 ring-primary/20',
                             ) }
-                            onClick={ () => { setCurrentSeasonId(season.id); setSeasonSheetOpen(false); } }
+                            onClick={ () => {
+                              const savedFields = getLastFieldPerSeason();
+                              const savedFieldId = savedFields[season.id];
+                              const fields = fieldsQ.data ?? [];
+                              const savedField = savedFieldId ? fields.find((f) => f.id === savedFieldId && f.seasonIds?.includes(season.id)) : undefined;
+                              if (savedField) {
+                                view.setSelectedPlotId(savedField.id);
+                                view.setFocusNonce(Date.now());
+                              } else {
+                                view.clearSelectedPlot();
+                              }
+                              setCurrentSeasonId(season.id);
+                              setSeasonSheetOpen(false);
+                              setGlobalViewOpen(true);
+                            } }
                           >
                             <CardHeader>
                               <div className="flex items-center justify-between gap-2">
-                                <CardTitle className={ cn(isCurrent && 'text-primary') }>
+                                <CardTitle className={ cn('font-bold', isCurrent && 'text-primary') }>
                                   { season.name }
                                 </CardTitle>
                                 { isCurrent && (
@@ -399,45 +460,39 @@ export function AppShell() {
                                 </div>
                               </div>
                             </CardHeader>
-                            <CardContent className="pt-0">
-                              <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
-                                <span>Fields:</span>
-                                <span className="text-foreground font-semibold">
-                                  { seasonFields.length }
-                                </span>
-                              </div>
-                              {seasonFields.length > 0 ? (
-                                <div className="mt-2 space-y-1.5">
-                                  { seasonFields.map((f) => (
-                                    <div key={f.id} className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5">
-                                        <GeometryPreview
-                                          geometry={f.geometry}
-                                          width={48}
-                                          height={48}
-                                          className="shrink-0 rounded-sm border border-border/40 bg-muted/30"
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                          <p className="truncate text-xs font-medium text-foreground">{f.name}</p>
-                                          <p className="text-[11px] text-muted-foreground tnum">
-                                            {f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—'}
-                                          </p>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={ (e) => {
-                                            e.stopPropagation();
-                                            view.setSelectedPlotId(f.id);
-                                            setSeasonSheetOpen(false);
-                                            navigate(`/monitoring/field-analytics/field/${f.id}`);
-                                          } }
-                                          className="shrink-0 rounded border border-border/60 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors duration-fast"
-                                        >
-                                          Focus
-                                        </button>
-                                      </div>
-                                  )) }
+                            <CardContent className="border-t border-border/50 pt-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Fields</span>
+                                  <span className="text-base font-bold text-foreground tabular-nums">
+                                    { seasonFields.length }
+                                  </span>
                                 </div>
-                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                    onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={!season.canDelete}
+                                    title={!season.canDelete ? "Cannot delete your only season" : undefined}
+                                    className={cn(
+                                      "rounded-md border px-3 py-1.5 text-sm",
+                                      !season.canDelete
+                                        ? "border-dashed text-muted-foreground cursor-not-allowed"
+                                        : "border-border text-foreground hover:bg-accent/40"
+                                    )}
+                                    onClick={ (e) => { e.stopPropagation(); if (season.canDelete) setDeletingSeasonId(season.id); } }
+                                  >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                              {seasonFields.length === 0 && (
                                 <button
                                   type="button"
                                   onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
@@ -446,29 +501,6 @@ export function AppShell() {
                                   + Add field
                                 </button>
                               )}
-                              <div className="mt-3 flex gap-2">
-                                <button
-                                  type="button"
-                                  className="flex-1 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
-                                  onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={!season.canDelete}
-                                  title={!season.canDelete ? "Cannot delete your only season" : undefined}
-                                  className={cn(
-                                    "flex-1 rounded-md border px-3 py-1.5 text-sm",
-                                    !season.canDelete
-                                      ? "border-dashed text-muted-foreground cursor-not-allowed"
-                                      : "border-border text-foreground hover:bg-accent/40"
-                                  )}
-                                  onClick={ async (e) => { e.stopPropagation(); if (season.canDelete && window.confirm('Delete this season?')) { await deleteSeason.mutateAsync(season.id); } } }
-                                >
-                                  Delete
-                                </button>
-                              </div>
                             </CardContent>
                           </Card>
                         );
@@ -760,6 +792,29 @@ export function AppShell() {
           ) }
         </aside>
       </div>
+
+      <AlertDialogRoot open={!!deletingSeasonId} onOpenChange={(open) => { if (!open) setDeletingSeasonId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete season?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{deletingSeason?.name}"? This action cannot be undone.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (!deletingSeasonId) return;
+              try {
+                await deleteSeason.mutateAsync(deletingSeasonId);
+              } catch {
+                // error handled by query state
+              }
+              setDeletingSeasonId(null);
+            }}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </TooltipProvider>
   );
 }

@@ -1,20 +1,22 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { X } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { Pencil, RotateCcw, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { useConfig } from '@/lib/queries';
 import { resolveBasemapConfig } from '@/map/basemap';
+import { polygonAreaMeters } from '@/lib/measure';
 import type maplibregl from 'maplibre-gl';
-import type { Field } from '@/types/api';
+import type { TerraDraw } from 'terra-draw';
+import type { Field, PlotGeometry } from '@/types/api';
 
 interface Props {
   field: Field;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave?: (fieldId: string, name?: string) => void;
+  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry) => void;
   onDelete?: (fieldId: string) => void;
 }
 
@@ -43,6 +45,23 @@ function polygonCenter(geometry: Field['geometry']): [number, number] {
   ];
 }
 
+function computeGeometryArea(geometry: PlotGeometry): number | null {
+  if (geometry.type !== 'Polygon') return null;
+  const ring = geometry.coordinates[0]?.map(([lng, lat]) => [lng, lat] as [number, number]);
+  if (!ring || ring.length < 3) return null;
+  return polygonAreaMeters(ring) / 10000;
+}
+
+function latestPolygon(draw: TerraDraw): PlotGeometry | null {
+  const features = draw.getSnapshot().filter((f) => f.geometry.type === 'Polygon');
+  const feature = features[features.length - 1];
+  return feature?.geometry.type === 'Polygon' ? (feature.geometry as PlotGeometry) : null;
+}
+
+function isPolygonGeometry(geometry: PlotGeometry | undefined): geometry is PlotGeometry & { type: 'Polygon' } {
+  return geometry?.type === 'Polygon';
+}
+
 export default function EditFieldDialog({
   field,
   open,
@@ -53,6 +72,11 @@ export default function EditFieldDialog({
   const [name, setName] = useState(field.name);
   const [error, setError] = useState<string | null>(null);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
+  const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
+  const [isRedrawing, setIsRedrawing] = useState(false);
+
+  const drawRef = useRef<TerraDraw | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   const configQ = useConfig();
 
@@ -64,6 +88,20 @@ export default function EditFieldDialog({
 
   const center = useMemo(() => polygonCenter(field.geometry), [field.geometry]);
 
+  const isMultiPart = useMemo(() => !isPolygonGeometry(field.geometry), [field.geometry]);
+
+  const displayGeometry = editedGeometry ?? field.geometry;
+
+  const currentArea = useMemo(() => {
+    if (isMultiPart) return field.areaHa ?? null;
+    return computeGeometryArea(displayGeometry);
+  }, [isMultiPart, field.areaHa, displayGeometry]);
+
+  const geometryChanged = useMemo(() => {
+    if (!editedGeometry) return false;
+    return JSON.stringify(editedGeometry) !== JSON.stringify(field.geometry);
+  }, [editedGeometry, field.geometry]);
+
   const handleMapReady = useCallback((map: maplibregl.Map) => {
     setMiniMap(map);
     const bounds = polygonBounds(field.geometry);
@@ -72,13 +110,101 @@ export default function EditFieldDialog({
     }
   }, [field.geometry]);
 
+  const stopDraw = useCallback(() => {
+    if (cleanupRef.current) {
+      cleanupRef.current();
+      cleanupRef.current = null;
+    }
+    drawRef.current = null;
+    setIsRedrawing(false);
+  }, []);
+
+  // TerraDraw initialised only during active redraw — fresh polygon mode, no pre-loaded geometry
+  useEffect(() => {
+    if (!open || !miniMap || isMultiPart || !isRedrawing) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const [{ TerraDraw, TerraDrawPolygonMode }, { TerraDrawMapLibreGLAdapter }] =
+          await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
+
+        if (cancelled) return;
+
+        const draw = new TerraDraw({
+          adapter: new TerraDrawMapLibreGLAdapter({ map: miniMap, prefixId: 'edit-dialog-draw' }),
+          modes: [
+            new TerraDrawPolygonMode({
+              styles: {
+                fillColor: '#3b82f6',
+                fillOpacity: 0.25,
+                outlineColor: '#2563eb',
+                outlineOpacity: 1,
+                outlineWidth: 3,
+              },
+            }),
+          ],
+        });
+
+        draw.start();
+        draw.setMode('polygon');
+        drawRef.current = draw;
+
+        draw.on('change', () => {
+          const geometry = latestPolygon(draw);
+          if (geometry) {
+            setEditedGeometry(geometry);
+            setError(null);
+          }
+        });
+
+        cleanupRef.current = () => {
+          cancelled = true;
+          try { draw.clear(); } catch { /* ignore */ }
+          try { draw.stop(); } catch { /* ignore */ }
+          drawRef.current = null;
+        };
+      } catch (exc) {
+        setError(exc instanceof Error ? exc.message : 'Failed to initialise the geometry editor.');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
+      drawRef.current = null;
+    };
+  }, [open, miniMap, isRedrawing, isMultiPart, stopDraw]);
+
+  const handleRedraw = useCallback(() => {
+    setEditedGeometry(null);
+    setIsRedrawing(true);
+  }, []);
+
+  const handleCancelRedraw = useCallback(() => {
+    stopDraw();
+    setEditedGeometry(null);
+    setError(null);
+  }, [stopDraw]);
+
   const handleSave = () => {
     if (!name.trim()) {
       setError('Field name is required');
       return;
     }
     setError(null);
-    onSave?.(field.id, name.trim());
+    onSave?.(
+      field.id,
+      name.trim(),
+      geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
+    );
+    if (!geometryChanged && !editedGeometry) {
+      // Name-only save - just close
+    }
     onOpenChange(false);
   };
 
@@ -97,7 +223,7 @@ export default function EditFieldDialog({
         >
           <VisuallyHidden>
             <Dialog.Title>Edit field</Dialog.Title>
-            <Dialog.Description>Edit field name and view its boundary on the map.</Dialog.Description>
+            <Dialog.Description>Edit field name and adjust its boundary on the map.</Dialog.Description>
           </VisuallyHidden>
 
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
@@ -122,14 +248,47 @@ export default function EditFieldDialog({
                   onBasemapError={() => {}}
                   onMapReady={handleMapReady}
                 />
-                {miniMap && (
+                {miniMap && !isRedrawing && (
                   <FieldBoundaryLayer
                     map={miniMap}
                     plot={null}
                     geometry={field.geometry}
-                    featureId="edit-field-preview"
+                    featureId={`edit-field-${field.id}`}
                     name={field.name}
                   />
+                )}
+                {isMultiPart && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-sm text-muted-foreground">
+                    Multi-part field editing is not available in this dialog.
+                  </div>
+                )}
+                {!isMultiPart && open && (
+                  <div className="absolute bottom-2 right-2 flex gap-1">
+                    {isRedrawing ? (
+                      <button
+                        type="button"
+                        onClick={handleCancelRedraw}
+                        className="rounded bg-background/80 px-2 py-1 text-[11px] text-foreground shadow hover:bg-background transition-colors"
+                      >
+                        Cancel redraw
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRedraw}
+                        className="flex items-center gap-1 rounded bg-background/80 px-2 py-1 text-[11px] text-foreground shadow hover:bg-background transition-colors"
+                      >
+                        <RotateCcw className="size-3" strokeWidth={1.75} />
+                        Redraw
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!isMultiPart && isRedrawing && open && (
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-background/80 px-2 py-1 text-[11px] text-muted-foreground shadow">
+                    <Pencil className="size-3" strokeWidth={1.75} />
+                    Click to place vertices, double-click to close
+                  </div>
                 )}
               </div>
             ) : (
@@ -148,7 +307,7 @@ export default function EditFieldDialog({
             </div>
 
             <div className="text-sm text-muted-foreground">
-              Area: {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
+              Area: {currentArea != null ? `${currentArea.toFixed(2)} ha` : '—'}
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}

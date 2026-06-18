@@ -11,9 +11,10 @@ import { useCreateSeason, useFields } from '@/lib/queries';
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCreated?: (seasonId: string) => void;
 }
 
-function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
+function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -41,12 +42,13 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
     if (!canCreate) return;
     setError(null);
     try {
-      await createSeason.mutateAsync({
+      const created = await createSeason.mutateAsync({
         name: name.trim(),
         startDate: startDate || null,
         endDate: endDate || null,
         fieldIds: selectedFieldIds,
       });
+      onCreated?.(created.id);
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create season';
@@ -60,7 +62,7 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Create season"
-          className="glass fixed left-1/2 top-[18vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg p-0"
+          className="glass fixed left-1/2 top-[12vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg p-0"
         >
           <VisuallyHidden>
             <Dialog.Title>Create season</Dialog.Title>
@@ -69,20 +71,16 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
             </Dialog.Description>
           </VisuallyHidden>
 
-          <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
-            <div className="min-w-0 text-center w-full">
-              <div className="mx-auto w-max">
-                <h3 className="text-base font-display font-semibold">Create season</h3>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                All data on the platform is filtered according to the selected season and the fields added to it.
-              </p>
-            </div>
+          <div className="relative border-b border-border/60 px-4 py-4">
             <Dialog.Close asChild>
-              <button aria-label="Close" className="rounded-md p-1 text-muted-foreground hover:bg-accent/40">
+              <button aria-label="Close" className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-accent/40">
                 <X className="size-4" />
               </button>
             </Dialog.Close>
+            <h3 className="text-center text-base font-display font-bold">Create season</h3>
+            <p className="mt-1 text-center text-xs text-muted-foreground">
+              Seasons filter all platform data and field assignments.
+            </p>
           </div>
 
           <div className="p-4 space-y-4">
@@ -183,7 +181,7 @@ function CreateSeasonDialogInner({ open, onOpenChange }: Props) {
 /**
  * Wrapper that resets form state whenever the dialog is opened.
  */
-export default function CreateSeasonDialog({ open, onOpenChange }: Props) {
+export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Props) {
   // Use a key to force remount and reset all internal state when dialog opens
-  return <CreateSeasonDialogInner key={open ? 'open' : 'closed'} open={open} onOpenChange={onOpenChange} />;
+  return <CreateSeasonDialogInner key={open ? 'open' : 'closed'} open={open} onOpenChange={onOpenChange} onCreated={onCreated} />;
 }

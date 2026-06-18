@@ -296,6 +296,7 @@ vegetation_cycle
 ├── maturity                    varchar(50), nullable   ← selected from maturity_options
 ├── sowing_date                 date, nullable
 ├── planting_date               date, nullable          ← used if has_planting_cutoff_date
+├── is_cutoff_start_date        boolen, nullable
 ├── harvest_date                date, nullable
 ├── irrigation_type_id          FK → irrigation_type.id, nullable
 ├── tillage_type_id             FK → tillage_type.id, nullable

@@ -43,16 +43,8 @@ export default function EditSeasonDialog({
     setSelectedFieldIds(seasonFieldIds);
   }, [seasonFieldIds]);
 
-  const canRemoveMap = useMemo(() => {
-    const map: Record<string, boolean> = {};
-    for (const fi of season.fieldIds) {
-      map[fi.id] = fi.canRemove;
-    }
-    return map;
-  }, [season.fieldIds]);
-
   const mandatoryFieldIds = useMemo(
-    () => season.fieldIds.filter((fi) => !fi.canRemove).map((fi) => fi.id),
+    () => season.fieldIds.filter((fi) => fi.isMapped && !fi.canRemove).map((fi) => fi.id),
     [season.fieldIds],
   );
 
@@ -60,7 +52,8 @@ export default function EditSeasonDialog({
   const isIndeterminate = selectedFieldIds.length > 0 && selectedFieldIds.length < allFields.length;
 
   const toggleField = (fieldId: string) => {
-    if (!canRemoveMap[fieldId]) return; // mandatory field, cannot uncheck
+    const fieldEntry = season.fieldIds.find((fi) => fi.id === fieldId);
+    if (fieldEntry && fieldEntry.isMapped && !fieldEntry.canRemove) return;
     setSelectedFieldIds((prev) =>
       prev.includes(fieldId) ? prev.filter((x) => x !== fieldId) : [...prev, fieldId],
     );
@@ -171,7 +164,7 @@ export default function EditSeasonDialog({
                   <div className="space-y-2">
                       {allFields.map((f) => {
                         const fieldEntry = season.fieldIds.find((fi) => fi.id === f.id);
-                        const isMandatory = fieldEntry ? !fieldEntry.canRemove : false;
+                        const isMandatory = fieldEntry ? (!fieldEntry.canRemove && fieldEntry.isMapped) : false;
                         return (
                           <div
                             key={f.id}

@@ -652,7 +652,10 @@ export function useCreateSeason() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: SeasonCreatePayload) => createSeason(payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.seasons }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+    },
   });
 }
 
@@ -664,6 +667,7 @@ export function useUpdateSeason() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
       void queryClient.invalidateQueries({ queryKey: queryKeys.season(data.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
     },
   });
 }

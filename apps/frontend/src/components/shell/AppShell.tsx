@@ -456,8 +456,15 @@ export function AppShell() {
                                 </button>
                                 <button
                                   type="button"
-                                  className="flex-1 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
-                                  onClick={ async (e) => { e.stopPropagation(); if (window.confirm('Delete this season?')) { await deleteSeason.mutateAsync(season.id); } } }
+                                  disabled={!season.canDelete}
+                                  title={!season.canDelete ? "Cannot delete your only season" : undefined}
+                                  className={cn(
+                                    "flex-1 rounded-md border px-3 py-1.5 text-sm",
+                                    !season.canDelete
+                                      ? "border-dashed text-muted-foreground cursor-not-allowed"
+                                      : "border-border text-foreground hover:bg-accent/40"
+                                  )}
+                                  onClick={ async (e) => { e.stopPropagation(); if (season.canDelete && window.confirm('Delete this season?')) { await deleteSeason.mutateAsync(season.id); } } }
                                 >
                                   Delete
                                 </button>

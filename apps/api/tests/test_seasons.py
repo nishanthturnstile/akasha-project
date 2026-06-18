@@ -58,7 +58,7 @@ class FakeSeasonStore:
             "canDelete": can_delete if can_delete is not None else self._seq > 1,
             "totalArea": 0.0,
             "fieldIds": [
-                {"id": field_id, "name": f"Field {idx + 1}", "canRemove": True}
+                {"id": field_id, "name": f"Field {idx + 1}", "canRemove": True, "isMapped": True}
                 for idx, field_id in enumerate(field_ids or [])
             ],
             "createdAt": self._now(),
@@ -91,7 +91,7 @@ class FakeSeasonStore:
             row["endDate"] = value.isoformat() if value else None
         if "fieldIds" in kwargs:
             row["fieldIds"] = [
-                {"id": field_id, "name": f"Field {idx + 1}", "canRemove": True}
+                {"id": field_id, "name": f"Field {idx + 1}", "canRemove": True, "isMapped": True}
                 for idx, field_id in enumerate(kwargs["fieldIds"] or [])
             ]
         row["updatedAt"] = self._now()
@@ -134,7 +134,7 @@ def test_create_season_accepts_field_ids_alias(store):
     assert body["name"] == "Kharif 2026"
     assert body["startDate"] == "2026-06-01"
     assert body["endDate"] == "2026-10-15"
-    assert body["fieldIds"] == [{"id": field_id, "name": "Field 1", "canRemove": True}]
+    assert body["fieldIds"] == [{"id": field_id, "name": "Field 1", "canRemove": True, "isMapped": True}]
 
 
 def test_update_season_accepts_field_ids_alias(store):
@@ -149,7 +149,7 @@ def test_update_season_accepts_field_ids_alias(store):
 
     assert response.status_code == 200
     assert response.json()["fieldIds"] == [
-        {"id": new_field_id, "name": "Field 1", "canRemove": True}
+        {"id": new_field_id, "name": "Field 1", "canRemove": True, "isMapped": True}
     ]
 
 

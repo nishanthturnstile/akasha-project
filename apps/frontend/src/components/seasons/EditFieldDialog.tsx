@@ -1,9 +1,13 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { X } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { GeometryPreview } from '@/lib/geometry-preview';
+import { MapLayerManager } from '@/components/map/MapLayerManager';
+import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
+import { useConfig } from '@/lib/queries';
+import { resolveBasemapConfig } from '@/map/basemap';
+import type maplibregl from 'maplibre-gl';
 import type { Field } from '@/types/api';
 
 interface Props {
@@ -12,6 +16,31 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onSave?: (fieldId: string, name?: string) => void;
   onDelete?: (fieldId: string) => void;
+}
+
+function polygonBounds(geometry: Field['geometry']): [[number, number], [number, number]] | null {
+  if (!geometry) return null;
+  const ring = geometry.type === 'Polygon'
+    ? geometry.coordinates[0]
+    : geometry.coordinates[0][0];
+  if (!ring || ring.length === 0) return null;
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  for (const [lng, lat] of ring) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return [[minLng, minLat], [maxLng, maxLat]];
+}
+
+function polygonCenter(geometry: Field['geometry']): [number, number] {
+  const bounds = polygonBounds(geometry);
+  if (!bounds) return [78, 12];
+  return [
+    (bounds[0][0] + bounds[1][0]) / 2,
+    (bounds[0][1] + bounds[1][1]) / 2,
+  ];
 }
 
 export default function EditFieldDialog({
@@ -23,6 +52,25 @@ export default function EditFieldDialog({
 }: Props) {
   const [name, setName] = useState(field.name);
   const [error, setError] = useState<string | null>(null);
+  const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
+
+  const configQ = useConfig();
+
+  const basemapResolution = useMemo(() => {
+    if (!configQ.data) return null;
+    try { return resolveBasemapConfig(configQ.data); }
+    catch { return null; }
+  }, [configQ.data]);
+
+  const center = useMemo(() => polygonCenter(field.geometry), [field.geometry]);
+
+  const handleMapReady = useCallback((map: maplibregl.Map) => {
+    setMiniMap(map);
+    const bounds = polygonBounds(field.geometry);
+    if (bounds) {
+      map.fitBounds(bounds, { padding: 24, maxZoom: 18 });
+    }
+  }, [field.geometry]);
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -45,11 +93,11 @@ export default function EditFieldDialog({
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
-          className="glass fixed left-1/2 top-[22vh] z-popover w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg p-0"
+          className="glass fixed left-1/2 top-[18vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg p-0"
         >
           <VisuallyHidden>
             <Dialog.Title>Edit field</Dialog.Title>
-            <Dialog.Description>Edit field name and view its boundary.</Dialog.Description>
+            <Dialog.Description>Edit field name and view its boundary on the map.</Dialog.Description>
           </VisuallyHidden>
 
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
@@ -62,13 +110,33 @@ export default function EditFieldDialog({
           </div>
 
           <div className="p-4 space-y-4">
-            <div className="flex items-center justify-center p-4 bg-muted/30 rounded-lg border border-border/60">
-              <GeometryPreview
-                geometry={field.geometry}
-                width={200}
-                height={140}
-              />
-            </div>
+            {basemapResolution ? (
+              <div className="relative h-[260px] w-full rounded-lg overflow-hidden border border-border">
+                <MapLayerManager
+                  basemap={basemapResolution}
+                  center={center}
+                  zoom={15}
+                  scene={null}
+                  opacity={1}
+                  visible={true}
+                  onBasemapError={() => {}}
+                  onMapReady={handleMapReady}
+                />
+                {miniMap && (
+                  <FieldBoundaryLayer
+                    map={miniMap}
+                    plot={null}
+                    geometry={field.geometry}
+                    featureId="edit-field-preview"
+                    name={field.name}
+                  />
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-[260px] rounded-lg border border-border bg-muted/30 text-sm text-muted-foreground">
+                Loading map…
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-3">
               <label className="text-sm">Field name</label>

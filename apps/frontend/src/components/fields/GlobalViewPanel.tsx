@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { GeometryPreview } from '@/lib/geometry-preview';
-import { useDeleteField, useFields, useSeasons } from '@/lib/queries';
+import { useDeleteField, useFields, useSeasons, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
 import type { Field } from '@/types/api';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
@@ -133,6 +133,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
   const fieldsQ = useFields();
   const seasonsQ = useSeasons();
   const deleteField = useDeleteField();
+  const updateField = useUpdateField();
   const view = useMapView();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
@@ -308,6 +309,8 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           field={editingField}
           open={!!editingField}
           onOpenChange={(open) => { if (!open) setEditingField(null); }}
+          onSave={(fieldId, name) => updateField.mutate({ fieldId, payload: { name } })}
+          onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
         />
       )}
     </>

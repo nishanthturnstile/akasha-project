@@ -32,15 +32,23 @@ export function FieldTrendChart({ points, indexType }: FieldTrendChartProps) {
   const width = 248;
   const height = 128;
   const padding = { top: 12, right: 12, bottom: 26, left: 34 };
+  const isNdvi = indexType.toUpperCase() === 'NDVI';
   const values = plotted.map((point) => point.mean);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  // NDVI: pin visible domain to [0, 1] for crop-vigor interpretation.
+  // Other indices: auto-scale to data range.
+  const yMin = isNdvi ? 0 : dataMin;
+  const yMax = isNdvi ? 1 : dataMax;
+  const span = yMax - yMin || 1;
   const xFor = (index: number) =>
     padding.left +
     (index / Math.max(1, plotted.length - 1)) * (width - padding.left - padding.right);
-  const yFor = (value: number) =>
-    padding.top + ((max - value) / span) * (height - padding.top - padding.bottom);
+  // For NDVI, visually clamp values outside [0,1] to the boundary; data is not modified.
+  const yFor = (value: number) => {
+    const v = isNdvi ? Math.max(0, Math.min(1, value)) : value;
+    return padding.top + ((yMax - v) / span) * (height - padding.top - padding.bottom);
+  };
   const d = plotted
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${xFor(index).toFixed(2)} ${yFor(point.mean).toFixed(2)}`)
     .join(' ');
@@ -73,11 +81,11 @@ export function FieldTrendChart({ points, indexType }: FieldTrendChartProps) {
           className="stroke-border"
           strokeWidth="1"
         />
-        <text x="2" y={ yFor(max) + 4 } className="fill-muted-foreground text-[9px]">
-          { fmt(max, 2) }
+        <text x="2" y={ yFor(yMax) + 4 } className="fill-muted-foreground text-[9px]" data-testid="trend-y-max">
+          { fmt(yMax, 2) }
         </text>
-        <text x="2" y={ yFor(min) + 4 } className="fill-muted-foreground text-[9px]">
-          { fmt(min, 2) }
+        <text x="2" y={ yFor(yMin) + 4 } className="fill-muted-foreground text-[9px]" data-testid="trend-y-min">
+          { fmt(yMin, 2) }
         </text>
         <path d={ d } fill="none" className="stroke-primary" strokeWidth="2.25" strokeLinecap="round" />
         { plotted.map((point, index) => (

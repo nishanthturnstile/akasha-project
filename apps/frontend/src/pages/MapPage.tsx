@@ -959,7 +959,7 @@ export default function MapPage() {
         * Raised above the attribution line so the two never collide at any width. */ }
       <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
         { visible && legendOpen && (scene || indexOverlay) && (
-          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } />
+          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } resolvedSourceId={ indexOverlay?.resolvedSourceId } />
         ) }
         <MapControls
           map={ map }

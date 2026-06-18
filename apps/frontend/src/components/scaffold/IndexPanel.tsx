@@ -435,7 +435,7 @@ function ChartTab({
   provenanceNote,
 }: ChartTabProps) {
   const maskMethod = sourceMaskMethod ?? null;
-  const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud';
+  const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud / masked';
 
   return (
     <div className="space-y-3 pt-1">

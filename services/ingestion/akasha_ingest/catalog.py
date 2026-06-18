@@ -713,10 +713,17 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
     shape = _shape(analytic)
     transform = _transform(analytic)
     proj_bbox = list(_first(analytic.get("proj:bbox"), analytic.get("bounds"), bbox))
+    analytic_resolution = analytic.get("resolution")
+    analytic_spatial_resolution = (
+        analytic_resolution[0]
+        if isinstance(analytic_resolution, list) and analytic_resolution
+        else None
+    )
     gsd = _first(
         manifest.get("gsd"),
         props.get("gsd"),
         analytic.get("gsd"),
+        analytic_spatial_resolution,
         source_meta["default_gsd"],
     )
     cloud_cover = _first(manifest.get("eo:cloud_cover"), props.get("eo:cloud_cover"))

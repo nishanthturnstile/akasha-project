@@ -155,7 +155,7 @@ def test_catalog_emits_three_band_liss4_resourcesat_item():
                 "band_count": 3,
                 "dtype": "uint16",
                 "nodata": 0,
-                "resolution": [5.8, 5.8],
+                "resolution": [5.0, 5.0],
                 "crs": "EPSG:32643",
                 "width": 2,
                 "height": 2,
@@ -165,7 +165,7 @@ def test_catalog_emits_three_band_liss4_resourcesat_item():
                 "band_count": 1,
                 "dtype": "uint8",
                 "nodata": 0,
-                "resolution": [5.8, 5.8],
+                "resolution": [5.0, 5.0],
                 "crs": "EPSG:32643",
                 "width": 2,
                 "height": 2,
@@ -178,7 +178,7 @@ def test_catalog_emits_three_band_liss4_resourcesat_item():
 
     assert item["collection"] == "resourcesat-2a-liss4-mx70-l2"
     assert item["properties"]["instruments"] == ["liss-4"]
-    assert item["properties"]["gsd"] == 5.8
+    assert item["properties"]["gsd"] == 5.0
     assert item["properties"]["akasha:band_role_mapping"] == {
         "GREEN": "BAND2",
         "RED": "BAND3",
@@ -192,7 +192,7 @@ def test_catalog_emits_three_band_liss4_resourcesat_item():
     assert len(item["assets"]["analytic"]["raster:bands"]) == 3
     assert {
         band["spatial_resolution"] for band in item["assets"]["analytic"]["raster:bands"]
-    } == {5.8}
+    } == {5.0}
 
 
 def test_source_collection_supports_eos06_phase5_context_source():

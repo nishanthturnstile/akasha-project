@@ -80,6 +80,8 @@ def test_liss4_systemd_artifacts_are_isolated_from_liss3_units():
     assert "AKASHA_SYNC_AOI=bangalore-60km" in env
     assert "AKASHA_SYNC_WINDOW_DAYS=30" in env
     assert "AKASHA_SYNC_MAX_DOWNLOADS=3" in env
+    assert "AKASHA_SYNC_MIN_COVERAGE_PERCENT=10" in env
+    assert '--min-coverage-percent "${AKASHA_SYNC_MIN_COVERAGE_PERCENT:-10}"' in script
 
 
 def test_liss4_installer_dry_run_outputs_liss4_unit_paths_only():

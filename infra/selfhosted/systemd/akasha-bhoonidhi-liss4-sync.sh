@@ -43,7 +43,7 @@ run_sync_for_aoi() {
     --ledger-path "${AKASHA_SYNC_LEDGER_PATH:-/srv/akasha/ingestion/ledger.sqlite}"
     --lock-path "${worker_lock_path}"
     --max-downloads "${AKASHA_SYNC_MAX_DOWNLOADS:-3}"
-    --min-coverage-percent "${AKASHA_SYNC_MIN_COVERAGE_PERCENT:-95}"
+    --min-coverage-percent "${AKASHA_SYNC_MIN_COVERAGE_PERCENT:-10}"
   )
 
   if [[ "${backfill_days}" != "0" ]]; then
@@ -97,4 +97,3 @@ for raw_aoi in "${aoi_ids[@]}"; do
   fi
   run_sync_for_aoi "${aoi_id}"
 done
-

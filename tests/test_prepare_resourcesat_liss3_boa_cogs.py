@@ -101,7 +101,7 @@ def test_liss4_source_profile_declares_three_analytic_bands() -> None:
 
     assert profile["collection"] == "ResourceSat-2A_LISS4-MX70_L2"
     assert profile["label"] == "LISS-4"
-    assert profile["resolution_meters"] == 5.8
+    assert profile["resolution_meters"] == 5.0
     assert profile["analytic_bands"] == (
         ("BAND2", "GREEN", "Green"),
         ("BAND3", "RED", "Red"),
@@ -432,8 +432,8 @@ def test_write_manifest_emits_liss4_three_band_contract(tmp_path: Path) -> None:
 
         crs = FakeCrs()
         bounds = (799980, 1290240, 909780, 1400040)
-        res = (5.8, 5.8)
-        transform = (5.8, 0, 799980, 0, -5.8, 1400040, 0, 0, 1)
+        res = (5.0, 5.0)
+        transform = (5.0, 0, 799980, 0, -5.0, 1400040, 0, 0, 1)
         width = 18931
         height = 18931
         dtypes = ("uint16",)
@@ -576,8 +576,8 @@ def test_validate_resourcesat_cogs_accepts_strict_liss3_outputs(tmp_path: Path) 
 
 
 def test_validate_resourcesat_cogs_accepts_strict_liss4_outputs(tmp_path: Path) -> None:
-    analytic = _FakeResourceSatDataset(count=3, res=(5.8, 5.8))
-    mask = _FakeResourceSatDataset(count=1, res=(5.8, 5.8))
+    analytic = _FakeResourceSatDataset(count=3, res=(5.0, 5.0))
+    mask = _FakeResourceSatDataset(count=1, res=(5.0, 5.0))
 
     prep.validate_resourcesat_cogs(
         _strict_validation_deps(analytic, mask),

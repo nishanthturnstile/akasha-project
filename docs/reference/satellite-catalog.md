@@ -46,7 +46,7 @@ Legend:
 | Satellite | Provider | Resolution | Revisit | Status |
 |-----------|----------|-----------|---------|--------|
 | [PlanetScope](#planetscope) | Planet Labs 💼 | 3–5 m | Daily | 🟢 Live |
-| [ResourceSat-2A](#resourcesat-2a) 🇮🇳 | ISRO 🆓 | 5.8 m | 5 d | 🟢 Live |
+| [ResourceSat-2A](#resourcesat-2a) 🇮🇳 | ISRO 🆓 | 5.0 m native LISS-4 scenes / 5.8 m composites | 5 d | 🟢 Live |
 | [Sentinel-2](#sentinel-2) | ESA 🆓 | 10 m | 2–5 d | 🟢 Live |
 | [Landsat 9](#landsat-9) | NASA / USGS 🆓 | 15 m | 16 d | 🟢 Live |
 | [Landsat 8](#landsat-8) | NASA / USGS 🆓 | 15–30 m | 16 d | 🟢 Live |
@@ -90,7 +90,7 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 | 4 | KOMPSAT-3A | Optical | KARI / SIIS | 0.4 m | 1.5 d | 13 km | Pan, B, G, R, NIR + MWIR | 2015 | 💼 Commercial |
 | 5 | SkySat | Optical | Planet Labs | 0.5 m | Multiple / day | 8 km | Pan, B, G, R, NIR | 2013 | 💼 Commercial |
 | 6 | PlanetScope | Multispectral | Planet Labs | 3–5 m | Daily | 24 km | B, G, R, RE, NIR | 2016 | 💼 Commercial |
-| 7 | ResourceSat-2A 🇮🇳 | Multispectral | ISRO | 5.8 m | 5 d | 70 km | G, R, NIR, SWIR | 2016 | 🆓 Open (NRSC) |
+| 7 | ResourceSat-2A 🇮🇳 | Multispectral | ISRO | 5.0 m native LISS-4 scenes / 5.8 m composites | 5 d | 70 km | G, R, NIR, SWIR | 2016 | 🆓 Open (NRSC) |
 | 8 | Sentinel-2 | Multispectral | ESA | 10 m | 2–5 d | **290 km** | Coastal, B, G, R, RE, NIR, SWIR | 2017 | 🆓 Open (Copernicus) |
 | 9 | Landsat 9 | Optical | NASA / USGS | 15 m | 16 d | 185 km | Coastal, B, G, R, NIR, SWIR, Pan, Thermal | 2021 | 🆓 Open (USGS) |
 | 10 | Landsat 8 | Optical | NASA / USGS | 15–30 m | 16 d | 185 km | Coastal, B, G, R, NIR, SWIR, Pan, Thermal | 2013 | 🆓 Open (USGS) |
@@ -141,7 +141,7 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 |--------|-----------|------------|------------------|
 | **Sub-metre (< 1 m)** | Very high — can see individual trees / vehicles | Cartosat-3, SuperView NEO-1, BlackSky Gen 3, KOMPSAT-3A, SkySat | Field-boundary digitisation, orchard inventory, claim verification |
 | **High (1 – 4 m)** | Single-row crops resolvable | NAIP (1 m), PlanetScope (3 m) | Plot-level NDVI, smallholding mapping |
-| **Medium (5 – 20 m)** | Field-scale; the agronomic sweet spot | ResourceSat-2A (5.8 m), Sentinel-2 (10 m), Landsat 9 (15 m), Sentinel-1 (20 m) | NDVI/NDRE time-series, irrigation, FASAL acreage |
+| **Medium (5 – 20 m)** | Field-scale; the agronomic sweet spot | ResourceSat-2A LISS-4 (5.0 m native scenes / 5.8 m composites), Sentinel-2 (10 m), Landsat 9 (15 m), Sentinel-1 (20 m) | NDVI/NDRE time-series, irrigation, FASAL acreage |
 | **Regional (> 20 m)** | District- and state-scale phenology | Landsat 8 (30 m), MODIS (250 m), EOS-06 (360 m) | State yield forecasts, drought monitoring, fire mapping |
 
 ### 3.4 By revisit cadence
@@ -297,7 +297,7 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 | Spec | Value |
 |------|-------|
 | Type | Multispectral |
-| Resolution | 5.8 m (LISS-4); 23.5 m (LISS-3); 56 m (AWiFS) |
+| Resolution | 5.0 m native scenes and 5.8 m operational composites (LISS-4); 23.5 m (LISS-3); 56 m (AWiFS) |
 | Revisit | 5 days |
 | Swath | 70 km |
 | Archive since | 2016 |

@@ -1091,7 +1091,7 @@ def resolve_best_resolution_source(
 ) -> ResolutionResult:
     """Select the best-resolution source for a field + index + date.
 
-    Returns LISS-4 (5.8 m) when all of the following hold:
+    Returns LISS-4 (5.8 m composite grid) when all of the following hold:
     - ``prefer_high_res`` is True
     - ``index_type`` is in the LISS-4 supported-indices set (NDVI/MSAVI/NDWI_GREEN_NIR)
     - a LISS-4 composite item exists whose date is within ``window_days`` of

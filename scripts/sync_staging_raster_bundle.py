@@ -29,6 +29,11 @@ DEFAULT_HOST = os.environ.get("AKASHA_STAGING_SSH_HOST", "akasha-staging")
 DEFAULT_SOURCE = "resourcesat-2a-liss3-boa"
 DEFAULT_AOI = "bangalore-60km"
 DEFAULT_REMOTE_ROOT = "/srv/akasha/data/seed/rasters"
+DEFAULT_MIN_COVERAGE_BY_SOURCE = {
+    # LISS-4 is a narrow-swath field-enhancement layer over the 120 km AOI;
+    # the BFF resolver falls back per field outside composite coverage.
+    "resourcesat-2a-liss4-mx70-l2": 10.0,
+}
 
 
 def _quote(value: str) -> str:
@@ -191,6 +196,11 @@ def _import_local(args: argparse.Namespace, manifest: Path) -> None:
 
 def _verify_local(args: argparse.Namespace, manifest: Path) -> None:
     compose = str((REPO_ROOT / "infra" / "docker" / "docker-compose.yml").resolve())
+    min_coverage = (
+        args.min_coverage_percent
+        if args.min_coverage_percent is not None
+        else DEFAULT_MIN_COVERAGE_BY_SOURCE.get(args.source)
+    )
     command = [
         "docker",
         "compose",
@@ -209,6 +219,8 @@ def _verify_local(args: argparse.Namespace, manifest: Path) -> None:
         "--manifest",
         _container_manifest_path(manifest),
     ]
+    if min_coverage is not None:
+        command.extend(["--min-coverage-percent", str(min_coverage)])
     if args.local_only_verify:
         command.append("--local-only")
     _run(command)
@@ -237,6 +249,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--verify-local",
         action="store_true",
         help="Run worker.py verify-composite after the bundle is present.",
+    )
+    parser.add_argument(
+        "--min-coverage-percent",
+        type=float,
+        default=None,
+        help=(
+            "Minimum AOI coverage for --verify-local. Defaults to 10 for LISS-4 "
+            "and the worker default for other sources."
+        ),
     )
     parser.add_argument(
         "--local-only-verify",

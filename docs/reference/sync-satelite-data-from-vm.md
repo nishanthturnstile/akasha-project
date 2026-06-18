@@ -54,5 +54,23 @@ python scripts/sync_staging_raster_bundle.py \
   --verify-local
 ```
 
+For the ResourceSat LISS-4 field-enhancement composite:
+
+```bash
+python scripts/sync_staging_raster_bundle.py \
+  --host akasha-staging \
+  --source resourcesat-2a-liss4-mx70-l2 \
+  --date 2026-01-30 \
+  --overwrite \
+  --import-local \
+  --force-upload \
+  --verify-local
+```
+
+LISS-4 uses a narrow 70 km swath over the larger Bangalore AOI, so this helper
+automatically verifies LISS-4 bundles with a 10% minimum AOI coverage threshold
+instead of the LISS-3 95% full-AOI threshold. The application still resolves
+coverage per field and falls back to LISS-3 outside LISS-4 coverage.
+
 This copies only processed COGs and manifest files. It does not copy raw
 Bhoonidhi downloads and does not expose Bhoonidhi credentials locally.

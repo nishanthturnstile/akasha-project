@@ -473,6 +473,17 @@ def test_field_index_point_returns_precise_value_for_hover(monkeypatch):
     monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
     monkeypatch.setattr(
         field_analytics.catalog,
+        "resolve_best_resolution_source",
+        lambda **kw: SimpleNamespace(
+            source_id=kw["primary_source_id"],
+            resolution_meters=24,
+            enhanced=False,
+            basis_date=None,
+            provenance_note=None,
+        ),
+    )
+    monkeypatch.setattr(
+        field_analytics.catalog,
         "resolve_assets_for_date",
         lambda *_: [
             {
@@ -522,6 +533,11 @@ def test_field_index_point_returns_precise_value_for_hover(monkeypatch):
         "value": 0.5,
         "masked": False,
         "maskClass": 1,
+        "resolvedSourceId": "resourcesat-2a-liss3-boa",
+        "resolutionMeters": 24,
+        "enhanced": False,
+        "basisDate": None,
+        "provenanceNote": None,
     }
 
 

@@ -345,6 +345,7 @@ export interface FieldStatisticsRequest {
   acquisitionDate?: string | null;
   indexType: string;
   cloudMask?: CloudMaskOptions;
+  preferHighRes?: boolean;
 }
 
 export interface FieldStatisticsResponse {
@@ -360,6 +361,12 @@ export interface FieldStatisticsResponse {
   maskedPixels?: number;
   maskMethod?: string | null;
   metricsProvisional?: boolean;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  resolvedSourceId?: string | null;
+  resolutionMeters?: number | null;
+  enhanced?: boolean;
+  basisDate?: string | null;
+  provenanceNote?: string | null;
   metadata: {
     formula?: string;
     bands?: string[];
@@ -384,6 +391,11 @@ export interface FieldIndexOverlayImage {
   sourceUrl: string;
   coordinates: ImageCorners;
   stretch: [number, number] | null;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  resolvedSourceId?: string | null;
+  resolutionMeters?: number | null;
+  enhanced?: boolean;
+  basisDate?: string | null;
 }
 
 export interface FieldIndexPointResponse {
@@ -396,6 +408,12 @@ export interface FieldIndexPointResponse {
   value: number | null;
   masked: boolean;
   maskClass: number | null;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  resolvedSourceId?: string | null;
+  resolutionMeters?: number | null;
+  enhanced?: boolean;
+  basisDate?: string | null;
+  provenanceNote?: string | null;
 }
 
 export interface FieldTrendPoint {

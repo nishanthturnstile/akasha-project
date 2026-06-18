@@ -318,6 +318,7 @@ export default function MapPage() {
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
+  const [preferHighRes, setPreferHighRes] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const plotsQ = useFields();
@@ -535,6 +536,7 @@ export default function MapPage() {
         sourceId: requestedIndexOverlay.sourceId,
         acquisitionDate: requestedIndexOverlay.acquisitionDate,
         indexType: requestedIndexOverlay.indexType,
+        preferHighRes,
       },
       requestedIndexOverlay.fallbackCoordinates,
     ).then((overlay) => {
@@ -552,7 +554,7 @@ export default function MapPage() {
     return () => {
       disposed = true;
     };
-  }, [requestedIndexOverlay]);
+  }, [requestedIndexOverlay, preferHighRes]);
 
   const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
     if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
@@ -562,8 +564,9 @@ export default function MapPage() {
       indexType: selectedDisplayMode,
       lng,
       lat,
+      preferHighRes,
     });
-  }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode]);
+  }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode, preferHighRes]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -902,6 +905,8 @@ export default function MapPage() {
               sourceMetricsProvisional={ Boolean(selectedSource?.metricsProvisional) }
               periodFrom={ periodFrom }
               periodTo={ periodTo }
+              preferHighRes={ preferHighRes }
+              onPreferHighResChange={ setPreferHighRes }
             />
           </div>
         ) }
@@ -954,7 +959,7 @@ export default function MapPage() {
         * Raised above the attribution line so the two never collide at any width. */ }
       <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
         { visible && legendOpen && (scene || indexOverlay) && (
-          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } />
+          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } />
         ) }
         <MapControls
           map={ map }

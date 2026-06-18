@@ -108,13 +108,24 @@ def _field_statistics(
     acquisition_date: str | None,
     index_type: str,
     cloud_mask: CloudMaskOptions,
+    prefer_high_res: bool = True,
 ) -> FieldStatisticsResponse:
-    source = catalog.get_source(source_id)
+    resolution = catalog.resolve_best_resolution_source(
+        primary_source_id=source_id,
+        index_type=index_type,
+        field_geometry=plot["geometry"],
+        acquisition_date=acquisition_date or "",
+        prefer_high_res=prefer_high_res,
+    )
+    effective_source_id = resolution.source_id
+    effective_date = resolution.basis_date if resolution.enhanced else acquisition_date
+
+    source = catalog.get_source(effective_source_id)
     mask_mapping = source_cloud_mask_mapping(source, cloud_mask)
     computed = compute_statistics(
         geometry=plot["geometry"],
-        source_id=source_id,
-        acquisition_date=acquisition_date,
+        source_id=effective_source_id,
+        acquisition_date=effective_date,
         index_type=index_type,
         max_area_ha=settings.max_polygon_area_ha,
         max_vertices=settings.max_polygon_vertices,
@@ -138,6 +149,11 @@ def _field_statistics(
         statistics=IndexStatisticsModel(**computed["statistics"]),
         pixel_counts=PixelCounts(**computed["pixelCounts"]),
         metadata=metadata,
+        resolved_source_id=resolution.source_id,
+        resolution_meters=resolution.resolution_meters,
+        enhanced=resolution.enhanced,
+        basis_date=resolution.basis_date,
+        provenance_note=resolution.provenance_note,
     )
 
 
@@ -196,6 +212,7 @@ def _native_trend_response(
                 acquisition_date=acquisition_date,
                 index_type=index_type,
                 cloud_mask=cloud_mask,
+                prefer_high_res=False,
             )
             point = _trend_point_from_stats(stats)
             if (
@@ -235,6 +252,11 @@ def _native_trend_response(
             "rangeLimitDays": MAX_TREND_DAYS,
             "maxCloudCoverInAoi": max_cloud_cover_in_aoi,
             "cloudFilteredSceneCount": cloud_filtered_scene_count,
+            "highResEnhancementNote": (
+                "Trend uses the primary source only for radiometric continuity. "
+                "High-resolution LISS-4 enhancement (5.8 m) is available for "
+                "single-date overlay, statistics, and point queries."
+            ),
         },
     )
 
@@ -343,11 +365,22 @@ def _index_overlay_response(
     source_id: str,
     acquisition_date: str,
     index_type: str,
+    prefer_high_res: bool = True,
 ) -> tuple[bytes, str, dict[str, str]]:
+    resolution = catalog.resolve_best_resolution_source(
+        primary_source_id=source_id,
+        index_type=index_type,
+        field_geometry=plot["geometry"],
+        acquisition_date=acquisition_date,
+        prefer_high_res=prefer_high_res,
+    )
+    effective_source_id = resolution.source_id
+    effective_date = resolution.basis_date if resolution.enhanced else acquisition_date
+
     assets = _resolve_single_field_asset(
         plot=plot,
-        source_id=source_id,
-        acquisition_date=acquisition_date,
+        source_id=effective_source_id,
+        acquisition_date=effective_date,
         index_type=index_type,
     )
     (
@@ -365,7 +398,15 @@ def _index_overlay_response(
         index_type=index_type,
     )
     lo, hi = tiles.overlay_display_range(index_type)
-    headers = {"X-Akasha-Overlay-Stretch": f"{lo},{hi}"}
+    headers: dict[str, str] = {"X-Akasha-Overlay-Stretch": f"{lo},{hi}"}
+    # Provenance headers
+    headers["X-Akasha-Resolved-Source"] = resolution.source_id
+    if resolution.resolution_meters is not None:
+        headers["X-Akasha-Resolved-Resolution"] = str(resolution.resolution_meters)
+    headers["X-Akasha-Enhanced"] = "true" if resolution.enhanced else "false"
+    if resolution.basis_date:
+        headers["X-Akasha-Basis-Date"] = resolution.basis_date
+
     if not read.intersects:
         footprint_corners = getattr(read, "footprint_corners", None)
         if footprint_corners:
@@ -428,13 +469,24 @@ def _field_index_point_response(
     index_type: str,
     lng: float,
     lat: float,
+    prefer_high_res: bool = True,
 ) -> dict[str, Any]:
     import numpy as np
 
+    resolution = catalog.resolve_best_resolution_source(
+        primary_source_id=source_id,
+        index_type=index_type,
+        field_geometry=plot["geometry"],
+        acquisition_date=acquisition_date,
+        prefer_high_res=prefer_high_res,
+    )
+    effective_source_id = resolution.source_id
+    effective_date = resolution.basis_date if resolution.enhanced else acquisition_date
+
     assets = _resolve_single_field_asset(
         plot=plot,
-        source_id=source_id,
-        acquisition_date=acquisition_date,
+        source_id=effective_source_id,
+        acquisition_date=effective_date,
         index_type=index_type,
     )
     read, values, valid_mask, masked_mask, source_mask, _geom, _dv, _dm = _compute_index_window(
@@ -443,13 +495,18 @@ def _field_index_point_response(
         index_type=index_type,
     )
 
-    base = {
+    base: dict[str, Any] = {
         "plotId": plot_id,
-        "sourceId": source_id,
-        "acquisitionDate": acquisition_date,
+        "sourceId": effective_source_id,
+        "acquisitionDate": effective_date,
         "indexType": index_type,
         "lng": lng,
         "lat": lat,
+        "resolvedSourceId": resolution.source_id,
+        "resolutionMeters": resolution.resolution_meters,
+        "enhanced": resolution.enhanced,
+        "basisDate": resolution.basis_date,
+        "provenanceNote": resolution.provenance_note,
     }
     if not read.intersects or values is None:
         return {**base, "value": None, "masked": True, "maskClass": None}
@@ -490,6 +547,7 @@ async def post_field_index_statistics(
             acquisition_date=payload.acquisition_date,
             index_type=index_type,
             cloud_mask=payload.cloud_mask,
+            prefer_high_res=payload.prefer_high_res,
         )
 
     try:
@@ -556,6 +614,7 @@ async def get_field_index_overlay(
     index_type: str,
     sourceId: str = Query(default=settings.default_source_id),
     acquisitionDate: str = Query(...),
+    preferHighRes: bool = Query(default=True),
     user: CurrentUser = Depends(get_current_user),
 ) -> Response:
     plot = await _get_field_or_404(plot_id, user.id)
@@ -566,6 +625,7 @@ async def get_field_index_overlay(
         source_id=sourceId,
         acquisition_date=acquisitionDate,
         index_type=normalized_index,
+        prefer_high_res=preferHighRes,
     )
     return Response(content=body, media_type=content_type, headers=headers)
 
@@ -578,6 +638,7 @@ async def get_field_index_point(
     indexType: str = Query(default=DEFAULT_INDEX),
     lng: float = Query(...),
     lat: float = Query(...),
+    preferHighRes: bool = Query(default=True),
     user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     plot = await _get_field_or_404(plot_id, user.id)
@@ -591,4 +652,5 @@ async def get_field_index_point(
         index_type=normalized_index,
         lng=lng,
         lat=lat,
+        prefer_high_res=preferHighRes,
     )

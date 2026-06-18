@@ -359,13 +359,16 @@ export const getFieldTrend = (
 
 export const getFieldIndexOverlayImage = async (
   plotId: string,
-  options: { sourceId: string; acquisitionDate: string; indexType: string },
+  options: { sourceId: string; acquisitionDate: string; indexType: string; preferHighRes?: boolean },
   fallbackCoordinates: ImageCorners,
 ): Promise<FieldIndexOverlayImage> => {
   const params = new URLSearchParams({
     sourceId: options.sourceId,
     acquisitionDate: options.acquisitionDate,
   });
+  if (options.preferHighRes !== undefined) {
+    params.set('preferHighRes', String(options.preferHighRes));
+  }
   const sourceUrl = `/api/fields/${encodeURIComponent(plotId)}/overlay/${encodeURIComponent(
     options.indexType,
   )}.png?${params.toString()}`;
@@ -373,11 +376,17 @@ export const getFieldIndexOverlayImage = async (
   const res = await fetchApi(sourceUrl, { headers });
   const blob = await res.blob();
   const typedBlob = blob.type ? blob : new Blob([blob], { type: 'image/png' });
+  const resolvedResStr = res.headers.get('X-Akasha-Resolved-Resolution');
+  const resolvedResNum = resolvedResStr != null ? Number(resolvedResStr) : null;
   return {
     url: URL.createObjectURL(typedBlob),
     sourceUrl,
     coordinates: parseOverlayCorners(res.headers.get('X-Akasha-Overlay-Corners')) ?? fallbackCoordinates,
     stretch: parseOverlayStretch(res.headers.get('X-Akasha-Overlay-Stretch')),
+    resolvedSourceId: res.headers.get('X-Akasha-Resolved-Source') ?? null,
+    resolutionMeters: resolvedResNum != null && Number.isFinite(resolvedResNum) ? resolvedResNum : null,
+    enhanced: res.headers.get('X-Akasha-Enhanced') === 'true',
+    basisDate: res.headers.get('X-Akasha-Basis-Date') ?? null,
   };
 };
 
@@ -389,6 +398,7 @@ export const getFieldIndexPoint = (
     indexType: string;
     lng: number;
     lat: number;
+    preferHighRes?: boolean;
   },
 ): Promise<FieldIndexPointResponse> => {
   const params = new URLSearchParams({
@@ -398,6 +408,9 @@ export const getFieldIndexPoint = (
     lng: String(options.lng),
     lat: String(options.lat),
   });
+  if (options.preferHighRes !== undefined) {
+    params.set('preferHighRes', String(options.preferHighRes));
+  }
   return request<FieldIndexPointResponse>(
     `/api/fields/${encodeURIComponent(plotId)}/indices/point?${params.toString()}`,
   );

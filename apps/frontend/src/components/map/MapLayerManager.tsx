@@ -56,6 +56,11 @@ export interface IndexOverlay {
   coordinates: ImageCorners;
   sourceUrl?: string;
   stretch?: [number, number] | null;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  resolvedSourceId?: string | null;
+  resolutionMeters?: number | null;
+  enhanced?: boolean;
+  basisDate?: string | null;
 }
 
 function removeIndexOverlay(map: maplibregl.Map): void {

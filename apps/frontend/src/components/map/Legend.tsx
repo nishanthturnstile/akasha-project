@@ -5,6 +5,8 @@ interface LegendProps {
     /** Active render mode (e.g. `RGB`, `NDVI`, `VV_GRAYSCALE`). */
     displayMode: string;
     sourceKind?: SourceKind;
+    /** Resolved resolution from overlay provenance (e.g. 5.8 for LISS-4). */
+    resolvedResolutionMeters?: number | null;
     className?: string;
 }
 
@@ -128,7 +130,7 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
  * map stays clean by default (CLAUDE.md: RGB is the cold default). For index and
  * SAR modes it shows a labelled ramp matching the tile render's colormap.
  */
-export function Legend({ displayMode, sourceKind, className }: LegendProps) {
+export function Legend({ displayMode, sourceKind, resolvedResolutionMeters, className }: LegendProps) {
     const ramp = rampFor(displayMode, sourceKind);
     if (!ramp) return null;
 
@@ -143,9 +145,19 @@ export function Legend({ displayMode, sourceKind, className }: LegendProps) {
                 className,
             ) }
         >
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/80 on-map-text">
-                { ramp.title }
-            </p>
+            <div className="mb-1.5 flex items-center justify-between gap-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/80 on-map-text">
+                    { ramp.title }
+                </p>
+                { resolvedResolutionMeters != null && Number.isFinite(resolvedResolutionMeters) && (
+                    <span
+                        className="text-[10px] font-medium text-primary/80 on-map-text"
+                        data-testid="legend-resolved-resolution"
+                    >
+                        { resolvedResolutionMeters } m
+                    </span>
+                ) }
+            </div>
             <div
                 aria-hidden="true"
                 className="h-2.5 w-full rounded-pill ring-1 ring-inset ring-border/60"

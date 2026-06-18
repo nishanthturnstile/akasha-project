@@ -134,6 +134,11 @@ class Settings:
         default_factory=lambda: _get("BHOONIDHI_LEDGER_PATH", "/srv/akasha/ingestion/ledger.sqlite")
     )
 
+    # Best-resolution resolver: date window for LISS-4 enhancement lookup.
+    best_resolution_window_days: int = field(
+        default_factory=lambda: _get_int("AKASHA_BEST_RESOLUTION_WINDOW_DAYS", 12)
+    )
+
     # Phase 12 auth/team foundations. AUTH_MODE=disabled requires explicit local opt-in.
     auth_mode: str = field(default_factory=lambda: _get("AUTH_MODE", "disabled"))
     auth_allow_disabled: bool = field(

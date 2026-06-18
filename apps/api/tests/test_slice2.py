@@ -395,9 +395,29 @@ def test_sources_endpoint_contract():
     assert rs["metricsProvisional"] is True
     assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
     assert sources["resourcesat-2a-awifs-boa"]["analysisLevel"] == "regional"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["analysisLevel"] == "context"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["supportedIndices"] == []
+    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "active"
+    liss4 = catalog.source_payload("resourcesat-2a-liss4-mx70-l2")
+    assert liss4["availabilityStatus"] == "active"
+    assert liss4["gatedReason"] is None
+    assert liss4["analysisLevel"] == "field"
+    assert liss4["supportedIndices"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert "NDMI" not in liss4["supportedIndices"]
+    assert "NDRE" not in liss4["supportedIndices"]
+    assert liss4["bandRoleMapping"] == {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4"}
+    assert liss4["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert liss4["mapDisplayModes"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert liss4["defaultMapDisplayMode"] == "NDVI"
+    assert [g["label"] for g in liss4["layerGroups"]] == [
+        "Imagery",
+        "Vegetation Indices",
+        "Water Index",
+    ]
+    assert liss4["maskMethod"] == "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)"
+    assert liss4["resolutionMeters"] == 5.8
+    assert liss4["metricsProvisional"] is True
+    assert "ISRO" in liss4["attribution"]
+    assert "NRSC" in liss4["attribution"]
+    assert "Bhoonidhi" in liss4["attribution"]
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["availabilityStatus"] == "gated"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
@@ -444,7 +464,6 @@ def test_phase5_gated_collection_contracts_are_loadable():
 
     for source_id in (
         "resourcesat-2a-awifs-boa",
-        "resourcesat-2a-liss4-mx70-l2",
         "eos-06-ocm-lac-ndvi-8day-360m",
         "irs-1c-liss3-archive",
         "eos-04-sar-mrs-l2b",
@@ -454,6 +473,54 @@ def test_phase5_gated_collection_contracts_are_loadable():
         collection = catalog.get_collection(source_id)
         assert collection["id"] == source_id
         assert collection.get("akasha:availability_status") == "gated"
+
+
+def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
+    from app.raster import catalog_resolver as catalog
+
+    source_id = "resourcesat-2a-liss4-mx70-l2"
+    collection = catalog.get_collection(source_id)
+    item = catalog.list_items(source_id)[0]
+
+    assert collection["id"] == source_id
+    assert collection["summaries"]["instruments"] == ["liss-4"]
+    assert collection["summaries"]["gsd"] == [5.8]
+    assert collection["akasha:analysis_level"] == "field"
+    assert collection["akasha:supported_indices"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert collection["akasha:display_modes"] == ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert collection["akasha:fcc_role_order"] == ["NIR", "RED", "GREEN"]
+    assert collection["akasha:band_role_mapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+    }
+    assert collection["akasha:reflectance"] == {
+        "scale": 0.0001,
+        "offset": 0,
+        "background_value": 0,
+        "nodata_policy": "all-band-background-or-warp-gap",
+        "note": "LISS-4 L2 reflectance metadata is provisional until staging radiometry validation.",
+    }
+    analytic = collection["item_assets"]["analytic"]
+    assert [band["name"] for band in analytic["eo:bands"]] == ["BAND2", "BAND3", "BAND4"]
+    assert len(analytic["raster:bands"]) == 3
+    assert [c["value"] for c in collection["item_assets"]["mask"]["classification:classes"]] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+    ]
+
+    assert item["collection"] == source_id
+    assert item["properties"]["akasha:composite"] is True
+    assert item["properties"]["akasha:aoi_id"] == "bangalore-60km"
+    assert item["properties"]["proj:epsg"] == 32643
+    assert item["properties"]["akasha:composite_resolution_meters"] == 5.8
+    assert item["assets"]["analytic"]["href"].startswith(
+        "s3://akasha-cogs/resourcesat-2a-liss4-mx70-l2/composite/bangalore-60km/"
+    )
+    assert item["assets"]["mask"]["href"].endswith("/mask.tif")
 
 
 def test_latest_items_for_empty_registered_source_returns_typed_error(monkeypatch):

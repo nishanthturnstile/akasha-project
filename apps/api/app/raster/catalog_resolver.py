@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from dataclasses import dataclass
+from datetime import date as _date, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -23,7 +25,12 @@ SENTINEL_2_SOURCE_ID = "sentinel-2-l2a"
 SENTINEL_1_SOURCE_ID = "sentinel-1-grd"
 RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
 RESOURCESAT_AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
-RESOURCESAT_BOA_SOURCE_IDS = {RESOURCESAT_LISS3_SOURCE_ID, RESOURCESAT_AWIFS_SOURCE_ID}
+RESOURCESAT_LISS4_SOURCE_ID = "resourcesat-2a-liss4-mx70-l2"
+RESOURCESAT_BOA_SOURCE_IDS = {
+    RESOURCESAT_LISS3_SOURCE_ID,
+    RESOURCESAT_AWIFS_SOURCE_ID,
+    RESOURCESAT_LISS4_SOURCE_ID,
+}
 COLLECTION_ID = RESOURCESAT_LISS3_SOURCE_ID
 SOURCE_LABEL = "ResourceSat-2A LISS-3 BOA"
 SOURCE_PROVIDER = "ISRO/NRSC Bhoonidhi"
@@ -177,31 +184,42 @@ _SOURCE_REGISTRY.update(
             "kind": "optical",
             "collectionId": "ResourceSat-2A_LISS4-MX70_L2",
             "expectedAssets": ["analytic", "mask"],
-            "supportedIndices": [],
-            "bandRoleMapping": {"RED": "BAND3", "NIR": "BAND4"},
+            "supportedIndices": ["NDVI", "MSAVI", "NDWI_GREEN_NIR"],
+            "bandRoleMapping": {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4"},
             "maskAsset": "mask",
-            "displayModes": ["FCC"],
+            "excludedMaskClasses": [0, 2, 3],
+            "nodataPolicy": "mask_only",
+            "displayModes": ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"],
             "defaultDisplayMode": "FCC",
-            "description": "Gated higher-resolution ResourceSat-2A LISS-4 context source.",
+            "mapDisplayModes": ["NDVI", "MSAVI", "NDWI_GREEN_NIR"],
+            "defaultMapDisplayMode": "NDVI",
+            "layerGroups": [
+                {"label": "Imagery", "modes": ["FCC"]},
+                {"label": "Vegetation Indices", "modes": ["NDVI", "MSAVI"]},
+                {"label": "Water Index", "modes": ["NDWI_GREEN_NIR"]},
+            ],
+            "description": (
+                "ResourceSat-2A LISS-4 MX70 L2 high-resolution field analytics source "
+                "with Akasha-generated provisional cloud/validity mask."
+            ),
             "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "optical",
             "defaultRescale": "0,3000",
             "tileRouteMode": "fcc",
             "resolutionMeters": 5.8,
-            "analysisLevel": "context",
-            "refreshPolicy": "Gated until access, calibration, and band metadata are validated.",
+            "analysisLevel": "field",
+            "refreshPolicy": (
+                "Bhoonidhi search on the ~5-day LISS-4 MX revisit cadence; L2 products may "
+                "lag acquisition."
+            ),
             "limitations": [
-                "Context-only until downloaded LISS-4 product metadata confirms calibrated "
-                "red/NIR bands and mask behavior.",
-                "Potential NDVI/MSAVI support remains gated and is not enabled for field "
-                "analytics.",
+                "False-colour composite only; LISS-4 MX70 has no blue band.",
+                "NDMI/NDRE/RECI unsupported because LISS-4 MX70 has no SWIR or red-edge band.",
+                "Mask is Akasha threshold-derived and provisional until a native quality layer exists.",
             ],
-            "maskMethod": "Pending Akasha mask validation.",
-            "excludedMaskClasses": [0, 2, 3],
+            "maskMethod": "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)",
             "availableMaskOptions": ["clouds", "cloudShadows"],
             "metricsProvisional": True,
-            "availabilityStatus": "gated",
-            "gatedReason": "No validated LISS-4 MX70 product has been ingested.",
         },
         "eos-06-ocm-lac-ndvi-8day-360m": {
             "id": "eos-06-ocm-lac-ndvi-8day-360m",
@@ -994,3 +1012,181 @@ def default_index(source_id: str = COLLECTION_ID) -> str:
     except Exception:  # noqa: BLE001
         pass
     return DEFAULT_INDEX if DEFAULT_INDEX in supported else supported[0]
+
+
+# ---------------------------------------------------------------------------
+# Best-resolution resolver (Phase D)
+# ---------------------------------------------------------------------------
+
+_NDMI_PROVENANCE_NOTE = (
+    "Moisture served from LISS-3 (24 m) -- LISS-4 has no SWIR band."
+)
+
+# Indices not supported by LISS-4 (no SWIR / no red-edge).
+_LISS4_UNSUPPORTED_INDICES: frozenset[str] = frozenset({"NDMI", "NDRE", "RECI"})
+
+
+@dataclass
+class ResolutionResult:
+    """Result of the best-resolution source selection for a field + index + date."""
+
+    source_id: str
+    resolution_meters: float | None
+    enhanced: bool
+    basis_date: str | None
+    provenance_note: str | None
+
+
+def _bbox_from_geometry(geometry: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    """Return (minx, miny, maxx, maxy) for a GeoJSON Polygon or MultiPolygon, or None on error."""
+    coords = geometry.get("coordinates")
+    geom_type = geometry.get("type", "")
+    if not isinstance(coords, list) or not coords:
+        return None
+    try:
+        xs: list[float] = []
+        ys: list[float] = []
+        if geom_type == "MultiPolygon":
+            for polygon in coords:
+                for ring in polygon:
+                    for pt in ring:
+                        xs.append(float(pt[0]))
+                        ys.append(float(pt[1]))
+        else:
+            for ring in coords:
+                for pt in ring:
+                    xs.append(float(pt[0]))
+                    ys.append(float(pt[1]))
+        if not xs or not ys:
+            return None
+        return (min(xs), min(ys), max(xs), max(ys))
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _bbox_intersects(
+    bbox: Any,
+    geometry_bounds: tuple[float, float, float, float],
+) -> bool:
+    """Return True if ``bbox`` (list/tuple of 4 floats) intersects ``geometry_bounds``."""
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        # Unknown bbox → assume intersection to avoid false negatives.
+        return True
+    try:
+        minx, miny, maxx, maxy = (float(v) for v in bbox)
+        gminx, gminy, gmaxx, gmaxy = geometry_bounds
+    except (TypeError, ValueError):
+        return True
+    return not (maxx < gminx or gmaxx < minx or maxy < gminy or gmaxy < miny)
+
+
+def resolve_best_resolution_source(
+    *,
+    primary_source_id: str,
+    index_type: str,
+    field_geometry: dict[str, Any],
+    acquisition_date: str,
+    prefer_high_res: bool = True,
+    window_days: int | None = None,
+) -> ResolutionResult:
+    """Select the best-resolution source for a field + index + date.
+
+    Returns LISS-4 (5.8 m) when all of the following hold:
+    - ``prefer_high_res`` is True
+    - ``index_type`` is in the LISS-4 supported-indices set (NDVI/MSAVI/NDWI_GREEN_NIR)
+    - a LISS-4 composite item exists whose date is within ``window_days`` of
+      ``acquisition_date``
+    - the composite item's bbox intersects ``field_geometry`` (used as a cheap
+      coverage proxy; no raster reads are performed here)
+
+    Otherwise returns the primary source (LISS-3).  NDMI/NDRE always return the
+    primary source with a provenance note.  Any catalog error causes a silent
+    fallback to the primary source so single-date analytics remain available.
+
+    Coverage check: asset bbox intersection is used as a proxy for composite
+    coverage; this may include fields near the composite edge that have partial
+    no-data.  Full per-pixel coverage validation requires opening the COG and is
+    intentionally deferred to the statistics/overlay computation step.
+    """
+    if window_days is None:
+        # Imported lazily to avoid a top-level circular dependency.
+        from ..config import settings as _settings
+
+        window_days = _settings.best_resolution_window_days
+
+    primary_source = get_source(primary_source_id)
+    primary_resolution: float | None = primary_source.get("resolutionMeters")
+
+    def _primary(note: str | None = None) -> ResolutionResult:
+        return ResolutionResult(
+            source_id=primary_source_id,
+            resolution_meters=primary_resolution,
+            enhanced=False,
+            basis_date=None,
+            provenance_note=note,
+        )
+
+    # LISS-4 enhancement only applies when the primary source is LISS-3.
+    # For Sentinel, AWiFS, and other sources, return the primary unchanged.
+    if primary_source_id != RESOURCESAT_LISS3_SOURCE_ID:
+        return _primary()
+
+    # NDMI/NDRE must always use LISS-3 (LISS-4 has no SWIR/red-edge).
+    if index_type in _LISS4_UNSUPPORTED_INDICES:
+        note = _NDMI_PROVENANCE_NOTE if index_type == "NDMI" else None
+        return _primary(note)
+
+    if not prefer_high_res:
+        return _primary()
+
+    if not acquisition_date:
+        return _primary()
+
+    try:
+        liss4_source = get_source(RESOURCESAT_LISS4_SOURCE_ID)
+    except Exception:  # noqa: BLE001
+        return _primary()
+
+    liss4_indices: set[str] = set(liss4_source.get("supportedIndices", []))
+    if index_type not in liss4_indices:
+        return _primary()
+
+    try:
+        target = _date.fromisoformat(acquisition_date)
+        window_start = target - timedelta(days=window_days)
+        window_end = target + timedelta(days=window_days)
+
+        liss4_dates = list_dates(RESOURCESAT_LISS4_SOURCE_ID)
+        candidates = [
+            d
+            for d in liss4_dates
+            if window_start <= _date.fromisoformat(d["acquisitionDate"]) <= window_end
+        ]
+        if not candidates:
+            return _primary()
+
+        # Pick the composite whose date is closest to the requested date.
+        candidates.sort(
+            key=lambda d: abs(
+                (_date.fromisoformat(d["acquisitionDate"]) - target).days
+            )
+        )
+        best = candidates[0]
+
+        # Coverage check: bbox intersection as proxy (no raster reads).
+        field_bbox = _bbox_from_geometry(field_geometry)
+        composite_bbox = best.get("bounds")
+        if field_bbox is not None and composite_bbox is not None:
+            if not _bbox_intersects(composite_bbox, field_bbox):
+                return _primary()
+
+        liss4_resolution: float = float(liss4_source.get("resolutionMeters") or 5.8)
+        return ResolutionResult(
+            source_id=RESOURCESAT_LISS4_SOURCE_ID,
+            resolution_meters=liss4_resolution,
+            enhanced=True,
+            basis_date=best["acquisitionDate"],
+            provenance_note=None,
+        )
+    except Exception:  # noqa: BLE001 - any catalog error → silent fallback
+        return _primary()

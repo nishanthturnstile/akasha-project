@@ -95,6 +95,7 @@ export const queryKeys = {
     acquisitionDate: string | null | undefined,
     indexType: string,
     cloudMask: CloudMaskOptions,
+    preferHighRes?: boolean,
   ) =>
     [
       'fields',
@@ -106,6 +107,7 @@ export const queryKeys = {
       cloudMask.clouds,
       cloudMask.cloudShadows,
       cloudMask.cirrus,
+      preferHighRes ?? true,
     ] as const,
   fieldTrend: (
     plotId: string,
@@ -285,6 +287,7 @@ export function useFieldStatistics(
     acquisitionDate: string | null | undefined;
     indexType: string;
     cloudMask: CloudMaskOptions;
+    preferHighRes?: boolean;
   },
 ) {
   return useQuery({
@@ -296,6 +299,7 @@ export function useFieldStatistics(
             options.acquisitionDate,
             options.indexType,
             options.cloudMask,
+            options.preferHighRes,
           )
         : (['fields', 'none', 'statistics'] as const),
     queryFn: () =>
@@ -304,6 +308,7 @@ export function useFieldStatistics(
         acquisitionDate: options.acquisitionDate,
         indexType: options.indexType,
         cloudMask: options.cloudMask,
+        preferHighRes: options.preferHighRes,
       }),
     enabled: Boolean(plotId && options.sourceId && options.acquisitionDate),
   });

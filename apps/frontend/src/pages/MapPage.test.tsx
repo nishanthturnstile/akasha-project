@@ -192,6 +192,7 @@ function stubAkashaFetch({
   fieldTrend?: FieldTrendResponse;
 } = {}) {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+  vi.stubEnv('VITE_BASEMAP_PROVIDER', 'osm');
   vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
   vi.stubGlobal('URL', {
     ...URL,

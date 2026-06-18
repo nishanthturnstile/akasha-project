@@ -236,11 +236,20 @@ try:
         f"GET dates contains {SAMPLE_DATE}",
     )
     lay = tc.get("/api/layers/default")
+    lay_body = lay.json()
     check(
         lay.status_code == 200
-        and lay.json()["tileUrlTemplate"]
+        and lay_body["defaultMapDisplayMode"] == "NDVI"
+        and lay_body["displayMode"] == "NDVI"
+        and lay_body["tileUrlTemplate"] is None,
+        "GET /api/layers/default defaults to NDVI index overlay (no FCC tile template)",
+    )
+    from app.raster import catalog_resolver as _catalog
+
+    check(
+        _catalog.tile_url_template(SOURCE_ID, SAMPLE_DATE)
         == f"/api/tiles/{SOURCE_ID}/{SAMPLE_DATE}/FCC/{{z}}/{{x}}/{{y}}.png",
-        "GET /api/layers/default tile template (same-origin /api route)",
+        "FCC tile template is a same-origin /api route",
     )
     bad = tc.post(
         "/api/indices/statistics",
@@ -342,9 +351,9 @@ check(
 # ---------------------------------------------------------------- synthetic E2E
 section("Synthetic ResourceSat dual-COG E2E (rasterio)")
 try:
-    import rasterio  # noqa: F401,I001
+    import rasterio  # type: ignore[import-not-found]  # noqa: F401,I001
     from pyproj import Transformer
-    from rasterio.transform import from_origin
+    from rasterio.transform import from_origin  # type: ignore[import-not-found]
 
     from app.raster import catalog_resolver as catalog
     from app.raster.service import compute_statistics

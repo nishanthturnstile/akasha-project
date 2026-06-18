@@ -236,7 +236,7 @@ export function AppShell() {
         </section>
 
         { globalViewOpen && (
-          <GlobalViewPanel onClose={ () => setGlobalViewOpen(false) } />
+          <GlobalViewPanel onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
         ) }
 
         <aside
@@ -311,7 +311,7 @@ export function AppShell() {
 
           {/* Sheet: all seasons list */ }
           <SheetRoot open={ seasonSheetOpen } onOpenChange={ setSeasonSheetOpen }>
-            <SheetContent side="right" className="max-w-sm">
+            <SheetContent side="right" className="flex flex-col max-w-sm">
               <SheetHeader>
                 <SheetTitle>Seasons</SheetTitle>
               </SheetHeader>
@@ -340,7 +340,7 @@ export function AppShell() {
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1 px-4 py-4">
+              <ScrollArea className="min-h-0 flex-1 px-4 py-4">
                 <div className="space-y-3 pr-1">
                   { seasonsQ.isLoading ? (
                     <p className="text-sm text-muted-foreground">Loading seasons…</p>
@@ -409,10 +409,7 @@ export function AppShell() {
                               {seasonFields.length > 0 ? (
                                 <div className="mt-2 space-y-1.5">
                                   { seasonFields.map((f) => (
-                                    <div
-                                        key={f.id}
-                                        className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5"
-                                      >
+                                    <div key={f.id} className="flex items-center gap-2 rounded-md border border-border/50 bg-background/40 px-2.5 py-1.5">
                                         <GeometryPreview
                                           geometry={f.geometry}
                                           width={48}
@@ -425,20 +422,19 @@ export function AppShell() {
                                             {f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—'}
                                           </p>
                                         </div>
+                                        <button
+                                          type="button"
+                                          onClick={ (e) => {
+                                            e.stopPropagation();
+                                            view.setSelectedPlotId(f.id);
+                                            setSeasonSheetOpen(false);
+                                            navigate(`/monitoring/field-analytics/field/${f.id}`);
+                                          } }
+                                          className="shrink-0 rounded border border-border/60 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors duration-fast"
+                                        >
+                                          Focus
+                                        </button>
                                       </div>
-                                      <button
-                                        type="button"
-                                        onClick={ (e) => {
-                                          e.stopPropagation();
-                                          view.setSelectedPlotId(f.id);
-                                          setSeasonSheetOpen(false);
-                                          navigate(`/monitoring/field-analytics/field/${f.id}`);
-                                        } }
-                                        className="shrink-0 rounded border border-border/60 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors duration-fast"
-                                      >
-                                        Focus
-                                      </button>
-                                    </div>
                                   )) }
                                 </div>
                               ) : (

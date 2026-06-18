@@ -1,8 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Field, Season } from '@/types/api';
@@ -33,15 +34,33 @@ export default function EditSeasonDialog({
   const [error, setError] = useState<string | null>(null);
 
   const seasonFieldIds = useMemo(
-    () => allFields.filter((f) => f.seasonIds?.includes(season.id)).map((f) => f.id),
-    [allFields, season.id],
+    () => season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id),
+    [season.fieldIds],
   );
-  const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>(seasonFieldIds);
+  const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedFieldIds(seasonFieldIds);
+  }, [seasonFieldIds]);
+
+  const canRemoveMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    for (const fi of season.fieldIds) {
+      map[fi.id] = fi.canRemove;
+    }
+    return map;
+  }, [season.fieldIds]);
+
+  const mandatoryFieldIds = useMemo(
+    () => season.fieldIds.filter((fi) => !fi.canRemove).map((fi) => fi.id),
+    [season.fieldIds],
+  );
 
   const isAllSelected = selectedFieldIds.length === allFields.length && allFields.length > 0;
   const isIndeterminate = selectedFieldIds.length > 0 && selectedFieldIds.length < allFields.length;
 
   const toggleField = (fieldId: string) => {
+    if (!canRemoveMap[fieldId]) return; // mandatory field, cannot uncheck
     setSelectedFieldIds((prev) =>
       prev.includes(fieldId) ? prev.filter((x) => x !== fieldId) : [...prev, fieldId],
     );
@@ -49,7 +68,7 @@ export default function EditSeasonDialog({
 
   const toggleAll = () => {
     if (isAllSelected) {
-      setSelectedFieldIds([]);
+      setSelectedFieldIds(mandatoryFieldIds);
     } else {
       setSelectedFieldIds(allFields.map((f) => f.id));
     }
@@ -150,24 +169,31 @@ export default function EditSeasonDialog({
 
                 <ScrollArea className="max-h-48 pr-2">
                   <div className="space-y-2">
-                    {allFields.map((f) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center justify-between rounded-lg border border-border/70 bg-card/35 px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedFieldIds.includes(f.id)}
-                            onChange={() => toggleField(f.id)}
-                          />
-                          <div className="text-sm">{f.name}</div>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—'}
-                        </div>
-                      </div>
-                    ))}
+                      {allFields.map((f) => {
+                        const fieldEntry = season.fieldIds.find((fi) => fi.id === f.id);
+                        const isMandatory = fieldEntry ? !fieldEntry.canRemove : false;
+                        return (
+                          <div
+                            key={f.id}
+                            className="flex items-center justify-between rounded-lg border border-border/70 bg-card/35 px-3 py-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedFieldIds.includes(f.id)}
+                                disabled={isMandatory}
+                                onChange={() => toggleField(f.id)}
+                              />
+                              <div className={cn('text-sm', isMandatory && 'text-muted-foreground')}>
+                                {f.name}
+                              </div>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {f.areaHa != null ? `${f.areaHa.toFixed(2)} ha` : '—'}
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
                 </ScrollArea>
               </div>

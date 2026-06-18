@@ -10,6 +10,7 @@ import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 
 interface Props {
   onClose: () => void;
+  seasonId: string | null;
 }
 
 function FieldMenu({
@@ -123,7 +124,12 @@ function FieldCard({
   );
 }
 
-export default function GlobalViewPanel({ onClose }: Props) {
+const EMPTY_CTA_BUTTONS = [
+  { label: 'Add Field', icon: Plus, action: 'add-field' as const },
+  { label: 'Browse Map', icon: Search, action: 'browse-map' as const },
+];
+
+export default function GlobalViewPanel({ onClose, seasonId }: Props) {
   const fieldsQ = useFields();
   const seasonsQ = useSeasons();
   const deleteField = useDeleteField();
@@ -135,6 +141,16 @@ export default function GlobalViewPanel({ onClose }: Props) {
   const allFields = useMemo(() => fieldsQ.data ?? [], [fieldsQ.data]);
   const allSeasons = useMemo(() => seasonsQ.data ?? [], [seasonsQ.data]);
 
+  const currentSeason = useMemo(() => {
+    if (!seasonId) return null;
+    return allSeasons.find((s) => s.id === seasonId) ?? null;
+  }, [allSeasons, seasonId]);
+
+  const seasonFields = useMemo(() => {
+    if (!seasonId) return allFields;
+    return allFields.filter((f) => f.seasonIds?.includes(seasonId));
+  }, [allFields, seasonId]);
+
   const seasonNames = useMemo(() => {
     const map: Record<string, string> = {};
     for (const s of allSeasons) {
@@ -145,8 +161,8 @@ export default function GlobalViewPanel({ onClose }: Props) {
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredFields = useMemo(() => {
-    if (!normalizedQuery) return allFields;
-    return allFields.filter((f) => {
+    if (!normalizedQuery) return seasonFields;
+    return seasonFields.filter((f) => {
       const searchable = [
         f.name,
         f.areaHa?.toString(),
@@ -154,7 +170,7 @@ export default function GlobalViewPanel({ onClose }: Props) {
       ].filter(Boolean).join(' ').toLocaleLowerCase();
       return searchable.includes(normalizedQuery);
     });
-  }, [allFields, normalizedQuery, seasonNames]);
+  }, [seasonFields, normalizedQuery, seasonNames]);
 
   const handleDelete = async (field: Field) => {
     if (!window.confirm(`Delete field "${field.name}"? This action cannot be undone.`)) return;
@@ -172,7 +188,9 @@ export default function GlobalViewPanel({ onClose }: Props) {
           <div>
             <h2 className="font-display text-base font-semibold text-foreground">Global View</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {allFields.length} field{allFields.length !== 1 ? 's' : ''}
+              {currentSeason
+                ? `${currentSeason.name} (${seasonFields.length} field${seasonFields.length !== 1 ? 's' : ''})`
+                : `${seasonFields.length} field${seasonFields.length !== 1 ? 's' : ''}`}
             </p>
           </div>
           <button
@@ -218,14 +236,39 @@ export default function GlobalViewPanel({ onClose }: Props) {
           ) : fieldsQ.error ? (
             <p className="text-sm text-destructive">Failed to load fields.</p>
           ) : filteredFields.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/80 bg-card/35 px-4 py-8 text-center">
-              <p className="text-sm font-medium text-foreground">
-                {normalizedQuery ? 'No fields match your search' : 'No fields yet'}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {normalizedQuery ? 'Try a different search term.' : 'Add a field to get started.'}
-              </p>
-            </div>
+            normalizedQuery ? (
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/80 bg-card/35 px-4 py-8 text-center">
+                <p className="text-sm font-medium text-foreground">No fields match your search</p>
+                <p className="text-xs text-muted-foreground">Try a different search term.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/80 bg-card/35 px-4 py-8 text-center">
+                <p className="text-sm font-medium text-foreground">
+                  {currentSeason ? `"${currentSeason.name}" has no fields yet` : 'No fields yet'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {currentSeason ? 'Add a field to this season to get started.' : 'Add a field to get started.'}
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 pt-1">
+                  {EMPTY_CTA_BUTTONS.map((btn) => (
+                    <button
+                      key={btn.action}
+                      type="button"
+                      onClick={() => {
+                        if (btn.action === 'add-field') {
+                          onClose();
+                          navigate('/monitoring/field-create');
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors duration-fast"
+                    >
+                      <btn.icon className="size-3.5" strokeWidth={1.75} />
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
           ) : (
             <div className="space-y-2">
               {filteredFields.map((field) => (
@@ -249,9 +292,8 @@ export default function GlobalViewPanel({ onClose }: Props) {
           <button
             type="button"
             onClick={ () => {
-              view.setPendingAction('create-field');
               onClose();
-              navigate('/monitoring/field-analytics');
+              navigate('/monitoring/field-create');
             } }
             className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 active:bg-primary/80 transition-colors duration-fast"
           >

@@ -6,6 +6,7 @@ import { NotFoundPage } from '@/components/shell/ModulePlaceholder';
 import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
 
 const FieldAnalyticsPage = lazy(() => import('@/pages/monitoring/FieldAnalyticsPage'));
+const FieldCreatePage = lazy(() => import('@/pages/monitoring/FieldCreatePage'));
 const MonitoringGlobalView = lazy(() => import('@/pages/monitoring/MonitoringGlobalView'));
 
 function lazyPlaceholderPage(name: keyof typeof import('@/pages/product/ProductPlaceholderPages')) {
@@ -108,6 +109,7 @@ export function ProductRoutes() {
         <Route path="account/api" element={ withSuspense(ApiSettingsPage) } />
         <Route path="*" element={ <NotFoundPage /> } />
       </Route>
+      <Route path="monitoring/field-create" element={ <AuthGate requireOnboardingComplete>{ withSuspense(FieldCreatePage) }</AuthGate> } />
     </Routes>
   );
 }

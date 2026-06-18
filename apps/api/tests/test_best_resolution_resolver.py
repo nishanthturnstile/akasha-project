@@ -583,7 +583,7 @@ def test_overlay_headers_include_provenance_when_enhanced(monkeypatch):
     assert r.headers.get("x-akasha-resolved-source") == RESOURCESAT_LISS4_SOURCE_ID
     assert r.headers.get("x-akasha-enhanced") == "true"
     assert r.headers.get("x-akasha-basis-date") == "2026-01-13"
-    # Resolution header must be present and match 5.8 m.
+    # Resolution header must be present and match the LISS-4 composite grid.
     assert r.headers.get("x-akasha-resolved-resolution") == "5.8"
 
 

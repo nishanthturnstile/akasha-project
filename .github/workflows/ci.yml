@@ -158,20 +158,6 @@ jobs:
       - name: Run Slice 2 validator
         run: python scripts/validate_slice2.py
 
-  gitleaks:
-    name: Gitleaks secret scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   trivy:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest

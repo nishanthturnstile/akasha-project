@@ -61,7 +61,7 @@ SOURCE_PROFILES = {
     LISS4_SOURCE_ID: {
         "collection": LISS4_BHOONIDHI_COLLECTION,
         "label": "LISS-4",
-        "resolution_meters": 5.8,
+        "resolution_meters": 5.0,
         "analytic_bands": LISS4_ANALYTIC_BANDS,
         "reflectance_scale": 0.0001,
         "reflectance_offset": 0.0,

@@ -1,5 +1,5 @@
 ---
-goal: Wire ResourceSat-2A LISS-4 (5.8 m) as an automatic per-field best-resolution enhancement layer on top of LISS-3 (24 m)
+goal: Wire ResourceSat-2A LISS-4 (5.0 m native scenes, 5.8 m composite grid) as an automatic per-field best-resolution enhancement layer on top of LISS-3 (24 m)
 version: 1.0
 date_created: 2026-06-18
 last_updated: 2026-06-18
@@ -9,7 +9,7 @@ tags: [feature, data, infrastructure, ingestion, raster, isro, bhoonidhi]
 
 # Introduction
 
-This plan adds **ResourceSat-2A LISS-4 MX70 L2 (5.8 m)** as a second ISRO/NRSC Bhoonidhi optical source
+This plan adds **ResourceSat-2A LISS-4 MX70 L2 (5.0 m native scenes, composited to the 5.8 m operational grid)** as a second ISRO/NRSC Bhoonidhi optical source
 that **automatically enhances per-field vegetation-index accuracy** (NDVI / MSAVI / NDWI_GREEN_NIR) wherever a
 LISS-4 composite covers a field for the selected date, while **falling back to the existing LISS-3 (24 m)
 source** elsewhere. LISS-3 remains the wide-coverage baseline and the only source for NDMI (LISS-4 has no
@@ -26,7 +26,7 @@ executed on `akasha-staging` over SSH because Bhoonidhi access is IP-whitelisted
 
 - **REQ-001**: LISS-4 enhances NDVI / MSAVI / NDWI_GREEN_NIR on a **per-field** basis; when a LISS-4 composite
   covers the field for the requested date (within a configurable date window), the BFF computes the index from
-  LISS-4 (5.8 m). Otherwise it falls back to LISS-3 (24 m).
+  LISS-4 (5.8 m composite grid). Otherwise it falls back to LISS-3 (24 m).
 - **REQ-002**: LISS-3 is never replaced. It remains the wide-coverage baseline and the sole NDMI source.
 - **REQ-003**: NDMI requested while LISS-4 is the resolved source MUST auto-resolve to LISS-3 and carry a
   provenance note (LISS-4 has no SWIR band).
@@ -71,10 +71,10 @@ executed on `akasha-staging` over SSH because Bhoonidhi access is IP-whitelisted
 |------|-------------|-----------|------|
 | TASK-A01 | In `services/ingestion/akasha_ingest/bhoonidhi.py`, add constants `RESOURCESAT_LISS4_SOURCE_ID = "resourcesat-2a-liss4-mx70-l2"` and `RESOURCESAT_LISS4_BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS4-MX70_L2"`, and add the pair to the `SOURCE_COLLECTIONS` dict. | | |
 | TASK-A02 | In `services/ingestion/akasha_ingest/config.py`, add a `RESOURCESAT_LISS4_COLLECTION_ID` constant and include the LISS-4 source id in `RESOURCESAT_BOA_COLLECTION_IDS` (this unblocks `bhoonidhi-sync` / `build-composite` / `verify-composite` source guards in `worker.py#L540`). Keep all worker `--source` defaults = LISS-3. | | |
-| TASK-A03 | In `scripts/prepare_resourcesat_liss3_boa_cogs.py`, make band order and mask builder **profile-driven**. Add a `resourcesat-2a-liss4-mx70-l2` entry to `SOURCE_PROFILES` with `collection="ResourceSat-2A_LISS4-MX70_L2"`, `label="LISS-4"`, `resolution_meters=5.8`, a 3-band `analytic_bands = (("BAND2","GREEN","Green"),("BAND3","RED","Red"),("BAND4","NIR","Near infrared"))`, and reflectance `scale=0.0001`, `offset=0.0` (placeholder — confirm in Phase F). | | |
+| TASK-A03 | In `scripts/prepare_resourcesat_liss3_boa_cogs.py`, make band order and mask builder **profile-driven**. Add a `resourcesat-2a-liss4-mx70-l2` entry to `SOURCE_PROFILES` with `collection="ResourceSat-2A_LISS4-MX70_L2"`, `label="LISS-4"`, `resolution_meters=5.0` (confirmed from the first Jan 30 staging download), a 3-band `analytic_bands = (("BAND2","GREEN","Green"),("BAND3","RED","Red"),("BAND4","NIR","Near infrared"))`, and reflectance `scale=0.0001`, `offset=0.0` (placeholder — confirm in Phase F). | | |
 | TASK-A04 | Add a SWIR-free mask builder `build_mask_array_3band()` (selected via profile) implementing the LISS-4 provisional Akasha threshold mask v1: class 0 gap (all bands background/out-of-range); class 4 water (`NDWI_GREEN_NIR >= 0.20 AND NIR <= 0.20`); class 2 cloud (`brightness((G+R+NIR)/3) >= 0.32 AND NDVI <= 0.20`); class 3 shadow (`GREEN <= 0.08 AND RED <= 0.08 AND NIR <= 0.08`); class 1 valid otherwise. Same `MASK_CLASSES` value scheme {0,1,2,3,4}. | | |
 | TASK-A05 | In `services/ingestion/akasha_ingest/composite.py`, generalize the analytic **band count** (read from the scene `prepare_manifest.json` / source profile instead of assuming 4). Confirm the most-recent-valid-pixel rule (`RESOURCE_SAT_VALID_MASK_CLASSES = {1,4}`), grid (`grid_from_aoi`, UTM 43N), analytic=bilinear / mask=nearest reprojection, and COG overview resampling all work for 3-band input. | | |
-| TASK-A06 | In `services/ingestion/akasha_ingest/catalog.py`, add a `resourcesat-2a-liss4-mx70-l2` entry to `RESOURCESAT_BOA_SOURCE_META` (`instrument="liss-4"`, `label="LISS-4"`, `default_gsd=5.8`) and make `_build_resourcesat_boa_stac_item()` emit **3-band** `eo:bands` (green/red/nir) and `raster:bands` (3× uint16 scale 0.0001 offset 0 spatial_resolution 5.8). | | |
+| TASK-A06 | In `services/ingestion/akasha_ingest/catalog.py`, add a `resourcesat-2a-liss4-mx70-l2` entry to `RESOURCESAT_BOA_SOURCE_META` (`instrument="liss-4"`, `label="LISS-4"`, `default_gsd=5.8`) and make `_build_resourcesat_boa_stac_item()` emit **3-band** `eo:bands` (green/red/nir) and `raster:bands` using the manifest's resolution (5.0 for native scene manifests, 5.8 for composites). | | |
 | TASK-A07 | Confirm `worker.py` subcommands `bhoonidhi-search`, `bhoonidhi-download`, `bhoonidhi-sync`, `build-composite`, `verify-composite` accept `--source resourcesat-2a-liss4-mx70-l2` (via the guard now including the id). Do **not** change defaults. | | |
 
 ### Implementation Phase B — Separate scheduled LISS-4 sync job (staging VM)
@@ -124,7 +124,7 @@ executed on `akasha-staging` over SSH because Bhoonidhi access is IP-whitelisted
 |------|-------------|-----------|------|
 | TASK-E01 | In `apps/frontend/src/types/api.ts`, add `resolvedSourceId`, `resolutionMeters`, `enhanced`, `basisDate` to the field statistics, overlay, and point response types. | | |
 | TASK-E02 | In `apps/frontend/src/lib/api.ts`, parse the new overlay response headers (`X-Akasha-Resolved-Source`, `X-Akasha-Resolved-Resolution`, `X-Akasha-Enhanced`) alongside the existing corner/stretch headers. | | |
-| TASK-E03 | In `apps/frontend/src/pages/MapPage.tsx` + `apps/frontend/src/components/scaffold/IndexPanel.tsx`, render an "Enhanced 5.8 m (LISS-4)" badge and the resolved resolution when `enhanced === true`; add an optional "Prefer high-res" toggle (default on) that sets `prefer_high_res`. | | |
+| TASK-E03 | In `apps/frontend/src/pages/MapPage.tsx` + `apps/frontend/src/components/scaffold/IndexPanel.tsx`, render an "Enhanced 5 m (LISS-4)" badge and the resolved resolution when `enhanced === true`; add an optional "Prefer high-res" toggle (default on) that sets `prefer_high_res`. | | |
 | TASK-E04 | In the moisture/NDMI view, render the provenance note "Moisture served from LISS-3 (24 m) — LISS-4 has no SWIR band." | | |
 | TASK-E05 | In `apps/frontend/src/components/map/Legend.tsx`, show the resolved resolution next to the index legend. Confirm `apps/frontend/src/components/layers/SourceCard.tsx` no longer shows the gated badge for LISS-4 (now `availabilityStatus` active). | | |
 
@@ -137,7 +137,7 @@ executed on `akasha-staging` over SSH because Bhoonidhi access is IP-whitelisted
 |------|-------------|-----------|------|
 | TASK-F01 | `ssh akasha-staging`; run `worker.py bhoonidhi-search --source resourcesat-2a-liss4-mx70-l2 --aoi bangalore-60km --lookback-days 90` and assess scene/date availability and AOI coverage feasibility. | | |
 | TASK-F02 | Download a sample LISS-4 product; validate 3 bands (Green/Red/NIR), CRS (EPSG:32643 expected), and real reflectance `scale`/`offset`/background + calibrated red/NIR. Update the prepare profile (TASK-A03) and STAC `akasha:reflectance` (TASK-C02) with confirmed values. | | |
-| TASK-F03 | Run `worker.py bhoonidhi-sync --source resourcesat-2a-liss4-mx70-l2 --aoi bangalore-60km` (search→download→prepare→composite→verify→ingest); confirm `verify-composite` passes (CRS, 5.8 m resolution, mask classes, coverage). | | |
+| TASK-F03 | Run `worker.py bhoonidhi-sync --source resourcesat-2a-liss4-mx70-l2 --aoi bangalore-60km` (search→download→prepare→composite→verify→ingest); confirm native scene prepare accepts 5.0 m inputs and `verify-composite` passes (CRS, 5.8 m composite grid, mask classes, partial-AOI coverage). | | |
 | TASK-F04 | Confirm `GET /api/sources/resourcesat-2a-liss4-mx70-l2/dates` returns composite dates, and a field inside LISS-4 coverage returns `enhanced: true` with `resolutionMeters: 5.8` for NDVI overlay + statistics + point. | | |
 | TASK-F05 | Cross-check LISS-4 vs LISS-3 NDVI on an overlapping date for a stable field; record any radiometric offset. If material, annotate (do not blend) per ALT-002. | | |
 | TASK-F06 | Install + enable the LISS-4 systemd timer (`systemctl enable --now akasha-bhoonidhi-liss4-sync.timer`); verify a dry-run/triggered run logs cleanly and respects the daily download limit. | | |
@@ -191,7 +191,7 @@ executed on `akasha-staging` over SSH because Bhoonidhi access is IP-whitelisted
 - **TEST-001**: `tests/test_prepare_resourcesat_liss4_mx70_l2_cogs.py` — synthetic 3-band input produces a
   3-band analytic COG + 1-band mask COG with classes {0,1,2,3,4} via the SWIR-free mask builder; manifest valid.
 - **TEST-002**: `tests/test_resourcesat_composite.py` (extend) — 3-band scenes composite to a valid AOI mosaic
-  (UTM 43N, 5.8 m, most-recent-valid rule, analytic/mask separate).
+  (UTM 43N, 5.8 m composite grid, most-recent-valid rule, analytic/mask separate).
 - **TEST-003**: `tests/test_bhoonidhi_ingestion.py` (extend) — LISS-4 source id maps to collection
   `ResourceSat-2A_LISS4-MX70_L2`; `bhoonidhi-sync` guard accepts the id.
 - **TEST-004**: `tests/test_bhoonidhi_systemd_artifacts.py` (extend) — LISS-4 timer/service/wrapper/env exist,
@@ -232,6 +232,6 @@ executed on `akasha-staging` over SSH because Bhoonidhi access is IP-whitelisted
 - `docs/impl-plan/isro-bhoonidhi-ingestion-phase-plan.md` (Phase 5 / P5-002 — LISS-4 adapter, AOI, composite/dated-timeline model, §2.1 Bhoonidhi API contract)
 - `docs/data-ingestion-and-satellite-rules.md` (band order, reflectance, mask classes, resampling, object keys)
 - `docs/engineering-dos-donts.md` (source registration guardrails, version pinning)
-- `docs/reference/satellite-catalog.md` (ResourceSat-2A LISS-4: 5.8 m, ~70 km swath, ~5-day revisit, 3 bands)
+- `docs/reference/satellite-catalog.md` (ResourceSat-2A LISS-4: 5.0 m native scenes, 5.8 m operational composite grid, ~70 km swath, ~5-day revisit, 3 bands)
 - `docs/architecture-tech-stack.md` (services, BFF API contracts)
 - `AGENTS.md` / `CLAUDE.md` (domain guardrails, canonical app tree, ingestion CLIs)

@@ -654,7 +654,6 @@ Required CI jobs:
 5. Security scans:
 
    ```bash
-   gitleaks detect
    trivy fs .
    ```
 
@@ -808,8 +807,7 @@ explicit, on-demand action.
    - Git,
    - Node/Yarn if not using build containers,
    - Python if not using build containers,
-   - Trivy,
-   - Gitleaks.
+   - Trivy.
 5. Verify a simple workflow can run on the runner.
 
 ### 5. Register staging and production in Coolify

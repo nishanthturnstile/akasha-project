@@ -254,7 +254,7 @@ def _native_trend_response(
             "cloudFilteredSceneCount": cloud_filtered_scene_count,
             "highResEnhancementNote": (
                 "Trend uses the primary source only for radiometric continuity. "
-                "High-resolution LISS-4 enhancement (5.8 m) is available for "
+                "High-resolution LISS-4 enhancement (5.8 m composite grid) is available for "
                 "single-date overlay, statistics, and point queries."
             ),
         },

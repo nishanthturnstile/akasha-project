@@ -11,7 +11,7 @@ export interface AoiConfig {
   bounds: [number, number, number, number];
 }
 
-export type BasemapProvider = 'esri';
+export type BasemapProvider = 'esri' | 'osm' | 'empty';
 export type BasemapUsageModel = 'session';
 export type BasemapPlacesPreference = 'all' | 'attributed' | 'none';
 
@@ -55,6 +55,8 @@ export interface Source {
   kind?: SourceKind;
   displayModes?: string[];
   defaultDisplayMode?: string;
+  mapDisplayModes?: string[];
+  defaultMapDisplayMode?: string;
   displayMode?: string;
   /** Optional category grouping for the LAYER picker; null/absent ⇒ flat list. */
   layerGroups?: LayerGroup[] | null;
@@ -220,6 +222,8 @@ export interface DefaultLayer {
   kind?: SourceKind;
   displayModes?: string[];
   defaultDisplayMode?: string;
+  mapDisplayModes?: string[];
+  defaultMapDisplayMode?: string;
   description?: string;
   supportedIndices?: string[];
   /** Same-origin `/api/tiles/.../{z}/{x}/{y}.png` template — never a COG/MinIO/TiTiler URL. */
@@ -341,6 +345,7 @@ export interface FieldStatisticsRequest {
   acquisitionDate?: string | null;
   indexType: string;
   cloudMask?: CloudMaskOptions;
+  preferHighRes?: boolean;
 }
 
 export interface FieldStatisticsResponse {
@@ -356,6 +361,12 @@ export interface FieldStatisticsResponse {
   maskedPixels?: number;
   maskMethod?: string | null;
   metricsProvisional?: boolean;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  resolvedSourceId?: string | null;
+  resolutionMeters?: number | null;
+  enhanced?: boolean;
+  basisDate?: string | null;
+  provenanceNote?: string | null;
   metadata: {
     formula?: string;
     bands?: string[];
@@ -371,6 +382,38 @@ export interface FieldStatisticsResponse {
     warnings?: string[];
     [key: string]: unknown;
   };
+}
+
+export type ImageCorners = [[number, number], [number, number], [number, number], [number, number]];
+
+export interface FieldIndexOverlayImage {
+  url: string;
+  sourceUrl: string;
+  coordinates: ImageCorners;
+  stretch: [number, number] | null;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  resolvedSourceId?: string | null;
+  resolutionMeters?: number | null;
+  enhanced?: boolean;
+  basisDate?: string | null;
+}
+
+export interface FieldIndexPointResponse {
+  plotId: string;
+  sourceId: string;
+  acquisitionDate: string;
+  indexType: string;
+  lng: number;
+  lat: number;
+  value: number | null;
+  masked: boolean;
+  maskClass: number | null;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  resolvedSourceId?: string | null;
+  resolutionMeters?: number | null;
+  enhanced?: boolean;
+  basisDate?: string | null;
+  provenanceNote?: string | null;
 }
 
 export interface FieldTrendPoint {

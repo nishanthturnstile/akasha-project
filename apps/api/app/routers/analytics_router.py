@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import logging
+import math
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -13,16 +15,24 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
 from ..api_models import CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
-from ..auth import CurrentTeam, get_current_team
+from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
-from ..raster.indices import DEFAULT_INDEX, get_index, index_tile_expression
+from ..raster.geo_validate import validate_polygon
+from ..raster.indices import DEFAULT_INDEX, get_index
 from ..raster.models import IndexStatisticsModel, PixelCounts
-from ..raster.service import compute_statistics
-from ..repositories import plots_repo
+from ..raster.raster_reader import read_index_windows
+from ..raster.service import (
+    _candidate_assets_for_geometry,
+    _excluded_mask_classes_for_assets,
+    _index_band_positions,
+    compute_statistics,
+)
+from ..raster.statistics_core import MASK_NODATA_CLASS, correct_reflectance, evaluate_index_values
+from ..repositories import fields_repo
 from ..routers.product_router import _enforce_index_rate_limit
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
 
@@ -52,11 +62,11 @@ async def _run_blocking(func, *args, **kwargs):
         ) from exc
 
 
-async def _get_plot_or_404(plot_id: str, team_id: str | None = None) -> dict[str, Any]:
-    plot = await _run_blocking(plots_repo.get_plot, plot_id, team_id)
-    if plot is None:
-        raise not_found("Field not found.", code="FIELD_NOT_FOUND", plotId=plot_id)
-    return plot
+async def _get_field_or_404(field_id: str, user_id: str) -> dict[str, Any]:
+    field = await _run_blocking(fields_repo.get_field, field_id, user_id)
+    if field is None:
+        raise not_found("Field not found.", code="FIELD_NOT_FOUND", fieldId=field_id)
+    return field
 
 
 def _default_range() -> tuple[date, date]:
@@ -98,13 +108,24 @@ def _field_statistics(
     acquisition_date: str | None,
     index_type: str,
     cloud_mask: CloudMaskOptions,
+    prefer_high_res: bool = True,
 ) -> FieldStatisticsResponse:
-    source = catalog.get_source(source_id)
+    resolution = catalog.resolve_best_resolution_source(
+        primary_source_id=source_id,
+        index_type=index_type,
+        field_geometry=plot["geometry"],
+        acquisition_date=acquisition_date or "",
+        prefer_high_res=prefer_high_res,
+    )
+    effective_source_id = resolution.source_id
+    effective_date = resolution.basis_date if resolution.enhanced else acquisition_date
+
+    source = catalog.get_source(effective_source_id)
     mask_mapping = source_cloud_mask_mapping(source, cloud_mask)
     computed = compute_statistics(
         geometry=plot["geometry"],
-        source_id=source_id,
-        acquisition_date=acquisition_date,
+        source_id=effective_source_id,
+        acquisition_date=effective_date,
         index_type=index_type,
         max_area_ha=settings.max_polygon_area_ha,
         max_vertices=settings.max_polygon_vertices,
@@ -128,6 +149,11 @@ def _field_statistics(
         statistics=IndexStatisticsModel(**computed["statistics"]),
         pixel_counts=PixelCounts(**computed["pixelCounts"]),
         metadata=metadata,
+        resolved_source_id=resolution.source_id,
+        resolution_meters=resolution.resolution_meters,
+        enhanced=resolution.enhanced,
+        basis_date=resolution.basis_date,
+        provenance_note=resolution.provenance_note,
     )
 
 
@@ -186,6 +212,7 @@ def _native_trend_response(
                 acquisition_date=acquisition_date,
                 index_type=index_type,
                 cloud_mask=cloud_mask,
+                prefer_high_res=False,
             )
             point = _trend_point_from_stats(stats)
             if (
@@ -225,17 +252,85 @@ def _native_trend_response(
             "rangeLimitDays": MAX_TREND_DAYS,
             "maxCloudCoverInAoi": max_cloud_cover_in_aoi,
             "cloudFilteredSceneCount": cloud_filtered_scene_count,
+            "highResEnhancementNote": (
+                "Trend uses the primary source only for radiometric continuity. "
+                "High-resolution LISS-4 enhancement (5.8 m) is available for "
+                "single-date overlay, statistics, and point queries."
+            ),
         },
     )
 
 
-def _index_overlay_response(
+def _compute_index_window(
+    *,
+    assets: dict[str, Any],
+    geometry: dict[str, Any],
+    index_type: str,
+) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
+    import numpy as np
+
+    index_def = get_index(index_type)
+    pos_a, pos_b, _resolved_bands = _index_band_positions(assets, index_def, index_type)
+    read = read_index_windows(
+        analytic_href=assets["analyticHref"],
+        mask_href=assets["maskHref"],
+        geometry=geometry,
+        positions=[pos_a, pos_b],
+    )
+    if not read.intersects:
+        return read, None, None, None, None, None, None, None
+
+    band_a = np.asarray(read.band_arrays[pos_a])
+    band_b = np.asarray(read.band_arrays[pos_b])
+    geom = np.asarray(read.geometry_mask, dtype=bool)
+    source_mask = np.asarray(read.mask)
+
+    if str(assets.get("nodataPolicy") or "selected_band_or_mask") == "mask_only":
+        analytic_nodata = np.zeros(band_a.shape, dtype=bool)
+    else:
+        analytic_nodata = (band_a == read.nodata) | (band_b == read.nodata)
+
+    mask_nodata = source_mask == MASK_NODATA_CLASS
+    nodata_mask = geom & (analytic_nodata | mask_nodata)
+    coverage_mask = geom & ~nodata_mask
+
+    excluded = _excluded_mask_classes_for_assets(assets=assets, override=None)
+    excluded_within_coverage = tuple(cls for cls in excluded if cls != MASK_NODATA_CLASS)
+    masked_within_coverage = coverage_mask & np.isin(source_mask, excluded_within_coverage)
+    valid_mask = coverage_mask & ~masked_within_coverage
+
+    # Per-pixel masks that DO NOT pre-clip to the polygon. The crisp polygon clip
+    # is applied at the fine reprojected output grid for the overlay so the edge
+    # hugs the boundary instead of stair-stepping at the native pixel size.
+    data_nodata = analytic_nodata | mask_nodata
+    data_masked = ~data_nodata & np.isin(source_mask, excluded_within_coverage)
+    data_valid = ~data_nodata & ~data_masked
+
+    scale = float(assets.get("scale", 0.0001))
+    offset = float(assets.get("offset", 0.0))
+    band_a_ref = correct_reflectance(band_a, scale, offset)
+    band_b_ref = correct_reflectance(band_b, scale, offset)
+    values, _good = evaluate_index_values(index_def.formula_kind, band_a_ref, band_b_ref)
+
+    return (
+        read,
+        values,
+        valid_mask,
+        nodata_mask | masked_within_coverage,
+        source_mask,
+        geom,
+        data_valid,
+        data_masked,
+    )
+
+
+def _resolve_single_field_asset(
     *,
     plot: dict[str, Any],
     source_id: str,
     acquisition_date: str,
     index_type: str,
-) -> tuple[bytes, str]:
+) -> dict[str, Any]:
     supported = catalog.supported_indices(source_id)
     if index_type not in supported:
         raise bad_request(
@@ -246,45 +341,187 @@ def _index_overlay_response(
             supported=supported,
         )
     assets_for_date = catalog.resolve_assets_for_date(source_id, acquisition_date)
-    if len(assets_for_date) != 1:
+    geom_facts = validate_polygon(
+        plot["geometry"],
+        max_area_ha=settings.max_polygon_area_ha,
+        max_vertices=settings.max_polygon_vertices,
+    )
+    candidate_assets = _candidate_assets_for_geometry(
+        assets_for_date=assets_for_date,
+        geometry_bounds=geom_facts.get("bounds"),
+    )
+    if len(candidate_assets) != 1:
         raise bad_request(
             "Field index overlay requires exactly one resolved analytic asset.",
             code="INDEX_OVERLAY_ASSET_UNAVAILABLE",
-            sceneCount=len(assets_for_date),
+            sceneCount=len(candidate_assets),
         )
-    assets = assets_for_date[0]
-    index_def = get_index(index_type)
-    try:
-        expression = index_tile_expression(
-            assets["bandNames"],
-            assets.get("bandRoleMapping", {}),
-            index_def,
-            scale=float(assets.get("scale", 0.0001)),
-            offset=float(assets.get("offset", -0.1)),
-        )
-    except KeyError as exc:
-        raise bad_request(
-            "STAC analytic asset is missing a band required for this index.",
-            code="MISSING_INDEX_BANDS",
-            indexType=index_type,
-            missingRole=str(exc).strip("'"),
-            availableBands=assets.get("bandNames", []),
-            bandRoleMapping=assets.get("bandRoleMapping", {}),
-        ) from exc
-    feature = {
-        "type": "Feature",
-        "properties": {"plotId": plot.get("id"), "name": plot.get("name")},
-        "geometry": plot["geometry"],
-    }
-    return tiles.fetch_feature_overlay(
-        analytic_href=assets["analyticHref"],
-        feature=feature,
-        expression=expression,
-        rescale=index_def.display_rescale_str,
-        colormap_name=index_def.display_colormap,
-        width=1024,
-        height=1024,
+    return candidate_assets[0]
+
+
+def _index_overlay_response(
+    *,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+    prefer_high_res: bool = True,
+) -> tuple[bytes, str, dict[str, str]]:
+    resolution = catalog.resolve_best_resolution_source(
+        primary_source_id=source_id,
+        index_type=index_type,
+        field_geometry=plot["geometry"],
+        acquisition_date=acquisition_date,
+        prefer_high_res=prefer_high_res,
     )
+    effective_source_id = resolution.source_id
+    effective_date = resolution.basis_date if resolution.enhanced else acquisition_date
+
+    assets = _resolve_single_field_asset(
+        plot=plot,
+        source_id=effective_source_id,
+        acquisition_date=effective_date,
+        index_type=index_type,
+    )
+    (
+        read,
+        values,
+        valid_mask,
+        masked_mask,
+        _source_mask,
+        _geom,
+        data_valid,
+        data_masked,
+    ) = _compute_index_window(
+        assets=assets,
+        geometry=plot["geometry"],
+        index_type=index_type,
+    )
+    lo, hi = tiles.overlay_display_range(index_type)
+    headers: dict[str, str] = {"X-Akasha-Overlay-Stretch": f"{lo},{hi}"}
+    # Provenance headers
+    headers["X-Akasha-Resolved-Source"] = resolution.source_id
+    if resolution.resolution_meters is not None:
+        headers["X-Akasha-Resolved-Resolution"] = str(resolution.resolution_meters)
+    headers["X-Akasha-Enhanced"] = "true" if resolution.enhanced else "false"
+    if resolution.basis_date:
+        headers["X-Akasha-Basis-Date"] = resolution.basis_date
+
+    if not read.intersects:
+        footprint_corners = getattr(read, "footprint_corners", None)
+        if footprint_corners:
+            headers["X-Akasha-Overlay-Corners"] = json.dumps(
+                footprint_corners, separators=(",", ":")
+            )
+        return tiles.TRANSPARENT_PNG, "image/png", headers
+
+    window_transform = getattr(read, "window_transform", None)
+    window_crs = getattr(read, "crs", None)
+    if window_transform is not None and window_crs is not None:
+        # EOS-style pixel-perfect path: reproject to north-up Web Mercator,
+        # supersample for a smooth heatmap, and clip crisply to the polygon.
+        rgba, corners = tiles.reproject_index_overlay_web_mercator(
+            index_type=index_type,
+            index_values=values,
+            data_valid=data_valid,
+            data_masked=data_masked,
+            src_transform=window_transform,
+            src_crs=window_crs,
+            geometry=plot["geometry"],
+        )
+        headers["X-Akasha-Overlay-Corners"] = json.dumps(corners, separators=(",", ":"))
+        return tiles.encode_rgba_png(rgba), "image/png", headers
+
+    # Fallback (no georeferencing metadata, e.g. synthetic tests): native render.
+    footprint_corners = getattr(read, "footprint_corners", None)
+    if footprint_corners:
+        headers["X-Akasha-Overlay-Corners"] = json.dumps(
+            footprint_corners, separators=(",", ":")
+        )
+    body, content_type = tiles.render_field_index_overlay_png(
+        index_type=index_type,
+        index_values=values,
+        valid_mask=valid_mask,
+        masked_mask=masked_mask,
+    )
+    return body, content_type, headers
+
+
+def _point_row_col(read: Any, lng: float, lat: float) -> tuple[int, int]:
+    transform = getattr(read, "window_transform", None)
+    crs = getattr(read, "crs", None)
+    if transform is None or crs is None:
+        return 0, 0
+    from rasterio.warp import transform as transform_coords  # lazy
+
+    xs, ys = transform_coords("EPSG:4326", crs, [lng], [lat])
+    inv = ~transform
+    col_f, row_f = inv * (xs[0], ys[0])
+    return int(math.floor(row_f)), int(math.floor(col_f))
+
+
+def _field_index_point_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+    lng: float,
+    lat: float,
+    prefer_high_res: bool = True,
+) -> dict[str, Any]:
+    import numpy as np
+
+    resolution = catalog.resolve_best_resolution_source(
+        primary_source_id=source_id,
+        index_type=index_type,
+        field_geometry=plot["geometry"],
+        acquisition_date=acquisition_date,
+        prefer_high_res=prefer_high_res,
+    )
+    effective_source_id = resolution.source_id
+    effective_date = resolution.basis_date if resolution.enhanced else acquisition_date
+
+    assets = _resolve_single_field_asset(
+        plot=plot,
+        source_id=effective_source_id,
+        acquisition_date=effective_date,
+        index_type=index_type,
+    )
+    read, values, valid_mask, masked_mask, source_mask, _geom, _dv, _dm = _compute_index_window(
+        assets=assets,
+        geometry=plot["geometry"],
+        index_type=index_type,
+    )
+
+    base: dict[str, Any] = {
+        "plotId": plot_id,
+        "sourceId": effective_source_id,
+        "acquisitionDate": effective_date,
+        "indexType": index_type,
+        "lng": lng,
+        "lat": lat,
+        "resolvedSourceId": resolution.source_id,
+        "resolutionMeters": resolution.resolution_meters,
+        "enhanced": resolution.enhanced,
+        "basisDate": resolution.basis_date,
+        "provenanceNote": resolution.provenance_note,
+    }
+    if not read.intersects or values is None:
+        return {**base, "value": None, "masked": True, "maskClass": None}
+
+    row, col = _point_row_col(read, lng, lat)
+    if row < 0 or col < 0 or row >= values.shape[0] or col >= values.shape[1]:
+        return {**base, "value": None, "masked": True, "maskClass": None}
+
+    mask_class = int(np.asarray(source_mask)[row, col])
+    is_valid = bool(np.asarray(valid_mask)[row, col])
+    is_masked = bool(np.asarray(masked_mask)[row, col]) or not is_valid
+    value = None
+    if not is_masked and np.isfinite(values[row, col]):
+        value = round(float(values[row, col]), 6)
+    return {**base, "value": value, "masked": is_masked, "maskClass": mask_class}
 
 
 @router.post(
@@ -296,10 +533,10 @@ async def post_field_index_statistics(
     plot_id: str,
     request: Request,
     payload: FieldStatisticsRequest = Body(...),
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> FieldStatisticsResponse:
     _enforce_index_rate_limit(request)
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     index_type = _normalize_index(payload.index_type)
 
     def _compute() -> FieldStatisticsResponse:
@@ -310,6 +547,7 @@ async def post_field_index_statistics(
             acquisition_date=payload.acquisition_date,
             index_type=index_type,
             cloud_mask=payload.cloud_mask,
+            prefer_high_res=payload.prefer_high_res,
         )
 
     try:
@@ -341,7 +579,7 @@ async def get_field_analytics_trend(
     cloudShadows: bool = True,
     cirrus: bool = True,
     maxCloudCoverInAoi: float | None = Query(default=None),
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> FieldTrendResponse:
     default_start, default_end = _default_range()
     date_start = startDate or default_start
@@ -350,7 +588,7 @@ async def get_field_analytics_trend(
     _validate_cloud_cover(maxCloudCoverInAoi)
 
     index_type = _normalize_index(indexType)
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     cloud_mask = CloudMaskOptions(
         clouds=clouds,
         cloud_shadows=cloudShadows,
@@ -376,15 +614,43 @@ async def get_field_index_overlay(
     index_type: str,
     sourceId: str = Query(default=settings.default_source_id),
     acquisitionDate: str = Query(...),
-    team: CurrentTeam = Depends(get_current_team),
+    preferHighRes: bool = Query(default=True),
+    user: CurrentUser = Depends(get_current_user),
 ) -> Response:
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(index_type)
-    body, content_type = await _run_blocking(
+    body, content_type, headers = await _run_blocking(
         _index_overlay_response,
         plot=plot,
         source_id=sourceId,
         acquisition_date=acquisitionDate,
         index_type=normalized_index,
+        prefer_high_res=preferHighRes,
     )
-    return Response(content=body, media_type=content_type)
+    return Response(content=body, media_type=content_type, headers=headers)
+
+
+@router.get("/fields/{plot_id}/indices/point")
+async def get_field_index_point(
+    plot_id: str,
+    sourceId: str = Query(default=settings.default_source_id),
+    acquisitionDate: str = Query(...),
+    indexType: str = Query(default=DEFAULT_INDEX),
+    lng: float = Query(...),
+    lat: float = Query(...),
+    preferHighRes: bool = Query(default=True),
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    plot = await _get_field_or_404(plot_id, user.id)
+    normalized_index = _normalize_index(indexType)
+    return await _run_blocking(
+        _field_index_point_response,
+        plot_id=plot_id,
+        plot=plot,
+        source_id=sourceId,
+        acquisition_date=acquisitionDate,
+        index_type=normalized_index,
+        lng=lng,
+        lat=lat,
+        prefer_high_res=preferHighRes,
+    )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hmac
 import logging
 import time
 from datetime import UTC, datetime, timedelta
@@ -15,14 +14,12 @@ from ..auth import (
     TeamMembership,
     auth_password_pepper,
     clear_session_cookie,
-    deployment_auth_required,
     ensure_auth_enabled_configured,
     forbidden,
     get_current_user,
     hash_token,
     hash_user_agent,
     invalid_credentials,
-    is_local_auth_env,
     new_session_token,
     session_expires_at,
     set_session_cookie,
@@ -33,7 +30,6 @@ from ..raster.errors import AkashaError, bad_request
 from ..repositories import auth_repo
 from ..schemas.auth import (
     AccountMe,
-    BootstrapPayload,
     LoginPayload,
     PasswordChangePayload,
     SignupPayload,
@@ -118,26 +114,6 @@ def _verify_password_or_dummy(password: str, password_hash: str | None) -> bool:
         return verify_password(password, password_hash)
     _verify_dummy_password(password)
     return False
-
-
-def _bootstrap_token_matches(submitted: str | None) -> bool:
-    expected = settings.auth_bootstrap_token.strip()
-    if not expected or not submitted:
-        return False
-    return hmac.compare_digest(submitted, expected)
-
-
-def _can_bootstrap(submitted_token: str | None) -> bool:
-    if not settings.auth_allow_bootstrap:
-        return False
-    if auth_repo.active_password_user_count() != 0:
-        return False
-    requires_token = deployment_auth_required() or not is_local_auth_env()
-    if requires_token:
-        return _bootstrap_token_matches(submitted_token)
-    if settings.auth_bootstrap_token.strip():
-        return _bootstrap_token_matches(submitted_token)
-    return True
 
 
 def account_me_payload(user: CurrentUser) -> AccountMe:
@@ -266,7 +242,6 @@ async def signup(payload: SignupPayload, request: Request, response: Response) -
             display_name=display_name,
             password_hash=hash_password(payload.password),
             team_name=_signup_team_name(display_name),
-            require_no_password_users=False,
         )
     except IntegrityError as exc:
         raise bad_request(
@@ -333,40 +308,6 @@ async def refresh_session(
         raise unauthorized()
     set_session_cookie(response, raw, expires_at)
     return account_me_payload(user)
-
-
-@router.post("/auth/bootstrap", response_model=dict[str, str], response_model_by_alias=True)
-async def bootstrap(payload: BootstrapPayload, request: Request) -> dict[str, str]:
-    if not is_local_auth_env():
-        ensure_auth_enabled_configured()
-    _enforce_auth_rate_limit(
-        request,
-        scope="bootstrap",
-        limit=settings.auth_bootstrap_rate_limit_per_hour,
-        window_seconds=3600.0,
-    )
-    try:
-        allowed = _can_bootstrap(payload.bootstrap_token)
-    except Exception as exc:  # noqa: BLE001
-        raise AkashaError(
-            "AUTH_BACKEND_UNAVAILABLE",
-            "Authentication storage is not available.",
-            503,
-        ) from exc
-    if not allowed:
-        raise forbidden("Bootstrap is not enabled.")
-    auth_password_pepper()
-    created = auth_repo.create_user_with_team(
-        username=payload.username,
-        email=payload.email,
-        display_name=payload.display_name,
-        password_hash=hash_password(payload.password),
-        team_name=payload.team_name,
-        require_no_password_users=True,
-    )
-    if created is None:
-        raise forbidden("Bootstrap is not enabled.")
-    return created
 
 
 @router.patch("/account/password", response_model=dict[str, bool], response_model_by_alias=True)

@@ -5,6 +5,8 @@ interface LegendProps {
     /** Active render mode (e.g. `RGB`, `NDVI`, `VV_GRAYSCALE`). */
     displayMode: string;
     sourceKind?: SourceKind;
+    /** Resolved resolution from overlay provenance (e.g. 5.8 for LISS-4). */
+    resolvedResolutionMeters?: number | null;
     className?: string;
 }
 
@@ -16,6 +18,7 @@ interface RampSpec {
     ticks: string[];
     /** Optional one-line caption beneath the ramp. */
     caption?: string;
+    maskedLabel?: string;
 }
 
 // Normalized-difference vegetation/water/moisture indices share a diverging
@@ -23,11 +26,12 @@ interface RampSpec {
 // the meaning toward water so it reads blue at the high end. Ranges match the
 // canonical (a-b)/(a+b) domain of [-1, 1].
 const NDVI_RAMP: RampSpec = {
-    title: 'NDVI · vegetation',
+    title: 'NDVI heatmap',
     gradient:
-        'linear-gradient(90deg,#9b4a1e 0%,#b9822f 25%,#e6d36a 50%,#86c44f 75%,#1f7a34 100%)',
-    ticks: ['-1', '0', '+1'],
-    caption: 'Bare / built ▸ dense canopy',
+        'linear-gradient(90deg,#d73027 0%,#fdae61 28%,#fee08b 52%,#a6d96a 76%,#1a9850 100%)',
+    ticks: ['Low', 'Mid', 'High'],
+    caption: 'Stress ▸ healthy canopy',
+    maskedLabel: 'Cloud / no data',
 };
 
 const NDRE_RAMP: RampSpec = {
@@ -109,6 +113,10 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
         case 'VV_GRAYSCALE':
         case 'VH_GRAYSCALE':
             return SAR_RAMP;
+        case 'FCC':
+        case 'FALSE_COLOR':
+        case 'FALSE_COLOUR':
+            return FALSE_COLOR_RAMP;
         default:
             break;
     }
@@ -122,7 +130,7 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
  * map stays clean by default (CLAUDE.md: RGB is the cold default). For index and
  * SAR modes it shows a labelled ramp matching the tile render's colormap.
  */
-export function Legend({ displayMode, sourceKind, className }: LegendProps) {
+export function Legend({ displayMode, sourceKind, resolvedResolutionMeters, className }: LegendProps) {
     const ramp = rampFor(displayMode, sourceKind);
     if (!ramp) return null;
 
@@ -137,9 +145,19 @@ export function Legend({ displayMode, sourceKind, className }: LegendProps) {
                 className,
             ) }
         >
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/80 on-map-text">
-                { ramp.title }
-            </p>
+            <div className="mb-1.5 flex items-center justify-between gap-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/80 on-map-text">
+                    { ramp.title }
+                </p>
+                { resolvedResolutionMeters != null && Number.isFinite(resolvedResolutionMeters) && (
+                    <span
+                        className="text-[10px] font-medium text-primary/80 on-map-text"
+                        data-testid="legend-resolved-resolution"
+                    >
+                        { resolvedResolutionMeters } m
+                    </span>
+                ) }
+            </div>
             <div
                 aria-hidden="true"
                 className="h-2.5 w-full rounded-pill ring-1 ring-inset ring-border/60"
@@ -160,6 +178,16 @@ export function Legend({ displayMode, sourceKind, className }: LegendProps) {
             </div>
             { ramp.caption && (
                 <p className="mt-1 text-[10px] leading-3 text-muted-foreground">{ ramp.caption }</p>
+            ) }
+            { ramp.maskedLabel && (
+                <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span
+                        aria-hidden="true"
+                        className="size-2.5 rounded-sm ring-1 ring-inset ring-border/60"
+                        style={ { backgroundColor: '#d0d5dd' } }
+                    />
+                    <span>{ ramp.maskedLabel }</span>
+                </div>
             ) }
         </div>
     );

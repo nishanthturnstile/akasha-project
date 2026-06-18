@@ -18,7 +18,6 @@ from .analytics import (
 )
 from .auth import (
     AccountMe,
-    BootstrapPayload,
     LoginPayload,
     PasswordChangePayload,
 )

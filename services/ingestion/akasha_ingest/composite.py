@@ -22,22 +22,49 @@ RESOURCE_SAT_VALID_MASK_CLASSES = frozenset({1, 4})
 RESOURCE_SAT_EXCLUDED_MASK_CLASSES = frozenset({0, 2, 3})
 SOURCE_ID = "resourcesat-2a-liss3-boa"
 BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
+LISS4_SOURCE_ID = "resourcesat-2a-liss4-mx70-l2"
+LISS4_BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS4-MX70_L2"
 AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
 AWIFS_BHOONIDHI_COLLECTION = "ResourceSat-2A_AWIFS_BOA"
+LISS3_ANALYTIC_BAND_ORDER = ["BAND2", "BAND3", "BAND4", "BAND5"]
+LISS4_ANALYTIC_BAND_ORDER = ["BAND2", "BAND3", "BAND4"]
+LISS3_BAND_ROLE_MAPPING = {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4",
+    "SWIR1": "BAND5",
+}
+LISS4_BAND_ROLE_MAPPING = {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4",
+}
 SOURCE_PROFILES = {
     SOURCE_ID: {
         "collection": BHOONIDHI_COLLECTION,
         "label": "ResourceSat LISS-3",
         "resolution": 24.0,
+        "analytic_band_order": LISS3_ANALYTIC_BAND_ORDER,
+        "band_role_mapping": LISS3_BAND_ROLE_MAPPING,
         "mask_method": (
             "Akasha threshold mask v1 (no native quality layer found in validated "
             "LISS-3 BOA sample; provisional)."
         ),
     },
+    LISS4_SOURCE_ID: {
+        "collection": LISS4_BHOONIDHI_COLLECTION,
+        "label": "ResourceSat LISS-4",
+        "resolution": 5.8,
+        "analytic_band_order": LISS4_ANALYTIC_BAND_ORDER,
+        "band_role_mapping": LISS4_BAND_ROLE_MAPPING,
+        "mask_method": "Akasha threshold mask v1 (LISS-4, no SWIR; provisional).",
+    },
     AWIFS_SOURCE_ID: {
         "collection": AWIFS_BHOONIDHI_COLLECTION,
         "label": "ResourceSat AWiFS",
         "resolution": 56.0,
+        "analytic_band_order": LISS3_ANALYTIC_BAND_ORDER,
+        "band_role_mapping": LISS3_BAND_ROLE_MAPPING,
         "mask_method": (
             "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
             "(pending AWiFS-specific native quality-layer validation; provisional)."
@@ -47,6 +74,8 @@ SOURCE_PROFILES = {
 SOURCE_ALIASES = {
     SOURCE_ID: SOURCE_ID,
     BHOONIDHI_COLLECTION: SOURCE_ID,
+    LISS4_SOURCE_ID: LISS4_SOURCE_ID,
+    LISS4_BHOONIDHI_COLLECTION: LISS4_SOURCE_ID,
     AWIFS_SOURCE_ID: AWIFS_SOURCE_ID,
     AWIFS_BHOONIDHI_COLLECTION: AWIFS_SOURCE_ID,
 }
@@ -63,13 +92,8 @@ MASK_CLASSES = [
     {"value": 3, "name": "shadow", "description": "Akasha threshold-derived shadow"},
     {"value": 4, "name": "water", "description": "Akasha threshold-derived water"},
 ]
-ANALYTIC_BAND_ORDER = ["BAND2", "BAND3", "BAND4", "BAND5"]
-BAND_ROLE_MAPPING = {
-    "GREEN": "BAND2",
-    "RED": "BAND3",
-    "NIR": "BAND4",
-    "SWIR1": "BAND5",
-}
+ANALYTIC_BAND_ORDER = LISS3_ANALYTIC_BAND_ORDER
+BAND_ROLE_MAPPING = LISS3_BAND_ROLE_MAPPING
 AOI_COMPOSITE_GRID_CRS_KEYS = (
     "compositeGridCrs",
     "composite_grid_crs",
@@ -94,6 +118,14 @@ def source_profile(source_id: str) -> dict[str, Any]:
 
 def default_resolution(source_id: str) -> float:
     return float(source_profile(source_id)["resolution"])
+
+
+def analytic_band_order_for_source(source_id: str) -> list[str]:
+    return list(source_profile(source_id).get("analytic_band_order") or ANALYTIC_BAND_ORDER)
+
+
+def band_role_mapping_for_source(source_id: str) -> dict[str, str]:
+    return dict(source_profile(source_id).get("band_role_mapping") or BAND_ROLE_MAPPING)
 
 
 def mask_method_for_source(source_id: str) -> str:
@@ -232,8 +264,8 @@ def _as_scene_arrays(scene: AlignedScene) -> tuple[np.ndarray, np.ndarray]:
     mask = np.asarray(scene.mask)
     if analytic.ndim != 3:
         raise ValueError(f"{scene.scene_id}: analytic array must be band,height,width")
-    if analytic.shape[0] != 4:
-        raise ValueError(f"{scene.scene_id}: ResourceSat analytic array must have 4 bands")
+    if analytic.shape[0] < 1:
+        raise ValueError(f"{scene.scene_id}: ResourceSat analytic array must have at least 1 band")
     if mask.ndim != 2:
         raise ValueError(f"{scene.scene_id}: mask array must be height,width")
     if analytic.shape[1:] != mask.shape:
@@ -471,17 +503,22 @@ def align_manifest_scene(
     manifest = _read_manifest(manifest_path)
     analytic_path = _manifest_asset_path(manifest_path, manifest, "analytic")
     mask_path = _manifest_asset_path(manifest_path, manifest, "mask")
+    source_id = source_id_from_manifest(manifest)
+    expected_band_order = analytic_band_order_for_source(source_id)
+    expected_band_count = len(expected_band_order)
     rasterio = deps["rasterio"]
     reproject = deps["reproject"]
     Resampling = deps["Resampling"]
     dst_transform = _grid_affine(deps, grid)
 
-    analytic_out = np.zeros((4, grid.height, grid.width), dtype=np.uint16)
+    analytic_out = np.zeros((expected_band_count, grid.height, grid.width), dtype=np.uint16)
     mask_out = np.zeros((grid.height, grid.width), dtype=np.uint8)
     with rasterio.open(analytic_path) as analytic:
-        if analytic.count != 4:
-            raise ValueError(f"{analytic_path}: expected 4 ResourceSat analytic bands")
-        for band_index in range(1, 5):
+        if analytic.count != expected_band_count:
+            raise ValueError(
+                f"{analytic_path}: expected {expected_band_count} ResourceSat analytic bands"
+            )
+        for band_index in range(1, expected_band_count + 1):
             reproject(
                 source=rasterio.band(analytic, band_index),
                 destination=analytic_out[band_index - 1],
@@ -535,6 +572,10 @@ def _write_intermediate_rasters(
     analytic_path.parent.mkdir(parents=True, exist_ok=True)
     rasterio = deps["rasterio"]
     transform = _grid_affine(deps, grid)
+    band_order = analytic_band_order_for_source(source_id)
+    band_count = int(np.asarray(analytic).shape[0])
+    if len(band_order) != band_count:
+        band_order = [f"BAND{index}" for index in range(1, band_count + 1)]
     profile = {
         "driver": "GTiff",
         "crs": grid.crs,
@@ -549,19 +590,19 @@ def _write_intermediate_rasters(
     }
     analytic_profile = dict(
         profile,
-        count=4,
+        count=band_count,
         dtype="uint16",
         nodata=NODATA_DN,
         predictor=2,
     )
     with rasterio.open(analytic_path, "w", **analytic_profile) as dst:
         dst.write(analytic)
-        for band_index, band_name in enumerate(ANALYTIC_BAND_ORDER, start=1):
+        for band_index, band_name in enumerate(band_order, start=1):
             dst.set_band_description(band_index, band_name)
         dst.update_tags(
             AKASHA_SOURCE_ID=source_id,
             AKASHA_COMPOSITE="true",
-            AKASHA_BAND_ORDER=",".join(ANALYTIC_BAND_ORDER),
+            AKASHA_BAND_ORDER=",".join(band_order),
             AKASHA_REFLECTANCE_SCALE="0.0001",
             AKASHA_REFLECTANCE_OFFSET="0",
             AREA_OR_POINT="Area",
@@ -721,6 +762,7 @@ def verify_composite_manifest(
         default_resolution(source_id) if expected_resolution is None else expected_resolution
     )
     profile = source_profile(source_id)
+    expected_band_count = len(analytic_band_order_for_source(source_id))
     props = manifest.get("properties") if isinstance(manifest.get("properties"), dict) else {}
     if not bool(manifest.get("composite") or props.get("akasha:composite")):
         problems.append("manifest is not marked as a composite")
@@ -786,10 +828,10 @@ def verify_composite_manifest(
 
     rasterio = deps["rasterio"]
     with rasterio.open(analytic_path) as analytic, rasterio.open(mask_path) as mask:
-        if analytic.count != 4:
-            problems.append(f"analytic band count {analytic.count} != 4")
+        if analytic.count != expected_band_count:
+            problems.append(f"analytic band count {analytic.count} != {expected_band_count}")
         else:
-            checks.append("analytic has 4 bands")
+            checks.append(f"analytic has {expected_band_count} bands")
         if mask.count != 1:
             problems.append(f"mask band count {mask.count} != 1")
         else:
@@ -907,6 +949,8 @@ def _write_composite_manifest(
     composite_date = composite_datetime[:10]
     profile = source_profile(source_id)
     mask_method = mask_method_for_source(source_id)
+    band_order = analytic_band_order_for_source(source_id)
+    band_role_mapping = band_role_mapping_for_source(source_id)
     payload: dict[str, Any] = {
         "source_id": source_id,
         "collection": profile["collection"],
@@ -927,8 +971,8 @@ def _write_composite_manifest(
         "period_end": period_end,
         "source_manifests": [path.as_posix() for path in source_manifest_paths],
         "contributing_scenes": metrics["contributing_scenes"],
-        "analytic_band_order": ANALYTIC_BAND_ORDER,
-        "band_role_mapping": BAND_ROLE_MAPPING,
+        "analytic_band_order": band_order,
+        "band_role_mapping": band_role_mapping,
         "mask_method": mask_method,
         "classification_classes": MASK_CLASSES,
         "outputs": {
@@ -950,7 +994,7 @@ def _write_composite_manifest(
             "akasha:cloud_masked_percent": metrics["cloud_masked_percent"],
             "akasha:mask_method": mask_method,
             "akasha:metrics_provisional": True,
-            "akasha:band_role_mapping": BAND_ROLE_MAPPING,
+            "akasha:band_role_mapping": band_role_mapping,
         },
     }
     if analytic_summary.get("wgs84_bbox"):

@@ -69,11 +69,11 @@ python scripts/smoke-test.py http://localhost:8080   # hits a running gateway (s
 
 ### Local full stack (requires Docker)
 ```bash
-make dev         # RECOMMENDED: Docker stack + local Vite hot-reload + idempotent migrate/seed/admin bootstrap
+make dev         # RECOMMENDED: Docker stack + local Vite hot-reload + idempotent migrate/seed; first user signs up via /signup
 make up          # docker compose -f infra/docker/docker-compose.yml up --build -d (backend/gateway only)
 make down        # stop;  make reset = down -v (delete volumes);  make logs
 ```
-See [README.md](README.md) for the full `make dev` workflow, local login, and Esri basemap key setup.
+See [README.md](README.md) for the full `make dev` workflow, local signup/login, and Esri basemap key setup.
 
 ### Operational CLIs (run inside the api / ingestion containers)
 ```bash
@@ -115,7 +115,7 @@ self-hosted Coolify ([infra/selfhosted/](infra/selfhosted/)) and local Docker al
   - **Ops/visibility:** `/health`, `/api/_skeleton/*`.
   - **Raster product (Slices 2–3):** [product.py](apps/api/app/product.py) (config/sources/dates/layers/tiles/statistics),
     [plots.py](apps/api/app/plots.py) (plot CRUD + GeoJSON import/export).
-  - **Auth/account:** [auth_routes.py](apps/api/app/auth_routes.py) (login/logout/bootstrap/password),
+  - **Auth/account:** [auth_router.py](apps/api/app/routers/auth_router.py) (login/logout/signup/password),
     [account.py](apps/api/app/account.py) (me, API keys, notifications).
   - **Farm entities:** [fields.py](apps/api/app/fields.py), [seasons.py](apps/api/app/seasons.py),
     [field_groups.py](apps/api/app/field_groups.py), [field_analytics.py](apps/api/app/field_analytics.py),

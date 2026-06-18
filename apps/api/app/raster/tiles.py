@@ -1,4 +1,4 @@
-"""TiTiler RGB tile URL building + same-origin proxy (Slice 2 — Phase 2).
+"""TiTiler URL building plus direct RGB tile rendering helpers.
 
 The BFF exposes a friendly same-origin route
     GET /api/tiles/{sourceId}/{acquisitionDate}/rgb/{z}/{x}/{y}.png
@@ -19,6 +19,7 @@ import urllib.request
 import zlib
 
 from .errors import mosaic_tiles_unavailable, raster_backend_unavailable, upstream_error
+from .raster_reader import gdal_s3_options, rasterio_aws_session
 
 # TiTiler 1.0 COG tile route. WebMercatorQuad is the default tile matrix set.
 TILE_MATRIX_SET = "WebMercatorQuad"
@@ -41,12 +42,95 @@ def _transparent_png() -> bytes:
         + _png_chunk(b"IDAT", idat)
         + _png_chunk(b"IEND", b"")
     )
-
-
 # Used for TiTiler 404 tile misses at COG/scene edges so MapLibre can continue
 # rendering without noisy failed tile requests. The COG URL and storage details
 # remain server-side.
 TRANSPARENT_PNG = _transparent_png()
+
+MASKED_OVERLAY_RGBA = (208, 213, 221, 255)
+
+_NDVI_REFERENCE_CLASSES: tuple[tuple[float, float, tuple[int, int, int]], ...] = (
+    (-1.0, 0.0, (19, 24, 125)),
+    (0.0, 0.15, (128, 70, 26)),
+    (0.15, 0.30, (213, 0, 35)),
+    (0.30, 0.45, (255, 83, 13)),
+    (0.45, 0.60, (250, 201, 9)),
+    (0.60, 0.75, (111, 202, 7)),
+    (0.75, 0.90, (22, 153, 43)),
+    (0.90, 1.0, (0, 88, 37)),
+)
+
+_OVERLAY_COLOR_STOPS: dict[str, tuple[tuple[float, tuple[int, int, int]], ...]] = {
+    "NDVI": (
+        (0.0, (215, 48, 39)),
+        (0.5, (254, 224, 139)),
+        (1.0, (26, 152, 80)),
+    ),
+    "NDRE": (
+        (0.0, (215, 48, 39)),
+        (0.5, (254, 224, 139)),
+        (1.0, (26, 152, 80)),
+    ),
+    "MSAVI": (
+        (0.0, (215, 48, 39)),
+        (0.5, (254, 224, 139)),
+        (1.0, (26, 152, 80)),
+    ),
+    "NDMI": (
+        (0.0, (138, 90, 34)),
+        (0.5, (216, 201, 138)),
+        (1.0, (31, 111, 139)),
+    ),
+    "NDWI_GREEN_NIR": (
+        (0.0, (202, 168, 106)),
+        (0.5, (232, 224, 176)),
+        (1.0, (22, 96, 168)),
+    ),
+}
+
+
+def overlay_display_range(index_type: str) -> tuple[float, float]:
+    """Return the semantic display range used for field overlay colorization."""
+    if index_type.upper() == "NDVI":
+        return -1.0, 1.0
+    from .indices import get_index
+
+    return get_index(index_type).display_rescale
+
+
+def _ndvi_reference_palette(values):
+    import numpy as np
+
+    rgb = np.zeros(values.shape + (3,), dtype=np.uint8)
+    for idx, (lower, upper, color) in enumerate(_NDVI_REFERENCE_CLASSES):
+        if idx == len(_NDVI_REFERENCE_CLASSES) - 1:
+            selected = (values >= lower) & (values <= upper)
+        else:
+            selected = (values >= lower) & (values < upper)
+        rgb[selected] = np.array(color, dtype=np.uint8)
+    rgb[values < _NDVI_REFERENCE_CLASSES[0][0]] = np.array(
+        _NDVI_REFERENCE_CLASSES[0][2], dtype=np.uint8
+    )
+    rgb[values > _NDVI_REFERENCE_CLASSES[-1][1]] = np.array(
+        _NDVI_REFERENCE_CLASSES[-1][2], dtype=np.uint8
+    )
+    return rgb
+
+
+def _colorize_index_rgb(index_type: str, values):
+    """Map index values to RGB using the EOS-style reference palette per index.
+
+    NDVI uses the discrete reference classes; other indices use their continuous
+    diverging ramp clamped to the index's display range.
+    """
+    import numpy as np
+
+    if index_type.upper() == "NDVI":
+        return _ndvi_reference_palette(values)
+    lo, hi = overlay_display_range(index_type)
+    normalized = np.clip((values - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+    palette = _OVERLAY_COLOR_STOPS.get(index_type.upper(), _OVERLAY_COLOR_STOPS["NDVI"])
+    return _interpolate_palette(normalized, palette)
 
 
 def titiler_base_url() -> str:
@@ -60,6 +144,299 @@ def default_rgb_rescale() -> str:
     (scale 0.0001). Overridable via AKASHA_RGB_RESCALE ("min,max").
     """
     return os.environ.get("AKASHA_RGB_RESCALE", "0,3000")
+
+
+def _parse_rescale_ranges(rescale: str, band_count: int) -> tuple[tuple[float, float], ...]:
+    parts = [part.strip() for part in rescale.split(",")]
+    if len(parts) != 2:
+        raise ValueError(f"invalid rescale range: {rescale!r}")
+    lower = float(parts[0])
+    upper = float(parts[1])
+    return tuple((lower, upper) for _ in range(band_count))
+
+
+def render_rgb_tile(
+    *,
+    analytic_href: str,
+    rgb_positions: list[int],
+    z: int,
+    x: int,
+    y: int,
+    rescale: str | None = None,
+) -> tuple[bytes, str]:
+    """Render a single-scene RGB/FCC tile directly in the BFF with rio-tiler.
+
+    This bypasses the TiTiler HTTP endpoint for single-scene RGB/FCC requests.
+    It keeps the same browser contract while avoiding TiTiler's intermittent
+    HTTP 500 "Read failed" responses for valid interior tiles on some COGs.
+    """
+    try:
+        import rasterio  # lazy
+        from rio_tiler.io import Reader  # lazy
+    except ImportError as exc:  # pragma: no cover - environment guard
+        raise raster_backend_unavailable(
+            "Raster stack (rio-tiler/rasterio) is not installed in this environment.",
+            reason=str(exc),
+        ) from exc
+
+    if not rgb_positions:
+        raise upstream_error(
+            "RGB tile request is missing band positions.", code="MISSING_RGB_BANDS"
+        )
+
+    stretch = _parse_rescale_ranges(rescale or default_rgb_rescale(), len(rgb_positions))
+    try:
+        with rasterio.Env(rasterio_aws_session(), **gdal_s3_options()):
+            with Reader(analytic_href) as cog:
+                image = cog.tile(x, y, z, indexes=tuple(rgb_positions))
+                image.rescale(stretch)
+                return image.render(img_format="PNG"), "image/png"
+    except Exception as exc:  # noqa: BLE001
+        raise upstream_error(
+            "Direct RGB tile render failed.", code="RGB_TILE_RENDER_ERROR"
+        ) from exc
+
+
+def _rgba_png(width: int, height: int, rgba: bytes) -> bytes:
+    """Encode an RGBA image buffer into a PNG without extra dependencies."""
+    if width <= 0 or height <= 0:
+        return TRANSPARENT_PNG
+    stride = width * 4
+    if len(rgba) != stride * height:
+        raise ValueError("RGBA buffer size does not match width*height*4.")
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack("!IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    scanlines = bytearray()
+    for row in range(height):
+        start = row * stride
+        scanlines.append(0)
+        scanlines.extend(rgba[start : start + stride])
+    idat = zlib.compress(bytes(scanlines))
+    return (
+        signature
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", idat)
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def _interpolate_palette(
+    normalized_values,
+    stops: tuple[tuple[float, tuple[int, int, int]], ...],
+):
+    import numpy as np
+
+    rgb = np.zeros(normalized_values.shape + (3,), dtype=np.uint8)
+    if len(stops) < 2:
+        return rgb
+
+    for idx, (left_stop, right_stop) in enumerate(zip(stops, stops[1:], strict=True)):
+        left_value, left_color = left_stop
+        right_value, right_color = right_stop
+        if idx == len(stops) - 2:
+            segment = (normalized_values >= left_value) & (normalized_values <= right_value)
+        else:
+            segment = (normalized_values >= left_value) & (normalized_values < right_value)
+        if not np.any(segment):
+            continue
+        width = max(right_value - left_value, 1e-6)
+        factor = (normalized_values[segment] - left_value) / width
+        for channel in range(3):
+            rgb[..., channel][segment] = np.clip(
+                np.round(
+                    left_color[channel]
+                    + (right_color[channel] - left_color[channel]) * factor
+                ),
+                0,
+                255,
+            ).astype(np.uint8)
+
+    low_color = np.array(stops[0][1], dtype=np.uint8)
+    high_color = np.array(stops[-1][1], dtype=np.uint8)
+    rgb[normalized_values <= stops[0][0]] = low_color
+    rgb[normalized_values >= stops[-1][0]] = high_color
+    return rgb
+
+
+def render_field_index_overlay_png(
+    *,
+    index_type: str,
+    index_values,
+    valid_mask,
+    masked_mask,
+) -> tuple[bytes, str]:
+    """Render a field-clipped index overlay as RGBA PNG.
+
+    `valid_mask` identifies pixels to colorize from `index_values`. `masked_mask`
+    identifies pixels inside the field that should render as light-grey
+    cloud/nodata holes. Everything else stays fully transparent.
+    """
+    import numpy as np
+
+    values = np.asarray(index_values, dtype="float64")
+    valid = np.asarray(valid_mask, dtype=bool)
+    masked = np.asarray(masked_mask, dtype=bool)
+    if values.ndim != 2 or valid.shape != values.shape or masked.shape != values.shape:
+        raise ValueError("Overlay inputs must be 2D arrays with matching shapes.")
+    if values.size == 0:
+        return TRANSPARENT_PNG, "image/png"
+
+    height, width = values.shape
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+
+    if np.any(masked):
+        rgba[masked] = MASKED_OVERLAY_RGBA
+
+    finite_valid = valid & np.isfinite(values)
+    if np.any(finite_valid):
+        rgb = _colorize_index_rgb(index_type, values)
+        rgba[finite_valid, :3] = rgb[finite_valid]
+        rgba[finite_valid, 3] = 255
+
+    invalid_valid = valid & ~np.isfinite(values)
+    if np.any(invalid_valid):
+        rgba[invalid_valid] = MASKED_OVERLAY_RGBA
+
+    if not np.any(rgba[..., 3]):
+        return TRANSPARENT_PNG, "image/png"
+    return _rgba_png(width, height, rgba.tobytes()), "image/png"
+
+
+def _overlay_supersample() -> int:
+    try:
+        return max(1, int(os.environ.get("AKASHA_OVERLAY_SUPERSAMPLE", "3") or 3))
+    except ValueError:
+        return 3
+
+
+def _overlay_max_dim() -> int:
+    try:
+        return max(256, int(os.environ.get("AKASHA_OVERLAY_MAX_DIM", "2048") or 2048))
+    except ValueError:
+        return 2048
+
+
+def encode_rgba_png(rgba) -> bytes:
+    """Encode an (H, W, 4) uint8 RGBA ndarray to PNG bytes (transparent if empty)."""
+    import numpy as np
+
+    arr = np.ascontiguousarray(np.asarray(rgba, dtype=np.uint8))
+    if arr.ndim != 3 or arr.shape[2] != 4 or arr.size == 0:
+        return TRANSPARENT_PNG
+    if not arr[..., 3].any():
+        return TRANSPARENT_PNG
+    height, width = arr.shape[:2]
+    return _rgba_png(width, height, arr.tobytes())
+
+
+def reproject_index_overlay_web_mercator(
+    *,
+    index_type: str,
+    index_values,
+    data_valid,
+    data_masked,
+    src_transform,
+    src_crs,
+    geometry,
+    supersample: int | None = None,
+    max_dim: int | None = None,
+):
+    """Reproject a field index window to a north-up Web Mercator overlay.
+
+    EOS-style pixel-perfect overlay: the native analytic window (UTM, ~24 m for
+    ResourceSat LISS-3) is reprojected to EPSG:3857 and supersampled so the
+    heatmap is smooth, the index is bilinearly resampled, and the field polygon
+    is rasterized crisply at the fine output grid so the clip hugs the boundary
+    instead of stair-stepping at the native pixel size. Because the output is a
+    north-up Web Mercator raster, the returned corners form an axis-aligned
+    rectangle that aligns exactly with the MapLibre basemap (no quad rotation
+    from the source UTM grid). `data_valid`/`data_masked` are per-pixel and must
+    NOT pre-clip to the polygon; the polygon clip is applied here at fine
+    resolution.
+
+    Returns `(rgba_ndarray, corners)` where corners are [TL, TR, BR, BL] lng/lat.
+    """
+    import numpy as np
+    from rasterio.enums import Resampling
+    from rasterio.features import rasterize
+    from rasterio.transform import array_bounds, from_bounds
+    from rasterio.warp import reproject, transform, transform_bounds, transform_geom
+
+    supersample = _overlay_supersample() if supersample is None else max(1, supersample)
+    max_dim = _overlay_max_dim() if max_dim is None else max(1, max_dim)
+
+    values = np.asarray(index_values, dtype="float64")
+    valid = np.asarray(data_valid, dtype=bool)
+    masked = np.asarray(data_masked, dtype=bool)
+    height, width = values.shape
+
+    left, bottom, right, top = array_bounds(height, width, src_transform)
+    dst_crs = "EPSG:3857"
+    mleft, mbottom, mright, mtop = transform_bounds(
+        src_crs, dst_crs, left, bottom, right, top, densify_pts=21
+    )
+
+    src_res = (abs(src_transform.a) + abs(src_transform.e)) / 2.0 or 1.0
+    out_res = max(src_res / supersample, 1.0)
+    out_w = max(1, int(round((mright - mleft) / out_res)))
+    out_h = max(1, int(round((mtop - mbottom) / out_res)))
+    scale = max(out_w / max_dim, out_h / max_dim, 1.0)
+    if scale > 1.0:
+        out_w = max(1, int(out_w / scale))
+        out_h = max(1, int(out_h / scale))
+    out_transform = from_bounds(mleft, mbottom, mright, mtop, out_w, out_h)
+
+    common = {
+        "src_transform": src_transform,
+        "src_crs": src_crs,
+        "dst_transform": out_transform,
+        "dst_crs": dst_crs,
+    }
+    out_index = np.full((out_h, out_w), np.nan, dtype="float64")
+    reproject(
+        values,
+        out_index,
+        src_nodata=np.nan,
+        dst_nodata=np.nan,
+        resampling=Resampling.bilinear,
+        **common,
+    )
+    out_valid = np.zeros((out_h, out_w), dtype="float32")
+    reproject(valid.astype("float32"), out_valid, resampling=Resampling.bilinear, **common)
+    out_masked = np.zeros((out_h, out_w), dtype="float32")
+    reproject(masked.astype("float32"), out_masked, resampling=Resampling.bilinear, **common)
+
+    geom_3857 = transform_geom("EPSG:4326", dst_crs, geometry)
+    poly = rasterize(
+        [(geom_3857, 1)],
+        out_shape=(out_h, out_w),
+        transform=out_transform,
+        fill=0,
+        all_touched=False,
+        dtype="uint8",
+    ).astype(bool)
+
+    rgba = np.zeros((out_h, out_w, 4), dtype=np.uint8)
+    valid_b = poly & (out_valid >= 0.5) & np.isfinite(out_index)
+    masked_b = poly & ~valid_b & (out_masked >= 0.5)
+    if np.any(valid_b):
+        rgb = _colorize_index_rgb(index_type, out_index)
+        rgba[valid_b, :3] = rgb[valid_b]
+        rgba[valid_b, 3] = 255
+    if np.any(masked_b):
+        rgba[masked_b] = MASKED_OVERLAY_RGBA
+
+    xs, ys = transform(
+        dst_crs,
+        "EPSG:4326",
+        [mleft, mright, mright, mleft],
+        [mtop, mtop, mbottom, mbottom],
+    )
+    corners = [
+        [round(float(x), 10), round(float(y), 10)] for x, y in zip(xs, ys, strict=True)
+    ]
+    return rgba, corners
 
 
 def default_sar_vv_rescale() -> str:

@@ -72,6 +72,7 @@ Repository variables:
 
 - `COOLIFY_STAGING_SERVICE_UUID` — UUID of the `akasha-staging-compose` service stack.
 - `COOLIFY_PRODUCTION_SERVICE_UUID` — UUID of the future `akasha-production-compose` service stack.
+- `VITE_BASEMAP_PROVIDER` — optional frontend basemap provider; use `esri` for staging/production, `osm` for development previews, or `empty` for no-network debugging.
 - `VITE_ESRI_API_KEY` — optional frontend build key, referrer-restricted in ArcGIS.
 - `VITE_ESRI_BASEMAP_STYLE` — optional, defaults to `arcgis/imagery`.
 - `VITE_ESRI_BASEMAP_STYLE_FAMILY` — optional, defaults to `arcgis`.
@@ -147,13 +148,17 @@ journalctl -u akasha-bhoonidhi-sync.service -n 200 --no-pager
 1. Confirm `IMAGE_TAG` exists in GHCR for all four Akasha images.
 2. Confirm Coolify env values are set and no `CHANGE_ME` placeholders remain.
 3. Deploy `akasha-staging-compose`.
-4. Run API migrations inside the `api` container:
+4. Confirm the `api` container is healthy. For the current single-replica
+   staging/production model, app-schema migrations run automatically during API
+   container startup before Uvicorn accepts traffic.
+5. Verify the live app schema is at the deployed image's Alembic head from the
+   `api` container:
 
 ```bash
-python -m app.cli migrate
+python -m app.cli db verify-current
 ```
 
-5. Seed or verify catalog/storage only when required for the staging dataset, from `ingestion-worker`:
+6. Seed or verify catalog/storage only when required for the staging dataset, from `ingestion-worker`:
 
 ```bash
 python worker.py seed
@@ -188,20 +193,20 @@ unresolved ingestion failures, and tile-unavailable dates. A stale ResourceSat
 catalog/composite date is allowed only when the Bhoonidhi search heartbeat is
 fresh and the source reports the explicit `UPSTREAM_DATA_STALE` warning class.
 
-6. If `AUTH_ALLOW_BOOTSTRAP=true`, create the first admin user through `/api/auth/bootstrap`, then set `AUTH_ALLOW_BOOTSTRAP=false` in Coolify and redeploy.
-7. Run unauthenticated smoke checks:
+7. Create the first user through the web app `/signup` flow only when `AUTH_ALLOW_SIGNUP=true` is intentionally enabled for that environment; otherwise provision users through the approved operator/user-management process before authenticated smoke checks.
+8. Run unauthenticated smoke checks:
 
 ```bash
 python scripts/smoke-test.py https://<staging-domain>
 ```
 
-8. Run authenticated smoke checks after a user exists:
+9. Run authenticated smoke checks after a user exists:
 
 ```bash
 AKASHA_SMOKE_USERNAME=<username> AKASHA_SMOKE_PASSWORD=<password> python scripts/smoke-test.py https://<staging-domain> --login
 ```
 
-9. Verify operator monitoring after a user exists:
+10. Verify operator monitoring after a user exists:
 
 ```bash
 curl -fsS -b cookies.txt https://<staging-domain>/api/monitoring/imagery-sources
@@ -211,7 +216,7 @@ The payload should include `sources`, `storage`, and `ingestionLedger`. If
 `ingestionLedger.status` is `missing`, confirm the API service has the read-only
 `/srv/akasha/ingestion` mount and the worker writes `BHOONIDHI_LEDGER_PATH`.
 
-10. Verify private ports from outside the host:
+11. Verify private ports from outside the host:
 
 ```bash
 for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<staging-public-ip>/$p" && echo "$p open" || echo "$p closed_or_filtered"; done
@@ -221,10 +226,15 @@ for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<staging-pub
 
 Run one-shot jobs from the Coolify terminal or container shell. Do not expose these services publicly.
 
-App schema migration from `api`:
+App schema migration/verification from `api`.
+
+The API image already runs `python -m app.cli db upgrade` on startup for the
+current single-replica deployment model. Run these manually only for
+repair/debug/verification from the Coolify terminal:
 
 ```bash
-python -m app.cli migrate
+python -m app.cli db upgrade
+python -m app.cli db verify-current
 ```
 
 Catalog/storage seed and verification from `ingestion-worker`:

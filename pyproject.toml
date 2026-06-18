@@ -17,3 +17,8 @@ target-version = ["py311"]
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[tool.pyright]
+# Mirror the runtime sys.path.insert() calls in apps/api and the validate_*/scripts
+# so Pylance can resolve the `app.*` and `akasha_ingest` packages statically.
+extraPaths = ["apps/api", "services/ingestion"]

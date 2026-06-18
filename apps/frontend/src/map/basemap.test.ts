@@ -36,6 +36,7 @@ afterEach(() => {
 
 describe('resolveBasemapConfig', () => {
   it('resolves Esri imagery session settings from app config', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
     vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
 
     expect(resolveBasemapConfig(CONFIG)).toEqual({
@@ -50,6 +51,7 @@ describe('resolveBasemapConfig', () => {
   });
 
   it('rejects missing Esri API keys instead of using a fallback basemap', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
     vi.stubEnv('VITE_ESRI_API_KEY', '');
 
     expect(() => resolveBasemapConfig(CONFIG)).toThrow(BasemapConfigurationError);
@@ -57,6 +59,7 @@ describe('resolveBasemapConfig', () => {
   });
 
   it('allows explicit Esri build-time overrides', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
     vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
     vi.stubEnv('VITE_ESRI_BASEMAP_STYLE', 'arcgis/imagery/standard');
     vi.stubEnv('VITE_ESRI_BASEMAP_PLACES', 'attributed');
@@ -66,6 +69,42 @@ describe('resolveBasemapConfig', () => {
       style: 'arcgis/imagery/standard',
       places: 'attributed',
       sessionDurationSeconds: 3600,
+    });
+  });
+
+  it('uses VITE_BASEMAP_PROVIDER=osm ahead of the backend Esri config without requiring an Esri key', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', 'osm');
+    vi.stubEnv('VITE_ESRI_API_KEY', '');
+
+    expect(resolveBasemapConfig(CONFIG)).toEqual({
+      provider: 'osm',
+      attribution: '© OpenStreetMap contributors',
+    });
+  });
+
+  it('uses VITE_BASEMAP_PROVIDER=empty as a no-network basemap without requiring an Esri key', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', 'empty');
+    vi.stubEnv('VITE_ESRI_API_KEY', '');
+
+    expect(resolveBasemapConfig(CONFIG)).toEqual({
+      provider: 'empty',
+    });
+  });
+
+  it('uses the backend provider when no frontend provider override is set', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', '');
+    vi.stubEnv('VITE_ESRI_API_KEY', '');
+    const config = {
+      ...CONFIG,
+      basemap: {
+        ...CONFIG.basemap,
+        provider: 'osm',
+      },
+    } as unknown as AppConfig;
+
+    expect(resolveBasemapConfig(config)).toEqual({
+      provider: 'osm',
+      attribution: '© OpenStreetMap contributors',
     });
   });
 });

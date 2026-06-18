@@ -34,7 +34,8 @@ jobs:
             context: .
             dockerfile: infra/gateway/Dockerfile
             build_args: |
-              VITE_ESRI_API_KEY=${{ vars.VITE_ESRI_API_KEY || '' }}
+              VITE_BASEMAP_PROVIDER=${{ vars.VITE_BASEMAP_PROVIDER || 'esri' }}
+              VITE_ESRI_PUBLIC_ACCESS=${{ vars.VITE_ESRI_API_KEY || '' }}
               VITE_ESRI_BASEMAP_STYLE=${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
               VITE_ESRI_BASEMAP_STYLE_FAMILY=${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
               VITE_ESRI_BASEMAP_PLACES=${{ vars.VITE_ESRI_BASEMAP_PLACES || 'none' }}

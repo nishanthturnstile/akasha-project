@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
-import { ApiError, composeTileTemplate } from '@/lib/api';
+import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
 import {
   useConfig,
   useCreateField,
@@ -19,7 +19,7 @@ import type { SatelliteScene } from '@/lib/satelliteLayer';
 import { AllFieldsPanel } from '@/components/fields/AllFieldsPanel';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
-import { MapLayerManager } from '@/components/map/MapLayerManager';
+import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
 import { MeasureTool } from '@/components/map/MeasureTool';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
@@ -43,6 +43,8 @@ import type {
   Plot,
   PlotGeometry,
   Source,
+  FieldIndexPointResponse,
+  ImageCorners,
 } from '@/types/api';
 
 function messageFor(error: unknown): string {
@@ -196,7 +198,6 @@ function extractImportFields(input: GeoJsonFeatureLike): { name: string; geometr
 }
 
 type LngLat = [number, number];
-type ImageCorners = [LngLat, LngLat, LngLat, LngLat];
 
 /** Lng/lat bounding-box corners (TL, TR, BR, BL) for a field's geometry —
  *  used to georeference the clipped index overlay image on the map. */
@@ -253,6 +254,35 @@ function sanitizeCloudMaskForSource(
   };
 }
 
+function mapDisplayModesForSource(source: Source | null | undefined): string[] {
+  const modes = source?.mapDisplayModes;
+  if (modes && modes.length > 0) return modes;
+  return source?.displayModes ?? [];
+}
+
+function defaultMapDisplayModeForSource(
+  source: Source | null | undefined,
+  fallback: string | null | undefined,
+): string {
+  return (
+    source?.defaultMapDisplayMode ??
+    source?.defaultDisplayMode ??
+    mapDisplayModesForSource(source)[0] ??
+    fallback ??
+    'FCC'
+  );
+}
+
+function resolveDisplayMode(
+  requested: string | null | undefined,
+  availableModes: string[],
+  fallback: string,
+): string {
+  if (!requested) return fallback;
+  const normalized = requested.trim().toUpperCase();
+  return availableModes.find((mode) => mode.toUpperCase() === normalized) ?? fallback;
+}
+
 export default function MapPage() {
   useMapUrlState();
   const configQ = useConfig();
@@ -288,6 +318,7 @@ export default function MapPage() {
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
+  const [preferHighRes, setPreferHighRes] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const plotsQ = useFields();
@@ -307,23 +338,27 @@ export default function MapPage() {
     }
   }, [plotsQ.data, plotsQ.isLoading, selectedPlotId, view]);
 
-  // On first load, focus a field AND select it so the map opens on the user's
-  // context instead of the default AOI. Prefer the last-selected field (deep link /
-  // persisted state); otherwise fall back to the first available field. Selecting it
-  // is essential: FieldBoundaryLayer only draws the *selected* field, so without this
-  // a fresh session / refresh with no persisted selection lands on "No field selected"
+  // Focus and select a field when the map loads or when the user navigates to a
+  // specific field (e.g. from the season sheet Focus button). On initial load
+  // the last-selected field (deep link / persisted state) wins; otherwise we fall
+  // back to the first available field. FieldBoundaryLayer only draws the
+  // *selected* field, so without this a fresh session lands on "No field selected"
   // and the drawn field is invisible even though it exists.
-  const initialFocusDone = useRef(false);
+  const prevFocusedPlotId = useRef<string | null>(null);
   useEffect(() => {
-    if (initialFocusDone.current) return;
     if (!map || plotsQ.isLoading || !plotsQ.data) return;
-    const focusTarget = selectedPlot ?? plotsQ.data[0] ?? null;
-    if (!focusTarget) return;
     if (!selectedPlotId) {
-      view.setSelectedPlotId(focusTarget.id);
+      const fallback = plotsQ.data[0] ?? null;
+      if (fallback) {
+        view.setSelectedPlotId(fallback.id);
+      }
+      return;
     }
+    const focusTarget = selectedPlot;
+    if (!focusTarget) return;
+    if (prevFocusedPlotId.current === selectedPlotId) return;
     focusPlot(map, focusTarget);
-    initialFocusDone.current = true;
+    prevFocusedPlotId.current = selectedPlotId;
   }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, view]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
@@ -374,15 +409,25 @@ export default function MapPage() {
   );
 
   const sourceDisplayModes = selectedSource?.displayModes ?? ['FCC'];
-  const selectedDisplayMode =
-    displayModeOverride ??
-    selectedSource?.displayMode ??
-    selectedSource?.defaultDisplayMode ??
-    sourceDisplayModes[0] ??
-    (defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
-      ? defaultLayerQ.data.displayMode
-      : undefined) ??
-    'FCC';
+  const sourceMapDisplayModes = mapDisplayModesForSource(selectedSource);
+  const defaultMapDisplayMode = defaultMapDisplayModeForSource(
+    selectedSource,
+    defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
+      ? defaultLayerQ.data.defaultMapDisplayMode ?? defaultLayerQ.data.displayMode ?? null
+      : null,
+  );
+  const selectedDisplayMode = resolveDisplayMode(
+    displayModeOverride ?? selectedSource?.displayMode ?? null,
+    sourceMapDisplayModes.length > 0 ? sourceMapDisplayModes : sourceDisplayModes,
+    defaultMapDisplayMode,
+  );
+
+  useEffect(() => {
+    if (!selectedSource || !displayModeOverride) return;
+    if (displayModeOverride !== selectedDisplayMode) {
+      view.setDisplayMode(selectedDisplayMode);
+    }
+  }, [displayModeOverride, selectedDisplayMode, selectedSource, view]);
 
   // EOS-style: when an index layer is selected, hide the full-scene Akasha raster so
   // the basemap satellite imagery shows AROUND the field, and paint the colorized
@@ -434,6 +479,7 @@ export default function MapPage() {
     if (!visible || !compareEnabled || !compareDate) return null;
     if (compareDate === selectedDate) return null;
     if (!effectiveSourceId) return null;
+    if (isIndexLayer) return null;
     const meta = datesQ.data?.find((d) => d.acquisitionDate === compareDate);
     if (!meta?.tileAvailable) return null;
     return {
@@ -448,6 +494,7 @@ export default function MapPage() {
     compareDate,
     visible,
     effectiveSourceId,
+    isIndexLayer,
     selectedDate,
     selectedDisplayMode,
     datesQ.data,
@@ -455,21 +502,71 @@ export default function MapPage() {
     selectedSource?.attribution,
   ]);
 
-  // EOS-style field-clipped index overlay: a same-origin PNG (colorized index,
-  // transparent outside the polygon) the map paints over the field only.
-  const indexOverlay = useMemo(() => {
+  const requestedIndexOverlay = useMemo(() => {
     if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
     const corners = geometryBboxCorners(selectedPlot.geometry);
     if (!corners) return null;
-    const params = new URLSearchParams({
+    return {
+      plotId: selectedPlot.id,
       sourceId: effectiveSourceId,
       acquisitionDate: selectedDate,
-    });
-    const url =
-      `${window.location.origin}/api/fields/${selectedPlot.id}` +
-      `/overlay/${selectedDisplayMode}.png?${params.toString()}`;
-    return { url, coordinates: corners };
+      indexType: selectedDisplayMode,
+      fallbackCoordinates: corners,
+    };
   }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode]);
+
+  const [indexOverlay, setIndexOverlay] = useState<IndexOverlay | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!requestedIndexOverlay) {
+      setIndexOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return null;
+      });
+      return;
+    }
+    setIndexOverlay((current) => {
+      if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+      return null;
+    });
+    void getFieldIndexOverlayImage(
+      requestedIndexOverlay.plotId,
+      {
+        sourceId: requestedIndexOverlay.sourceId,
+        acquisitionDate: requestedIndexOverlay.acquisitionDate,
+        indexType: requestedIndexOverlay.indexType,
+        preferHighRes,
+      },
+      requestedIndexOverlay.fallbackCoordinates,
+    ).then((overlay) => {
+      if (disposed) {
+        if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
+        return;
+      }
+      setIndexOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return overlay;
+      });
+    }).catch(() => {
+      if (!disposed) setIndexOverlay(null);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [requestedIndexOverlay, preferHighRes]);
+
+  const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
+    if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
+    return getFieldIndexPoint(selectedPlot.id, {
+      sourceId: effectiveSourceId,
+      acquisitionDate: selectedDate,
+      indexType: selectedDisplayMode,
+      lng,
+      lat,
+      preferHighRes,
+    });
+  }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode, preferHighRes]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -608,7 +705,15 @@ export default function MapPage() {
 
   const config = configQ.data;
   const sourceAttribution = selectedSource?.attribution ?? selectedSource?.provider;
-  const attribution = scene?.attribution ?? sourceAttribution ?? 'Satellite imagery';
+  const attribution =
+    scene?.attribution ??
+    (indexOverlay
+      ? sourceAttribution
+      : basemapResolution.basemapConfig.provider === 'osm'
+        ? basemapResolution.basemapConfig.attribution
+        : basemapResolution.basemapConfig.provider === 'esri'
+          ? 'ArcGIS basemap'
+          : sourceAttribution ?? 'Satellite imagery');
   const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
   const analyticsSupportedIndices = sourceSupportedIndices;
   const sourceAnalysisLevel = selectedSource?.analysisLevel ?? 'field';
@@ -800,6 +905,8 @@ export default function MapPage() {
               sourceMetricsProvisional={ Boolean(selectedSource?.metricsProvisional) }
               periodFrom={ periodFrom }
               periodTo={ periodTo }
+              preferHighRes={ preferHighRes }
+              onPreferHighResChange={ setPreferHighRes }
             />
           </div>
         ) }
@@ -807,7 +914,10 @@ export default function MapPage() {
 
       {/* Right: coordinate readout, measure, and consolidated layer-control bar (above timeline). */ }
       <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
-        <CoordinateReadout map={ map } />
+        <CoordinateReadout
+          map={ map }
+          indexLookup={ isIndexLayer && selectedPlot && selectedDate && effectiveSourceId ? indexLookup : undefined }
+        />
         <MeasureTool
           activeTool={ activeMapTool }
           map={ map }
@@ -818,12 +928,13 @@ export default function MapPage() {
           sources={ sourcesQ.data }
           activeSourceId={ effectiveSourceId }
           onSelectSource={ view.setSource }
-          displayModes={ sourceDisplayModes }
+          displayModes={ sourceMapDisplayModes.length > 0 ? sourceMapDisplayModes : sourceDisplayModes }
           displayMode={ selectedDisplayMode }
           onDisplayModeChange={ view.setDisplayMode }
           cloudMask={ cloudMask }
           onCloudMaskChange={ view.setCloudMask }
           cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
+          compareAvailable={ !isIndexLayer }
           compareEnabled={ compareEnabled }
           onCompareEnabledChange={ view.setCompareEnabled }
           comparableDates={ comparableDates }
@@ -847,8 +958,8 @@ export default function MapPage() {
         * stacked in a single bottom-left column so they never overlap each other.
         * Raised above the attribution line so the two never collide at any width. */ }
       <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
-        { visible && legendOpen && (
-          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } />
+        { visible && legendOpen && (scene || indexOverlay) && (
+          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } />
         ) }
         <MapControls
           map={ map }

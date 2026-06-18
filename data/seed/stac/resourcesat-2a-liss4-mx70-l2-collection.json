@@ -9,10 +9,10 @@
     "https://stac-extensions.github.io/classification/v1.1.0/schema.json"
   ],
   "id": "resourcesat-2a-liss4-mx70-l2",
-  "title": "ResourceSat-2A LISS-4 MX70 L2 (gated)",
-  "description": "Gated high-resolution ResourceSat-2A LISS-4 context source. This collection is a contract scaffold only; analytics remain disabled until downloaded product metadata confirms calibrated red/NIR bands and mask behavior.",
+  "title": "ResourceSat-2A LISS-4 MX70 L2 (Bhoonidhi)",
+  "description": "ResourceSat-2A LISS-4 MX70 L2 high-resolution reflectance composites for field analytics over the Bangalore 60 km AOI. LISS-4 MX70 has Green, Red, and NIR bands, so default imagery is FCC (NIR, Red, Green) and supported indices are limited to NDVI, MSAVI, and NDWI_GREEN_NIR. The mask product is Akasha-generated and provisional because no native cloud/quality raster is available.",
   "license": "proprietary",
-  "keywords": ["isro", "nrsc", "bhoonidhi", "resourcesat-2a", "liss-4", "mx70", "context", "gated"],
+  "keywords": ["isro", "nrsc", "bhoonidhi", "resourcesat-2a", "liss-4", "mx70", "bangalore", "composite"],
   "providers": [
     { "name": "ISRO/NRSC", "roles": ["producer", "licensor"], "url": "https://bhoonidhi.nrsc.gov.in" },
     { "name": "Bhoonidhi", "roles": ["host"], "url": "https://bhoonidhi.nrsc.gov.in" },
@@ -20,28 +20,89 @@
   ],
   "extent": {
     "spatial": { "bbox": [[77.023647, 12.537266, 78.131561, 13.61645]] },
-    "temporal": { "interval": [[null, null]] }
+    "temporal": { "interval": [["2026-03-19T00:00:00Z", null]] }
   },
   "summaries": {
     "platform": ["resourcesat-2a"],
     "constellation": ["resourcesat"],
     "instruments": ["liss-4"],
-    "gsd": [5.8]
+    "gsd": [5.8],
+    "proj:epsg": [32643]
   },
   "akasha:provider": "ISRO/NRSC Bhoonidhi",
   "akasha:bhoonidhi_collection_id": "ResourceSat-2A_LISS4-MX70_L2",
   "akasha:source_kind": "optical",
-  "akasha:analysis_level": "context",
-  "akasha:availability_status": "gated",
-  "akasha:gated_reason": "LISS-4 band/radiometry metadata has not been validated.",
-  "akasha:supported_indices": [],
-  "akasha:unsupported_indices": ["NDVI", "MSAVI", "NDRE", "RECI", "NDMI", "NDWI_GREEN_NIR"],
-  "akasha:display_modes": ["FCC"],
+  "akasha:analysis_level": "field",
+  "akasha:aoi_id": "bangalore-60km",
+  "akasha:availability_status": "active",
+  "akasha:supported_indices": ["NDVI", "MSAVI", "NDWI_GREEN_NIR"],
+  "akasha:unsupported_indices": ["NDMI", "NDRE", "RECI"],
+  "akasha:default_index": "NDVI",
+  "akasha:display_modes": ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"],
   "akasha:default_display_mode": "FCC",
+  "akasha:map_display_modes": ["NDVI", "MSAVI", "NDWI_GREEN_NIR"],
+  "akasha:default_map_display_mode": "NDVI",
+  "akasha:tile_route_mode": "fcc",
+  "akasha:fcc_role_order": ["NIR", "RED", "GREEN"],
+  "akasha:band_role_mapping": {
+    "GREEN": "BAND2",
+    "RED": "BAND3",
+    "NIR": "BAND4"
+  },
   "akasha:expected_assets": ["analytic", "mask"],
   "akasha:mask_asset": "mask",
-  "akasha:mask_method": "Pending Akasha mask validation.",
+  "akasha:default_excluded_mask_classes": [0, 2, 3],
+  "akasha:mask_method": "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)",
   "akasha:metrics_provisional": true,
+  "akasha:refresh_policy": "Bhoonidhi search on the ~5-day LISS-4 MX revisit cadence; L2 products may lag acquisition.",
+  "akasha:reflectance": {
+    "scale": 0.0001,
+    "offset": 0,
+    "background_value": 0,
+    "nodata_policy": "all-band-background-or-warp-gap",
+    "note": "LISS-4 L2 reflectance metadata is provisional until staging radiometry validation."
+  },
+  "akasha:composite_policy": {
+    "aoi_id": "bangalore-60km",
+    "grid_crs": "EPSG:32643",
+    "window_days": 30,
+    "selection_rule": "best-available-valid-pixel-with-recency-tiebreak"
+  },
+  "akasha:attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
+  "item_assets": {
+    "analytic": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "ResourceSat-2A LISS-4 MX70 L2 analytic composite COG",
+      "roles": ["data", "reflectance", "composite"],
+      "gsd": 5.8,
+      "eo:bands": [
+        { "name": "BAND2", "common_name": "green", "center_wavelength": 0.555 },
+        { "name": "BAND3", "common_name": "red", "center_wavelength": 0.655 },
+        { "name": "BAND4", "common_name": "nir", "center_wavelength": 0.815 }
+      ],
+      "raster:bands": [
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 5.8, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 5.8, "unit": "reflectance", "scale": 0.0001, "offset": 0 },
+        { "data_type": "uint16", "bits_per_sample": 16, "spatial_resolution": 5.8, "unit": "reflectance", "scale": 0.0001, "offset": 0 }
+      ]
+    },
+    "mask": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Akasha-generated provisional LISS-4 cloud/validity mask COG",
+      "roles": ["metadata", "data-mask"],
+      "gsd": 5.8,
+      "raster:bands": [
+        { "data_type": "uint8", "nodata": 0, "spatial_resolution": 5.8 }
+      ],
+      "classification:classes": [
+        { "value": 0, "name": "gap_or_background", "description": "All-band background, outside footprint, or warp gap", "nodata": true },
+        { "value": 1, "name": "valid", "description": "Usable optical pixel" },
+        { "value": 2, "name": "cloud", "description": "Akasha threshold-derived cloud; provisional" },
+        { "value": 3, "name": "shadow", "description": "Akasha threshold-derived shadow; provisional" },
+        { "value": 4, "name": "water", "description": "Akasha threshold-derived water; kept by default" }
+      ]
+    }
+  },
   "links": [
     { "rel": "root", "href": "./resourcesat-2a-liss4-mx70-l2-collection.json", "type": "application/json" },
     { "rel": "self", "href": "./resourcesat-2a-liss4-mx70-l2-collection.json", "type": "application/json" },

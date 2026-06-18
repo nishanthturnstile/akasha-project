@@ -13,6 +13,7 @@ describe('Legend', () => {
         const legend = getByTestId('map-legend');
         expect(legend.getAttribute('data-display-mode')).toBe('NDVI');
         expect(legend.textContent).toContain('NDVI');
+        expect(legend.textContent).toContain('Cloud / no data');
         expect(legend.getAttribute('aria-label')).toContain('NDVI');
     });
 
@@ -40,5 +41,32 @@ describe('Legend', () => {
             <Legend displayMode="FALSE_COLOR_URBAN" sourceKind="optical" />,
         );
         expect(getByTestId('map-legend').textContent).toContain('False colour');
+    });
+
+    it('shows a false-colour key for FCC', () => {
+        const { getByTestId } = render(<Legend displayMode="FCC" sourceKind="optical" />);
+        expect(getByTestId('map-legend').textContent).toContain('False colour');
+    });
+
+    it('shows the resolved resolution label when resolvedResolutionMeters is provided', () => {
+        const { getByTestId } = render(
+            <Legend displayMode="NDVI" sourceKind="optical" resolvedResolutionMeters={ 5.8 } />,
+        );
+        const resEl = getByTestId('legend-resolved-resolution');
+        expect(resEl).toBeTruthy();
+        expect(resEl.textContent).toContain('5.8');
+        expect(resEl.textContent).toContain('m');
+    });
+
+    it('does not show the resolved resolution label when resolvedResolutionMeters is null', () => {
+        const { queryByTestId } = render(
+            <Legend displayMode="NDVI" sourceKind="optical" resolvedResolutionMeters={ null } />,
+        );
+        expect(queryByTestId('legend-resolved-resolution')).toBeNull();
+    });
+
+    it('does not show the resolved resolution label when resolvedResolutionMeters is absent', () => {
+        const { queryByTestId } = render(<Legend displayMode="NDVI" sourceKind="optical" />);
+        expect(queryByTestId('legend-resolved-resolution')).toBeNull();
     });
 });

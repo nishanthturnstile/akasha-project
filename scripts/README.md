@@ -7,6 +7,7 @@
 | `validate_slice2.py` | Static + synthetic validation of Slice 2 raster de-risk: seed metadata, BFF raster package, deps/infra, pure-numpy NDVI reference, TestClient endpoint contracts, and a synthetic dual-COG read-to-stat pipeline when rasterio is installed. | No |
 | `smoke-test.py` | Hits a live gateway/API health path plus ResourceSat source/date/layer/statistics contracts. With `--login`, also verifies the operator imagery-source monitoring contract; add `--require-monitoring-clean` to fail on storage errors, zero-byte COG objects, stale/missing refresh heartbeats, missing active field composites, low coverage/usable pixels, unresolved ingestion failures, or tile-unavailable dates. A fresh search heartbeat with no newer upstream Online=Y product is allowed only as the explicit `UPSTREAM_DATA_STALE` warning class. Real tile/stat failures are reported as blocked when COGs or backing services are unavailable. | No, but needs a running gateway/API |
 | `prepare_resourcesat_liss3_boa_cogs.py` | Converts Bhoonidhi ResourceSat-2A LISS-3 BOA ZIPs into Akasha `analytic.tif` and provisional `mask.tif` COGs; manifest mode writes `data/seed/rasters/resourcesat-2a-liss3-boa/scene/{date}/{sceneComponent}/`. | No, but run via the ingestion Docker image to avoid local GDAL setup |
+| `sync_staging_raster_bundle.py` | Pulls final ResourceSat composite COG bundles from the whitelisted staging VM over SSH into local `data/seed/rasters`, then optionally imports them into local MinIO + pgSTAC with `worker.py ingest-manifest`. Does not call Bhoonidhi or copy raw downloads. | No, but `--import-local` needs local Docker stack running |
 | `prepare_context_cog.py` | Converts a licensed operator-provided visual/context GeoTIFF (for example Cartosat-3) into a source-scoped COG + `prepare_manifest.json` for `ingest-manifest`. | No, but run via the ingestion Docker image to avoid local GDAL setup |
 | `download_sentinel2_l2a_product.py` | Legacy Sentinel-2 L2A download helper retained for regression and migration reference. Not part of the production ResourceSat default workflow. | No |
 | `prepare_sentinel2_l2a_cogs.py` | Legacy Sentinel-2 L2A COG preparation helper retained for regression and migration reference. Not part of the production ResourceSat default workflow. | No, but run via the ingestion Docker image if used |
@@ -48,6 +49,23 @@ docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
   python worker.py verify-manifest-cogs
 docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
   python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
+
+# Pull the latest final staging composite into local dev and prepopulate local MinIO/pgSTAC.
+# Requires SSH access to the whitelisted VM via the `akasha-staging` host alias.
+bash scripts/dev-local.sh --backend-only
+python scripts/sync_staging_raster_bundle.py \
+  --host akasha-staging \
+  --import-local \
+  --verify-local
+
+# Pull a specific composite date, replacing any existing local copy and local MinIO objects.
+python scripts/sync_staging_raster_bundle.py \
+  --host akasha-staging \
+  --date 2026-03-19 \
+  --overwrite \
+  --import-local \
+  --force-upload \
+  --verify-local
 
 # Prepare and register a licensed manual Cartosat/context GeoTIFF.
 docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \

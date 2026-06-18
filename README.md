@@ -67,10 +67,24 @@ When changing application behavior, edit `apps/api` and `apps/frontend`.
 
 ## Local development: one command with frontend hot reload
 
+For a complete macOS/Windows onboarding walkthrough, including separate
+backend/frontend startup, hot reload, rebuild rules, and Alembic migrations,
+see [`docs/developer-setup-guide.md`](docs/developer-setup-guide.md).
+
 This is the recommended workflow for day-to-day development. It runs the
 backend/API/data services in Docker, runs the React/Vite frontend locally for
 hot reload, and keeps the browser contract exactly like production:
 same-origin `/api/*` and `/tiles/*` through the gateway.
+
+For regular feature work, the most comfortable setup is two terminals:
+
+```bash
+make backend   # Docker backend/gateway/dependencies + FastAPI hot reload
+make frontend  # Vite frontend hot reload, proxying through the local gateway
+```
+
+`make dev` remains the one-command option when you want both terminals' work in
+one process.
 
 ### Prerequisites
 
@@ -79,7 +93,7 @@ same-origin `/api/*` and `/tiles/*` through the gateway.
 - **Git Bash**, WSL, macOS/Linux shell, or another shell that can run `bash`
 - Optional: `make`. If `make` is not installed, use the `bash` command below.
 
-### Start everything
+### Start everything in one command
 
 From the repository root:
 
@@ -100,17 +114,25 @@ The command does the boring-but-important setup automatically:
    - `infra/docker/.env` with generated local-only Docker secrets
    - `apps/frontend/.env` for Vite basemap settings
 3. Checks whether the configured Docker gateway port is already occupied
-4. Starts the Docker stack: `web`, `api`, `titiler`, `stac-api`, `postgis`, `minio`
+4. Starts the Docker stack with the local dev overlay: `web`, `api`, `titiler`, `stac-api`, `postgis`, `minio`
 5. Waits for gateway/API health checks
 6. Applies API migrations with `python -m app.cli db upgrade`
 7. Runs API storage checks with `python -m app.cli check`
 8. Seeds catalog/storage with `worker.py seed`
-9. Bootstraps a local admin user if no password user exists
-10. Starts Vite with hot reload, using the next free frontend port if `5173` is busy
+9. Starts Vite with hot reload, using the next free frontend port if `5173` is busy
 
 The same command is safe for both **first run** and **repeat runs**. Migrations,
 API checks, and seed loading are intentionally idempotent, so the team does not
 need a separate “first-time setup” command.
+
+Backend Python edits under `apps/api/app` reload automatically through Uvicorn
+inside the `api` container. Changes to `apps/api/requirements.txt`,
+`apps/api/Dockerfile`, OS packages, or other image-baked files still require a
+backend image rebuild:
+
+```bash
+make backend-rebuild
+```
 
 Open:
 
@@ -118,18 +140,16 @@ Open:
 http://localhost:5173/   # default; use the URL printed by the script if 5173 is busy
 ```
 
-Local login:
+Create your first local account through sign-up, then use those credentials to log in:
+
+```text
+URL:      http://localhost:5173/signup  # default; use the printed frontend port if changed
+```
+
+Local login after sign-up:
 
 ```text
 URL:      http://localhost:5173/login   # default; use the printed frontend port if changed
-Username: admin
-Password: AkashaLocal2026!
-```
-
-You can override the local bootstrap credentials before first run:
-
-```bash
-AKASHA_LOCAL_ADMIN_USER=myadmin AKASHA_LOCAL_ADMIN_PASSWORD='change-me-local-only' make dev
 ```
 
 ### Esri basemap key
@@ -153,6 +173,12 @@ If you want the Docker stack prepared without starting Vite:
 make up
 ```
 
+or, equivalently:
+
+```bash
+make backend
+```
+
 or:
 
 ```bash
@@ -170,6 +196,43 @@ The frontend prefers `FRONTEND_PORT=5173`. If that port is already in use, the
 script starts Vite on the next free port and prints the actual frontend/login
 URL. Set `FRONTEND_PORT` only when you intentionally want a different preferred
 port.
+
+### Frontend only
+
+After the backend/gateway is already running, start or restart only Vite:
+
+```bash
+make frontend
+```
+
+or:
+
+```bash
+bash scripts/dev-local.sh --frontend-only
+```
+
+The frontend command verifies the gateway health endpoint first. If the backend
+is not reachable, start it with `make backend`.
+
+### App-schema migration helpers
+
+API-owned tables use SQLAlchemy ORM models plus Alembic revisions. pgSTAC and
+catalog/storage setup remain owned by the ingestion worker.
+
+Use the helper targets so developers do not hand-pick revision IDs:
+
+```bash
+make db-revision MSG="add crop metadata"  # generate a unique Alembic revision
+make db-upgrade                            # apply app-schema migrations
+make db-current                            # show the live DB revision
+make db-heads                              # fail if Alembic has multiple heads
+make db-check                              # verify live DB is at this code's head
+```
+
+Commit SQLAlchemy model changes and their Alembic revision together. If two PRs
+create migrations from the same parent, rebase and either regenerate/update your
+revision to the current head or create an explicit merge revision with
+`make db-merge-heads MSG="merge migration heads"`.
 
 ### Stop, restart, reset
 
@@ -206,9 +269,8 @@ Common causes:
   `18080` or another free port.
 - Map says the basemap is not configured: set `VITE_ESRI_API_KEY` in
   `apps/frontend/.env` and restart Vite.
-- Auth bootstrap is skipped: a local password user already exists; use the
-  existing local account or run `make reset` if you intentionally want a clean
-  database.
+- Sign-up says the email already exists: use the existing local account or run
+  `make reset` if you intentionally want a clean database.
 
 ### Optional static validation — no Docker required
 

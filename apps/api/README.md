@@ -30,9 +30,10 @@ importing the app never requires them.
 | GET | `/api/config` | AOI, map defaults, limits, supported indices. |
 | GET | `/api/sources` | Satellite/product sources (STAC collections). |
 | GET | `/api/sources/{id}/dates` | Acquisition/composite dates + coverage/usable-pixel %. |
-| GET | `/api/layers/default` | Default source/date + same-origin display tile template. |
-| GET | `/api/tiles/{sourceId}/{date}/{displayMode}/{z}/{x}/{y}.png` | BFF to TiTiler proxy; ResourceSat default is FCC (`bidx=3,2,1`). COG url/creds stay server-side. |
+| GET | `/api/layers/default` | Default source/date + same-origin display metadata. ResourceSat map default is field-clipped NDVI, so `tileUrlTemplate` can be `null`. |
+| GET | `/api/tiles/{sourceId}/{date}/{displayMode}/{z}/{x}/{y}.png` | Same-origin scene tiles for display-capable modes (for example FCC, SAR grayscale, context rasters). COG url/creds stay server-side. |
 | GET | `/api/tiles/{sourceId}/{date}/rgb/{z}/{x}/{y}.png` | Legacy RGB route for sources that support true-colour RGB. |
+| GET | `/api/fields/{plotId}/overlay/{indexType}.png` | Field-clipped, mask-aware index overlay PNG rendered in the BFF. |
 | POST | `/api/indices/statistics` | Source-mask-aware, offset-corrected index stats computed in the BFF (reads analytic + mask COG windows with rasterio). |
 
 TiTiler serves display tiles only; masked statistics are computed in the BFF.
@@ -72,13 +73,47 @@ catalog objects remain owned by the ingestion worker.
 ```bash
 cd apps/api
 python -m app.cli db upgrade   # create/upgrade akasha app schema
+python -m app.cli db heads      # verify this checkout has one Alembic head
+python -m app.cli db current    # show live database revision
+python -m app.cli db verify-current  # verify live DB is at this checkout's head
 python -m app.cli check        # PostGIS + app schema + MinIO liveness
 ```
 
 `python -m app.cli migrate` remains as a compatibility alias for
 `python -m app.cli db upgrade`.
 
-## Run locally (standalone)
+For day-to-day team work, prefer the repository-level helpers so migrations are
+generated inside the Dockerized API runtime and revision IDs stay unique:
+
+```bash
+make db-revision MSG="add crop metadata"
+make db-upgrade
+make db-heads
+make db-check
+```
+
+Every SQLAlchemy model change must be committed with its Alembic revision. Keep
+`dev-akasha-core` and `main` at a single Alembic head; if parallel PRs create a
+branch, rebase and create an explicit Alembic merge revision before merging.
+
+## Run locally
+
+The supported local backend workflow is Docker-first because the API depends on
+native GDAL/rasterio/PostGIS-related libraries that are painful to install
+consistently on Windows:
+
+```bash
+make backend   # Docker backend/gateway/dependencies + FastAPI reload
+make frontend  # Vite frontend reload in a second terminal
+```
+
+Changes under `apps/api/app` hot-reload in the container. Rebuild the API image
+after dependency or Dockerfile changes with `make backend-rebuild`.
+
+### Standalone host run, advanced only
+
+Use this only when your host Python environment already has the required native
+geospatial dependencies installed:
 
 ```bash
 cd apps/api

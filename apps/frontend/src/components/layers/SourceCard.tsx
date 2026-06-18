@@ -41,7 +41,7 @@ export function SourceCard({
 }: SourceCardProps) {
     const isSar = source.kind === 'sar';
     const isGated = source.availabilityStatus === 'gated';
-    const modes = source.displayModes ?? [];
+    const modes = source.mapDisplayModes ?? source.displayModes ?? [];
     const limitations = source.limitations ?? [];
     const showModeToggle = active && modes.length > 1;
 

@@ -81,6 +81,34 @@ def test_resourcesat_mask_generation_uses_provisional_classes() -> None:
     assert mask.tolist() == [[0, 1, 4, 3, 2]]
 
 
+def test_liss4_mask_generation_uses_swir_free_provisional_classes() -> None:
+    analytic = np.array(
+        [
+            [[0, 1200, 3000, 4000, 500]],
+            [[0, 1000, 1000, 3600, 600]],
+            [[0, 4000, 1000, 3800, 700]],
+        ],
+        dtype="uint16",
+    )
+
+    mask = prep.build_mask_array_3band(np, analytic)
+
+    assert mask.tolist() == [[0, 1, 4, 2, 3]]
+
+
+def test_liss4_source_profile_declares_three_analytic_bands() -> None:
+    profile = prep.source_profile("resourcesat-2a-liss4-mx70-l2")
+
+    assert profile["collection"] == "ResourceSat-2A_LISS4-MX70_L2"
+    assert profile["label"] == "LISS-4"
+    assert profile["resolution_meters"] == 5.8
+    assert profile["analytic_bands"] == (
+        ("BAND2", "GREEN", "Green"),
+        ("BAND3", "RED", "Red"),
+        ("BAND4", "NIR", "Near infrared"),
+    )
+
+
 def test_resourcesat_mask_generation_uses_all_band_valid_range_gap_rule() -> None:
     # The ResourceSat gap authority stays all-band based: one invalid band is not enough.
     analytic = np.array(
@@ -390,6 +418,83 @@ def test_write_manifest_uses_awifs_specific_mask_method(tmp_path: Path) -> None:
     assert "LISS-3 BOA sample" not in payload["mask_method"]
 
 
+def test_write_manifest_emits_liss4_three_band_contract(tmp_path: Path) -> None:
+    expected_bbox = [77.0, 11.0, 78.0, 12.0]
+
+    class FakeCrs:
+        def to_string(self) -> str:
+            return "EPSG:32643"
+
+    class FakeDataset:
+        def __init__(self, count: int, descriptions: tuple[str, ...]) -> None:
+            self.count = count
+            self.descriptions = descriptions
+
+        crs = FakeCrs()
+        bounds = (799980, 1290240, 909780, 1400040)
+        res = (5.8, 5.8)
+        transform = (5.8, 0, 799980, 0, -5.8, 1400040, 0, 0, 1)
+        width = 18931
+        height = 18931
+        dtypes = ("uint16",)
+        nodata = 0
+
+        def __enter__(self) -> "FakeDataset":
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def overviews(self, _band: int) -> list[int]:
+            return [2, 4]
+
+    class FakeRasterio:
+        def open(self, path: Path) -> FakeDataset:
+            if Path(path).name == "mask.tif":
+                return FakeDataset(1, ("mask",))
+            return FakeDataset(3, ("BAND2", "BAND3", "BAND4"))
+
+    def fake_transform_bounds(*_args: object, **_kwargs: object) -> list[float]:
+        return expected_bbox
+
+    product_dir = tmp_path / "product"
+    product_dir.mkdir()
+    (product_dir / "BAND_META.txt").write_text("PATH=99\nROW=65\n", encoding="utf-8")
+    product = SelectedProduct(
+        product_id="LISS4_PRODUCT",
+        source_path=tmp_path / "LISS4_PRODUCT.zip",
+        acquisition_datetime="2026-03-19T00:00:00Z",
+        acquisition_date="2026-03-19",
+        path="99",
+        row="65",
+    )
+    paths = PreparedPaths(
+        product=product,
+        product_dir=product_dir,
+        output_dir=tmp_path / "out",
+        analytic_cog=tmp_path / "out" / "analytic.tif",
+        mask_cog=tmp_path / "out" / "mask.tif",
+        manifest=tmp_path / "out" / "prepare_manifest.json",
+    )
+
+    write_manifest(
+        deps={"rasterio": FakeRasterio(), "transform_bounds": fake_transform_bounds},
+        paths=paths,
+        meta=ResourceSatMeta(raw={"PATH": "99", "ROW": "65"}),
+        analytic_intermediate=tmp_path / "analytic_intermediate.tif",
+        mask_intermediate=tmp_path / "mask_intermediate.tif",
+        source_id="resourcesat-2a-liss4-mx70-l2",
+        collection="ResourceSat-2A_LISS4-MX70_L2",
+    )
+
+    payload = json.loads(paths.manifest.read_text(encoding="utf-8"))
+    assert payload["source_id"] == "resourcesat-2a-liss4-mx70-l2"
+    assert payload["collection"] == "ResourceSat-2A_LISS4-MX70_L2"
+    assert payload["analytic_band_order"] == ["BAND2", "BAND3", "BAND4"]
+    assert payload["band_role_mapping"] == {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4"}
+    assert payload["outputs"]["analytic"]["band_count"] == 3
+
+
 class _FakeCrs:
     def __init__(self, value: str = "EPSG:32643") -> None:
         self.value = value
@@ -467,6 +572,18 @@ def test_validate_resourcesat_cogs_accepts_strict_liss3_outputs(tmp_path: Path) 
         tmp_path / "analytic.tif",
         tmp_path / "mask.tif",
         source_id="resourcesat-2a-liss3-boa",
+    )
+
+
+def test_validate_resourcesat_cogs_accepts_strict_liss4_outputs(tmp_path: Path) -> None:
+    analytic = _FakeResourceSatDataset(count=3, res=(5.8, 5.8))
+    mask = _FakeResourceSatDataset(count=1, res=(5.8, 5.8))
+
+    prep.validate_resourcesat_cogs(
+        _strict_validation_deps(analytic, mask),
+        tmp_path / "analytic.tif",
+        tmp_path / "mask.tif",
+        source_id="resourcesat-2a-liss4-mx70-l2",
     )
 
 

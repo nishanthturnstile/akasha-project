@@ -115,6 +115,86 @@ def test_source_collection_supports_awifs_phase5_source():
     )
 
 
+def test_source_collection_supports_liss4_phase_a_source():
+    assert (
+        bhoonidhi.source_collection("resourcesat-2a-liss4-mx70-l2")
+        == "ResourceSat-2A_LISS4-MX70_L2"
+    )
+
+
+def test_resourcesat_guards_include_liss4_without_changing_worker_defaults():
+    parser = worker.build_parser()
+    sync_args = parser.parse_args(["bhoonidhi-sync"])
+    composite_args = parser.parse_args(
+        ["build-composite", "--window-start", "2026-03-01", "--window-end", "2026-03-31"]
+    )
+
+    assert sync_args.source == "resourcesat-2a-liss3-boa"
+    assert composite_args.source == "resourcesat-2a-liss3-boa"
+    assert "resourcesat-2a-liss4-mx70-l2" in config.RESOURCESAT_BOA_COLLECTION_IDS
+
+
+def test_catalog_emits_three_band_liss4_resourcesat_item():
+    manifest = {
+        "source_id": "resourcesat-2a-liss4-mx70-l2",
+        "collection": "ResourceSat-2A_LISS4-MX70_L2",
+        "product_id": "LISS4_PRODUCT",
+        "platform": "resourcesat-2a",
+        "product_level": "BOA",
+        "acquisition_datetime": "2026-03-19T00:00:00Z",
+        "path": "99",
+        "row": "65",
+        "bbox": [77.0, 12.0, 78.0, 13.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]],
+        },
+        "outputs": {
+            "analytic": {
+                "path": "analytic.tif",
+                "band_count": 3,
+                "dtype": "uint16",
+                "nodata": 0,
+                "resolution": [5.8, 5.8],
+                "crs": "EPSG:32643",
+                "width": 2,
+                "height": 2,
+            },
+            "mask": {
+                "path": "mask.tif",
+                "band_count": 1,
+                "dtype": "uint8",
+                "nodata": 0,
+                "resolution": [5.8, 5.8],
+                "crs": "EPSG:32643",
+                "width": 2,
+                "height": 2,
+            },
+        },
+        "properties": {"akasha:metrics_provisional": True},
+    }
+
+    item = catalog.build_stac_item_from_prepare_manifest(manifest)
+
+    assert item["collection"] == "resourcesat-2a-liss4-mx70-l2"
+    assert item["properties"]["instruments"] == ["liss-4"]
+    assert item["properties"]["gsd"] == 5.8
+    assert item["properties"]["akasha:band_role_mapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+    }
+    assert [band["name"] for band in item["assets"]["analytic"]["eo:bands"]] == [
+        "BAND2",
+        "BAND3",
+        "BAND4",
+    ]
+    assert len(item["assets"]["analytic"]["raster:bands"]) == 3
+    assert {
+        band["spatial_resolution"] for band in item["assets"]["analytic"]["raster:bands"]
+    } == {5.8}
+
+
 def test_source_collection_supports_eos06_phase5_context_source():
     assert (
         bhoonidhi.source_collection("eos-06-ocm-lac-ndvi-8day-360m")

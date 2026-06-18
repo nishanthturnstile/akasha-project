@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarDays, Layers, Lock, Plus, Sprout } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Layers, Lock, Plus, Sprout, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
@@ -22,6 +23,9 @@ interface IndexPanelProps {
   periodFrom?: string | null;
   /** Inclusive upper bound (YYYY-MM-DD) carried from the timeline calendar range. */
   periodTo?: string | null;
+  /** Prefer LISS-4 high-resolution source when available (default true). */
+  preferHighRes?: boolean;
+  onPreferHighResChange?: (value: boolean) => void;
 }
 
 const TAB_ITEMS: { value: AnalyticsTab; label: string }[] = [
@@ -67,6 +71,8 @@ export function IndexPanel({
   sourceMetricsProvisional = false,
   periodFrom,
   periodTo,
+  preferHighRes = true,
+  onPreferHighResChange,
 }: IndexPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('crop-info');
 
@@ -87,6 +93,7 @@ export function IndexPanel({
     acquisitionDate: selectedDate,
     indexType: activeIndexType,
     cloudMask,
+    preferHighRes,
   });
   const trendQ = useFieldTrend(selectedPlot?.id, {
     sourceId,
@@ -108,6 +115,9 @@ export function IndexPanel({
   const analyticsCopy = metricsProvisional
     ? 'Akasha provisional-mask analytics'
     : 'Akasha masked-raster analytics';
+  const enhanced = statsResponse?.enhanced ?? false;
+  const resolutionMeters = statsResponse?.resolutionMeters ?? null;
+  const provenanceNote = statsResponse?.provenanceNote ?? null;
 
   return (
     <section
@@ -120,6 +130,22 @@ export function IndexPanel({
           <BarChart3 className="size-4 text-primary" strokeWidth={ 1.75 } />
           <h2 className="font-display text-base font-semibold text-foreground">Analytics</h2>
         </div>
+        { onPreferHighResChange != null && (
+          <div className="flex items-center gap-1.5">
+            <label
+              htmlFor="analytics-pref-highres"
+              className="cursor-pointer text-[11px] text-muted-foreground"
+            >
+              Hi-res
+            </label>
+            <Switch
+              id="analytics-pref-highres"
+              checked={ preferHighRes }
+              onCheckedChange={ onPreferHighResChange }
+              data-testid="analytics-prefer-high-res"
+            />
+          </div>
+        ) }
       </header>
 
       { !selectedPlot ? (
@@ -202,6 +228,9 @@ export function IndexPanel({
                 sourceMaskMethod={ responseMaskMethod }
                 sourceMetricsProvisional={ metricsProvisional }
                 maskedPixels={ maskedPixels }
+                enhanced={ enhanced }
+                resolutionMeters={ resolutionMeters }
+                provenanceNote={ provenanceNote }
               />
             </TabsContent>
 
@@ -374,6 +403,10 @@ interface ChartTabProps {
   sourceMaskMethod?: string | null;
   sourceMetricsProvisional?: boolean;
   maskedPixels?: number | null;
+  /** Provenance from LISS-4 best-resolution resolver. */
+  enhanced?: boolean;
+  resolutionMeters?: number | null;
+  provenanceNote?: string | null;
 }
 
 function ChartTab({
@@ -397,6 +430,9 @@ function ChartTab({
   sourceMaskMethod,
   sourceMetricsProvisional = false,
   maskedPixels,
+  enhanced = false,
+  resolutionMeters,
+  provenanceNote,
 }: ChartTabProps) {
   const maskMethod = sourceMaskMethod ?? null;
   const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud';
@@ -433,6 +469,16 @@ function ChartTab({
             </span>
           ) }
         </div>
+
+        { enhanced && (
+          <div
+            className="mb-2 flex items-center gap-1 rounded-pill border border-primary/30 bg-primary/10 px-2 py-0.5 w-fit text-[11px] font-medium text-primary"
+            data-testid="analytics-enhanced-badge"
+          >
+            <Zap className="size-3 shrink-0" strokeWidth={ 1.75 } />
+            Enhanced { resolutionMeters != null ? `${resolutionMeters} m` : '' } (LISS-4)
+          </div>
+        ) }
 
         { error && (
           <div className="flex gap-2 text-[12px] leading-5 text-destructive">
@@ -535,6 +581,11 @@ function ChartTab({
         ) }
         { typeof maskedPixels === 'number' && Number.isFinite(maskedPixels) && (
           <p data-testid="analytics-masked-pixels">Masked pixels: { maskedPixels }</p>
+        ) }
+        { (activeIndex === 'NDMI' || provenanceNote) && (
+          <p data-testid="analytics-ndmi-note" className="text-amber-300">
+            { provenanceNote ?? 'Moisture served from LISS-3 (24 m) -- LISS-4 has no SWIR band.' }
+          </p>
         ) }
         { warnings.map((warning) => (
           <p key={ warning } className="text-amber-300">{ warning }</p>

@@ -278,3 +278,284 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(addTrigger.disabled).toBe(true);
     });
 });
+
+describe('IndexPanel — LISS-4 provenance UI (Phase E)', () => {
+    it('shows the prefer-high-res toggle when onPreferHighResChange is provided', () => {
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+                preferHighRes
+                onPreferHighResChange={ () => undefined }
+            />,
+        );
+
+        expect(screen.getByTestId('analytics-prefer-high-res')).toBeTruthy();
+    });
+
+    it('does not show the prefer-high-res toggle when onPreferHighResChange is absent', () => {
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        expect(screen.queryByTestId('analytics-prefer-high-res')).toBeNull();
+    });
+
+    it('renders the enhanced badge when the statistics response has enhanced=true', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-04-27',
+                            cloudMask,
+                            statistics: {
+                                min: 0.2,
+                                max: 0.7,
+                                mean: 0.45,
+                                stddev: 0.1,
+                                validPixelPercent: 95,
+                                cloudMaskedPercent: 3,
+                                coveragePercent: 98,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 2,
+                                coveragePixels: 98,
+                                maskedPixels: 3,
+                                validPixels: 95,
+                            },
+                            enhanced: true,
+                            resolvedSourceId: 'resourcesat-2a-liss4',
+                            resolutionMeters: 5.8,
+                            basisDate: '2026-04-27',
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'], warnings: [] },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDVI',
+                            startDate: '2025-10-29',
+                            endDate: '2026-04-27',
+                            points: [],
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+                preferHighRes
+                onPreferHighResChange={ () => undefined }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        const badge = await screen.findByTestId('analytics-enhanced-badge');
+        expect(badge).toBeTruthy();
+        expect(badge.textContent).toContain('Enhanced');
+        expect(badge.textContent).toContain('5.8 m');
+        expect(badge.textContent).toContain('LISS-4');
+    });
+
+    it('does not render the enhanced badge when enhanced is false/absent', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-04-27',
+                            cloudMask,
+                            statistics: {
+                                min: 0.2,
+                                max: 0.7,
+                                mean: 0.45,
+                                stddev: 0.1,
+                                validPixelPercent: 95,
+                                cloudMaskedPercent: 3,
+                                coveragePercent: 98,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 2,
+                                coveragePixels: 98,
+                                maskedPixels: 3,
+                                validPixels: 95,
+                            },
+                            enhanced: false,
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'], warnings: [] },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDVI',
+                            startDate: '2025-10-29',
+                            endDate: '2026-04-27',
+                            points: [],
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        // Wait for the data to load (mean value is available)
+        await screen.findByText('0.45');
+        expect(screen.queryByTestId('analytics-enhanced-badge')).toBeNull();
+    });
+
+    it('shows the NDMI provenance note when the active index is NDMI', () => {
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDMI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        const note = screen.getByTestId('analytics-ndmi-note');
+        expect(note).toBeTruthy();
+        expect(note.textContent).toContain('Moisture served from LISS-3');
+        expect(note.textContent).toContain('LISS-4 has no SWIR band');
+    });
+
+    it('shows the provenance note from the stats response when present', async () => {
+        const customNote = 'Moisture served from LISS-3 (24 m) -- LISS-4 has no SWIR band.';
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDMI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-04-27',
+                            cloudMask,
+                            statistics: {
+                                min: -0.1,
+                                max: 0.4,
+                                mean: 0.15,
+                                stddev: 0.08,
+                                validPixelPercent: 92,
+                                cloudMaskedPercent: 4,
+                                coveragePercent: 96,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 4,
+                                coveragePixels: 96,
+                                maskedPixels: 4,
+                                validPixels: 92,
+                            },
+                            enhanced: false,
+                            provenanceNote: customNote,
+                            metadata: { formula: '(NIR-SWIR1)/(NIR+SWIR1)', bands: ['BAND4', 'BAND5'], warnings: [] },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDMI',
+                            startDate: '2025-10-29',
+                            endDate: '2026-04-27',
+                            points: [],
+                            metadata: { formula: '(NIR-SWIR1)/(NIR+SWIR1)', bands: ['BAND4', 'BAND5'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDMI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        const note = await screen.findByTestId('analytics-ndmi-note');
+        expect(note.textContent).toBe(customNote);
+    });
+});

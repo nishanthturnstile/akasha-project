@@ -62,7 +62,7 @@ def _stats_response(
 
 
 def test_index_csv_export_uses_server_side_geometry_and_cloud_mapping(monkeypatch):
-    monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: _plot())
     calls: list[dict[str, Any]] = []
 
     def fake_compute_statistics(**kwargs):
@@ -91,7 +91,7 @@ def test_index_csv_export_uses_server_side_geometry_and_cloud_mapping(monkeypatc
 
 
 def test_index_geojson_export_contains_safe_field_statistics(monkeypatch):
-    monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics,
         "compute_statistics",
@@ -116,7 +116,7 @@ def test_index_geojson_export_contains_safe_field_statistics(monkeypatch):
 
 @pytest.mark.parametrize("export_format", ["shp", "geotiff"])
 def test_provider_backed_export_formats_are_unavailable(monkeypatch, export_format):
-    monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: _plot())
     r = client.get(
         "/api/fields/plot-1/exports/index"
         f"?format={export_format}&acquisitionDate=2026-06-01&indexType=NDVI"
@@ -127,7 +127,7 @@ def test_provider_backed_export_formats_are_unavailable(monkeypatch, export_form
 
 
 def test_report_csv_export_uses_native_trend_points(monkeypatch):
-    monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog,
         "list_dates",
@@ -157,12 +157,12 @@ def test_report_csv_export_uses_native_trend_points(monkeypatch):
 
 
 def test_index_export_missing_date_and_field_are_sanitized(monkeypatch):
-    monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda *_: None)
+    monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: None)
     missing = client.get("/api/fields/missing/exports/index?format=csv&acquisitionDate=2026-06-01")
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "FIELD_NOT_FOUND"
 
-    monkeypatch.setattr(field_exports.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: _plot())
     no_date = client.get("/api/fields/plot-1/exports/index?format=csv")
     assert no_date.status_code == 400
     assert no_date.json()["error"]["code"] == "MISSING_DATE"

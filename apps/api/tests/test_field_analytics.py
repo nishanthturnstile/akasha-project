@@ -1,11 +1,17 @@
 """Selected-field native analytics route tests."""
 from __future__ import annotations
 
+import json
+import struct
+import zlib
+from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 from app.config import settings
 from app.main import app
+from app.raster import tiles
 from app.routers import analytics_router as field_analytics
 from app.schemas.analytics import FieldStatisticsRequest
 from fastapi.testclient import TestClient
@@ -65,9 +71,63 @@ def _stats_response(
     }
 
 
+def _decode_rgba_png(png: bytes) -> tuple[int, int, list[tuple[int, int, int, int]]]:
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+    cursor = 8
+    width = height = 0
+    idat = bytearray()
+    while cursor < len(png):
+        length = struct.unpack("!I", png[cursor : cursor + 4])[0]
+        cursor += 4
+        kind = png[cursor : cursor + 4]
+        cursor += 4
+        data = png[cursor : cursor + length]
+        cursor += length + 4
+        if kind == b"IHDR":
+            width, height = struct.unpack("!II", data[:8])
+        elif kind == b"IDAT":
+            idat.extend(data)
+        elif kind == b"IEND":
+            break
+
+    raw = zlib.decompress(bytes(idat))
+    pixels: list[tuple[int, int, int, int]] = []
+    stride = width * 4
+    offset = 0
+    for _row in range(height):
+        assert raw[offset] == 0
+        offset += 1
+        row = raw[offset : offset + stride]
+        offset += stride
+        for col in range(0, len(row), 4):
+            pixels.append(tuple(row[col : col + 4]))
+    return width, height, pixels
+
+
+def test_field_statistics_uses_field_repository_for_field_ids(monkeypatch):
+    field = _plot(id="field-1", name="Migrated Field")
+    calls: list[tuple[str, str]] = []
+
+    def fake_get_field(field_id: str, user_id: str) -> dict[str, Any]:
+        calls.append((field_id, user_id))
+        return field
+
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", fake_get_field)
+    monkeypatch.setattr(field_analytics, "compute_statistics", lambda **kwargs: _stats_response())
+
+    r = client.post(
+        "/api/fields/field-1/indices/statistics",
+        json={"sourceId": "resourcesat-2a-liss3-boa", "indexType": "NDVI"},
+    )
+
+    assert r.status_code == 200
+    assert calls[0][0] == "field-1"
+    assert r.json()["plotId"] == "field-1"
+
+
 def test_field_statistics_loads_geometry_server_side(monkeypatch):
     plot = _plot()
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: plot)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: plot)
     calls: list[dict[str, Any]] = []
 
     def fake_compute_statistics(**kwargs):
@@ -102,7 +162,7 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
 
 
 def test_field_statistics_missing_field(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: None)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: None)
     r = client.post("/api/fields/missing/indices/statistics", json={"indexType": "NDVI"})
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "FIELD_NOT_FOUND"
@@ -110,7 +170,7 @@ def test_field_statistics_missing_field(monkeypatch):
 
 
 def test_trend_rejects_invalid_date_range(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     r = client.get(
         "/api/fields/plot-1/analytics/trend?startDate=2026-06-30&endDate=2026-01-01"
     )
@@ -119,7 +179,7 @@ def test_trend_rejects_invalid_date_range(monkeypatch):
 
 
 def test_native_trend_normalizes_points(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog,
         "list_dates",
@@ -154,7 +214,7 @@ def test_native_trend_normalizes_points(monkeypatch):
 
 
 def test_native_trend_rejects_unsupported_index(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     r = client.get(
         "/api/fields/plot-1/analytics/trend"
         "?indexType=BAD&startDate=2026-01-01&endDate=2026-03-01"
@@ -164,7 +224,7 @@ def test_native_trend_rejects_unsupported_index(monkeypatch):
 
 
 def test_trend_without_dates_uses_catalog_defaults_without_internal_leaks(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "list_dates", lambda _: [])
     r = client.get("/api/fields/plot-1/analytics/trend?indexType=NDVI")
     assert r.status_code == 200
@@ -174,7 +234,7 @@ def test_trend_without_dates_uses_catalog_defaults_without_internal_leaks(monkey
 
 
 def test_native_trend_reports_cloud_percent_per_scene(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog, "list_dates", lambda _: [{"acquisitionDate": "2026-01-01"}]
     )
@@ -196,7 +256,7 @@ def test_native_trend_reports_cloud_percent_per_scene(monkeypatch):
 
 
 def test_native_trend_filters_scenes_over_max_cloud_cover(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics.catalog,
         "list_dates",
@@ -230,14 +290,14 @@ def test_native_trend_filters_scenes_over_max_cloud_cover(monkeypatch):
 
 
 def test_native_trend_rejects_out_of_range_cloud_cover(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     r = client.get("/api/fields/plot-1/analytics/trend?maxCloudCoverInAoi=150")
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "INVALID_CLOUD_COVER"
 
 
 def test_field_index_overlay_renders_clipped_png(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
     monkeypatch.setattr(
         field_analytics.catalog,
@@ -245,22 +305,32 @@ def test_field_index_overlay_renders_clipped_png(monkeypatch):
         lambda *_: [
             {
                 "analyticHref": "s3://akasha-cogs/x/analytic.tif",
+                "maskHref": "s3://akasha-cogs/x/mask.tif",
                 "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
                 "bandRoleMapping": {
                     "GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5",
                 },
                 "scale": 0.0001,
                 "offset": 0.0,
+                "excludedMaskClasses": [0, 2, 3],
+                "nodataPolicy": "mask_only",
             }
         ],
     )
-    captured: dict[str, Any] = {}
-
-    def fake_overlay(**kwargs):
-        captured.update(kwargs)
-        return b"PNGCLIP", "image/png"
-
-    monkeypatch.setattr(field_analytics.tiles, "fetch_feature_overlay", fake_overlay)
+    monkeypatch.setattr(
+        field_analytics,
+        "read_index_windows",
+        lambda **_: SimpleNamespace(
+            band_arrays={
+                2: np.array([[2000, 5000], [1000, 0]], dtype=np.uint16),
+                3: np.array([[6000, 5000], [7000, 0]], dtype=np.uint16),
+            },
+            mask=np.array([[1, 2], [1, 0]], dtype=np.uint8),
+            geometry_mask=np.array([[True, True], [True, True]], dtype=bool),
+            nodata=0,
+            intersects=True,
+        ),
+    )
 
     r = client.get(
         "/api/fields/plot-1/overlay/ndvi.png"
@@ -268,16 +338,211 @@ def test_field_index_overlay_renders_clipped_png(monkeypatch):
     )
 
     assert r.status_code == 200
-    assert r.content == b"PNGCLIP"
     assert r.headers["content-type"] == "image/png"
-    # The field polygon is sent to TiTiler as the clip feature; NDVI colormap applied.
-    assert captured["feature"]["geometry"]["type"] == "Polygon"
-    assert captured["colormap_name"] == "rdylgn"
-    assert "b3" in captured["expression"] and "b2" in captured["expression"]
+    width, height, pixels = _decode_rgba_png(r.content)
+    assert (width, height) == (2, 2)
+    assert pixels[1] == (208, 213, 221, 255)
+    assert pixels[3] == (208, 213, 221, 255)
+    assert pixels[0][3] == 255 and pixels[0][:3] != (208, 213, 221)
+    assert pixels[2][3] == 255 and pixels[2][1] >= pixels[2][0]
+
+
+def test_field_index_overlay_returns_true_window_corners_and_reference_stretch(monkeypatch):
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "resolve_assets_for_date",
+        lambda *_: [
+            {
+                "analyticHref": "s3://akasha-cogs/x/analytic.tif",
+                "maskHref": "s3://akasha-cogs/x/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5",
+                },
+                "scale": 0.0001,
+                "offset": 0.0,
+                "excludedMaskClasses": [0, 2, 3],
+                "nodataPolicy": "mask_only",
+            }
+        ],
+    )
+    true_corners = [[77.001, 13.002], [77.103, 13.001], [77.104, 12.9], [77.0, 12.901]]
+    monkeypatch.setattr(
+        field_analytics,
+        "read_index_windows",
+        lambda **_: SimpleNamespace(
+            band_arrays={
+                2: np.array([[2000, 2000], [2000, 2000]], dtype=np.uint16),
+                3: np.array([[6000, 6000], [6000, 6000]], dtype=np.uint16),
+            },
+            mask=np.array([[1, 1], [1, 1]], dtype=np.uint8),
+            geometry_mask=np.array([[True, True], [True, True]], dtype=bool),
+            nodata=0,
+            intersects=True,
+            footprint_corners=true_corners,
+        ),
+    )
+
+    r = client.get(
+        "/api/fields/plot-1/overlay/ndvi.png"
+        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+    )
+
+    assert r.status_code == 200
+    assert r.headers["x-akasha-overlay-corners"] == json.dumps(true_corners, separators=(",", ":"))
+    assert r.headers["x-akasha-overlay-stretch"] == "-1.0,1.0"
+
+
+def test_ndvi_overlay_uses_reference_heatmap_colors():
+    png, _content_type = tiles.render_field_index_overlay_png(
+        index_type="NDVI",
+        index_values=np.array([[-0.5, 0.08, 0.22, 0.37, 0.52, 0.67, 0.82, 0.95]]),
+        valid_mask=np.ones((1, 8), dtype=bool),
+        masked_mask=np.zeros((1, 8), dtype=bool),
+    )
+
+    width, height, pixels = _decode_rgba_png(png)
+    assert (width, height) == (8, 1)
+    assert [pixel[:3] for pixel in pixels] == [
+        (19, 24, 125),   # water / non-vegetation
+        (128, 70, 26),   # bare soil
+        (213, 0, 35),    # poor vegetation
+        (255, 83, 13),   # low-medium growth
+        (250, 201, 9),   # moderate growth
+        (111, 202, 7),   # healthy crop
+        (22, 153, 43),   # very healthy crop
+        (0, 88, 37),     # dense / excellent vegetation
+    ]
+
+
+def test_reproject_index_overlay_web_mercator_is_north_up_supersampled_and_clipped():
+    rasterio = pytest.importorskip("rasterio")
+    pytest.importorskip("pyproj")
+    from rasterio.transform import from_origin
+    from rasterio.warp import transform_bounds
+
+    # 10x10 ResourceSat-like window: UTM 43N, 24 m pixels.
+    src_transform = from_origin(500000, 1450000, 24, 24)
+    src_crs = rasterio.crs.CRS.from_epsg(32643)
+    index_values = np.full((10, 10), 0.5, dtype="float64")
+    data_valid = np.ones((10, 10), dtype=bool)
+    data_masked = np.zeros((10, 10), dtype=bool)
+
+    left, top = 500000.0, 1450000.0
+    right, bottom = left + 240.0, top - 240.0
+    west, south, east, north = transform_bounds(src_crs, "EPSG:4326", left, bottom, right, top)
+    # Inner polygon covering the central half of the window (in lng/lat).
+    px0, px1 = west + (east - west) * 0.25, west + (east - west) * 0.75
+    py0, py1 = south + (north - south) * 0.25, south + (north - south) * 0.75
+    geometry = {
+        "type": "Polygon",
+        "coordinates": [[[px0, py0], [px1, py0], [px1, py1], [px0, py1], [px0, py0]]],
+    }
+
+    rgba, corners = tiles.reproject_index_overlay_web_mercator(
+        index_type="NDVI",
+        index_values=index_values,
+        data_valid=data_valid,
+        data_masked=data_masked,
+        src_transform=src_transform,
+        src_crs=src_crs,
+        geometry=geometry,
+    )
+
+    out_h, out_w = rgba.shape[:2]
+    # Supersampled finer than the native 10x10 window.
+    assert out_h > 10 and out_w > 10
+
+    # North-up Web Mercator rectangle (TL, TR, BR, BL) once expressed in lng/lat.
+    (tl, tr, br, bl) = corners
+    assert tl[1] == pytest.approx(tr[1])
+    assert bl[1] == pytest.approx(br[1])
+    assert tl[0] == pytest.approx(bl[0])
+    assert tr[0] == pytest.approx(br[0])
+
+    # Inside the polygon → opaque colorized; outside → fully transparent.
+    assert rgba[out_h // 2, out_w // 2, 3] == 255
+    assert rgba[0, 0, 3] == 0
+    assert rgba[out_h - 1, out_w - 1, 3] == 0
+
+
+def test_field_index_point_returns_precise_value_for_hover(monkeypatch):
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI"])
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "resolve_best_resolution_source",
+        lambda **kw: SimpleNamespace(
+            source_id=kw["primary_source_id"],
+            resolution_meters=24,
+            enhanced=False,
+            basis_date=None,
+            provenance_note=None,
+        ),
+    )
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "resolve_assets_for_date",
+        lambda *_: [
+            {
+                "analyticHref": "s3://akasha-cogs/x/analytic.tif",
+                "maskHref": "s3://akasha-cogs/x/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {
+                    "GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5",
+                },
+                "scale": 0.0001,
+                "offset": 0.0,
+                "excludedMaskClasses": [0, 2, 3],
+                "nodataPolicy": "mask_only",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "read_index_windows",
+        lambda **_: SimpleNamespace(
+            band_arrays={
+                2: np.array([[2000]], dtype=np.uint16),
+                3: np.array([[6000]], dtype=np.uint16),
+            },
+            mask=np.array([[1]], dtype=np.uint8),
+            geometry_mask=np.array([[True]], dtype=bool),
+            nodata=0,
+            intersects=True,
+            footprint_corners=[[77, 12], [77.1, 12], [77.1, 11.9], [77, 11.9]],
+        ),
+    )
+
+    r = client.get(
+        "/api/fields/plot-1/indices/point"
+        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+        "&indexType=NDVI&lng=77.05&lat=12.05"
+    )
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "plotId": "plot-1",
+        "sourceId": "resourcesat-2a-liss3-boa",
+        "acquisitionDate": "2026-03-19",
+        "indexType": "NDVI",
+        "lng": 77.05,
+        "lat": 12.05,
+        "value": 0.5,
+        "masked": False,
+        "maskClass": 1,
+        "resolvedSourceId": "resourcesat-2a-liss3-boa",
+        "resolutionMeters": 24,
+        "enhanced": False,
+        "basisDate": None,
+        "provenanceNote": None,
+    }
 
 
 def test_field_index_overlay_rejects_unsupported_index(monkeypatch):
-    monkeypatch.setattr(field_analytics.plots_repo, "get_plot", lambda *_: _plot())
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "supported_indices", lambda *_: ["NDVI", "NDMI"])
     r = client.get(
         "/api/fields/plot-1/overlay/ndre.png?sourceId=resourcesat-2a-liss3-boa"

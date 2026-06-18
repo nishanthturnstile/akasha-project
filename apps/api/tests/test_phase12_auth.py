@@ -387,7 +387,6 @@ def test_signup_creates_user_team_session_and_returns_onboarding_state(monkeypat
             "display_name": "New User",
             "password_hash": "hashed-password",
             "team_name": "New User's Team",
-            "require_no_password_users": False,
         }
     ]
     assert created_sessions[0]["user_id"] == "11111111-1111-4111-8111-111111111111"
@@ -571,73 +570,7 @@ def test_logout_clears_stale_cookie_without_valid_session(monkeypatch):
     assert "max-age=0" in response.headers["set-cookie"].lower()
 
 
-def test_bootstrap_requires_allow_flag_even_when_no_password_users(monkeypatch):
-    monkeypatch.setattr(settings, "auth_allow_bootstrap", False)
-    auth_routes._AUTH_RATE_BUCKETS.clear()
-    monkeypatch.setattr(auth_routes.auth_repo, "active_password_user_count", lambda: 0)
-
-    response = client.post(
-        "/api/auth/bootstrap",
-        json={
-            "username": "owner",
-            "password": "correct horse battery staple",
-            "email": "owner@example.test",
-            "displayName": "Owner",
-            "teamName": "Owner Team",
-        },
-    )
-
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
-
-
-def test_bootstrap_requires_setup_token_in_deployment(monkeypatch):
-    monkeypatch.setattr(settings, "auth_mode", "enabled")
-    monkeypatch.setattr(settings, "auth_allow_bootstrap", True)
-    monkeypatch.setattr(settings, "auth_bootstrap_token", "setup-token")
-    monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")
-    monkeypatch.setattr(settings, "app_env", "production")
-    auth_routes._AUTH_RATE_BUCKETS.clear()
-    monkeypatch.setattr(auth_routes.auth_repo, "active_password_user_count", lambda: 0)
-    created = []
-    monkeypatch.setattr(
-        auth_routes.auth_repo,
-        "create_user_with_team",
-        lambda **kwargs: created.append(kwargs) or {"userId": "user-1", "teamId": "team-1"},
-    )
-    monkeypatch.setattr(auth_routes, "hash_password", lambda password: "hashed-password")
-    payload = {
-        "username": "owner",
-        "password": "correct horse battery staple",
-        "email": "owner@example.test",
-        "displayName": "Owner",
-        "teamName": "Owner Team",
-    }
-
-    rejected = client.post("/api/auth/bootstrap", json=payload)
-    accepted = client.post(
-        "/api/auth/bootstrap",
-        json={**payload, "bootstrapToken": "setup-token"},
-    )
-
-    assert rejected.status_code == 403
-    assert accepted.status_code == 200
-    assert accepted.json() == {"userId": "user-1", "teamId": "team-1"}
-    assert created[0]["password_hash"] == "hashed-password"
-    assert created[0]["require_no_password_users"] is True
-
-
-def test_bootstrap_transaction_recheck_failure_returns_forbidden(monkeypatch):
-    monkeypatch.setattr(settings, "auth_mode", "enabled")
-    monkeypatch.setattr(settings, "auth_allow_bootstrap", True)
-    monkeypatch.setattr(settings, "auth_bootstrap_token", "setup-token")
-    monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")
-    monkeypatch.setattr(settings, "app_env", "production")
-    auth_routes._AUTH_RATE_BUCKETS.clear()
-    monkeypatch.setattr(auth_routes.auth_repo, "active_password_user_count", lambda: 0)
-    monkeypatch.setattr(auth_routes.auth_repo, "create_user_with_team", lambda **kwargs: None)
-    monkeypatch.setattr(auth_routes, "hash_password", lambda password: "hashed-password")
-
+def test_auth_bootstrap_route_is_removed():
     response = client.post(
         "/api/auth/bootstrap",
         json={
@@ -650,8 +583,7 @@ def test_bootstrap_transaction_recheck_failure_returns_forbidden(monkeypatch):
         },
     )
 
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "FORBIDDEN"
+    assert response.status_code == 404
 
 
 def test_cors_wildcard_is_not_used_with_credentials(monkeypatch):

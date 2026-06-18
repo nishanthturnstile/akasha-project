@@ -228,14 +228,14 @@ Repository ownership and sync notes:
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-069 | Enter staging environment variables in Coolify. Use environment-specific secrets and do not reuse production secrets. | Yes for staging pre-deploy — UI validation on 2026-06-11 found all expected staging variables present, non-blank, and without `CHANGE_ME` placeholders. Temporary HTTP settings are set to `PUBLIC_ORIGIN=http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io`, `AUTH_ALLOW_BOOTSTRAP=true`, and `AUTH_COOKIE_SECURE=false`. | 2026-06-11 |
+| TASK-069 | Enter staging environment variables in Coolify. Use environment-specific secrets and do not reuse production secrets. | Yes for staging pre-deploy — UI validation on 2026-06-11 found all expected staging variables present, non-blank, and without `CHANGE_ME` placeholders. Temporary HTTP settings are set to `PUBLIC_ORIGIN=http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io` and `AUTH_COOKIE_SECURE=false`. | 2026-06-11 |
 | TASK-070 | Deploy `akasha-staging-compose` from `infra/selfhosted/coolify-compose.yml`. | Yes — after GHCR access was fixed on staging, Coolify deployed the stack and reported `Running (healthy)`. Docker shows `web`, `api`, `titiler`, `stac-api`, `postgis`, and `minio` running healthy; one-shot `ingestion-worker` and `ingestion-sar` exited `0` as expected. | 2026-06-11 |
 | TASK-071 | Verify only the `web` service has a public domain or public route. | | |
 | TASK-072 | Run app schema migration inside the `api` container using the repository-supported app migration command. | Yes — after adding `POSTGRES_PASSWORD_URLENCODED` and redeploying, `docker exec api-s6f7s03fv8dhnxx8ld6a8nuh python -m app.cli migrate` completed successfully with `app-schema Alembic upgrade complete`. | 2026-06-11 |
 | TASK-073 | Run catalog/storage seed or verification commands from the `ingestion-worker` container only when required for the staging dataset. | | |
-| TASK-074 | Bootstrap the first admin user only if `AUTH_MODE=enabled` and no password users exist. Set `AUTH_ALLOW_BOOTSTRAP=false` after bootstrap. | | |
+| TASK-074 | Create the first staging user through `/signup` only when `AUTH_ALLOW_SIGNUP=true` is intentionally enabled, or provision users through the approved operator process. | | |
 | TASK-075 | Run unauthenticated smoke checks against `/health`, `/api/health`, and `/api/_skeleton/services`. | Yes — checks passed on `http://web-s6f7s03fv8dhnxx8ld6a8nuh.20.219.3.35.sslip.io` with HTTP `200` for all three endpoints. | 2026-06-11 |
-| TASK-076 | Run authenticated smoke checks against `/api/config`, `/api/sources`, `/api/sources/sentinel-2-l2a/dates`, `/api/layers/default`, one RGB tile request, and one NDVI statistics request. | Pending first admin/bootstrap — unauthenticated product checks correctly return HTTP `401` because `AUTH_MODE=enabled`; run `scripts/smoke-test.py --login` after creating the first staging user. | 2026-06-11 |
+| TASK-076 | Run authenticated smoke checks against `/api/config`, `/api/sources`, `/api/sources/sentinel-2-l2a/dates`, `/api/layers/default`, one RGB tile request, and one NDVI statistics request. | Pending first user — unauthenticated product checks correctly return HTTP `401` because `AUTH_MODE=enabled`; run `scripts/smoke-test.py --login` after creating/provisioning a staging user. | 2026-06-11 |
 | TASK-077 | From outside the host, verify ports `5432`, `9000`, `9001`, `8080`, and `8000` are refused or filtered on the staging public IP. | Yes — rechecked after staging deployment on 2026-06-11; all five private ports remained closed or filtered on `20.219.3.35`. | 2026-06-11 |
 | TASK-078 | Perform one staging rollback rehearsal by redeploying a previous known-good image tag and rerunning smoke checks. | | |
 
@@ -248,7 +248,7 @@ Phase 8 pre-deployment notes:
 - Environment-variable check validated 43 expected staging variables: none missing, none blank, no `CHANGE_ME` placeholders, and expected temporary HTTP values match.
 - GHCR access was later fixed on staging; image pre-pull succeeded for all Akasha and upstream images.
 - First staging deploy succeeded and reached healthy status. App schema migration succeeded after `POSTGRES_PASSWORD_URLENCODED` was added and the stack redeployed.
-- Product smoke checks require authentication on staging. The unauthenticated smoke script passed Slice 0 health endpoints and returned expected HTTP `401` for product endpoints until the first staging user is bootstrapped and `--login` smoke mode can be used.
+- Product smoke checks require authentication on staging. The unauthenticated smoke script passed Slice 0 health endpoints and returned expected HTTP `401` for product endpoints until the first staging user is created/provisioned and `--login` smoke mode can be used.
 - Post-deploy unauthenticated health checks passed for `/health`, `/api/health`, and `/api/_skeleton/services`; private service ports stayed externally closed/filtered.
 
 ### Implementation Phase 9
@@ -268,7 +268,7 @@ Phase 8 pre-deployment notes:
 | TASK-087 | Create Docker Compose resource `akasha-production-compose` using the same `infra/selfhosted/coolify-compose.yml`. | | |
 | TASK-088 | Enter production environment variables in Coolify using production-only secrets. | | |
 | TASK-089 | Deploy production only with the exact Git SHA image tag that passed staging. | | |
-| TASK-090 | Run production app schema migration, required verification jobs, first admin bootstrap, authenticated smoke checks, private-port checks, and backup validation before production acceptance. | | |
+| TASK-090 | Run production app schema migration, required verification jobs, first-user provisioning/sign-up, authenticated smoke checks, private-port checks, and backup validation before production acceptance. | | |
 
 ## 3. Alternatives
 

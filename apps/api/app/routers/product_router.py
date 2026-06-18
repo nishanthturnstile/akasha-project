@@ -14,6 +14,7 @@ Minimal product surface needed to verify the raster proof path end-to-end:
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 import os
 import time
 from datetime import date, timedelta
@@ -180,13 +181,20 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     dates = catalog.list_dates(source_id)
     selectable_dates = [d for d in dates if bool(d.get("tileAvailable", True))]
     date_pool = selectable_dates or dates
+    map_display_modes = list(source.get("mapDisplayModes", source["displayModes"]))
+    default_map_display_mode = str(
+        source.get("defaultMapDisplayMode", source["defaultDisplayMode"])
+    )
     if not date_pool:
-        display_mode = source["defaultDisplayMode"]
+        display_mode = default_map_display_mode
         return {
             "sourceId": source_id,
             "acquisitionDate": None,
             "displayMode": display_mode,
             "displayModes": source["displayModes"],
+            "defaultDisplayMode": source["defaultDisplayMode"],
+            "mapDisplayModes": map_display_modes,
+            "defaultMapDisplayMode": default_map_display_mode,
             "kind": source["kind"],
             "tileUrlTemplate": None,
             "bounds": None,
@@ -204,14 +212,22 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     date = next((d for d in date_pool if d["isLatestUsable"]), date_pool[0])
     acquisition_date = date["acquisitionDate"]
     items = catalog.items_for_date(source_id, acquisition_date)
-    display_mode = source["defaultDisplayMode"]
+    display_mode = default_map_display_mode
+    tile_url_template = (
+        None
+        if display_mode in catalog.supported_indices(source_id)
+        else catalog.tile_url_template(source_id, acquisition_date)
+    )
     return {
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
         "displayMode": display_mode,
         "displayModes": source["displayModes"],
+        "defaultDisplayMode": source["defaultDisplayMode"],
+        "mapDisplayModes": map_display_modes,
+        "defaultMapDisplayMode": default_map_display_mode,
         "kind": source["kind"],
-        "tileUrlTemplate": catalog.tile_url_template(source_id, acquisition_date),
+        "tileUrlTemplate": tile_url_template,
         "bounds": catalog.merged_bbox(items),
         "minzoom": 8,
         "maxzoom": 14,
@@ -258,12 +274,15 @@ async def _render_rgb_tile(
             availableBands=assets.get("bandNames", []),
         ) from exc
     if len(assets_for_date) == 1:
-        url = tiles.build_rgb_tile_url(
-            analytic_href=assets["analyticHref"],
-            rgb_positions=positions,
-            z=z,
-            x=x,
-            y=y,
+        body, content_type = await anyio.to_thread.run_sync(
+            partial(
+                tiles.render_rgb_tile,
+                analytic_href=assets["analyticHref"],
+                rgb_positions=positions,
+                z=z,
+                x=x,
+                y=y,
+            )
         )
     else:
         url = tiles.build_mosaic_rgb_tile_url(
@@ -273,7 +292,7 @@ async def _render_rgb_tile(
             x=x,
             y=y,
         )
-    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+        body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
 
 
@@ -389,12 +408,15 @@ async def _render_fcc_tile(
         ) from exc
 
     if len(assets_for_date) == 1:
-        url = tiles.build_rgb_tile_url(
-            analytic_href=assets["analyticHref"],
-            rgb_positions=positions,
-            z=z,
-            x=x,
-            y=y,
+        body, content_type = await anyio.to_thread.run_sync(
+            partial(
+                tiles.render_rgb_tile,
+                analytic_href=assets["analyticHref"],
+                rgb_positions=positions,
+                z=z,
+                x=x,
+                y=y,
+            )
         )
     else:
         url = tiles.build_mosaic_rgb_tile_url(
@@ -404,7 +426,7 @@ async def _render_fcc_tile(
             x=x,
             y=y,
         )
-    body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
+        body, content_type = await anyio.to_thread.run_sync(tiles.fetch_tile, url)
     return Response(content=body, media_type=content_type)
 
 
@@ -432,7 +454,7 @@ async def _render_index_tile(
             assets.get("bandRoleMapping", {}),
             index_def,
             scale=float(assets.get("scale", 0.0001)),
-            offset=float(assets.get("offset", -0.1)),
+            offset=float(assets.get("offset", 0.0)),
         )
     except KeyError as exc:
         raise upstream_error(

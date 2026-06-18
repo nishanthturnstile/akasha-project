@@ -382,6 +382,8 @@ def test_sources_endpoint_contract():
     # FCC base imagery + optical index display modes (EOS-style LAYER picker).
     assert rs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert rs["defaultDisplayMode"] == "FCC"
+    assert rs["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert rs["defaultMapDisplayMode"] == "NDVI"
     assert [g["label"] for g in rs["layerGroups"]] == [
         "Imagery",
         "Vegetation Indices",
@@ -393,9 +395,29 @@ def test_sources_endpoint_contract():
     assert rs["metricsProvisional"] is True
     assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
     assert sources["resourcesat-2a-awifs-boa"]["analysisLevel"] == "regional"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["analysisLevel"] == "context"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["supportedIndices"] == []
+    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "active"
+    liss4 = catalog.source_payload("resourcesat-2a-liss4-mx70-l2")
+    assert liss4["availabilityStatus"] == "active"
+    assert liss4["gatedReason"] is None
+    assert liss4["analysisLevel"] == "field"
+    assert liss4["supportedIndices"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert "NDMI" not in liss4["supportedIndices"]
+    assert "NDRE" not in liss4["supportedIndices"]
+    assert liss4["bandRoleMapping"] == {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4"}
+    assert liss4["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert liss4["mapDisplayModes"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert liss4["defaultMapDisplayMode"] == "NDVI"
+    assert [g["label"] for g in liss4["layerGroups"]] == [
+        "Imagery",
+        "Vegetation Indices",
+        "Water Index",
+    ]
+    assert liss4["maskMethod"] == "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)"
+    assert liss4["resolutionMeters"] == 5.8
+    assert liss4["metricsProvisional"] is True
+    assert "ISRO" in liss4["attribution"]
+    assert "NRSC" in liss4["attribution"]
+    assert "Bhoonidhi" in liss4["attribution"]
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["availabilityStatus"] == "gated"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
@@ -442,7 +464,6 @@ def test_phase5_gated_collection_contracts_are_loadable():
 
     for source_id in (
         "resourcesat-2a-awifs-boa",
-        "resourcesat-2a-liss4-mx70-l2",
         "eos-06-ocm-lac-ndvi-8day-360m",
         "irs-1c-liss3-archive",
         "eos-04-sar-mrs-l2b",
@@ -452,6 +473,54 @@ def test_phase5_gated_collection_contracts_are_loadable():
         collection = catalog.get_collection(source_id)
         assert collection["id"] == source_id
         assert collection.get("akasha:availability_status") == "gated"
+
+
+def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
+    from app.raster import catalog_resolver as catalog
+
+    source_id = "resourcesat-2a-liss4-mx70-l2"
+    collection = catalog.get_collection(source_id)
+    item = catalog.list_items(source_id)[0]
+
+    assert collection["id"] == source_id
+    assert collection["summaries"]["instruments"] == ["liss-4"]
+    assert collection["summaries"]["gsd"] == [5.8]
+    assert collection["akasha:analysis_level"] == "field"
+    assert collection["akasha:supported_indices"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert collection["akasha:display_modes"] == ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert collection["akasha:fcc_role_order"] == ["NIR", "RED", "GREEN"]
+    assert collection["akasha:band_role_mapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+    }
+    assert collection["akasha:reflectance"] == {
+        "scale": 0.0001,
+        "offset": 0,
+        "background_value": 0,
+        "nodata_policy": "all-band-background-or-warp-gap",
+        "note": "LISS-4 L2 reflectance metadata is provisional until staging radiometry validation.",
+    }
+    analytic = collection["item_assets"]["analytic"]
+    assert [band["name"] for band in analytic["eo:bands"]] == ["BAND2", "BAND3", "BAND4"]
+    assert len(analytic["raster:bands"]) == 3
+    assert [c["value"] for c in collection["item_assets"]["mask"]["classification:classes"]] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+    ]
+
+    assert item["collection"] == source_id
+    assert item["properties"]["akasha:composite"] is True
+    assert item["properties"]["akasha:aoi_id"] == "bangalore-60km"
+    assert item["properties"]["proj:epsg"] == 32643
+    assert item["properties"]["akasha:composite_resolution_meters"] == 5.8
+    assert item["assets"]["analytic"]["href"].startswith(
+        "s3://akasha-cogs/resourcesat-2a-liss4-mx70-l2/composite/bangalore-60km/"
+    )
+    assert item["assets"]["mask"]["href"].endswith("/mask.tif")
 
 
 def test_latest_items_for_empty_registered_source_returns_typed_error(monkeypatch):
@@ -510,10 +579,8 @@ def test_layers_default_tile_template_is_same_origin_api_route():
     body = r.json()
     assert body["sourceId"] == "resourcesat-2a-liss3-boa"
     assert body["acquisitionDate"] == "2026-03-19"
-    assert body["displayMode"] == "FCC"
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
-    )
+    assert body["displayMode"] == "NDVI"
+    assert body["tileUrlTemplate"] is None
 
 
 def _stac_item(item_id, acquisition_date, bbox, analytic_href, scl_href, usable=80.0):
@@ -984,9 +1051,8 @@ def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite
     body = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa").json()
 
     assert body["acquisitionDate"] == "2026-04-18"
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/resourcesat-2a-liss3-boa/2026-04-18/FCC/{z}/{x}/{y}.png"
-    )
+    assert body["displayMode"] == "NDVI"
+    assert body["tileUrlTemplate"] is None
 
 
 def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_missing(
@@ -1128,15 +1194,16 @@ def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
     assert body["cloudMaskedPercent"] is None
 
 
-def test_layers_default_supports_resourcesat_fcc():
+def test_layers_default_uses_resourcesat_ndvi_overlay_mode():
     r = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa")
     assert r.status_code == 200
     body = r.json()
     assert body["sourceId"] == "resourcesat-2a-liss3-boa"
-    assert body["displayMode"] == "FCC"
-    assert body["tileUrlTemplate"] == (
-        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
-    )
+    assert body["displayMode"] == "NDVI"
+    assert body["defaultDisplayMode"] == "FCC"
+    assert body["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert body["defaultMapDisplayMode"] == "NDVI"
+    assert body["tileUrlTemplate"] is None
 
 
 def test_context_source_default_layer_uses_declared_display_asset(monkeypatch):
@@ -1236,20 +1303,22 @@ def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
         ],
     )
 
-    def fake_fetch_tile(url):
-        captured["url"] = url
+    def fake_render_rgb_tile(**kwargs):
+        captured.update(kwargs)
         return b"png-bytes", "image/png"
 
-    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+    monkeypatch.setattr(tiles, "render_rgb_tile", fake_render_rgb_tile)
 
     r = client.get("/api/tiles/sentinel-2-l2a/2026-01-15/rgb/3/4/5.png")
     assert r.status_code == 200
     assert r.content == b"png-bytes"
-    assert captured["url"] == (
-        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
-        "url=s3%3A%2F%2Fakasha-cogs%2Fa%2Fanalytic.tif&bidx=1&bidx=8&bidx=9&"
-        "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
-    )
+    assert captured == {
+        "analytic_href": "s3://akasha-cogs/a/analytic.tif",
+        "rgb_positions": [1, 8, 9],
+        "z": 3,
+        "x": 4,
+        "y": 5,
+    }
 
 
 def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
@@ -1279,20 +1348,22 @@ def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
         ],
     )
 
-    def fake_fetch_tile(url):
-        captured["url"] = url
+    def fake_render_rgb_tile(**kwargs):
+        captured.update(kwargs)
         return b"png-bytes", "image/png"
 
-    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
+    monkeypatch.setattr(tiles, "render_rgb_tile", fake_render_rgb_tile)
 
     r = client.get("/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/3/4/5.png")
     assert r.status_code == 200
     assert r.content == b"png-bytes"
-    assert captured["url"] == (
-        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
-        "url=s3%3A%2F%2Fakasha-cogs%2Fresourcesat%2Fanalytic.tif&bidx=3&bidx=2&bidx=1&"
-        "rescale=0%2C3000&rescale=0%2C3000&rescale=0%2C3000"
-    )
+    assert captured == {
+        "analytic_href": "s3://akasha-cogs/resourcesat/analytic.tif",
+        "rgb_positions": [3, 2, 1],
+        "z": 3,
+        "x": 4,
+        "y": 5,
+    }
 
 
 def test_ndvi_context_tile_route_uses_declared_context_asset(monkeypatch):

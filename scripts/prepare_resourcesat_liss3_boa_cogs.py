@@ -29,22 +29,55 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ID = "resourcesat-2a-liss3-boa"
 BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS3_BOA"
+LISS4_SOURCE_ID = "resourcesat-2a-liss4-mx70-l2"
+LISS4_BHOONIDHI_COLLECTION = "ResourceSat-2A_LISS4-MX70_L2"
 AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
 AWIFS_BHOONIDHI_COLLECTION = "ResourceSat-2A_AWIFS_BOA"
+LISS3_ANALYTIC_BANDS: tuple[tuple[str, str, str], ...] = (
+    ("BAND2", "GREEN", "Green"),
+    ("BAND3", "RED", "Red"),
+    ("BAND4", "NIR", "Near infrared"),
+    ("BAND5", "SWIR1", "Short-wave infrared 1"),
+)
+LISS4_ANALYTIC_BANDS: tuple[tuple[str, str, str], ...] = (
+    ("BAND2", "GREEN", "Green"),
+    ("BAND3", "RED", "Red"),
+    ("BAND4", "NIR", "Near infrared"),
+)
 SOURCE_PROFILES = {
     SOURCE_ID: {
         "collection": BHOONIDHI_COLLECTION,
         "label": "LISS-3",
         "resolution_meters": 24,
+        "analytic_bands": LISS3_ANALYTIC_BANDS,
+        "reflectance_scale": 0.0001,
+        "reflectance_offset": 0.0,
+        "mask_builder": "4band",
         "mask_method": (
             "Akasha threshold mask v1 (no native quality layer found in validated "
             "LISS-3 BOA sample; provisional)."
+        ),
+    },
+    LISS4_SOURCE_ID: {
+        "collection": LISS4_BHOONIDHI_COLLECTION,
+        "label": "LISS-4",
+        "resolution_meters": 5.8,
+        "analytic_bands": LISS4_ANALYTIC_BANDS,
+        "reflectance_scale": 0.0001,
+        "reflectance_offset": 0.0,
+        "mask_builder": "3band",
+        "mask_method": (
+            "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)."
         ),
     },
     AWIFS_SOURCE_ID: {
         "collection": AWIFS_BHOONIDHI_COLLECTION,
         "label": "AWiFS",
         "resolution_meters": 56,
+        "analytic_bands": LISS3_ANALYTIC_BANDS,
+        "reflectance_scale": 0.0001,
+        "reflectance_offset": 0.0,
+        "mask_builder": "4band",
         "mask_method": (
             "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
             "(pending AWiFS-specific native quality-layer validation; provisional)."
@@ -79,12 +112,23 @@ def mask_method_for_source(source_id: str) -> str:
     return str(method or MASK_METHOD)
 
 
-ANALYTIC_BANDS: tuple[tuple[str, str, str], ...] = (
-    ("BAND2", "GREEN", "Green"),
-    ("BAND3", "RED", "Red"),
-    ("BAND4", "NIR", "Near infrared"),
-    ("BAND5", "SWIR1", "Short-wave infrared 1"),
-)
+ANALYTIC_BANDS = LISS3_ANALYTIC_BANDS
+
+
+def analytic_bands_for_source(source_id: str) -> tuple[tuple[str, str, str], ...]:
+    return tuple(source_profile(source_id).get("analytic_bands") or ANALYTIC_BANDS)
+
+
+def band_role_mapping_for_source(source_id: str) -> dict[str, str]:
+    return {role: band for band, role, _description in analytic_bands_for_source(source_id)}
+
+
+def reflectance_scale_for_source(source_id: str) -> float:
+    return float(source_profile(source_id).get("reflectance_scale", REFLECTANCE_SCALE))
+
+
+def reflectance_offset_for_source(source_id: str) -> float:
+    return float(source_profile(source_id).get("reflectance_offset", REFLECTANCE_OFFSET))
 
 MASK_CLASSES = [
     {"value": 0, "name": "nodata", "description": "No data / all-band gap", "nodata": True},
@@ -218,10 +262,11 @@ def acquisition_date_from_datetime(value: str) -> str:
     return value[:10]
 
 
-def parse_band_meta(path: Path) -> ResourceSatMeta:
+def parse_band_meta(path: Path, *, source_id: str = SOURCE_ID) -> ResourceSatMeta:
     raw: dict[str, str] = {}
     background_values: dict[str, int] = {}
     valid_ranges: dict[str, tuple[float, float]] = {}
+    analytic_bands = analytic_bands_for_source(source_id)
     for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -235,7 +280,7 @@ def parse_band_meta(path: Path) -> ResourceSatMeta:
         normalized_key = re.sub(r"[^A-Z0-9]+", "_", key.strip().upper()).strip("_")
         raw[normalized_key] = value.strip()
 
-    for band, _role, _description in ANALYTIC_BANDS:
+    for band, _role, _description in analytic_bands:
         for suffix in ("BACKGROUND", "BACKGROUND_VALUE", "FILL", "FILL_VALUE", "NODATA"):
             value = raw.get(f"{band}_{suffix}") or raw.get(f"{suffix}_{band}")
             if value is not None:
@@ -268,7 +313,7 @@ def parse_band_meta(path: Path) -> ResourceSatMeta:
             ("VALID_MAX", "MAX", "DN_MAX"),
         )
     if default_valid_range is not None:
-        for band, _role, _description in ANALYTIC_BANDS:
+        for band, _role, _description in analytic_bands:
             valid_ranges.setdefault(band, default_valid_range)
     acquisition_datetime = _first_meta(raw, "ACQUISITION_DATETIME", "DATETIME", "DATE")
     if acquisition_datetime:
@@ -583,6 +628,111 @@ def build_mask_array(
     return mask
 
 
+def build_mask_array_3band(
+    np: Any,
+    analytic: Any,
+    *,
+    background_values: dict[str, int] | None = None,
+    valid_ranges: dict[str, tuple[float, float]] | None = None,
+    scale: float = REFLECTANCE_SCALE,
+    offset: float = REFLECTANCE_OFFSET,
+    water_ndwi_threshold: float = 0.20,
+    water_nir_max: float = 0.20,
+    cloud_brightness_threshold: float = 0.32,
+    cloud_ndvi_max: float = 0.20,
+    shadow_threshold: float = 0.08,
+) -> Any:
+    """Return LISS-4 mask codes: 0 gap, 1 valid, 2 cloud, 3 shadow, 4 water."""
+    background_values = background_values or {}
+    valid_ranges = valid_ranges or {}
+    data = np.asarray(analytic)
+    expected_bands = LISS4_ANALYTIC_BANDS
+    if data.shape[0] != len(expected_bands):
+        raise ValueError(f"expected {len(expected_bands)} analytic bands, got {data.shape[0]}")
+    gap_parts = []
+    for index, (band_name, _role, _description) in enumerate(expected_bands):
+        band_gap = data[index] == background_values.get(band_name, NODATA_DN)
+        valid_range = valid_ranges.get(band_name)
+        if valid_range is not None:
+            lower, upper = valid_range
+            band_gap = band_gap | (data[index] < lower) | (data[index] > upper)
+        gap_parts.append(band_gap)
+    gap = np.logical_and.reduce(gap_parts)
+
+    reflectance = data.astype("float32") * float(scale) + float(offset)
+    green, red, nir = reflectance
+    ndwi_denominator = green + nir
+    ndwi = np.zeros_like(green, dtype="float32")
+    np.divide(
+        green - nir,
+        ndwi_denominator,
+        out=ndwi,
+        where=np.abs(ndwi_denominator) > 1e-6,
+    )
+    ndvi_denominator = nir + red
+    ndvi = np.zeros_like(nir, dtype="float32")
+    np.divide(
+        nir - red,
+        ndvi_denominator,
+        out=ndvi,
+        where=np.abs(ndvi_denominator) > 1e-6,
+    )
+
+    brightness = (green + red + nir) / 3.0
+    water = (ndwi >= water_ndwi_threshold) & (nir <= water_nir_max) & ~gap
+    cloud = (
+        (brightness >= cloud_brightness_threshold)
+        & (ndvi <= cloud_ndvi_max)
+        & ~gap
+        & ~water
+    )
+    shadow = (
+        (green <= shadow_threshold)
+        & (red <= shadow_threshold)
+        & (nir <= shadow_threshold)
+        & ~gap
+        & ~water
+        & ~cloud
+    )
+
+    mask = np.ones(data.shape[1:], dtype="uint8")
+    mask[gap] = 0
+    mask[water] = 4
+    mask[cloud] = 2
+    mask[shadow] = 3
+    return mask
+
+
+def build_mask_array_for_source(
+    np: Any,
+    analytic: Any,
+    *,
+    source_id: str,
+    background_values: dict[str, int] | None = None,
+    valid_ranges: dict[str, tuple[float, float]] | None = None,
+    scale: float = REFLECTANCE_SCALE,
+    offset: float = REFLECTANCE_OFFSET,
+) -> Any:
+    builder = source_profile(source_id).get("mask_builder", "4band")
+    if builder == "3band":
+        return build_mask_array_3band(
+            np,
+            analytic,
+            background_values=background_values,
+            valid_ranges=valid_ranges,
+            scale=scale,
+            offset=offset,
+        )
+    return build_mask_array(
+        np,
+        analytic,
+        background_values=background_values,
+        valid_ranges=valid_ranges,
+        scale=scale,
+        offset=offset,
+    )
+
+
 def build_analytic_intermediate(
     *,
     deps: dict[str, Any],
@@ -595,6 +745,7 @@ def build_analytic_intermediate(
     rasterio = deps["rasterio"]
     Resampling = deps["Resampling"]
     reproject = deps["reproject"]
+    analytic_bands = analytic_bands_for_source(source_id)
 
     if output_path.exists() and not overwrite:
         return output_path
@@ -602,12 +753,12 @@ def build_analytic_intermediate(
     if output_path.exists():
         output_path.unlink()
 
-    reference_path = find_band_asset(product_dir, "BAND2")
+    reference_path = find_band_asset(product_dir, analytic_bands[0][0])
     with rasterio.open(reference_path) as reference:
         profile = reference.profile.copy()
         profile.update(
             driver="GTiff",
-            count=len(ANALYTIC_BANDS),
+            count=len(analytic_bands),
             dtype="uint16",
             nodata=NODATA_DN,
             tiled=True,
@@ -618,7 +769,7 @@ def build_analytic_intermediate(
             BIGTIFF="IF_SAFER",
         )
         with rasterio.open(output_path, "w", **profile) as dst:
-            for band_index, (band_name, role, description) in enumerate(ANALYTIC_BANDS, start=1):
+            for band_index, (band_name, role, description) in enumerate(analytic_bands, start=1):
                 source_path = find_band_asset(product_dir, band_name)
                 with rasterio.open(source_path) as src:
                     if same_grid(src, reference):
@@ -647,9 +798,9 @@ def build_analytic_intermediate(
                     )
             dst.update_tags(
                 AKASHA_SOURCE_ID=source_id,
-                AKASHA_BAND_ORDER=",".join(band for band, _role, _desc in ANALYTIC_BANDS),
-                AKASHA_REFLECTANCE_SCALE=str(REFLECTANCE_SCALE),
-                AKASHA_REFLECTANCE_OFFSET=str(REFLECTANCE_OFFSET),
+                AKASHA_BAND_ORDER=",".join(band for band, _role, _desc in analytic_bands),
+                AKASHA_REFLECTANCE_SCALE=str(reflectance_scale_for_source(source_id)),
+                AKASHA_REFLECTANCE_OFFSET=str(reflectance_offset_for_source(source_id)),
                 AREA_OR_POINT="Area",
             )
     return output_path
@@ -674,9 +825,10 @@ def build_mask_intermediate(
 
     with rasterio.open(analytic_path) as src:
         analytic = src.read()
-        mask = build_mask_array(
+        mask = build_mask_array_for_source(
             np,
             analytic,
+            source_id=source_id,
             background_values=meta.background_values,
             valid_ranges=meta.valid_ranges,
             scale=meta.scale,
@@ -764,11 +916,12 @@ def validate_resourcesat_cogs(
     validate_cog(deps, mask_path)
 
     expected_resolution = float(source_profile(source_id)["resolution_meters"])
+    expected_band_count = len(analytic_bands_for_source(source_id))
     allowed_mask_values = {int(item["value"]) for item in MASK_CLASSES}
     problems: list[str] = []
     with deps["rasterio"].open(analytic_path) as analytic, deps["rasterio"].open(mask_path) as mask:
-        if analytic.count != len(ANALYTIC_BANDS):
-            problems.append(f"analytic band count {analytic.count} != {len(ANALYTIC_BANDS)}")
+        if analytic.count != expected_band_count:
+            problems.append(f"analytic band count {analytic.count} != {expected_band_count}")
         if mask.count != 1:
             problems.append(f"mask band count {mask.count} != 1")
         if analytic.crs is None or mask.crs is None:
@@ -876,6 +1029,8 @@ def write_manifest(
     analytic_summary = raster_summary(deps, paths.analytic_cog)
     mask_summary = raster_summary(deps, paths.mask_cog)
     mask_method = mask_method_for_source(source_id)
+    analytic_bands = analytic_bands_for_source(source_id)
+    band_role_mapping = band_role_mapping_for_source(source_id)
     payload: dict[str, Any] = {
         "source_id": source_id,
         "collection": collection,
@@ -888,8 +1043,8 @@ def write_manifest(
         "row": paths.product.row,
         "source_zip": paths.product.source_path.as_posix(),
         "product_dir": paths.product_dir.as_posix(),
-        "analytic_band_order": [band for band, _role, _description in ANALYTIC_BANDS],
-        "band_role_mapping": {role: band for band, role, _description in ANALYTIC_BANDS},
+        "analytic_band_order": [band for band, _role, _description in analytic_bands],
+        "band_role_mapping": band_role_mapping,
         "mask_method": mask_method,
         "classification_classes": MASK_CLASSES,
         "akasha:metrics_provisional": True,
@@ -912,7 +1067,7 @@ def write_manifest(
         "properties": {
             "akasha:mask_method": mask_method,
             "akasha:metrics_provisional": True,
-            "akasha:band_role_mapping": {role: band for band, role, _description in ANALYTIC_BANDS},
+            "akasha:band_role_mapping": band_role_mapping,
         },
     }
     if paths.product.bbox:
@@ -997,7 +1152,7 @@ def prepare_one(
         resolve_repo_path(args.work_dir),
         overwrite=args.reextract,
     )
-    meta = parse_band_meta(find_band_meta(product_dir))
+    meta = parse_band_meta(find_band_meta(product_dir), source_id=args.source)
     path_value = product.path or meta.path
     row_value = product.row or meta.row
     if not path_value or not row_value:

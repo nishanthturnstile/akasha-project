@@ -134,12 +134,33 @@ RESOURCESAT_LISS3_EO_BANDS = [
     },
 ]
 
+RESOURCESAT_LISS4_EO_BANDS = [
+    {
+        "name": "BAND2",
+        "common_name": "green",
+        "center_wavelength": 0.555,
+        "full_width_half_max": 0.07,
+    },
+    {
+        "name": "BAND3",
+        "common_name": "red",
+        "center_wavelength": 0.655,
+        "full_width_half_max": 0.07,
+    },
+    {
+        "name": "BAND4",
+        "common_name": "nir",
+        "center_wavelength": 0.815,
+        "full_width_half_max": 0.11,
+    },
+]
+
 RESOURCESAT_MASK_CLASSES = [
     {"value": 0, "name": "nodata", "description": "No data / outside scene", "nodata": True},
     {"value": 1, "name": "valid", "description": "Valid clear land or water pixel"},
     {"value": 2, "name": "cloud", "description": "Akasha threshold-derived cloud"},
     {"value": 3, "name": "cloud_shadow", "description": "Akasha threshold-derived shadow"},
-    {"value": 4, "name": "all_band_gap", "description": "All analytic bands are empty or invalid"},
+    {"value": 4, "name": "water", "description": "Akasha threshold-derived water"},
 ]
 
 RESOURCESAT_BAND_ROLE_MAPPING = {
@@ -147,6 +168,20 @@ RESOURCESAT_BAND_ROLE_MAPPING = {
     "RED": "BAND3",
     "NIR": "BAND4",
     "SWIR1": "BAND5",
+}
+RESOURCESAT_BAND_ROLE_MAPPING_BY_SOURCE = {
+    config.RESOURCESAT_LISS3_COLLECTION_ID: RESOURCESAT_BAND_ROLE_MAPPING,
+    config.RESOURCESAT_LISS4_COLLECTION_ID: {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+    },
+    config.RESOURCESAT_AWIFS_COLLECTION_ID: RESOURCESAT_BAND_ROLE_MAPPING,
+}
+RESOURCESAT_EO_BANDS_BY_SOURCE = {
+    config.RESOURCESAT_LISS3_COLLECTION_ID: RESOURCESAT_LISS3_EO_BANDS,
+    config.RESOURCESAT_LISS4_COLLECTION_ID: RESOURCESAT_LISS4_EO_BANDS,
+    config.RESOURCESAT_AWIFS_COLLECTION_ID: RESOURCESAT_LISS3_EO_BANDS,
 }
 
 RESOURCESAT_MASK_METHOD = (
@@ -162,6 +197,9 @@ RESOURCESAT_MASK_METHOD_BY_SOURCE = {
         "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
         "(pending AWiFS-specific native quality-layer validation; provisional)."
     ),
+    config.RESOURCESAT_LISS4_COLLECTION_ID: (
+        "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)."
+    ),
 }
 
 RESOURCESAT_BOA_SOURCE_META = {
@@ -174,6 +212,11 @@ RESOURCESAT_BOA_SOURCE_META = {
         "instrument": "awifs",
         "label": "AWiFS",
         "default_gsd": 56,
+    },
+    config.RESOURCESAT_LISS4_COLLECTION_ID: {
+        "instrument": "liss-4",
+        "label": "LISS-4",
+        "default_gsd": 5.8,
     },
 }
 
@@ -624,12 +667,15 @@ def _resourcesat_raster_bands(
     meta: dict[str, Any],
     default_count: int,
     asset: str,
+    default_spatial_resolution: float = 24,
 ) -> list[dict[str, Any]]:
     existing = _first(meta.get("raster:bands"), meta.get("raster_bands"))
     if existing:
         return list(existing)
-    resolution = meta.get("resolution") or [24]
-    spatial_resolution = resolution[0] if isinstance(resolution, list) and resolution else 24
+    resolution = meta.get("resolution") or [default_spatial_resolution]
+    spatial_resolution = (
+        resolution[0] if isinstance(resolution, list) and resolution else default_spatial_resolution
+    )
     if asset == "analytic":
         return [
             {
@@ -680,6 +726,19 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
         props.get("akasha:mask_method"),
         RESOURCESAT_MASK_METHOD_BY_SOURCE.get(scene.source_id, RESOURCESAT_MASK_METHOD),
     )
+    source_band_role_mapping = RESOURCESAT_BAND_ROLE_MAPPING_BY_SOURCE.get(
+        scene.source_id, RESOURCESAT_BAND_ROLE_MAPPING
+    )
+    band_role_mapping = dict(
+        _first(
+            manifest.get("band_role_mapping"),
+            props.get("akasha:band_role_mapping"),
+            source_band_role_mapping,
+        )
+    )
+    eo_bands = RESOURCESAT_EO_BANDS_BY_SOURCE.get(
+        scene.source_id, RESOURCESAT_LISS3_EO_BANDS
+    )
 
     item_props: dict[str, Any] = {
         "datetime": scene.acquisition_datetime,
@@ -727,7 +786,7 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
             manifest.get("contributing_scenes"),
             props.get("akasha:contributing_scenes"),
         ),
-        "akasha:band_role_mapping": dict(RESOURCESAT_BAND_ROLE_MAPPING),
+        "akasha:band_role_mapping": band_role_mapping,
         "akasha:mask_asset": "mask",
         "akasha:mask_method": mask_method,
         "akasha:date_metrics_kind": "optical",
@@ -761,14 +820,20 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
         "href": f"s3://{config.BUCKET}/{scene.analytic_key}",
         "type": "image/tiff; application=geotiff; profile=cloud-optimized",
         "title": (
-            f"ResourceSat-2A {source_meta['label']} BOA analytic COG " "(BAND2/BAND3/BAND4/BAND5)"
+            f"ResourceSat-2A {source_meta['label']} BOA analytic COG "
+            f"({('/'.join(band['name'] for band in eo_bands))})"
         ),
         "roles": ["data", "reflectance"],
         "gsd": gsd,
         "eo:bands": (
-            manifest.get("eo_bands") or analytic.get("eo:bands") or RESOURCESAT_LISS3_EO_BANDS
+            manifest.get("eo_bands") or analytic.get("eo:bands") or eo_bands
         ),
-        "raster:bands": _resourcesat_raster_bands(analytic, 4, "analytic"),
+        "raster:bands": _resourcesat_raster_bands(
+            analytic,
+            len(eo_bands),
+            "analytic",
+            default_spatial_resolution=float(gsd),
+        ),
     }
     mask_asset: dict[str, Any] = {
         "href": f"s3://{config.BUCKET}/{scene.mask_key}",
@@ -776,7 +841,12 @@ def _build_resourcesat_boa_stac_item(manifest: dict[str, Any], scene: SceneIdent
         "title": "Akasha-generated provisional ResourceSat mask COG",
         "roles": ["metadata", "data-mask"],
         "gsd": gsd,
-        "raster:bands": _resourcesat_raster_bands(mask, 1, "mask"),
+        "raster:bands": _resourcesat_raster_bands(
+            mask,
+            1,
+            "mask",
+            default_spatial_resolution=float(gsd),
+        ),
         "classification:classes": (
             manifest.get("classification_classes")
             or mask.get("classification:classes")

@@ -80,6 +80,29 @@ def test_best_available_composite_prefers_most_recent_valid_pixel() -> None:
     ]
 
 
+def test_best_available_composite_accepts_liss4_three_band_scenes() -> None:
+    older_band = np.array([[10, 20], [30, 40]], dtype="uint16")
+    newer_band = np.array([[50, 60], [70, 80]], dtype="uint16")
+    older = AlignedScene(
+        scene_id="older-liss4",
+        acquisition_datetime="2026-03-05T00:00:00Z",
+        analytic=np.stack([older_band, older_band + 100, older_band + 200]),
+        mask=np.array([[1, 2], [0, 3]], dtype="uint8"),
+    )
+    newer = AlignedScene(
+        scene_id="newer-liss4",
+        acquisition_datetime="2026-03-19T00:00:00Z",
+        analytic=np.stack([newer_band, newer_band + 100, newer_band + 200]),
+        mask=np.array([[1, 1], [4, 0]], dtype="uint8"),
+    )
+
+    result = build_best_available_composite([newer, older])
+
+    assert result["analytic"].shape == (3, 2, 2)
+    assert result["analytic"][0].tolist() == [[50, 60], [70, 40]]
+    assert result["mask"].tolist() == [[1, 1], [4, 3]]
+
+
 def test_best_available_composite_keeps_masked_fallback_when_no_valid_scene_exists() -> None:
     first = _scene("first", "2026-03-05T00:00:00Z", [[10, 20]], [[2, 0]])
     second = _scene("second", "2026-03-19T00:00:00Z", [[50, 60]], [[3, 0]])
@@ -278,6 +301,85 @@ def test_build_resource_sat_composite_defaults_awifs_resolution(
     )
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert manifest["source_id"] == "resourcesat-2a-awifs-boa"
+
+
+def test_build_resource_sat_composite_defaults_liss4_resolution_and_band_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_grid_from_aoi(**kwargs):
+        captured["resolution"] = kwargs["resolution"]
+        return CompositeGrid.from_projected_bounds(
+            [799960, 1290192, 800024, 1290256],
+            crs="EPSG:32643",
+            resolution=kwargs["resolution"],
+        )
+
+    def fake_align_manifest_scene(**_kwargs):
+        band = np.full((2, 2), 100, dtype="uint16")
+        return AlignedScene(
+            scene_id="liss4-scene",
+            acquisition_datetime="2026-03-19T00:00:00Z",
+            analytic=np.stack([band, band + 10, band + 20]),
+            mask=np.ones((2, 2), dtype="uint8"),
+        )
+
+    def fake_write_intermediate_rasters(**kwargs):
+        captured["written_band_count"] = kwargs["analytic"].shape[0]
+        kwargs["analytic_path"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["analytic_path"].write_bytes(b"analytic")
+        kwargs["mask_path"].write_bytes(b"mask")
+
+    def fake_translate_to_cog(**kwargs):
+        kwargs["output_path"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["output_path"].write_bytes(b"cog")
+
+    def fake_write_composite_manifest(**kwargs):
+        captured["manifest_source_id"] = kwargs["source_id"]
+        kwargs["manifest_path"].write_text(
+            json.dumps(
+                {
+                    "source_id": kwargs["source_id"],
+                    "composite_resolution_meters": kwargs["grid"].resolution,
+                    "analytic_band_order": ["BAND2", "BAND3", "BAND4"],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(composite, "grid_from_aoi", fake_grid_from_aoi)
+    monkeypatch.setattr(composite, "align_manifest_scene", fake_align_manifest_scene)
+    monkeypatch.setattr(composite, "_write_intermediate_rasters", fake_write_intermediate_rasters)
+    monkeypatch.setattr(composite, "_translate_to_cog", fake_translate_to_cog)
+    monkeypatch.setattr(composite, "_write_composite_manifest", fake_write_composite_manifest)
+
+    result = composite.build_resource_sat_composite(
+        deps={},
+        manifest_paths=[tmp_path / "scene" / "prepare_manifest.json"],
+        aoi={"id": "test-aoi", "geometry": {"type": "Polygon", "coordinates": []}},
+        output_root=tmp_path / "rasters",
+        window_start="2026-03-01",
+        window_end="2026-03-31",
+        source_id="resourcesat-2a-liss4-mx70-l2",
+        overwrite=True,
+        skip_validation=True,
+    )
+
+    assert captured["resolution"] == 5.8
+    assert captured["written_band_count"] == 3
+    assert result.output_dir == (
+        tmp_path
+        / "rasters"
+        / "resourcesat-2a-liss4-mx70-l2"
+        / "composite"
+        / "test-aoi"
+        / "2026-03-19"
+    )
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    assert manifest["source_id"] == "resourcesat-2a-liss4-mx70-l2"
+    assert manifest["composite_resolution_meters"] == 5.8
+    assert manifest["analytic_band_order"] == ["BAND2", "BAND3", "BAND4"]
 
 
 def test_build_resource_sat_composite_accepts_aoi_grid_crs_alias(

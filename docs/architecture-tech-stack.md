@@ -302,7 +302,7 @@ by Akasha-owned data sources remain disabled or placeholder-only until native se
 |---|---|---|
 | Field management | Native `akasha.plots` + field AOI metadata | Add grouping, metadata, and import/export workflows without external mirrors. |
 | Scene timeline | pgSTAC/STAC query and seed fallback | Filter by field AOI, scene coverage, and cloud/valid-pixel metrics. |
-| Source-native and index display tiles | COG/TiTiler-backed same-origin `/api/tiles/*` routes | Keep ResourceSat FCC (`NIR,RED,GREEN`, `bidx=3,2,1`) as the production default and add optional native index overlays. |
+| Source-native and index display tiles | Same-origin `/api/tiles/*` scene routes plus BFF-rendered `/api/fields/{plotId}/overlay/*` field overlays | Keep the basemap as the cold-start map view; use ResourceSat as the default field analytics source with NDVI clipped to the selected field. |
 | Field analytics trend | BFF rasterio/rio-tiler statistics over STAC/COG assets | Broaden trend coverage as catalog density increases. |
 | Imagery export | BFF native CSV/GeoJSON selected-field exports | Add server-side GeoTIFF/vector exports without signed storage URLs in the browser. |
 | Weather forecast/history | Placeholder / unavailable in risk scoring | Add an Akasha-selected weather adapter normalized behind BFF routes. |

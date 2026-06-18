@@ -17,6 +17,7 @@ class FieldStatisticsRequest(ApiModel):
     acquisition_date: str | None = None
     index_type: str = DEFAULT_INDEX
     cloud_mask: CloudMaskOptions = Field(default_factory=CloudMaskOptions)
+    prefer_high_res: bool = True
 
 
 class FieldStatisticsResponse(ApiModel):
@@ -30,3 +31,9 @@ class FieldStatisticsResponse(ApiModel):
     statistics: IndexStatisticsModel
     pixel_counts: PixelCounts
     metadata: dict[str, Any]
+    # Best-resolution provenance (Phase D)
+    resolved_source_id: str | None = None
+    resolution_meters: float | None = None
+    enhanced: bool = False
+    basis_date: str | None = None
+    provenance_note: str | None = None

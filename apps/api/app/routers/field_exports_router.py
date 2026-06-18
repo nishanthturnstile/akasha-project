@@ -14,13 +14,13 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 
 from ..api_models import CloudMaskOptions
-from ..auth import CurrentTeam, get_current_team
+from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping
 from ..config import settings
 from ..raster import catalog_resolver as catalog
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from ..raster.indices import DEFAULT_INDEX
-from ..repositories import plots_repo
+from ..repositories import fields_repo
 from ..routers.analytics_router import (
     _field_statistics,
     _native_trend_response,
@@ -52,11 +52,11 @@ async def _run_blocking(func, *args, **kwargs):
         ) from exc
 
 
-async def _get_plot_or_404(plot_id: str, team_id: str | None = None) -> dict[str, Any]:
-    plot = await _run_blocking(plots_repo.get_plot, plot_id, team_id)
-    if plot is None:
-        raise not_found("Field not found.", code="FIELD_NOT_FOUND", plotId=plot_id)
-    return plot
+async def _get_field_or_404(field_id: str, user_id: str) -> dict[str, Any]:
+    field = await _run_blocking(fields_repo.get_field, field_id, user_id)
+    if field is None:
+        raise not_found("Field not found.", code="FIELD_NOT_FOUND", fieldId=field_id)
+    return field
 
 
 def _safe_filename(value: str) -> str:
@@ -234,9 +234,9 @@ async def export_field_index(
     clouds: bool = True,
     cloudShadows: bool = True,
     cirrus: bool = True,
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ):
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     acquisition_date = _required_acquisition_date(acquisitionDate)
     index_type = _normalize_index(indexType)
     cloud_mask = CloudMaskOptions(clouds=clouds, cloud_shadows=cloudShadows, cirrus=cirrus)
@@ -288,14 +288,14 @@ async def export_field_report_csv(
     clouds: bool = True,
     cloudShadows: bool = True,
     cirrus: bool = True,
-    team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ):
     default_start, default_end = _default_range()
     date_start = startDate or default_start
     date_end = endDate or default_end
     _validate_range(date_start, date_end)
 
-    plot = await _get_plot_or_404(plot_id, team.id)
+    plot = await _get_field_or_404(plot_id, user.id)
     index_type = _normalize_index(indexType)
     cloud_mask = CloudMaskOptions(clouds=clouds, cloud_shadows=cloudShadows, cirrus=cirrus)
     response = await _run_blocking(

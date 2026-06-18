@@ -33,6 +33,7 @@ interface LayerControlBarProps {
     cloudMask: CloudMaskOptions;
     onCloudMaskChange: (value: CloudMaskOptions) => void;
     cloudMaskDisabled?: boolean;
+    compareAvailable?: boolean;
     compareEnabled: boolean;
     onCompareEnabledChange: (next: boolean) => void;
     comparableDates: SceneDate[];
@@ -268,6 +269,7 @@ export function LayerControlBar({
     cloudMask,
     onCloudMaskChange,
     cloudMaskDisabled = false,
+    compareAvailable = true,
     compareEnabled,
     onCompareEnabledChange,
     comparableDates,
@@ -371,16 +373,18 @@ export function LayerControlBar({
             <span aria-hidden="true" className="h-5 w-px bg-border" />
 
             <div className="flex items-center gap-1" data-testid="layer-bar-cluster">
-                <CompareControl
-                    enabled={ compareEnabled }
-                    onEnabledChange={ onCompareEnabledChange }
-                    dates={ comparableDates }
-                    activeDate={ activeDate }
-                    compareDate={ compareDate }
-                    onCompareDateChange={ onCompareDateChange }
-                    blend={ blend }
-                    onBlendChange={ onBlendChange }
-                />
+                { compareAvailable && (
+                    <CompareControl
+                        enabled={ compareEnabled }
+                        onEnabledChange={ onCompareEnabledChange }
+                        dates={ comparableDates }
+                        activeDate={ activeDate }
+                        compareDate={ compareDate }
+                        onCompareDateChange={ onCompareDateChange }
+                        blend={ blend }
+                        onBlendChange={ onBlendChange }
+                    />
+                ) }
                 <CloudMaskPopover
                     value={ cloudMask }
                     onChange={ onCloudMaskChange }

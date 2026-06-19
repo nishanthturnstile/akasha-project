@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useExportFieldLeaderboardCsv, useFieldLeaderboard } from '@/lib/queries';
 import { fieldLabel } from '@/lib/fieldLabels';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { FieldLeaderboardFilters } from '@/types/api';
 import { DEFAULT_REPORT_COLUMNS, REPORT_COLUMNS } from '@/pages/reports/reportColumns';
 import { downloadFile, fmt, reportErrorMessage, valueForColumn } from '@/pages/reports/reportUtils';
@@ -42,13 +49,19 @@ export default function FieldLeaderboardPage() {
       <section className="mt-4 grid gap-3 rounded-xl border border-border/80 bg-card/90 p-4 md:grid-cols-5">
         <label className="text-sm text-muted-foreground">
           Index
-          <select
-            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground"
+          <Select
             value={ filters.indexType ?? 'NDVI' }
-            onChange={ (event) => setFilters((current) => ({ ...current, indexType: event.target.value })) }
+            onValueChange={ (value) => setFilters((current) => ({ ...current, indexType: value })) }
           >
-            { ['NDVI', 'NDRE', 'NDMI'].map((index) => <option key={ index }>{ index }</option>) }
-          </select>
+            <SelectTrigger className="mt-1 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              { ['NDVI', 'NDRE', 'NDMI'].map((index) => (
+                <SelectItem key={ index } value={ index }>{ index }</SelectItem>
+              )) }
+            </SelectContent>
+          </Select>
         </label>
         { ['groupName', 'cropType', 'variety', 'seasonLabel'].map((key) => (
           <label key={ key } className="text-sm text-muted-foreground">

@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { useDatasets, useUploadDataset } from '@/lib/queries';
 import { reportErrorMessage } from '@/pages/reports/reportUtils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { UploadedDataset } from '@/types/api';
 
 export default function DataManagerPage() {
@@ -22,11 +29,19 @@ export default function DataManagerPage() {
         <p className="mt-1 text-sm text-muted-foreground">Upload GeoJSON, SHP ZIP, or ISO-XML ZIP metadata. Max upload: 1 MiB in this demo build.</p>
       </section>
       <section className="mt-4 rounded-xl border border-border/80 bg-card/90 p-4">
-        <select className="rounded-md border border-border bg-background px-3 py-2" value={ datasetType } onChange={ (event) => setDatasetType(event.target.value as UploadedDataset['datasetType']) }>
-          <option value="geojson">GeoJSON</option>
-          <option value="shp_zip">SHP ZIP</option>
-          <option value="iso_xml">ISO-XML ZIP</option>
-        </select>
+        <Select
+          value={ datasetType }
+          onValueChange={ (value) => setDatasetType(value as UploadedDataset['datasetType']) }
+        >
+          <SelectTrigger className="w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="geojson">GeoJSON</SelectItem>
+            <SelectItem value="shp_zip">SHP ZIP</SelectItem>
+            <SelectItem value="iso_xml">ISO-XML ZIP</SelectItem>
+          </SelectContent>
+        </Select>
         <input className="ml-3" type="file" onChange={ (event) => void onFile(event.target.files?.[0]) } />
       </section>
       { error && <p className="mt-4 rounded-md border border-amber-500/40 p-3 text-sm text-amber-100">{ reportErrorMessage(error) }</p> }

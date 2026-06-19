@@ -1,6 +1,6 @@
 [Unit]
 Description=Akasha Bhoonidhi ResourceSat LISS-4 sync and composite refresh
-Documentation=docs/impl-plan/feature-resourcesat-liss4-best-resolution-1.md
+Documentation=file:/srv/akasha/docs/impl-plan/feature-resourcesat-liss4-best-resolution-1.md
 After=docker.service network-online.target
 Wants=network-online.target
 
@@ -17,4 +17,3 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-

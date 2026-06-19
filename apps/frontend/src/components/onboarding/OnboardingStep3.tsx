@@ -56,8 +56,16 @@ export default function OnboardingStep3() {
       await completeOnboarding.mutateAsync();
       // Clear onboarding session keys
       sessionStorage.removeItem(ONBOARDING_SEASON_KEY);
+      const storedIds = (() => {
+        try {
+          return JSON.parse(sessionStorage.getItem(ONBOARDING_FIELDS_KEY) ?? '[]') as string[];
+        } catch {
+          return [];
+        }
+      })();
+      const lastFieldId = storedIds[storedIds.length - 1];
       sessionStorage.removeItem(ONBOARDING_FIELDS_KEY);
-      navigate('/');
+      navigate(lastFieldId ? `/monitoring/field-analytics/field/${lastFieldId}` : '/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
     }

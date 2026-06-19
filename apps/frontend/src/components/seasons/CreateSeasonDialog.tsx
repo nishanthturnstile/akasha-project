@@ -16,7 +16,7 @@ interface Props {
 
 function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);

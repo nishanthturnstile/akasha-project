@@ -131,7 +131,7 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
     ],
-    { padding: 96, maxZoom: 16, duration: 650 },
+    { padding: 96, maxZoom: 18, duration: 650 },
   );
 }
 

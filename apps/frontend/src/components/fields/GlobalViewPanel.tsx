@@ -269,7 +269,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
                       onClick={() => {
                         if (btn.action === 'add-field') {
                           onClose();
-                          navigate('/monitoring/field-create');
+                          navigate(seasonId ? `/monitoring/field-create?seasonId=${seasonId}` : '/monitoring/field-create');
                         }
                       }}
                       className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors duration-fast"
@@ -308,7 +308,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
             type="button"
             onClick={ () => {
               onClose();
-              navigate('/monitoring/field-create');
+              navigate(seasonId ? `/monitoring/field-create?seasonId=${seasonId}` : '/monitoring/field-create');
             } }
             className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 active:bg-primary/80 transition-colors duration-fast"
           >

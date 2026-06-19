@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,12 +11,12 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { MapControls } from '@/components/map/MapControls';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { polygonAreaMeters } from '@/lib/measure';
-import { useConfig, useCreateField, useSeasons } from '@/lib/queries';
+import { useConfig, useCreateField, useSeasons, queryKeys } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 
 import type maplibregl from 'maplibre-gl';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
-import type { GeoJsonPosition, PlotGeometry } from '@/types/api';
+import type { Field, GeoJsonPosition, PlotGeometry } from '@/types/api';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 
 function toLngLatRing(ring: GeoJsonPosition[]): [number, number][] {
@@ -29,13 +30,16 @@ export default function FieldCreatePage() {
   const configQ = useConfig();
   const seasonsQ = useSeasons();
   const createFieldMutation = useCreateField();
+  const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [draftGeometry, setDraftGeometry] = useState<PlotGeometry | null>(null);
   const [fieldName, setFieldName] = useState('');
-  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const preselectedSeasonId = searchParams.get('seasonId');
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(preselectedSeasonId);
   const [createSeasonOpen, setCreateSeasonOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const drawResetKey = 0;
@@ -122,6 +126,7 @@ export default function FieldCreatePage() {
         areaHa: areaMeters / 10000,
         seasonIds: [selectedSeasonId],
       });
+      queryClient.setQueryData<Field[]>(queryKeys.fields, (old) => [...(old ?? []), created]);
       navigate(`/monitoring/field-analytics/field/${created.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save field';
@@ -145,48 +150,50 @@ export default function FieldCreatePage() {
         <h2 className="font-display text-lg font-semibold">Add field</h2>
       </div>
 
-      {/* Season selector bar */}
-      <div className="z-50 flex flex-col border-b border-border/60 bg-background/95">
-        <div className="flex items-center gap-3 px-4 py-2">
-          <label className="text-sm font-medium text-foreground shrink-0">Season</label>
-          { allSeasons.length === 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={ () => setCreateSeasonOpen(true) }
-            >
-              Create season
-            </Button>
+      {/* Season selector bar — hidden when a season is pre-selected from context */}
+      { !preselectedSeasonId && (
+        <div className="z-50 flex flex-col border-b border-border/60 bg-background/95">
+          <div className="flex items-center gap-3 px-4 py-2">
+            <label className="text-sm font-medium text-foreground shrink-0">Season</label>
+            { allSeasons.length === 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={ () => setCreateSeasonOpen(true) }
+              >
+                Create season
+              </Button>
+            ) }
+          </div>
+          { allSeasons.length > 0 && (
+            <ScrollArea className="max-h-32 border-t border-border/40">
+              <div className="flex flex-col gap-0.5 px-3 py-2">
+                { allSeasons.map((s) => (
+                  <button
+                    key={ s.id }
+                    type="button"
+                    onClick={ () => setSelectedSeasonId(selectedSeasonId === s.id ? null : s.id) }
+                    className={ cn(
+                      'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-fast',
+                      selectedSeasonId === s.id
+                        ? 'bg-primary/15 text-foreground font-medium'
+                        : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+                    ) }
+                  >
+                    <div className={ cn(
+                      'size-3 shrink-0 rounded-full border-2',
+                      selectedSeasonId === s.id
+                        ? 'border-primary bg-primary'
+                        : 'border-muted-foreground/40',
+                    ) } />
+                    <span className="truncate">{ s.name }</span>
+                  </button>
+                )) }
+              </div>
+            </ScrollArea>
           ) }
         </div>
-        { allSeasons.length > 0 && (
-          <ScrollArea className="max-h-32 border-t border-border/40">
-            <div className="flex flex-col gap-0.5 px-3 py-2">
-              { allSeasons.map((s) => (
-                <button
-                  key={ s.id }
-                  type="button"
-                  onClick={ () => setSelectedSeasonId(selectedSeasonId === s.id ? null : s.id) }
-                  className={ cn(
-                    'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-fast',
-                    selectedSeasonId === s.id
-                      ? 'bg-primary/15 text-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
-                  ) }
-                >
-                  <div className={ cn(
-                    'size-3 shrink-0 rounded-full border-2',
-                    selectedSeasonId === s.id
-                      ? 'border-primary bg-primary'
-                      : 'border-muted-foreground/40',
-                  ) } />
-                  <span className="truncate">{ s.name }</span>
-                </button>
-              )) }
-            </div>
-          </ScrollArea>
-        ) }
-      </div>
+      ) }
 
       {/* Map area */}
       <div className="relative flex-1">

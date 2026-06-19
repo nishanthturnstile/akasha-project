@@ -100,7 +100,7 @@ export function AppShell() {
   const [seasonSheetOpen, setSeasonSheetOpen] = useState(false);
   const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
-  const [globalViewOpen, setGlobalViewOpen] = useState(true);
+  const [globalViewOpen, setGlobalViewOpen] = useState(!location.pathname.includes('/field/'));
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
 
   const seasonsQ = useSeasons();
@@ -128,25 +128,8 @@ export function AppShell() {
   }, [seasonsQ.data]);
 
   const filteredSeasons = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return sortedSeasons.filter((s) => {
-      if (!s.startDate && !s.endDate) return seasonTab === 'active';
-      const start = s.startDate ? new Date(s.startDate) : null;
-      const end = s.endDate ? new Date(s.endDate) : null;
-      if (seasonTab === 'active') {
-        if (start && start > today) return false;
-        if (end && end < today) return false;
-        return true;
-      }
-      if (seasonTab === 'planned') {
-        return start != null && start > today;
-      }
-      if (seasonTab === 'ended') {
-        return end != null && end < today;
-      }
-      return true;
-    });
+    if (seasonTab === 'active') return sortedSeasons;
+    return [];
   }, [sortedSeasons, seasonTab]);
 
   const editSeasonTarget = useMemo(
@@ -167,6 +150,32 @@ export function AppShell() {
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
     [effectiveSeasonId, sortedSeasons],
   );
+
+  // Auto-select the last-viewed field for the current season on initial load
+  useEffect(() => {
+    const fields = fieldsQ.data;
+    if (!fields || fields.length === 0 || !effectiveSeasonId) return;
+    if (view.selectedPlotId) return;
+
+    const savedFields = getLastFieldPerSeason();
+    const savedFieldId = savedFields[effectiveSeasonId];
+    const savedField = savedFieldId
+      ? fields.find((f) => f.id === savedFieldId && f.seasonIds?.includes(effectiveSeasonId))
+      : undefined;
+
+    if (savedField) {
+      view.setSelectedPlotId(savedField.id);
+      view.setFocusNonce(Date.now());
+      setTimeout(() => setGlobalViewOpen(false), 0);
+    } else {
+      const firstField = fields.find((f) => f.seasonIds?.includes(effectiveSeasonId));
+      if (firstField) {
+        view.setSelectedPlotId(firstField.id);
+        view.setFocusNonce(Date.now());
+        setTimeout(() => setGlobalViewOpen(false), 0);
+      }
+    }
+  }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId, view]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -214,7 +223,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={ 200 }>
-      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ setCurrentSeasonId } />
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (id) => { setCurrentSeasonId(id); setSeasonTab('active'); setGlobalViewOpen(true); } } />
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
@@ -495,8 +504,13 @@ export function AppShell() {
                               {seasonFields.length === 0 && (
                                 <button
                                   type="button"
-                                  onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
-                                  className="mt-2 w-full rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:bg-accent/40 transition-colors duration-fast"
+                                  onClick={ (e) => {
+                                    e.stopPropagation();
+                                    setCurrentSeasonId(season.id);
+                                    setSeasonSheetOpen(false);
+                                    setGlobalViewOpen(true);
+                                  } }
+                                  className="mt-2 w-full rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
                                 >
                                   + Add field
                                 </button>
@@ -809,6 +823,7 @@ export function AppShell() {
                 // error handled by query state
               }
               setDeletingSeasonId(null);
+              window.location.reload();
             }}>
               Delete
             </AlertDialogAction>

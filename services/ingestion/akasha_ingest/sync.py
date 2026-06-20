@@ -263,16 +263,34 @@ def filter_new_candidates(
     )
 
 
+# Maps a canonical source id to its scripts/ preparation entrypoint. Adding a new
+# satellite is a one-line registry edit here plus the script itself — the worker
+# orchestration never needs to change.
+PREPARE_SCRIPTS: dict[str, str] = {
+    "resourcesat-2a-liss3-boa": "prepare_resourcesat_liss3_boa_cogs.py",
+    "resourcesat-2a-liss4-mx70-l2": "prepare_resourcesat_liss3_boa_cogs.py",
+    "resourcesat-2a-awifs-boa": "prepare_resourcesat_liss3_boa_cogs.py",
+    "sentinel-1-grd": "prepare_sentinel1_grd_cogs.py",
+    "eos-04-sar-mrs-l2b": "prepare_eos04_sar_mrs_l2b_cogs.py",
+    "nisar-ssar-beta-gcov": "prepare_nisar_ssar_beta_gcov_cogs.py",
+}
+DEFAULT_PREPARE_SCRIPT = "prepare_resourcesat_liss3_boa_cogs.py"
+
+
 def find_repo_root(start: Path) -> Path:
     for candidate in [start, *start.parents]:
-        if (candidate / "scripts" / "prepare_resourcesat_liss3_boa_cogs.py").is_file():
+        if (candidate / "scripts" / DEFAULT_PREPARE_SCRIPT).is_file():
             return candidate
     # Container layout: worker.py and scripts/ are both under /app.
     return Path("/app")
 
 
-def prepare_script_path(start: Path) -> Path:
-    return find_repo_root(start) / "scripts" / "prepare_resourcesat_liss3_boa_cogs.py"
+def prepare_script_name(source_id: str) -> str:
+    return PREPARE_SCRIPTS.get(source_id, DEFAULT_PREPARE_SCRIPT)
+
+
+def prepare_script_path(source_id: str, start: Path) -> Path:
+    return find_repo_root(start) / "scripts" / prepare_script_name(source_id)
 
 
 def cleanup_downloads(downloaded: list[dict[str, Any]], *, audit_retention: bool) -> list[Path]:

@@ -448,7 +448,7 @@ def cmd_verify_composite(args: argparse.Namespace) -> int:
 def _run_prepare_script(args: argparse.Namespace, download_manifest: Path) -> None:
     from akasha_ingest import config, sync
 
-    script = sync.prepare_script_path(Path(__file__).resolve())
+    script = sync.prepare_script_path(args.source, Path(__file__).resolve())
     output_root = config.raster_source_root() / args.source
     raw_root = Path(args.raw_root or config.BHOONIDHI_RAW_ROOT) / args.source
     work_dir = (

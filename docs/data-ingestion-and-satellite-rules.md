@@ -19,8 +19,7 @@ regression and migration checks unless explicitly enabled.
 | ResourceSat-2A AWiFS BOA | ISRO/NRSC Bhoonidhi | Gated | Coarser optical context/analytics after validation. |
 | ResourceSat-2A LISS-4 | ISRO/NRSC Bhoonidhi | Gated | Higher-resolution context after band/radiometry validation. |
 | EOS-06 OCM NDVI | ISRO/NRSC Bhoonidhi | Gated | Coarse precomputed NDVI context only; not field-level stats. |
-| EOS-04 SAR-MRS L2B | ISRO/NRSC Bhoonidhi | Active (display-only SAR) | C-band radar backscatter display; never an optical vegetation-index source. |
-| NISAR S-SAR Beta GCOV | ISRO/NRSC Bhoonidhi | Active (display-only SAR) | S-band radar backscatter display; never an optical vegetation-index source. |
+| EOS-04 SAR / NISAR | ISRO/NRSC Bhoonidhi | Gated SAR | Radar context; never optical vegetation-index sources. |
 | Cartosat-3 | ISRO/NRSC Bhoonidhi | Gated/manual | High-resolution visual context only until access, licensing, and product format are confirmed. |
 | Sentinel-2 L2A | ESA / Copernicus | Legacy opt-in | Regression/migration path; not production-selectable by default. |
 | Sentinel-1 GRD | ESA / Copernicus | Legacy/gated SAR | SAR context; no optical indices. |
@@ -236,32 +235,6 @@ SAR specifics:
   designed.
 - Do not run optical index formulas on SAR COGs.
 - Register SAR items with radar-safe metrics and null optical cloud metrics.
-
-EOS-04 SAR-MRS L2B and NISAR S-SAR Beta GCOV (display-only, Phase 1):
-
-- **No SNAP.** Both are geocoded products (L2B / GCOV), unlike Sentinel-1 GRD
-  raw. Preparation is read calibrated backscatter -> dB -> COG-ify -> manifest
-  (`scripts/prepare_eos04_sar_mrs_l2b_cogs.py`,
-  `scripts/prepare_nisar_ssar_beta_gcov_cogs.py`).
-- **Single asset `backscatter.tif`**, Float32, **dB scale**, nodata `-9999.0`,
-  COG blocksize 512 with `average` overviews. **No mask/SCL asset** (SAR has no
-  cloud mask).
-- **dB conversion** depends on the source scale (`--input-scale`): linear power
-  `10*log10(max(x,1e-8))`; amplitude/DN `20*log10(...)`; already-dB passthrough.
-  `auto` uses a value heuristic; confirm against `gdalinfo` on a real sample.
-- **Polarizations are not assumed to be VV.** EOS-04 SAR-MRS is typically
-  HH/HV; NISAR GCOV diagonal covariance terms (`HHHH/HVHV/VHVH/VVVV`) map to
-  HH/HV/VH/VV. The `VV_GRAYSCALE` display route prefers a VV band when present
-  and otherwise renders the first backscatter band (`bidx=1`).
-- **Object keys** follow the SAR layout
-  `s3://akasha-cogs/<source>/<date>/<relativeOrbit>/<sceneComponent>/backscatter.tif`.
-- **Acquisition** reuses the existing Bhoonidhi client; the display-only path
-  uses the discrete `bhoonidhi-search` -> `bhoonidhi-download` ->
-  `prepare_*` -> `ingest-manifest` commands (not `bhoonidhi-sync`, which is
-  composite-coupled and ResourceSat-only).
-- Per-source preparation entrypoints are routed by source id via
-  `akasha_ingest.sync.PREPARE_SCRIPTS`; adding a future satellite is a registry
-  edit plus its `prepare_*` script, with no worker change.
 
 ## Storage and Retention
 

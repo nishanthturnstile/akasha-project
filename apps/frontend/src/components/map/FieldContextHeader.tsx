@@ -1,4 +1,4 @@
-import { ChevronDown, Map as MapIcon, Pencil, Search, Sparkles } from 'lucide-react';
+import { Map as MapIcon, Pencil, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { Plot } from '@/types/api';
@@ -6,11 +6,6 @@ import type { Plot } from '@/types/api';
 interface FieldContextHeaderProps {
     /** Server-resolved plot, or `null` when no field is selected. */
     selectedPlot: Plot | null;
-    /** Total available fields (drives the "All fields (N)" trigger). */
-    fieldCount: number;
-    /** Open / close the floating field list (controls `AllFieldsPanel`). */
-    onToggleAllFields: () => void;
-    allFieldsOpen: boolean;
     /** Clear the active selection — equivalent to "back to all fields". */
     onBack: () => void;
     /** Enter geometry edit mode on the currently selected plot. */
@@ -33,9 +28,6 @@ function formatAreaHa(value: number | null | undefined): string {
  */
 export function FieldContextHeader({
     selectedPlot,
-    fieldCount,
-    onToggleAllFields,
-    allFieldsOpen,
     onBack,
     onEditGeometry,
     onOpenCommand,
@@ -134,28 +126,6 @@ export function FieldContextHeader({
                     <kbd className="hidden font-mono text-[11px] text-muted-foreground sm:inline">⌘K</kbd>
                 </button>
                 <ThemeToggle />
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={ onToggleAllFields }
-                    aria-expanded={ allFieldsOpen }
-                    aria-controls="all-fields-panel"
-                    data-testid="all-fields-trigger"
-                    className="glass h-10 gap-2 rounded-md border-border/70 bg-[hsl(var(--panel)/var(--panel-alpha))] px-3 text-[13px] font-medium text-foreground/90 shadow-e2 hover:bg-accent/40"
-                >
-                    All fields
-                    <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] text-primary">
-                        { fieldCount }
-                    </span>
-                    <ChevronDown
-                        className={
-                            'size-3.5 transition-transform duration-fast ease-standard ' +
-                            (allFieldsOpen ? 'rotate-180' : '')
-                        }
-                        strokeWidth={ 1.75 }
-                    />
-                </Button>
             </div>
         </div>
     );

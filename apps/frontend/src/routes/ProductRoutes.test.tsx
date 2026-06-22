@@ -9,6 +9,12 @@ vi.mock('@/pages/monitoring/FieldAnalyticsPage', () => ({
   default: () => <div data-testid="map-page">Map workspace</div>,
 }));
 
+// Stub the map renderer so tests don't load the real maplibre-gl/Esri WebGL
+// stack (unsupported in jsdom; named-imports from the CJS maplibre-gl module).
+vi.mock('@/components/map/MapLayerManager', () => ({
+  MapLayerManager: () => null,
+}));
+
 function renderRoutes(path: string) {
   if (!vi.isMockFunction(globalThis.fetch)) {
     vi.stubGlobal(

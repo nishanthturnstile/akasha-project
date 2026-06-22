@@ -44,7 +44,18 @@ def _row_to_season(
     ) = row
 
     can_remove_map = can_remove_map or {}
-    total_area = sum((f.get("areaHa") or 0) for f in fields) if fields else 0.0
+    field_ids_list: list[dict] = []
+    total_area = 0.0
+    for f in (fields or []):
+        is_mapped = f.get("isMapped", True)
+        if is_mapped:
+            total_area += f.get("areaHa") or 0
+        field_ids_list.append({
+            "id": str(f["id"]),
+            "name": f["name"],
+            "canRemove": can_remove_map.get(str(f["id"]), False) if is_mapped else False,
+            "isMapped": is_mapped,
+        })
 
     return {
         "id": str(season_id),
@@ -54,14 +65,7 @@ def _row_to_season(
         "endDate": end_date.isoformat() if end_date else None,
         "canDelete": can_delete,
         "totalArea": total_area,
-        "fieldIds": [
-            {
-                "id": str(f["id"]),
-                "name": f["name"],                              # ← field name
-                "canRemove": can_remove_map.get(str(f["id"]), False),
-            }
-            for f in fields
-        ] if fields else [],
+        "fieldIds": field_ids_list,
         "createdAt": _iso(created_at),
         "updatedAt": _iso(updated_at),
     }
@@ -78,15 +82,26 @@ def _season_columns() -> tuple[Any, ...]:
     )
 
 
-def _season_field_ids(session: Any, season_id: uuid.UUID) -> list[dict]:
-    stmt = (
-        select(FieldSeason.field_id, Field.name, Field.area_ha)
-        .join(Field, Field.id == FieldSeason.field_id)
-        .where(FieldSeason.season_id == season_id)
-    )
+def _season_field_ids(
+    session: Any, user_id: uuid.UUID, season_id: uuid.UUID
+) -> list[dict]:
+    all_fields = session.execute(
+        select(Field.id, Field.name, Field.area_ha).where(Field.user_id == user_id)
+    ).all()
+    mapped_ids = {
+        row[0]
+        for row in session.execute(
+            select(FieldSeason.field_id).where(FieldSeason.season_id == season_id)
+        ).all()
+    }
     return [
-        {"id": row.field_id, "name": row.name, "areaHa": row.area_ha}
-        for row in session.execute(stmt).all()
+        {
+            "id": row.id,
+            "name": row.name,
+            "areaHa": row.area_ha,
+            "isMapped": row.id in mapped_ids,
+        }
+        for row in all_fields
     ]
 
 def _field_can_remove_map(session: Any, fields: list[dict]) -> dict[str, bool]:
@@ -134,15 +149,17 @@ def list_seasons(user_id: str | None = None) -> list[dict[str, Any]]:
     stmt = select(*_season_columns()).order_by(
         Season.start_date.nulls_last(), Season.name
     )
+    user_uuid = _uuid(user_id)
     if user_id is not None:
-        stmt = stmt.where(Season.user_id == _uuid(user_id))
+        stmt = stmt.where(Season.user_id == user_uuid)
     with session_scope() as session:
         seasons = session.execute(stmt).all()
         results = []
         for row in seasons:
             season_id = row[0]
-            field_ids = _season_field_ids(session, season_id)
-            can_remove_map = _field_can_remove_map(session, field_ids)
+            field_ids = _season_field_ids(session, user_uuid, season_id)
+            mapped_field_ids = [f for f in field_ids if f.get("isMapped")]
+            can_remove_map = _field_can_remove_map(session, mapped_field_ids)
             results.append(_row_to_season(row, field_ids, can_remove_map=can_remove_map))
         return results
 
@@ -150,15 +167,17 @@ def list_seasons(user_id: str | None = None) -> list[dict[str, Any]]:
 def get_season(season_id: str, user_id: str | None = None) -> dict[str, Any] | None:
     try:
         season_uuid = uuid.UUID(str(season_id))
+        user_uuid = _uuid(user_id)
         stmt = select(*_season_columns()).where(Season.season_id == season_uuid)
         if user_id is not None:
-            stmt = stmt.where(Season.user_id == _uuid(user_id))
+            stmt = stmt.where(Season.user_id == user_uuid)
         with session_scope() as session:
             row = session.execute(stmt).first()
             if row is None:
                 return None
-            field_ids_result = _season_field_ids(session, season_uuid)
-            can_remove_map = _field_can_remove_map(session, field_ids_result)
+            field_ids_result = _season_field_ids(session, user_uuid, season_uuid)
+            mapped_field_ids = [f for f in field_ids_result if f.get("isMapped")]
+            can_remove_map = _field_can_remove_map(session, mapped_field_ids)
             return _row_to_season(row, field_ids_result, can_remove_map=can_remove_map)
     except Exception as exc:
         print(f"Error in get_season: {exc}")
@@ -201,7 +220,7 @@ def create_season(
 
         _recalculate_can_delete(session, user_id)
         session.refresh(season)
-        field_ids_result = _season_field_ids(session, season.season_id)
+        field_ids_result = _season_field_ids(session, _uuid(user_id), season.season_id)
         return _row_to_season(
             (
                 season.season_id,
@@ -255,7 +274,7 @@ def update_season(
             session.flush()
 
         session.refresh(season)
-        field_ids_result = _season_field_ids(session, season.season_id)
+        field_ids_result = _season_field_ids(session, season.user_id, season.season_id)
         return _row_to_season(
             (
                 season.season_id,

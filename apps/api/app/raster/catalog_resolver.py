@@ -259,19 +259,22 @@ _SOURCE_REGISTRY.update(
             "maskAsset": None,
             "displayModes": ["VV_GRAYSCALE"],
             "defaultDisplayMode": "VV_GRAYSCALE",
-            "description": "Gated ISRO SAR context source.",
+            "description": "ISRO EOS-04 C-band SAR backscatter (display-only; cloud-penetrating).",
             "attribution": "ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "radar",
             "defaultRescale": "-25,5",
             "tileRouteMode": "vv_grayscale",
             "resolutionMeters": None,
             "analysisLevel": "context",
-            "refreshPolicy": "Gated until SAR product structure is validated.",
+            "refreshPolicy": "Backscatter display only; no optical indices or cloud mask.",
             "limitations": ["Not an optical vegetation-index source."],
             "maskMethod": None,
             "metricsProvisional": True,
-            "availabilityStatus": "gated",
-            "gatedReason": "No validated EOS-04 SAR COG has been ingested.",
+            # Display-only activation (Phase 1). Dates/tiles appear once a real
+            # EOS-04 backscatter COG is ingested via bhoonidhi-download ->
+            # prepare_eos04_sar_mrs_l2b_cogs.py -> ingest-manifest.
+            "availabilityStatus": "active",
+            "gatedReason": None,
         },
         "nisar-ssar-beta-gcov": {
             "id": "nisar-ssar-beta-gcov",
@@ -285,19 +288,22 @@ _SOURCE_REGISTRY.update(
             "maskAsset": None,
             "displayModes": ["VV_GRAYSCALE"],
             "defaultDisplayMode": "VV_GRAYSCALE",
-            "description": "Gated NISAR SAR context source.",
+            "description": "NISAR S-band GCOV radar backscatter (display-only; cloud-penetrating).",
             "attribution": "ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "radar",
             "defaultRescale": "-25,5",
             "tileRouteMode": "vv_grayscale",
             "resolutionMeters": None,
             "analysisLevel": "context",
-            "refreshPolicy": "Gated until NISAR product support is validated.",
+            "refreshPolicy": "Backscatter display only; no optical indices or cloud mask.",
             "limitations": ["Not an optical vegetation-index source."],
             "maskMethod": None,
             "metricsProvisional": True,
-            "availabilityStatus": "gated",
-            "gatedReason": "No validated NISAR COG has been ingested.",
+            # Display-only activation (Phase 1). Dates/tiles appear once a real
+            # NISAR GCOV backscatter COG is ingested via bhoonidhi-download ->
+            # prepare_nisar_ssar_beta_gcov_cogs.py -> ingest-manifest.
+            "availabilityStatus": "active",
+            "gatedReason": None,
         },
         "cartosat-3-gated": {
             "id": "cartosat-3-gated",

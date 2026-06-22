@@ -2,6 +2,13 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
 import { useCompleteOnboarding, useSeasons } from '@/lib/queries';
 
@@ -56,8 +63,16 @@ export default function OnboardingStep3() {
       await completeOnboarding.mutateAsync();
       // Clear onboarding session keys
       sessionStorage.removeItem(ONBOARDING_SEASON_KEY);
+      const storedIds = (() => {
+        try {
+          return JSON.parse(sessionStorage.getItem(ONBOARDING_FIELDS_KEY) ?? '[]') as string[];
+        } catch {
+          return [];
+        }
+      })();
+      const lastFieldId = storedIds[storedIds.length - 1];
       sessionStorage.removeItem(ONBOARDING_FIELDS_KEY);
-      navigate('/');
+      navigate(lastFieldId ? `/monitoring/field-analytics/field/${lastFieldId}` : '/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
     }
@@ -78,21 +93,22 @@ export default function OnboardingStep3() {
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Crop name</label>
-            <select
+            <Select
               value={ cropName }
-              onChange={ (e) => {
-                setCropName(e.target.value);
+              onValueChange={ (value) => {
+                setCropName(value);
                 setError(null);
               } }
-              className="w-full rounded-md border border-border bg-background px-3 py-2"
             >
-              <option value="">Select a crop</option>
-              { CROP_OPTIONS.map((crop) => (
-                <option key={ crop } value={ crop }>
-                  { crop }
-                </option>
-              )) }
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a crop" />
+              </SelectTrigger>
+              <SelectContent>
+                { CROP_OPTIONS.map((crop) => (
+                  <SelectItem key={ crop } value={ crop }>{ crop }</SelectItem>
+                )) }
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

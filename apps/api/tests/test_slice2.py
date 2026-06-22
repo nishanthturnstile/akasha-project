@@ -422,8 +422,16 @@ def test_sources_endpoint_contract():
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["displayModes"] == ["NDVI_CONTEXT"]
+    # EOS-04 and NISAR are activated as display-only SAR sources (Phase 1):
+    # active, no optical indices, VV grayscale backscatter display only.
     assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
-    assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "gated"
+    assert sources["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "active"
+    assert sources["eos-04-sar-mrs-l2b"]["supportedIndices"] == []
+    assert sources["eos-04-sar-mrs-l2b"]["displayModes"] == ["VV_GRAYSCALE"]
+    assert sources["nisar-ssar-beta-gcov"]["kind"] == "sar"
+    assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "active"
+    assert sources["nisar-ssar-beta-gcov"]["supportedIndices"] == []
+    assert sources["nisar-ssar-beta-gcov"]["displayModes"] == ["VV_GRAYSCALE"]
     cartosat = sources["cartosat-3-gated"]
     assert cartosat["availabilityStatus"] == "gated"
     assert cartosat["kind"] == "context"
@@ -466,13 +474,18 @@ def test_phase5_gated_collection_contracts_are_loadable():
         "resourcesat-2a-awifs-boa",
         "eos-06-ocm-lac-ndvi-8day-360m",
         "irs-1c-liss3-archive",
-        "eos-04-sar-mrs-l2b",
-        "nisar-ssar-beta-gcov",
         "cartosat-3-gated",
     ):
         collection = catalog.get_collection(source_id)
         assert collection["id"] == source_id
         assert collection.get("akasha:availability_status") == "gated"
+
+    # EOS-04 / NISAR SAR collections are loadable and now active (display-only).
+    for source_id in ("eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"):
+        collection = catalog.get_collection(source_id)
+        assert collection["id"] == source_id
+        assert collection.get("akasha:availability_status") == "active"
+        assert collection.get("akasha:kind") == "sar"
 
 
 def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
@@ -1589,10 +1602,13 @@ def test_sar_vv_tile_route_uses_actual_vv_band_position(monkeypatch):
     )
 
 
-def test_sar_vv_tile_route_rejects_non_vv_backscatter_without_leaking_href(monkeypatch):
+def test_sar_tile_route_renders_first_band_when_vv_absent(monkeypatch):
+    # EOS-04 SAR-MRS is typically HH/HV (no VV); display-only SAR must still
+    # render the primary backscatter band (bidx=1) rather than erroring.
     from app.raster import catalog_resolver as catalog
     from app.raster import tiles
 
+    captured = {}
     monkeypatch.setenv("TITILER_URL", "http://titiler.internal:8000")
     monkeypatch.setattr(
         catalog,
@@ -1600,7 +1616,7 @@ def test_sar_vv_tile_route_rejects_non_vv_backscatter_without_leaking_href(monke
         lambda source_id, acquisition_date: [
             {
                 "itemId": "eos04-hh-hv",
-                "backscatterHref": "s3://secret-bucket/eos-04/backscatter.tif",
+                "backscatterHref": "s3://akasha-cogs/eos-04/backscatter.tif",
                 "bandNames": ["HH_dB", "HV_dB"],
                 "nodata": -9999.0,
                 "epsg": 32643,
@@ -1608,25 +1624,26 @@ def test_sar_vv_tile_route_rejects_non_vv_backscatter_without_leaking_href(monke
             }
         ],
     )
-    monkeypatch.setattr(
-        tiles,
-        "fetch_tile",
-        lambda _url: (_ for _ in ()).throw(AssertionError("must fail before TiTiler")),
-    )
+
+    def fake_fetch_tile(url):
+        captured["url"] = url
+        return b"png-bytes", "image/png"
+
+    monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
 
     r = client.get("/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/3/4/5.png")
 
-    assert r.status_code == 400
-    body = r.json()
-    assert body["error"]["code"] == "MISSING_VV_POLARIZATION"
-    assert body["error"]["details"] == {
-        "sourceId": "eos-04-sar-mrs-l2b",
-        "acquisitionDate": "2026-04-26",
-        "itemId": "eos04-hh-hv",
-        "availablePolarizations": ["HH_dB", "HV_dB"],
-    }
+    assert r.status_code == 200
+    assert r.content == b"png-bytes"
+    # First (HH) band is rendered in grayscale with the SAR dB rescale.
+    assert captured["url"] == (
+        "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
+        "url=s3%3A%2F%2Fakasha-cogs%2Feos-04%2Fbackscatter.tif&bidx=1&"
+        "rescale=-25%2C5&colormap_name=gray"
+    )
+    # The internal href is never leaked to the browser (only tile bytes).
     assert "s3://" not in r.text
-    assert "secret-bucket" not in r.text
+    assert "akasha-cogs" not in r.text
 
 
 def test_sentinel1_tile_route_rejects_unsupported_display_mode():

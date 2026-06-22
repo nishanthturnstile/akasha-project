@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, RefreshCw, Satellite } from 'lucide-react';
 import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
@@ -16,8 +17,9 @@ import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
-import { AllFieldsPanel } from '@/components/fields/AllFieldsPanel';
+
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
+import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryLayerHelpers';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
@@ -31,6 +33,15 @@ import { LayerControlBar } from '@/components/layers/LayerControlBar';
 import { TimelineBar } from '@/components/timeline/TimelineBar';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogRoot,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/useMapView';
@@ -120,7 +131,7 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
     ],
-    { padding: 96, maxZoom: 16, duration: 650 },
+    { padding: 96, maxZoom: 18, duration: 650 },
   );
 }
 
@@ -302,6 +313,8 @@ export default function MapPage() {
     legendOpen,
     periodFrom,
     periodTo,
+    overlaysVisible,
+    focusNonce,
   } = view;
 
   const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
@@ -313,18 +326,23 @@ export default function MapPage() {
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [allFieldsOpen, setAllFieldsOpen] = useState(false);
   const [draftGeometry, setDraftGeometry] = useState<PlotGeometry | null>(null);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
   const [preferHighRes, setPreferHighRes] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [deleteFieldTarget, setDeleteFieldTarget] = useState<{
+    id: string;
+    name: string;
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
   const plotsQ = useFields();
   const createFieldMutation = useCreateField();
   const updateFieldMutation = useUpdateField();
   const deleteFieldMutation = useDeleteField();
+  const navigate = useNavigate();
 
   const selectedPlot = useMemo(() => {
     if (!selectedPlotId) return null;
@@ -345,21 +363,42 @@ export default function MapPage() {
   // *selected* field, so without this a fresh session lands on "No field selected"
   // and the drawn field is invisible even though it exists.
   const prevFocusedPlotId = useRef<string | null>(null);
+  const prevFocusNonce = useRef(0);
   useEffect(() => {
     if (!map || plotsQ.isLoading || !plotsQ.data) return;
-    if (!selectedPlotId) {
-      const fallback = plotsQ.data[0] ?? null;
-      if (fallback) {
-        view.setSelectedPlotId(fallback.id);
-      }
-      return;
-    }
+    if (!selectedPlotId) return;
     const focusTarget = selectedPlot;
     if (!focusTarget) return;
-    if (prevFocusedPlotId.current === selectedPlotId) return;
+    const nonceBumped = focusNonce !== prevFocusNonce.current;
+    if (!nonceBumped && prevFocusedPlotId.current === selectedPlotId) return;
     focusPlot(map, focusTarget);
     prevFocusedPlotId.current = selectedPlotId;
-  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, view]);
+    prevFocusNonce.current = focusNonce;
+  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, view]);
+
+  // Click the field boundary on the map → navigate to field analytics
+  useEffect(() => {
+    if (!map || !selectedPlotId) return;
+    const clickHandler = (e: maplibregl.MapMouseEvent) => {
+      const features = map.queryRenderedFeatures(e.point, { layers: [FIELD_BOUNDARY_FILL_LAYER_ID] });
+      if (features.length > 0) {
+        navigate(`/monitoring/field-analytics/field/${selectedPlotId}`);
+      }
+    };
+    const enterHandler = () => { map.getCanvas().style.cursor = 'pointer'; };
+    const leaveHandler = () => { map.getCanvas().style.cursor = ''; };
+    map.on('click', clickHandler);
+    map.on('mouseenter', FIELD_BOUNDARY_FILL_LAYER_ID, enterHandler);
+    map.on('mouseleave', FIELD_BOUNDARY_FILL_LAYER_ID, leaveHandler);
+    return () => {
+      map.off('click', clickHandler);
+      if (map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID)) {
+        map.off('mouseenter', FIELD_BOUNDARY_FILL_LAYER_ID, enterHandler);
+        map.off('mouseleave', FIELD_BOUNDARY_FILL_LAYER_ID, leaveHandler);
+      }
+      map.getCanvas().style.cursor = '';
+    };
+  }, [map, selectedPlotId, navigate]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
@@ -604,24 +643,19 @@ export default function MapPage() {
     return true;
   };
 
-  // Wrapper to request tool ownership and start drawing a field
-  const handleAddField = () => {
-    if (!map) {
-      // Map not ready – do nothing or could show a warning
-      return;
+  // Activate draw mode when Global View "Add field" button sets pendingAction
+  useEffect(() => {
+    if (view.pendingAction === 'create-field') {
+      view.setPendingAction(null);
+      if (map) {
+        requestMapTool('field-draw');
+        setFieldMode('draw');
+      }
     }
-    // Ensure we have ownership of the field-draw tool before activating draw mode
-    requestMapTool('field-draw');
-    setFieldMode('draw');
-  };
+  }, [view, view.pendingAction, map]);
 
   const releaseMapTool = (owner: MapToolOwner) => {
     setActiveMapTool((current) => (current === owner ? null : current));
-  };
-
-  const selectAndFocusPlot = (plot: Plot) => {
-    view.setSelectedPlotId(plot.id);
-    focusPlot(map, plot);
   };
 
   const importGeoJsonFile = async (file: File) => {
@@ -655,12 +689,16 @@ export default function MapPage() {
     downloadBlob(blob, geoJsonFilename(selectedPlot));
   };
 
-  const deleteSelectedField = async () => {
+  const deleteSelectedField = () => {
     if (!selectedPlot) return;
-    const confirmed = window.confirm(`Delete field "${selectedPlot.name}"?`);
-    if (!confirmed) return;
-    await deleteFieldMutation.mutateAsync(selectedPlot.id);
-    view.clearSelectedPlot();
+    setDeleteFieldTarget({
+      id: selectedPlot.id,
+      name: selectedPlot.name,
+      onConfirm: async () => {
+        await deleteFieldMutation.mutateAsync(selectedPlot.id);
+        view.clearSelectedPlot();
+      },
+    });
   };
 
   if (configQ.isLoading) return <FullScreenLoading />;
@@ -793,22 +831,16 @@ export default function MapPage() {
       />
 
       {/* Top chrome: field context · layers · search · theme · all-fields trigger */ }
-      <FieldContextHeader
+      { overlaysVisible && <FieldContextHeader
         selectedPlot={ selectedPlot }
-        fieldCount={ plotsQ.data?.length ?? 0 }
-        allFieldsOpen={ allFieldsOpen }
-        onToggleAllFields={ () => setAllFieldsOpen((open) => !open) }
-        onBack={ () => {
-          view.clearSelectedPlot();
-          setAllFieldsOpen(true);
-        } }
+        onBack={ () => view.clearSelectedPlot() }
         onEditGeometry={ () =>
           selectedPlot ? setFieldMode((current) => (current === 'edit' ? null : 'edit')) : undefined
         }
         onOpenCommand={ () => setCommandOpen(true) }
-      />
+      />  }
 
-      <CommandPalette
+      { overlaysVisible && <CommandPalette
         open={ commandOpen }
         onOpenChange={ setCommandOpen }
         sources={ sourcesQ.data }
@@ -817,23 +849,26 @@ export default function MapPage() {
         onSelectSource={ view.setSource }
         onSelectDate={ view.setDate }
         onToggleLayers={ view.toggleLayers }
-      />
+      />  }
 
-      <input
-        ref={ fileInputRef }
-        type="file"
-        accept=".geojson,application/geo+json,application/json"
-        className="hidden"
-        data-testid="field-import-input"
-        onChange={ (event) => {
-          const file = event.target.files?.[0];
-          event.currentTarget.value = '';
-          if (file) void importGeoJsonFile(file);
-        } }
-      />
+      { overlaysVisible && (
+        <input
+          ref={ fileInputRef }
+          type="file"
+          accept=".geojson,application/geo+json,application/json"
+          className="hidden"
+          data-testid="field-import-input"
+          onChange={ (event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = '';
+            if (file) void importGeoJsonFile(file);
+          } }
+        />
+      ) }
 
       {/* Left: field tools */ }
-      <div className="absolute left-4 top-17 z-toolbar">
+      { overlaysVisible && (
+        <div className="absolute left-4 top-17 z-toolbar">
         <PlotToolbar
           activeAction={ fieldMode === 'draw' ? 'draw' : null }
           hasSelectedField={ Boolean(selectedPlot) }
@@ -853,45 +888,9 @@ export default function MapPage() {
           onDeleteSelectedField={ () => void deleteSelectedField() }
           selectedFieldName={ selectedPlot?.name }
         />
-      </div>
+      </div>  ) }
 
-      {/* Right: stacked panels — All Fields dropdown above, field details below */ }
-      <div className="absolute right-4 top-17 z-panel flex max-w-90 flex-col gap-3">
-        { allFieldsOpen && (
-          <AllFieldsPanel
-            plots={ plotsQ.data }
-            isLoading={ plotsQ.isLoading }
-            error={ plotsQ.isError ? messageFor(plotsQ.error) : null }
-            onRetry={ () => void plotsQ.refetch() }
-            selectedPlotId={ selectedPlotId }
-            onSelect={ (plot) => {
-              view.setSelectedPlotId(plot.id);
-              selectAndFocusPlot(plot);
-              setAllFieldsOpen(false);
-            } }
-            onEdit={ (plot) => {
-              view.setSelectedPlotId(plot.id);
-              setFieldMode('edit');
-              setAllFieldsOpen(false);
-            } }
-            onDelete={ (plot) => {
-              const confirmed = window.confirm(`Delete field "${plot.name}"?`);
-              if (!confirmed) return;
-              deleteFieldMutation.mutateAsync(plot.id).then(() => {
-                view.clearSelectedPlot();
-                if (map && config) {
-                  map.flyTo({
-                    center: config.aoi.center,
-                    zoom: config.aoi.zoom,
-                    duration: 800,
-                  });
-                }
-              });
-            } }
-            onAdd={ map ? handleAddField : undefined }
-            onImport={ () => fileInputRef.current?.click() }
-          />
-        ) }
+      { overlaysVisible && <div className="absolute right-4 top-17 z-panel flex max-w-90 flex-col gap-3">
         { showIndexPanel && (
           <div className="hidden xl:block">
             <IndexPanel
@@ -910,10 +909,9 @@ export default function MapPage() {
             />
           </div>
         ) }
-      </div>
+      </div>  }
 
-      {/* Right: coordinate readout, measure, and consolidated layer-control bar (above timeline). */ }
-      <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
+      { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <CoordinateReadout
           map={ map }
           indexLookup={ isIndexLayer && selectedPlot && selectedDate && effectiveSourceId ? indexLookup : undefined }
@@ -952,14 +950,14 @@ export default function MapPage() {
           collapsed={ view.layerBarCollapsed }
           onCollapsedChange={ view.setLayerBarCollapsed }
         />
-      </div>
+      </div>  }
 
       {/* Left: legend + navigation map controls (zoom / compass / locate / fullscreen),
         * stacked in a single bottom-left column so they never overlap each other.
         * Raised above the attribution line so the two never collide at any width. */ }
       <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
-        { visible && legendOpen && (scene || indexOverlay) && (
-          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } />
+        { overlaysVisible && visible && legendOpen && (scene || indexOverlay) && (
+          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } resolvedSourceId={ indexOverlay?.resolvedSourceId } />
         ) }
         <MapControls
           map={ map }
@@ -972,17 +970,15 @@ export default function MapPage() {
         />
       </div>
 
-      {/* Map attribution — its own thin line pinned just above the timeline so it
-        * never overlaps the floating control clusters on any screen size. */ }
-      <div
+      { overlaysVisible && <div
         className="pointer-events-none absolute bottom-[calc(var(--timeline-height)+0.5rem)] left-4 z-toolbar max-w-[calc(100vw-2rem)] truncate rounded-sm bg-[hsl(var(--panel)/0.55)] px-1.5 py-0.5 text-[11px] text-foreground/80 backdrop-blur-sm"
         data-testid="attribution"
       >
         { attribution }
-      </div>
+      </div> }
 
       {/* Bottom: temporal filmstrip */ }
-      <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
+      { overlaysVisible && <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
         <TimelineBar
           dates={ activeTimelineDates }
           selectedDate={ selectedDate }
@@ -1001,7 +997,33 @@ export default function MapPage() {
           periodTo={ periodTo }
           onPeriodChange={ view.setPeriod }
         />
-      </div>
+      </div>  }
+
+      <AlertDialogRoot
+        open={!!deleteFieldTarget}
+        onOpenChange={(open) => { if (!open) setDeleteFieldTarget(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete field?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{deleteFieldTarget?.name}"? This action cannot be undone.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (!deleteFieldTarget) return;
+              try {
+                await deleteFieldTarget.onConfirm();
+              } catch {
+                // error handled by query state
+              }
+              setDeleteFieldTarget(null);
+            }}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </div>
   );
 }

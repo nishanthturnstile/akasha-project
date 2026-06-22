@@ -652,7 +652,10 @@ export function useCreateSeason() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: SeasonCreatePayload) => createSeason(payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.seasons }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+    },
   });
 }
 
@@ -664,6 +667,7 @@ export function useUpdateSeason() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
       void queryClient.invalidateQueries({ queryKey: queryKeys.season(data.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
     },
   });
 }
@@ -687,7 +691,10 @@ export function useCreateField() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: FieldCreatePayload) => createField(payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fields }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
   });
 }
 
@@ -699,6 +706,7 @@ export function useUpdateField() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
       void queryClient.invalidateQueries({ queryKey: queryKeys.field(data.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
     },
   });
 }
@@ -707,6 +715,9 @@ export function useDeleteField() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteField,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fields }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
   });
 }

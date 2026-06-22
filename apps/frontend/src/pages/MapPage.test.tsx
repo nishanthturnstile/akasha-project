@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import MapPage from '@/pages/MapPage';
@@ -41,13 +42,15 @@ function renderMapPage(initialState?: Partial<MapViewState>) {
   });
 
   return render(
-    <QueryClientProvider client={ queryClient }>
-      <TooltipProvider>
-        <MapViewProvider initialState={ initialState }>
-          <MapPage />
-        </MapViewProvider>
-      </TooltipProvider>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={ queryClient }>
+        <TooltipProvider>
+          <MapViewProvider initialState={ { overlaysVisible: true, ...initialState } }>
+            <MapPage />
+          </MapViewProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 

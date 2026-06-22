@@ -9,10 +9,10 @@
     "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json"
   ],
   "id": "eos-04-sar-mrs-l2b",
-  "title": "EOS-04 SAR-MRS L2B (gated)",
-  "description": "Gated ISRO EOS-04 SAR-MRS L2B context source. It is a radar/backscatter source, not an optical vegetation-index source. Product format, polarization metadata, and calibrated backscatter conversion must be validated before activation.",
+  "title": "EOS-04 SAR-MRS L2B",
+  "description": "ISRO EOS-04 SAR-MRS L2B C-band radar backscatter (display-only). It is a radar/backscatter source, not an optical vegetation-index source; no cloud mask and no optical indices apply.",
   "license": "proprietary",
-  "keywords": ["isro", "nrsc", "bhoonidhi", "eos-04", "sar", "radar", "backscatter", "gated"],
+  "keywords": ["isro", "nrsc", "bhoonidhi", "eos-04", "sar", "radar", "backscatter"],
   "providers": [
     { "name": "ISRO/NRSC", "roles": ["producer", "licensor"] },
     { "name": "Bhoonidhi", "roles": ["host"] },
@@ -39,17 +39,15 @@
   },
   "akasha:source_kind": "sar",
   "akasha:kind": "sar",
-  "akasha:availability_status": "gated",
-  "akasha:gated_reason": "EOS-04 product format and polarization metadata have not been validated.",
+  "akasha:availability_status": "active",
   "akasha:supported_indices": [],
   "akasha:display_modes": ["VV_GRAYSCALE"],
   "akasha:default_display_mode": "VV_GRAYSCALE",
   "akasha:date_metrics_kind": "radar",
   "akasha:analysis_level": "context",
-  "akasha:refresh_policy": "Gated until SAR product structure is validated.",
+  "akasha:refresh_policy": "Backscatter display only; no optical indices or cloud mask.",
   "akasha:limitations": [
-    "Not an optical vegetation-index source.",
-    "Backscatter conversion is disabled until product structure and polarization metadata are validated."
+    "Not an optical vegetation-index source."
   ],
   "item_assets": {
     "backscatter": {

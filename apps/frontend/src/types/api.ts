@@ -817,6 +817,13 @@ export interface AssistantStatus {
   limitations: string[];
 }
 
+export interface FieldIdEntry {
+  id: string;
+  name: string;
+  canRemove: boolean;
+  isMapped: boolean;
+}
+
 export interface Season {
   id: string;
   userId: string;
@@ -824,6 +831,8 @@ export interface Season {
   startDate: string | null;
   endDate: string | null;
   canDelete: boolean;
+  totalArea: number;
+  fieldIds: FieldIdEntry[];
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -832,12 +841,14 @@ export interface SeasonCreatePayload {
   name: string;
   startDate?: string | null;
   endDate?: string | null;
+  fieldIds?: string[];
 }
 
 export interface SeasonUpdatePayload {
   name?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  fieldIds?: string[];
 }
 
 export interface Field {

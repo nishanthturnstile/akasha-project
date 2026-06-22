@@ -55,6 +55,7 @@ function useRoutedMapUrlState(): void {
         const plotId = normalizeIdParam(params.plotId);
         if (plotId && plotId !== view.selectedPlotId) {
             view.setSelectedPlotId(plotId);
+            view.setFocusNonce(Date.now());
         }
 
         // SET_SOURCE clears selectedDate / displayMode (source switch invalidates

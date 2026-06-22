@@ -1062,6 +1062,31 @@ def test_worker_bhoonidhi_download_caps_manifest_products(monkeypatch, tmp_path)
     assert download_manifest["download"]["max_downloads"] == 2
 
 
+def test_prepare_script_dispatch_routes_each_source_to_its_script():
+    assert sync.prepare_script_name("resourcesat-2a-liss3-boa") == (
+        "prepare_resourcesat_liss3_boa_cogs.py"
+    )
+    assert sync.prepare_script_name("resourcesat-2a-awifs-boa") == (
+        "prepare_resourcesat_liss3_boa_cogs.py"
+    )
+    assert sync.prepare_script_name("sentinel-1-grd") == "prepare_sentinel1_grd_cogs.py"
+    assert sync.prepare_script_name("eos-04-sar-mrs-l2b") == (
+        "prepare_eos04_sar_mrs_l2b_cogs.py"
+    )
+    assert sync.prepare_script_name("nisar-ssar-beta-gcov") == (
+        "prepare_nisar_ssar_beta_gcov_cogs.py"
+    )
+    # Unknown sources fall back to the ResourceSat default rather than raising.
+    assert sync.prepare_script_name("totally-unknown") == sync.DEFAULT_PREPARE_SCRIPT
+
+
+def test_prepare_script_path_resolves_under_repo_scripts_dir():
+    worker_path = REPO_ROOT / "services" / "ingestion" / "worker.py"
+    resolved = sync.prepare_script_path("eos-04-sar-mrs-l2b", worker_path)
+    assert resolved == REPO_ROOT / "scripts" / "prepare_eos04_sar_mrs_l2b_cogs.py"
+    assert resolved.is_file()
+
+
 def test_bhoonidhi_sync_prepare_command_uses_temp_root_derived_work_dir(
     monkeypatch,
     tmp_path,
@@ -1072,7 +1097,7 @@ def test_bhoonidhi_sync_prepare_command_uses_temp_root_derived_work_dir(
     monkeypatch.setattr(config, "BHOONIDHI_RAW_ROOT", str(tmp_path / "raw-root"))
     monkeypatch.setattr(config, "raster_source_root", lambda: tmp_path / "rasters")
 
-    def fake_prepare_script_path(_worker_path: Path) -> Path:
+    def fake_prepare_script_path(_source_id: str, _worker_path: Path) -> Path:
         return tmp_path / "prepare_resourcesat_liss3_boa_cogs.py"
 
     def fake_run(command, check):

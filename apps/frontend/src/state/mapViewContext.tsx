@@ -46,7 +46,9 @@ type MapViewAction =
     | { type: 'SET_LAYER_BAR_COLLAPSED'; collapsed: boolean }
     | { type: 'SET_OVERLAYS_VISIBLE'; visible: boolean }
     | { type: 'SET_HEADER_VISIBLE'; visible: boolean }
-    | { type: 'SET_BOTTOM_BAR_VISIBLE'; visible: boolean };
+    | { type: 'SET_BOTTOM_BAR_VISIBLE'; visible: boolean }
+    | { type: 'SET_PENDING_ACTION'; action: 'create-field' | null }
+    | { type: 'SET_FOCUS_NONCE'; nonce: number };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -116,6 +118,12 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_BOTTOM_BAR_VISIBLE':
             if (action.visible === state.bottomBarVisible) return state;
             return { ...state, bottomBarVisible: action.visible };
+        case 'SET_PENDING_ACTION':
+            if (action.action === state.pendingAction) return state;
+            return { ...state, pendingAction: action.action };
+        case 'SET_FOCUS_NONCE':
+            if (action.nonce === state.focusNonce) return state;
+            return { ...state, focusNonce: action.nonce };
         default:
             return state;
     }
@@ -194,6 +202,10 @@ export function MapViewProvider({
                 dispatch({ type: 'SET_HEADER_VISIBLE', visible }),
             setBottomBarVisible: (visible) =>
                 dispatch({ type: 'SET_BOTTOM_BAR_VISIBLE', visible }),
+            setPendingAction: (action) =>
+                dispatch({ type: 'SET_PENDING_ACTION', action }),
+            setFocusNonce: (nonce) =>
+                dispatch({ type: 'SET_FOCUS_NONCE', nonce }),
         }),
         [state],
     );

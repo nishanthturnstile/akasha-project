@@ -155,8 +155,11 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
   const [editingField, setEditingField] = useState<Field | null>(null);
   const [deletingField, setDeletingField] = useState<Field | null>(null);
 
-  const allFields = useMemo(() => fieldsQ.data ?? [], [fieldsQ.data]);
-  const allSeasons = useMemo(() => seasonsQ.data ?? [], [seasonsQ.data]);
+  const allFields = useMemo(() => (Array.isArray(fieldsQ.data) ? fieldsQ.data : []), [fieldsQ.data]);
+  const allSeasons = useMemo(
+    () => (Array.isArray(seasonsQ.data) ? seasonsQ.data : []),
+    [seasonsQ.data],
+  );
 
   const currentSeason = useMemo(() => {
     if (!seasonId) return null;

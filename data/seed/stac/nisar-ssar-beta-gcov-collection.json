@@ -9,10 +9,10 @@
     "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json"
   ],
   "id": "nisar-ssar-beta-gcov",
-  "title": "NISAR S-SAR Beta GCOV (gated)",
-  "description": "Gated NISAR S-SAR GCOV context source. It is a radar/backscatter source, not an optical vegetation-index source. Routine product availability, HDF5/GeoTIFF layer structure, and polarization metadata must be validated before activation.",
+  "title": "NISAR S-SAR Beta GCOV",
+  "description": "NISAR S-SAR GCOV S-band radar backscatter (display-only). It is a radar/backscatter source, not an optical vegetation-index source; no cloud mask and no optical indices apply. GCOV covariance-diagonal layers are converted to dB backscatter.",
   "license": "proprietary",
-  "keywords": ["isro", "nasa", "nisar", "s-sar", "gcov", "radar", "backscatter", "gated"],
+  "keywords": ["isro", "nasa", "nisar", "s-sar", "gcov", "radar", "backscatter"],
   "providers": [
     { "name": "NASA/ISRO", "roles": ["producer", "licensor"] },
     { "name": "Bhoonidhi", "roles": ["host"] },
@@ -38,17 +38,15 @@
   },
   "akasha:source_kind": "sar",
   "akasha:kind": "sar",
-  "akasha:availability_status": "gated",
-  "akasha:gated_reason": "NISAR product availability and layer structure have not been validated.",
+  "akasha:availability_status": "active",
   "akasha:supported_indices": [],
   "akasha:display_modes": ["VV_GRAYSCALE"],
   "akasha:default_display_mode": "VV_GRAYSCALE",
   "akasha:date_metrics_kind": "radar",
   "akasha:analysis_level": "context",
-  "akasha:refresh_policy": "Gated until NISAR product support is validated.",
+  "akasha:refresh_policy": "Backscatter display only; no optical indices or cloud mask.",
   "akasha:limitations": [
-    "Not an optical vegetation-index source.",
-    "Backscatter conversion is disabled until routine product availability and layer metadata are validated."
+    "Not an optical vegetation-index source."
   ],
   "item_assets": {
     "backscatter": {

@@ -5,6 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MapViewProvider } from '@/state/mapViewContext';
 import { AppShell } from '@/components/shell/AppShell';
 
+// Stub the map renderer so tests don't load the real maplibre-gl/Esri WebGL
+// stack (unsupported in jsdom; named-imports from the CJS maplibre-gl module).
+vi.mock('@/components/map/MapLayerManager', () => ({
+  MapLayerManager: () => null,
+}));
+
 function renderShell(path = '/weather/forecast') {
   vi.stubGlobal(
     'fetch',

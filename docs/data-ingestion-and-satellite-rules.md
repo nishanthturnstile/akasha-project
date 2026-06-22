@@ -24,6 +24,22 @@ regression and migration checks unless explicitly enabled.
 | Sentinel-2 L2A | ESA / Copernicus | Legacy opt-in | Regression/migration path; not production-selectable by default. |
 | Sentinel-1 GRD | ESA / Copernicus | Legacy/gated SAR | SAR context; no optical indices. |
 
+## New Satellite Source Onboarding Rule
+
+Every new satellite source must stay gated until it has all of the following:
+
+- A pipeline registry entry that defines source id, provider, supported roles,
+  band/order metadata, default display mode, mask behavior, and index support.
+- A source-specific transform/prep script or adapter for native provider
+  products; do not reuse ResourceSat/Sentinel assumptions unless the source
+  metadata proves they match.
+- Validation tests for registry behavior, transform outputs, COG/STAC metadata,
+  masks, and source-specific supported/unsupported indices.
+- A staging dry-run from the approved staging egress path.
+- A capped real staging run, normally with `--max-downloads 1` first.
+- Composite verification with `worker.py verify-composite` before the source is
+  exposed for team use or marked selectable in the product.
+
 ## AOI Rules
 
 - `AOI_CONFIG_PATH` is the authoritative AOI input for the default deployment.

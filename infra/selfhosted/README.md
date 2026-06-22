@@ -301,6 +301,114 @@ operator-download/prep workflow is available. The `ingestion-sar` service still 
 Sentinel-1 regression path; use `docs/sentinel-1-grd-cog-prep-runbook.md` only for that explicit
 legacy workflow, not for production ISRO SAR onboarding.
 
+## Centralized ad hoc ingestion jobs
+
+Phase 5 adds a restricted staging-side job wrapper for team-triggered ingestion without granting
+interactive SSH shells or moving raw provider archives to laptops. Install these artifacts on the
+staging worker VM:
+
+```bash
+infra/selfhosted/systemd/install-akasha-ingestion-jobs.sh --dry-run
+infra/selfhosted/systemd/install-akasha-ingestion-jobs.sh
+```
+
+The installer copies the wrappers to `/opt/akasha/bin/`, preserves an existing
+`/etc/akasha/ingestion-jobs.env`, and creates `/srv/akasha/ingestion/jobs` for durable
+`request.json`, `status.json`, `command.txt`, `job.log`, and `result.json` files. Keep
+`/etc/akasha/ingestion-jobs.env` on the VM only. It controls the job root, allowed sources/AOIs,
+default download caps, retention, Coolify Compose discovery overrides, raw/work roots, ledger path,
+and pull policy:
+
+```text
+AKASHA_INGESTION_JOB_ROOT=/srv/akasha/ingestion/jobs
+AKASHA_INGESTION_ALLOWED_SOURCES=resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
+AKASHA_INGESTION_ALLOWED_AOIS=bangalore-60km
+AKASHA_INGESTION_DEFAULT_MAX_DOWNLOADS=3
+AKASHA_SYNC_RAW_ROOT=/srv/akasha/data/raw/bhoonidhi
+AKASHA_SYNC_TEMP_ROOT=/srv/akasha/data/work/bhoonidhi
+AKASHA_SYNC_LEDGER_PATH=/srv/akasha/ingestion/ledger.sqlite
+AKASHA_SYNC_PULL_POLICY=never
+```
+
+Restrict job access to an OS group instead of general shell users:
+
+```bash
+sudo groupadd --system akasha-ingesters
+sudo usermod -aG akasha-ingesters <developer-linux-user>
+sudo chgrp -R akasha-ingesters /srv/akasha/ingestion/jobs
+sudo chmod 2750 /srv/akasha/ingestion/jobs
+```
+
+For each approved team SSH key, use a forced-command `authorized_keys` line. The forced command
+validates `doctor`, `start`, `status`, `logs`, `list`, `retry`, `validate`, and `prune`, then execs
+only the job wrapper:
+
+```text
+command="/opt/akasha/bin/akasha-ingestion-forced-command.sh",restrict ssh-ed25519 <team-public-key> <developer>
+```
+
+On each developer machine, add an SSH alias named `akasha-staging`:
+
+```sshconfig
+Host akasha-staging
+  HostName <staging-host>
+  User <developer-linux-user>
+  IdentityFile ~/.ssh/<developer-key>
+```
+
+Then run the local Windows/Linux/macOS-safe CLI from the repository root. Use the placeholder host
+`akasha-staging`; do not put secrets in commands, notes, or docs.
+
+```bash
+# Check local SSH/Docker plus the remote wrapper, Compose discovery, env, and writable job root.
+python scripts/staging_ingestion_job.py doctor --host akasha-staging
+
+# Rehearse the request without downloading provider data.
+python scripts/staging_ingestion_job.py trigger --host akasha-staging \
+  --source resourcesat-2a-liss3-boa --aoi bangalore-60km --dry-run --wait
+
+# Run one capped real ingestion job and wait for a terminal state.
+python scripts/staging_ingestion_job.py trigger --host akasha-staging \
+  --source resourcesat-2a-liss3-boa --aoi bangalore-60km \
+  --max-downloads 1 --wait
+
+# Inspect progress and logs.
+python scripts/staging_ingestion_job.py status <job_id> --host akasha-staging
+python scripts/staging_ingestion_job.py logs <job_id> --host akasha-staging --follow
+
+# Retry a failed job with the same request and a new job id.
+python scripts/staging_ingestion_job.py retry <job_id> --host akasha-staging \
+  --overwrite --force-upload --notes "retry after operator review"
+
+# Validate remote composite output, then pull only final prepared artifacts locally.
+python scripts/staging_ingestion_job.py validate <job_id> --host akasha-staging
+python scripts/staging_ingestion_job.py sync-local <job_id> --host akasha-staging \
+  --import-local --verify-local
+```
+
+`sync-local` delegates to `scripts/sync_staging_raster_bundle.py`: it reads the job result and opens
+a non-interactive tar stream for the selected final bundle under the staging raster work root. If a
+developer key is forced-command-only for job subcommands, provision an approved artifact-sync SSH
+path or a separate SSH alias for `sync-local`; do not grant broader access than final
+`analytic.tif`, `mask.tif`, and `prepare_manifest.json` bundle reads.
+
+Ad hoc jobs and scheduled sync share collision protection. The job wrapper rejects another
+`queued`/`running` job for the same `(source, AOI)`, and the runner also uses the Bhoonidhi worker
+lock used by the scheduled timer. A collision exits as `blocked_by_lock`; wait for the timer or
+other developer job to finish, then run `retry <job_id>`.
+
+To roll back the ad hoc job wrappers, remove the forced-command lines from `authorized_keys`, then
+run:
+
+```bash
+infra/selfhosted/systemd/install-akasha-ingestion-jobs.sh --uninstall
+```
+
+`--uninstall` removes `/opt/akasha/bin/akasha-ingestion-job*.sh` and
+`/opt/akasha/bin/akasha-ingestion-forced-command.sh`; it intentionally keeps
+`/etc/akasha/ingestion-jobs.env` and `/srv/akasha/ingestion` job/data artifacts for audit and
+manual cleanup.
+
 ## Rollback
 
 1. Pick a previous known-good Git SHA image tag.

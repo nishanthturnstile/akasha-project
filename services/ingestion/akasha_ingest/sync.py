@@ -14,6 +14,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from . import pipeline_registry
+
 TERMINAL_PRODUCT_STATUSES = {"prepared", "ingested", "composited", "skipped"}
 
 
@@ -263,17 +265,8 @@ def filter_new_candidates(
     )
 
 
-# Maps a canonical source id to its scripts/ preparation entrypoint. Adding a new
-# satellite is a one-line registry edit here plus the script itself — the worker
-# orchestration never needs to change.
-PREPARE_SCRIPTS: dict[str, str] = {
-    "resourcesat-2a-liss3-boa": "prepare_resourcesat_liss3_boa_cogs.py",
-    "resourcesat-2a-liss4-mx70-l2": "prepare_resourcesat_liss3_boa_cogs.py",
-    "resourcesat-2a-awifs-boa": "prepare_resourcesat_liss3_boa_cogs.py",
-    "sentinel-1-grd": "prepare_sentinel1_grd_cogs.py",
-    "eos-04-sar-mrs-l2b": "prepare_eos04_sar_mrs_l2b_cogs.py",
-    "nisar-ssar-beta-gcov": "prepare_nisar_ssar_beta_gcov_cogs.py",
-}
+# Backward-compatible view of the centralized pipeline registry.
+PREPARE_SCRIPTS: dict[str, str] = dict(pipeline_registry.PREPARE_SCRIPTS)
 DEFAULT_PREPARE_SCRIPT = "prepare_resourcesat_liss3_boa_cogs.py"
 
 
@@ -286,7 +279,10 @@ def find_repo_root(start: Path) -> Path:
 
 
 def prepare_script_name(source_id: str) -> str:
-    return PREPARE_SCRIPTS.get(source_id, DEFAULT_PREPARE_SCRIPT)
+    try:
+        return pipeline_registry.prepare_script_name(source_id)
+    except KeyError:
+        return DEFAULT_PREPARE_SCRIPT
 
 
 def prepare_script_path(source_id: str, start: Path) -> Path:

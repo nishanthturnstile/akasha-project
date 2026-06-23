@@ -1,0 +1,12 @@
+[
+  {"name": "Conservation tillage"},
+  {"name": "Conventional tillage"},
+  {"name": "Intensive tillage"},
+  {"name": "Mulch-till"},
+  {"name": "No-till"},
+  {"name": "Reduced tillage"},
+  {"name": "Ridge-till"},
+  {"name": "Rotational tillage"},
+  {"name": "Strip-till"},
+  {"name": "Zone tillage"}
+]

@@ -589,6 +589,81 @@ class UploadedDataset(UuidPkMixin, TimestampMixin, OwnerTeamMixin, Base):
     )
 
 
+class IrrigationType(Base):
+    __tablename__ = "irrigation_types"
+    __table_args__ = (
+        UniqueConstraint("name", name="irrigation_types_name_key"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class TillageType(Base):
+    __tablename__ = "tillage_types"
+    __table_args__ = (
+        UniqueConstraint("name", name="tillage_types_name_key"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class SeedingType(Base):
+    __tablename__ = "seeding_types"
+    __table_args__ = (
+        UniqueConstraint("name", name="seeding_types_name_key"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class Crop(Base):
+    __tablename__ = "crops"
+    __table_args__ = (
+        UniqueConstraint("name", name="crops_name_key"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    seeding_type_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.seeding_types.id", ondelete="RESTRICT"),
+    )
+    color: Mapped[str | None] = mapped_column(Text)
+    maturity_options: Mapped[list[Any] | None] = mapped_column(JSONB)
+    has_weather_risk: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    bbch_mode: Mapped[str | None] = mapped_column(Text)
+    characteristic: Mapped[str | None] = mapped_column(Text)
+
+
+class Variety(Base):
+    __tablename__ = "varieties"
+    __table_args__ = (
+        UniqueConstraint("crop_id", "name", name="varieties_crop_id_name_key"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    crop_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.crops.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    maturity_options: Mapped[list[Any] | None] = mapped_column(JSONB)
+
+
 Index("plots_geometry_gix", Plot.geometry, postgresql_using="gist")
 Index("plots_created_at_idx", Plot.created_at.desc())
 Index("plots_status_idx", Plot.status)
@@ -635,3 +710,5 @@ Index("fields_geometry_gix", Field.geometry, postgresql_using="gist")
 Index("fields_user_idx", Field.user_id)
 Index("field_seasons_field_idx", FieldSeason.field_id)
 Index("field_seasons_season_idx", FieldSeason.season_id)
+Index("crops_seeding_type_idx", Crop.seeding_type_id)
+Index("varieties_crop_id_idx", Variety.crop_id)

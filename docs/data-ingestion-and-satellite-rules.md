@@ -37,8 +37,10 @@ Every new satellite source must stay gated until it has all of the following:
   masks, and source-specific supported/unsupported indices.
 - A staging dry-run from the approved staging egress path.
 - A capped real staging run, normally with `--max-downloads 1` first.
-- Composite verification with `worker.py verify-composite` before the source is
-  exposed for team use or marked selectable in the product.
+- Source-appropriate verification before the source is exposed for team use or
+  marked selectable in the product. Use `worker.py verify-composite` only for
+  optical sources that produce dated composite COGs; use source-aware raster,
+  SAR, context, or archive verification for non-composite sources.
 
 ## AOI Rules
 
@@ -195,7 +197,9 @@ STAC registration uses upsert semantics.
    items.
 5. `worker.py build-composite` builds AOI/date composites from validated scenes.
 6. `worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi
-   bangalore-60km` verifies the runtime COGs and dated STAC item.
+  bangalore-60km` verifies the ResourceSat runtime composite COGs and dated STAC item.
+  For SAR/context/archive sources, use the source-aware raster verification command
+  defined by the ingestion roadmap instead of `verify-composite`.
 
 ## Date-Level Serving Rules
 

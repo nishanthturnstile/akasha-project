@@ -395,14 +395,20 @@ def test_sources_endpoint_contract():
     assert rs["metricsProvisional"] is True
     assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
     assert sources["resourcesat-2a-awifs-boa"]["analysisLevel"] == "regional"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "active"
+    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
     liss4 = catalog.source_payload("resourcesat-2a-liss4-mx70-l2")
-    assert liss4["availabilityStatus"] == "active"
-    assert liss4["gatedReason"] is None
+    assert liss4["availabilityStatus"] == "gated"
+    assert liss4["gatedReason"] == "LISS-4 awaits staging composite verification."
     assert liss4["analysisLevel"] == "field"
     assert liss4["supportedIndices"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
     assert "NDMI" not in liss4["supportedIndices"]
     assert "NDRE" not in liss4["supportedIndices"]
+    assert "NDMI" not in liss4["displayModes"]
+    assert "NDRE" not in liss4["displayModes"]
+    assert "RECI" not in liss4["displayModes"]
+    assert "NDMI" not in liss4["mapDisplayModes"]
+    assert "NDRE" not in liss4["mapDisplayModes"]
+    assert "RECI" not in liss4["mapDisplayModes"]
     assert liss4["bandRoleMapping"] == {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4"}
     assert liss4["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"]
     assert liss4["mapDisplayModes"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]

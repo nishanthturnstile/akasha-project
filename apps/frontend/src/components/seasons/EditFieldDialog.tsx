@@ -15,6 +15,7 @@ import {
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { useConfig, useSeasons } from '@/lib/queries';
+import { useVegetationCycles } from '@/hooks/useVegetationCycles';
 import { resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
 import type maplibregl from 'maplibre-gl';
@@ -84,18 +85,6 @@ const TILLAGE_OPTIONS = [
   'Conventional', 'Reduced', 'No-till', 'Strip-till', 'Conservation', 'Other',
 ];
 
-interface VegetationCycleForm {
-  id: string;
-  cropName: string;
-  plantingDate: string;
-  irrigationType: string;
-  targetYield: number | null;
-  harvestingDate: string;
-  tillageType: string;
-  actualYield: number | null;
-  notes: string;
-}
-
 export default function EditFieldDialog({
   field,
   open,
@@ -113,7 +102,7 @@ export default function EditFieldDialog({
 
   const seasonsQ = useSeasons();
   const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set());
-  const [vegetationCycles, setVegetationCycles] = useState<Record<string, VegetationCycleForm[]>>({});
+  const { cycles: vegetationCycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } = useVegetationCycles(field.id);
 
   const configQ = useConfig();
 
@@ -260,54 +249,14 @@ export default function EditFieldDialog({
     });
   }, []);
 
-  const addCycle = useCallback((seasonId: string) => {
-    const newCycle: VegetationCycleForm = {
-      id: crypto.randomUUID(),
-      cropName: '',
-      plantingDate: '',
-      irrigationType: '',
-      targetYield: null,
-      harvestingDate: '',
-      tillageType: '',
-      actualYield: null,
-      notes: '',
-    };
-    setVegetationCycles((prev) => ({
-      ...prev,
-      [seasonId]: [...(prev[seasonId] ?? []), newCycle],
-    }));
-  }, []);
-
-  const removeCycle = useCallback((seasonId: string, cycleId: string) => {
-    setVegetationCycles((prev) => ({
-      ...prev,
-      [seasonId]: (prev[seasonId] ?? []).filter((c) => c.id !== cycleId),
-    }));
-  }, []);
-
-  const clearSeasonCycles = useCallback((seasonId: string) => {
-    setVegetationCycles((prev) => ({
-      ...prev,
-      [seasonId]: [],
-    }));
+  const handleClearSeason = useCallback((seasonId: string) => {
+    clearSeasonCycles(seasonId);
     setExpandedSeasons((prev) => {
       const next = new Set(prev);
       next.delete(seasonId);
       return next;
     });
-  }, []);
-
-  const updateCycle = useCallback(
-    (seasonId: string, cycleId: string, field: keyof VegetationCycleForm, value: string | number | null) => {
-      setVegetationCycles((prev) => ({
-        ...prev,
-        [seasonId]: (prev[seasonId] ?? []).map((c) =>
-          c.id === cycleId ? { ...c, [field]: value } : c,
-        ),
-      }));
-    },
-    [],
-  );
+  }, [clearSeasonCycles]);
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -441,7 +390,7 @@ export default function EditFieldDialog({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={ () => clearSeasonCycles(season.id) }
+                                  onClick={ () => handleClearSeason(season.id) }
                                   className="rounded-md p-1 text-black hover:text-destructive hover:bg-destructive/10 transition-colors"
                                   title="Remove all vegetation cycles"
                                 >

@@ -116,16 +116,16 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                 />
             ) }
             <span className="leading-tight">
-                <span className="block text-[9px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                <span className="block text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                     { month }
                 </span>
-                <span className="block font-display text-[13px] font-semibold leading-none tracking-[-0.02em] text-foreground">
+                <span className="block font-display text-[14px] font-semibold leading-none tracking-[-0.02em] text-foreground">
                     { day }
                 </span>
             </span>
             { badge && sourceKind !== 'sar' && sourceKind !== 'context' && sourceKind !== 'archive' ? (
                 <span
-                    className="font-mono tnum mt-0.5 inline-flex h-3 items-center rounded-pill border border-border/60 bg-card/40 px-1 text-[8px] leading-none tracking-[0.04em] text-muted-foreground"
+                    className="font-mono tnum mt-0.5 inline-flex h-3 items-center rounded-pill border border-border/60 bg-card/40 px-1 text-[9px] leading-none tracking-[0.04em] text-muted-foreground"
                     data-testid={ `date-chip-sensor-${date.acquisitionDate}` }
                 >
                     { badge }
@@ -135,7 +135,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                     percent={ date.usablePixelPercent }
                     coveragePercent={ date.coveragePercent }
                     sourceKind={ sourceKind }
-                    className="max-w-full gap-1 overflow-hidden px-1 py-0 text-[9px] leading-3 [&>span:first-child]:size-1"
+                    className="max-w-full gap-1 overflow-hidden px-1 py-0 text-[10px] leading-3 [&>span:first-child]:size-1"
                 />
             ) }
         </button>

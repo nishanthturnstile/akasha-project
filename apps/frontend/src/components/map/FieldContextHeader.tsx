@@ -1,7 +1,8 @@
-import { Map as MapIcon, Pencil, Search, Sparkles } from 'lucide-react';
+import { Map as MapIcon, Pencil, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import type { Plot } from '@/types/api';
+import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
+import type { Field, Plot } from '@/types/api';
 
 interface FieldContextHeaderProps {
     /** Server-resolved plot, or `null` when no field is selected. */
@@ -12,8 +13,10 @@ interface FieldContextHeaderProps {
     onEditGeometry: () => void;
     /** Open the command palette. */
     onOpenCommand: () => void;
-    /** Future field overview entry-point (placeholder for now). */
-    onGetOverview?: () => void;
+    /** All fields for the dropdown list. */
+    allFields: Field[];
+    /** Navigate function. */
+    onNavigate: (path: string) => void;
 }
 
 function formatAreaHa(value: number | null | undefined): string {
@@ -23,15 +26,17 @@ function formatAreaHa(value: number | null | undefined): string {
 
 /**
  * Top-of-canvas field chrome: back, field identity, validated area, edit,
- * overview placeholder, and all-fields trigger. Area is read from `plot.areaHa`
+ * add-field dropdown, and search trigger. Area is read from `plot.areaHa`
  * (server), never recomputed from polygon coordinates client-side (REQ-008).
  */
+
 export function FieldContextHeader({
     selectedPlot,
     onBack,
     onEditGeometry,
     onOpenCommand,
-    onGetOverview,
+    allFields,
+    onNavigate,
 }: FieldContextHeaderProps) {
     const hasSelection = Boolean(selectedPlot);
     const name = selectedPlot?.name ?? 'No field selected';
@@ -58,6 +63,8 @@ export function FieldContextHeader({
                     <span aria-hidden="true" className="text-base leading-none">←</span>
                 </Button>
 
+                <div className="w-px self-stretch bg-border/60" />
+
                 <div
                     className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary"
                     aria-hidden="true"
@@ -65,16 +72,11 @@ export function FieldContextHeader({
                     <MapIcon className="size-4" strokeWidth={ 1.75 } />
                 </div>
 
+                <div className="w-px self-stretch bg-border/60" />
+
                 <div className="flex min-w-0 flex-col">
                     <div className="flex items-center gap-2 truncate font-display text-sm font-semibold tracking-tight text-foreground">
                         <span className="truncate" data-testid="field-header-name">{ name }</span>
-                        <span
-                            className="rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground/80"
-                            data-testid="field-header-area"
-                            title="Validated polygon area from BFF"
-                        >
-                            { formatAreaHa(selectedPlot?.areaHa) }
-                        </span>
                     </div>
                     { cropLine && (
                         <p className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -83,34 +85,33 @@ export function FieldContextHeader({
                     ) }
                 </div>
 
-                <div className="ml-1 flex items-center gap-1">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={ onEditGeometry }
-                        disabled={ !hasSelection }
-                        aria-label="Edit field geometry"
-                        title="Edit boundary"
-                        data-testid="field-header-edit"
-                        className="size-9 rounded-md text-foreground/80 hover:bg-accent/60"
-                    >
-                        <Pencil className="size-4" strokeWidth={ 1.75 } />
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={ onGetOverview }
-                        disabled
-                        data-testid="field-header-overview"
-                        title="Generate field overview (coming soon)"
-                        className="h-9 gap-1.5 rounded-md px-2 text-[12px] font-medium text-foreground/70"
-                    >
-                        <Sparkles className="size-3.5" strokeWidth={ 1.75 } />
-                        Overview
-                    </Button>
-                </div>
+                <div className="w-px self-stretch bg-border/60" />
+
+                <span
+                    className="rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground/80"
+                    data-testid="field-header-area"
+                    title="Validated polygon area from BFF"
+                >
+                    { formatAreaHa(selectedPlot?.areaHa) }
+                </span>
+
+                <div className="w-px self-stretch bg-border/60" />
+
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={ onEditGeometry }
+                    disabled={ !hasSelection }
+                    aria-label="Edit field geometry"
+                    title="Edit boundary"
+                    data-testid="field-header-edit"
+                    className="size-9 rounded-md text-foreground/80 hover:bg-accent/60"
+                >
+                    <Pencil className="size-4" strokeWidth={ 1.75 } />
+                </Button>
+
+                <AddFieldDropdown fields={allFields} onNavigate={onNavigate} />
             </div>
 
             <div className="pointer-events-auto flex items-center gap-2">

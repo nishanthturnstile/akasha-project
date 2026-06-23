@@ -151,7 +151,7 @@ export function IndexPanel({
       { !selectedPlot ? (
         <div className="px-4 py-3">
           <div
-            className="rounded-md border border-dashed border-border/80 p-3 text-[12px] leading-5 text-muted-foreground"
+            className="rounded-md border border-dashed border-border/80 p-3 text-[13px] leading-5 text-muted-foreground"
             data-testid="index-panel-no-field"
           >
             Select a field to view cloud-masked statistics and trend analytics.
@@ -256,7 +256,7 @@ function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
         title="Crop rotation"
         icon={ <Sprout className="size-3.5 text-primary" strokeWidth={ 1.75 } /> }
       >
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Season · { seasonLabel ? `as of ${seasonLabel}` : 'no scene selected' }
         </p>
         <div className="flex items-center gap-2">
@@ -264,13 +264,13 @@ function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
             type="button"
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-[11px]"
+            className="h-7 px-2 text-[13px]"
             data-testid="crop-info-add-crop"
             disabled
           >
             <Plus className="size-3" strokeWidth={ 1.75 } /> Add crop
           </Button>
-          <span className="text-[11px] text-muted-foreground">Show all</span>
+          <span className="text-[13px] text-muted-foreground">Show all</span>
         </div>
       </CropInfoCard>
 
@@ -279,7 +279,7 @@ function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
         title="Sown area detected"
         locked
       >
-        <p className="text-[11px] leading-4 text-muted-foreground">
+        <p className="text-[13px] leading-4 text-muted-foreground">
           Sown-area detection is available on the Essential or Professional plan.
         </p>
       </CropInfoCard>
@@ -288,14 +288,14 @@ function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
         testId="crop-info-card-management-guide"
         title="Crop management guide"
       >
-        <p className="text-[11px] leading-4 text-muted-foreground">
+        <p className="text-[13px] leading-4 text-muted-foreground">
           Browse Akasha crop-management notes for each supported crop.
         </p>
         <Button
           type="button"
           size="sm"
           variant="ghost"
-          className="h-7 px-0 text-[11px] text-primary"
+          className="h-7 px-0 text-[13px] text-primary"
           data-testid="crop-info-guide-link"
           disabled
         >
@@ -307,7 +307,7 @@ function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
         testId="crop-info-card-growth-stages"
         title="Growth stages"
       >
-        <p className="text-[11px] leading-4 text-muted-foreground">
+        <p className="text-[13px] leading-4 text-muted-foreground">
           Select a crop to view its growth stages.
         </p>
       </CropInfoCard>
@@ -317,7 +317,7 @@ function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
         title="Current risks"
         locked
       >
-        <p className="text-[11px] leading-4 text-muted-foreground">
+        <p className="text-[13px] leading-4 text-muted-foreground">
           Risk diagnostics are available on the Essential or Professional plan.
         </p>
       </CropInfoCard>
@@ -327,7 +327,7 @@ function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
         title="NDVI value split"
         locked
       >
-        <p className="text-[11px] leading-4 text-muted-foreground">
+        <p className="text-[13px] leading-4 text-muted-foreground">
           Vegetation-class split is available on the Essential or Professional plan.
         </p>
       </CropInfoCard>
@@ -359,7 +359,7 @@ function CropInfoCard({
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           { icon }
-          <p className="text-[12px] font-medium text-foreground">{ title }</p>
+          <p className="text-[13px] font-medium text-foreground">{ title }</p>
         </div>
         { locked && (
           <Lock
@@ -481,7 +481,7 @@ function ChartTab({
         ) }
 
         { error && (
-          <div className="flex gap-2 text-[12px] leading-5 text-destructive">
+          <div className="flex gap-2 text-[13px] leading-5 text-destructive">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
             <span>{ error }</span>
           </div>
@@ -517,7 +517,7 @@ function ChartTab({
           ) }
         </div>
         { trendError ? (
-          <div className="rounded-md border border-destructive/30 p-3 text-[12px] leading-5 text-destructive">
+          <div className="rounded-md border border-destructive/30 p-3 text-[13px] leading-5 text-destructive">
             { trendError }
           </div>
         ) : (
@@ -599,7 +599,7 @@ function ActivitiesTab() {
   return (
     <div className="space-y-3 pt-1" data-testid="activities-tab">
       <div className="flex items-center justify-between">
-        <p className="text-[12px] font-medium text-foreground">Activities</p>
+        <p className="text-[13px] font-medium text-foreground">Activities</p>
         <Button
           type="button"
           size="sm"
@@ -615,12 +615,12 @@ function ActivitiesTab() {
         className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border/80 p-4 text-center"
         data-testid="activities-empty-state"
       >
-        <p className="text-[12px] text-muted-foreground">No activities added to this field.</p>
+        <p className="text-[13px] text-muted-foreground">No activities added to this field.</p>
         <Button
           type="button"
           size="sm"
           variant="primary"
-          className="h-8 px-3 text-[12px]"
+          className="h-8 px-3 text-[13px]"
           data-testid="activities-add-button"
           disabled
         >
@@ -635,7 +635,7 @@ function DateField({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="rounded-md border border-border/70 bg-background/40 px-2 py-1.5">
       <p className="text-[10px] uppercase text-muted-foreground">{ label }</p>
-      <p className="font-mono tnum text-[12px] text-foreground">{ value ?? '—' }</p>
+      <p className="font-mono tnum text-[13px] text-foreground">{ value ?? '—' }</p>
     </div>
   );
 }
@@ -652,7 +652,7 @@ function Metric({
   return (
     <div className={ compact ? 'rounded bg-muted/30 px-2 py-1' : 'rounded bg-muted/30 px-2 py-1.5' }>
       <p className="text-[10px] uppercase text-muted-foreground">{ label }</p>
-      <p className={ compact ? 'text-[12px] font-medium text-foreground' : 'text-[15px] font-semibold text-foreground' }>
+      <p className={ compact ? 'text-[13px] font-medium text-foreground' : 'text-[15px] font-semibold text-foreground' }>
         { value }
       </p>
     </div>

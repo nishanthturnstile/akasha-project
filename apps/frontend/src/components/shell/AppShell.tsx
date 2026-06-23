@@ -288,7 +288,7 @@ export function AppShell() {
         </section>
 
         { globalViewOpen && (
-          <GlobalViewPanel onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
+          <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
         ) }
 
         <aside
@@ -342,20 +342,15 @@ export function AppShell() {
               aria-label="Season selector"
               onClick={ () => setSeasonSheetOpen(true) }
               className={ cn(
-                'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-[12px] transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 'border-primary bg-primary/10 text-foreground',
                 railCollapsed && 'justify-center px-0',
               ) }
             >
               <CalendarRange className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
               { !railCollapsed && (
-                <span className="min-w-0 flex-1 truncate font-medium">
+                <span className="min-w-0 flex-1 truncate font-bold text-base">
                   { currentSeason ? currentSeason.name : 'Season' }
-                </span>
-              ) }
-              { !railCollapsed && (
-                <span className="shrink-0 pr-1 text-[10px] font-medium text-primary/70 uppercase tracking-wider">
-                  View
                 </span>
               ) }
             </button>
@@ -424,7 +419,7 @@ export function AppShell() {
                           <Card
                             key={ season.id }
                             className={ cn(
-                              'border-border/60 bg-card/90 shadow-sm cursor-pointer transition-colors duration-fast',
+                              'border-border/60 bg-card/90 shadow-sm cursor-pointer transition-colors duration-fast min-h-[200px]',
                               isCurrent && 'border-primary/50 ring-1 ring-primary/20',
                             ) }
                             onClick={ () => {
@@ -445,7 +440,7 @@ export function AppShell() {
                           >
                             <CardHeader>
                               <div className="flex items-center justify-between gap-2">
-                                <CardTitle className={ cn('font-bold', isCurrent && 'text-primary') }>
+                                <CardTitle className={ cn('font-bold text-lg', isCurrent && 'text-primary') }>
                                   { season.name }
                                 </CardTitle>
                                 { isCurrent && (

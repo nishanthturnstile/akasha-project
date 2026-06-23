@@ -442,7 +442,7 @@ with the API owner before the relevant phase.
   include e.g. `NDVI`, `FALSE_COLOR_URBAN`, and have the tile route render them (TiTiler expression +
   colormap, applying SCL mask) at
   `/api/tiles/{sourceId}/{date}/{mode}/{z}/{x}/{y}.png`. Touch points:
-  [product.py](../apps/api/app/product.py) (tile route),
+  [product_router.py](../apps/api/app/routers/product_router.py) (tile route),
   [catalog_resolver.py](../apps/api/app/raster/catalog_resolver.py) (source registry / `displayModes`),
   band→position via [indices.py](../apps/api/app/raster/indices.py) (never hard-code positions). Add
   contract tests in [apps/api/tests/test_slice2.py](../apps/api/tests/test_slice2.py).
@@ -519,7 +519,7 @@ CoordinateReadout|BasemapSwitcher|MeasureTool.tsx`, `components/TopBar/CommandPa
 [SourceSelector.tsx](../apps/frontend/src/components/layers/SourceSelector.tsx) ·
 [DateList.tsx](../apps/frontend/src/components/layers/DateList.tsx).
 
-**BFF (Phase 3 / optional)**: [product.py](../apps/api/app/product.py) ·
+**BFF (Phase 3 / optional)**: [product_router.py](../apps/api/app/routers/product_router.py) ·
 [catalog_resolver.py](../apps/api/app/raster/catalog_resolver.py) ·
 [indices.py](../apps/api/app/raster/indices.py) ·
 [test_slice2.py](../apps/api/tests/test_slice2.py).

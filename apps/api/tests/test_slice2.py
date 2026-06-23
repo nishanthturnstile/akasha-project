@@ -395,10 +395,10 @@ def test_sources_endpoint_contract():
     assert rs["metricsProvisional"] is True
     assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
     assert sources["resourcesat-2a-awifs-boa"]["analysisLevel"] == "regional"
-    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "gated"
+    assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "active"
     liss4 = catalog.source_payload("resourcesat-2a-liss4-mx70-l2")
-    assert liss4["availabilityStatus"] == "gated"
-    assert liss4["gatedReason"] == "LISS-4 awaits staging composite verification."
+    assert liss4["availabilityStatus"] == "active"
+    assert liss4["gatedReason"] is None
     assert liss4["analysisLevel"] == "field"
     assert liss4["supportedIndices"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
     assert "NDMI" not in liss4["supportedIndices"]

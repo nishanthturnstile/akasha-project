@@ -407,7 +407,7 @@ for name, raw in [
 section("Production documentation defaults")
 readme_raw = (REPO / "README.md").read_text(encoding="utf-8")
 engineering_raw = (REPO / "docs/engineering-dos-donts.md").read_text(encoding="utf-8")
-emergent_raw = (REPO / "docs/emergent-context.md").read_text(encoding="utf-8")
+emergent_raw = (REPO / "docs/archive/emergent-context.md").read_text(encoding="utf-8")
 data_rules_raw = (REPO / "docs/data-ingestion-and-satellite-rules.md").read_text(encoding="utf-8")
 check(
     "ResourceSat LISS-3 FCC composites" in readme_raw,

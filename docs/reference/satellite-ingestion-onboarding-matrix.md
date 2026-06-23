@@ -62,7 +62,7 @@ profiles, fail-closed prepare dispatch, and generic composite/date serving.
 
 | Tier | Meaning | Platforms |
 |---|---|---|
-| **T1 — Free, buildable now** | Open API + free data; ingest like ResourceSat once the provider client exists | Sentinel-2, Sentinel-1, Landsat 8, Landsat 9, MODIS, EOS-04, EOS-06, NISAR, **ResourceSat-2A LISS-3 ✅ active baseline; LISS-4 🟡 productionization in progress; AWiFS 🟡 gated** |
+| **T1 — Free, buildable now** | Open API + free data; ingest like ResourceSat once the provider client exists | Sentinel-2, Sentinel-1, Landsat 8, Landsat 9, MODIS, EOS-04, EOS-06, NISAR, **ResourceSat-2A LISS-3 ✅ active baseline; LISS-4 ✅ active field enhancement; AWiFS 🟡 gated** |
 | **T2 — Free, archive-only** | Free but no new acquisitions (history only) | Landsat 7, Landsat 5, IRS-1C |
 | **T3 — Commercial / paid** | API exists but gated behind a licensing/tasking contract + cost | PlanetScope, SkySat, SuperView NEO-1, BlackSky Gen 3, KOMPSAT-3A, ALOS-2, Cartosat-3 |
 | **T4 — Free but out-of-AOI** | Free + open but does not cover India | NAIP (US-only) |
@@ -74,7 +74,7 @@ profiles, fail-closed prepare dispatch, and generic composite/date serving.
 | Platform | Provider | Access | Auth | Optical/SAR | India AOI | New client? | Verdict |
 |---|---|---|---|---|---|---|---|
 | ResourceSat-2A LISS-3 BOA | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | ✅ Active baseline |
-| ResourceSat-2A LISS-4 MX70 L2 | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | 🟡 Productionization in progress until TASK-030 |
+| ResourceSat-2A LISS-4 MX70 L2 | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | ✅ Active field enhancement |
 | ResourceSat-2A AWiFS BOA | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | 🟡 Gated until TASK-049 |
 | Sentinel-2 L2A | ESA CDSE | Free | OAuth2 (Keycloak) | Optical | ✅ | **cdse** | 🟢 Buildable |
 | Sentinel-1 GRD | ESA CDSE | Free | OAuth2 (Keycloak) | SAR | ✅ | **cdse** | 🟢 Buildable |
@@ -121,7 +121,7 @@ Client + contract already implemented in [bhoonidhi.py](../../services/ingestion
 
 | Field | Value |
 |---|---|
-| Status / tier | LISS-3: active baseline · LISS-4: productionization in progress until TASK-030 · AWiFS: gated until TASK-049 |
+| Status / tier | LISS-3: active baseline · LISS-4: active field enhancement · AWiFS: gated until TASK-049 |
 | Collections | `ResourceSat-2A_LISS3_BOA`, `ResourceSat-2A_LISS4-MX70_L2`, `ResourceSat-2A_AWIFS_BOA` |
 | Product / format | Bottom-of-atmosphere reflectance; raw uint16 DN GeoTIFF (`BAND2/3/4/5.tif`) |
 | Analytic bands | LISS-3/AWiFS: `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`; LISS-4: `[BAND2 Green, BAND3 Red, BAND4 NIR]` |
@@ -132,7 +132,7 @@ Client + contract already implemented in [bhoonidhi.py](../../services/ingestion
 | Indices | NDVI, MSAVI, NDMI, NDWI_GREEN_NIR (LISS-4: no NDMI — no SWIR; no NDRE — no red edge) |
 | India AOI | ✅ `bangalore-60km` |
 | Licensing | Redistribution approved by Bhoonidhi; attribute "ISRO-IRS, ISRO/NRSC, Bhoonidhi" |
-| Verdict | Variant-specific: LISS-3 is the verified reference implementation; LISS-4 remains gated until staging composite verification and activation evidence; AWiFS remains gated until BOA composite validation and activation evidence. |
+| Verdict | Variant-specific: LISS-3 is the verified reference implementation; LISS-4 is active as a high-resolution field enhancement where verified coverage exists; AWiFS remains gated until BOA composite validation and activation evidence. |
 
 #### A.2 EOS-04 (RISAT) — 🟡 gated, scaffolded
 

@@ -72,9 +72,9 @@ fi
 
 run "${sudo_cmd[@]}" install -d -m 0755 /opt/akasha/bin /etc/akasha
 if [[ "${dry_run}" == "true" ]] || getent group akasha-ingesters >/dev/null 2>&1; then
-  run "${sudo_cmd[@]}" install -d -m 2750 -o root -g akasha-ingesters /srv/akasha/ingestion/jobs
+  run "${sudo_cmd[@]}" install -d -m 2770 -o root -g akasha-ingesters /srv/akasha/ingestion/jobs
 else
-  run "${sudo_cmd[@]}" install -d -m 2750 /srv/akasha/ingestion/jobs
+  run "${sudo_cmd[@]}" install -d -m 2770 /srv/akasha/ingestion/jobs
   echo "Warning: group akasha-ingesters does not exist yet; create it and chgrp /srv/akasha/ingestion/jobs." >&2
 fi
 

@@ -219,7 +219,7 @@ Repository ownership and sync notes:
 - Added `.github/workflows/sync-client-main.yml` on source branch `dev-akasha-core`; after PR merge to source `main`, pushes to source `main` will sync to client `main` using secret `CLIENT_REPO_SYNC_SSH_KEY`.
 - The sync workflow is guarded to run only in source repository `nishanthturnstile/akasha-project`, so the copied workflow should not recursively run in the client repository.
 - Added client-only `.github/workflows/build-client-images.yml`; after sync to `Akasha-TechCatalyst/akasha-project`, client workflow run `27290559364` successfully built and pushed `akasha-api`, `akasha-ingestion-sar`, `akasha-ingestion-worker`, and `akasha-web` to `ghcr.io/akasha-techcatalyst/*` with Git SHA tag `a7f67f47f3b801e5a62dcd053a7d1a54296b144e` and `main` tags. This standalone workflow was later removed on 2026-06-11 to avoid duplicate builds; `.github/workflows/deploy-staging.yml` is now the single staging path that builds, pushes, patches Coolify, and deploys.
-- Added detailed Phase 7 execution plan at `docs/impl-plan/infrastructure-selfhosted-coolify-phase7-deployment-artifacts-1.md`.
+- Added detailed Phase 7 execution plan now archived at `docs/impl-plan/archive/infrastructure-selfhosted-coolify-phase7-deployment-artifacts-1.md`.
 - Phase 7 artifact validation on 2026-06-11 passed: `scripts/smoke-test.py` compiles, Compose/workflow YAML parse successfully, Compose has no `build:` blocks or host `ports:`, only `web` has a Coolify FQDN marker, `git diff --check` passes, and edited-file diagnostics report no errors.
 
 ### Implementation Phase 8
@@ -295,7 +295,7 @@ Phase 8 pre-deployment notes:
 
 ## 5. Files
 
-- **FILE-001**: `docs/self-hosted-coolify-3vm-deployment-plan.md` — Source deployment architecture and constraints for the self-hosted 3-VM plan.
+- **FILE-001**: `docs/impl-plan/archive/self-hosted-coolify-3vm-deployment-plan.md` — Archived source deployment architecture and constraints for the self-hosted 3-VM plan.
 - **FILE-002**: `docs/impl-plan/infrastructure-selfhosted-coolify-azure-start-1.md` — This initial Azure rehearsal implementation plan.
 - **FILE-003**: `infra/docker/docker-compose.yml` — Source Compose file to adapt for Coolify-managed deployment.
 - **FILE-004**: `infra/selfhosted/coolify-compose.yml` — New self-hosted Coolify Compose file to create before staging deploy.
@@ -348,7 +348,7 @@ Phase 8 pre-deployment notes:
 
 ## 8. Related Specifications / Further Reading
 
-- `docs/self-hosted-coolify-3vm-deployment-plan.md`
+- `docs/impl-plan/archive/self-hosted-coolify-3vm-deployment-plan.md`
 - `docs/platform-plan.md`
 - `docs/architecture-tech-stack.md`
 - `docs/engineering-dos-donts.md`

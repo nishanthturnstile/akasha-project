@@ -1,4 +1,4 @@
-import { MoreVertical, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { FileDown, MapPin, MoreVertical, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -26,10 +26,16 @@ function FieldMenu({
   field,
   onEdit,
   onDelete,
+  isPinned,
+  onPin,
+  onUnpin,
 }: {
   field: Field;
   onEdit: (field: Field) => void;
   onDelete: (field: Field) => void;
+  isPinned: boolean;
+  onPin: (field: Field) => void;
+  onUnpin: (field: Field) => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -65,6 +71,33 @@ function FieldMenu({
             <Pencil className="size-3.5" strokeWidth={1.75} />
             Edit
           </button>
+          {isPinned ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setOpen(false); onUnpin(field); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+            >
+              <MapPin className="size-3.5" strokeWidth={1.75} />
+              Unpin
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setOpen(false); onPin(field); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+            >
+              <MapPin className="size-3.5" strokeWidth={1.75} />
+              Pin Field
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+          >
+            <FileDown className="size-3.5" strokeWidth={1.75} />
+            Export Contours
+          </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(field); }}
@@ -85,12 +118,18 @@ function FieldCard({
   onDelete,
   onSelect,
   selected,
+  isPinned,
+  onPin,
+  onUnpin,
 }: {
   field: Field;
   onEdit: (field: Field) => void;
   onDelete: (field: Field) => void;
   onSelect?: (field: Field) => void;
   selected?: boolean;
+  isPinned: boolean;
+  onPin: (field: Field) => void;
+  onUnpin: (field: Field) => void;
 }) {
   return (
     <div
@@ -107,18 +146,22 @@ function FieldCard({
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium text-foreground">{field.name}</p>
+          <p className="truncate text-sm font-medium text-foreground">
+            {isPinned && <MapPin className="mr-1 inline size-3.5 text-primary" strokeWidth={1.75} />}
+            {field.name}
+          </p>
           <p className="shrink-0 text-xs text-muted-foreground tnum">
             {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
           </p>
         </div>
       </div>
-      <FieldMenu field={field} onEdit={onEdit} onDelete={onDelete} />
+      <FieldMenu field={field} onEdit={onEdit} onDelete={onDelete} isPinned={isPinned} onPin={onPin} onUnpin={onUnpin} />
     </div>
   );
 }
 
 const LAST_FIELD_KEY = 'akasha.lastFieldPerSeason';
+const PINNED_KEY = 'akasha.pinnedFields';
 
 export function getLastFieldPerSeason(): Record<string, string> {
   try {
@@ -133,6 +176,24 @@ export function setLastFieldForSeason(seasonId: string, fieldId: string) {
     const map = getLastFieldPerSeason();
     map[seasonId] = fieldId;
     localStorage.setItem(LAST_FIELD_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+function getPinnedFields(): Record<string, string[]> {
+  try {
+    return JSON.parse(localStorage.getItem(PINNED_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+function setPinnedFieldsForSeason(seasonId: string, fieldIds: string[]) {
+  try {
+    const map = getPinnedFields();
+    map[seasonId] = fieldIds;
+    localStorage.setItem(PINNED_KEY, JSON.stringify(map));
   } catch {
     // localStorage unavailable
   }
@@ -179,18 +240,43 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
     return map;
   }, [allSeasons]);
 
+  const [pinnedFieldIds, setPinnedFieldIds] = useState<string[]>(() => {
+    return seasonId ? (getPinnedFields()[seasonId] ?? []) : [];
+  });
+
+  const handlePin = (field: Field) => {
+    if (!seasonId) return;
+    const next = pinnedFieldIds.includes(field.id) ? pinnedFieldIds : [...pinnedFieldIds, field.id];
+    setPinnedFieldIds(next);
+    setPinnedFieldsForSeason(seasonId, next);
+  };
+
+  const handleUnpin = (field: Field) => {
+    if (!seasonId) return;
+    const next = pinnedFieldIds.filter((id) => id !== field.id);
+    setPinnedFieldIds(next);
+    setPinnedFieldsForSeason(seasonId, next);
+  };
+
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredFields = useMemo(() => {
-    if (!normalizedQuery) return seasonFields;
-    return seasonFields.filter((f) => {
-      const searchable = [
-        f.name,
-        f.areaHa?.toString(),
-        ...(f.seasonIds?.map((sid) => seasonNames[sid]).filter(Boolean) ?? []),
-      ].filter(Boolean).join(' ').toLocaleLowerCase();
-      return searchable.includes(normalizedQuery);
+    const matched = !normalizedQuery
+      ? seasonFields
+      : seasonFields.filter((f) => {
+          const searchable = [
+            f.name,
+            f.areaHa?.toString(),
+            ...(f.seasonIds?.map((sid) => seasonNames[sid]).filter(Boolean) ?? []),
+          ].filter(Boolean).join(' ').toLocaleLowerCase();
+          return searchable.includes(normalizedQuery);
+        });
+    return [...matched].sort((a, b) => {
+      const aPinned = pinnedFieldIds.includes(a.id) ? 0 : 1;
+      const bPinned = pinnedFieldIds.includes(b.id) ? 0 : 1;
+      if (aPinned !== bPinned) return aPinned - bPinned;
+      return a.name.localeCompare(b.name);
     });
-  }, [seasonFields, normalizedQuery, seasonNames]);
+  }, [seasonFields, normalizedQuery, seasonNames, pinnedFieldIds]);
 
   const handleDelete = (field: Field) => {
     setDeletingField(field);
@@ -291,6 +377,9 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
                   key={field.id}
                   field={field}
                   selected={field.id === selectedPlotId}
+                  isPinned={pinnedFieldIds.includes(field.id)}
+                  onPin={handlePin}
+                  onUnpin={handleUnpin}
                   onEdit={setEditingField}
                   onDelete={handleDelete}
                   onSelect={ (f) => {

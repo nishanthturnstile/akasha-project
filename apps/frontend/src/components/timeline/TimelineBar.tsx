@@ -44,13 +44,13 @@ function NoteRow({
         <div
             data-testid={ testId }
             className={ cn(
-                'flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px]',
+                'flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[13px]',
                 tone === 'warning'
                     ? 'border-warning/30 bg-warning/10 text-warning'
                     : 'border-info/30 bg-info/10 text-info',
             ) }
         >
-            <Info className="size-3 shrink-0" strokeWidth={ 1.75 } />
+            <Info className="size-3.5 shrink-0" strokeWidth={ 1.75 } />
             <span className="truncate">{ children }</span>
         </div>
     );
@@ -174,7 +174,7 @@ export function TimelineBar({
                 className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2"
                 data-testid="timeline-error"
             >
-                <span className="flex items-center gap-2 text-[13px] text-destructive">
+                <span className="flex items-center gap-2 text-[14px] text-destructive">
                     <AlertTriangle className="size-4" strokeWidth={ 1.75 } /> { error }
                 </span>
                 <Button variant="outline" size="sm" onClick={ onRetry } data-testid="timeline-retry">
@@ -184,13 +184,13 @@ export function TimelineBar({
         );
     } else if (ordered.length === 0) {
         content = (
-            <p className="py-4 text-[13px] text-muted-foreground" data-testid="timeline-empty">
+            <p className="py-4 text-[14px] text-muted-foreground" data-testid="timeline-empty">
                 No acquisition dates available for this source.
             </p>
         );
     } else if (visible.length === 0) {
         content = (
-            <p className="py-4 text-[13px] text-muted-foreground" data-testid="timeline-empty-period">
+            <p className="py-4 text-[14px] text-muted-foreground" data-testid="timeline-empty-period">
                 No acquisition dates in the selected period.
             </p>
         );
@@ -262,7 +262,7 @@ export function TimelineBar({
                                 <span
                                     role="status"
                                     data-testid="timeline-next-image"
-                                    className="hidden h-8 items-center gap-1 rounded-md border border-border/60 bg-card/40 px-2 text-[11px] text-muted-foreground md:inline-flex"
+                                    className="hidden h-8 items-center gap-1 rounded-md border border-border/60 bg-card/40 px-2 text-[13px] text-muted-foreground md:inline-flex"
                                 >
                                     <CalendarClock className="size-3.5" strokeWidth={ 1.75 } />
                                     <span>

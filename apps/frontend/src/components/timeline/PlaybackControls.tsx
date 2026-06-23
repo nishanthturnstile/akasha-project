@@ -93,7 +93,7 @@ export function PlaybackControls({ dates, selectedDate, onSelect, onPrefetch }: 
                 title="Cycle speed"
                 data-testid="playback-speed"
                 className={ cn(
-                    'h-8 rounded-md border border-border/60 bg-secondary/40 px-2 font-mono text-[11px] tabular-nums text-foreground/85 transition-colors duration-fast ease-standard',
+                    'h-8 rounded-md border border-border/60 bg-secondary/40 px-2 font-mono text-[13px] tabular-nums text-foreground/85 transition-colors duration-fast ease-standard',
                     'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     'disabled:cursor-not-allowed disabled:opacity-40',
                 ) }

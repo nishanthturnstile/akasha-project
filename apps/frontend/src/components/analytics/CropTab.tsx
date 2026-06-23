@@ -37,15 +37,27 @@ export default function CropTab({ fieldId }: CropTabProps) {
           testId="crop-info-card-crop-rotation"
           title="Crop rotation"
           icon={<Sprout className="size-3.5 text-primary" strokeWidth={1.75} />}
+          action={
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[11px]"
+              onClick={handleAddYield}
+              data-testid="crop-rotation-add"
+            >
+              <Plus className="size-3" strokeWidth={1.75} /> Add
+            </Button>
+          }
         >
           {latestCycle ? (
-            <div className="space-y-1 text-[11px] leading-5 text-foreground">
+            <div className="space-y-1 text-[13px] leading-5 text-foreground">
               <p><span className="text-muted-foreground">Crop:</span> {latestCycle.cropName || '—'}</p>
               <p><span className="text-muted-foreground">Planted:</span> {latestCycle.plantingDate || '—'}</p>
               <p><span className="text-muted-foreground">Harvest:</span> {latestCycle.harvestingDate || '—'}</p>
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground">No crop data added yet.</p>
+            <p className="text-[13px] text-muted-foreground">No crop data added yet.</p>
           )}
         </CropInfoCard>
 
@@ -54,7 +66,7 @@ export default function CropTab({ fieldId }: CropTabProps) {
           title="Sown area detected"
           locked
         >
-          <p className="text-[11px] leading-4 text-muted-foreground">
+          <p className="text-[13px] leading-4 text-muted-foreground">
             Sown-area detection is available on the Essential or Professional plan.
           </p>
         </CropInfoCard>
@@ -66,7 +78,7 @@ export default function CropTab({ fieldId }: CropTabProps) {
           testId="crop-info-card-growth-stages"
           title="Growth stages"
         >
-          <p className="text-[11px] leading-4 text-muted-foreground">
+          <p className="text-[13px] leading-4 text-muted-foreground">
             Select a crop to view its growth stages.
           </p>
         </CropInfoCard>
@@ -75,14 +87,28 @@ export default function CropTab({ fieldId }: CropTabProps) {
           testId="crop-info-card-yield"
           title="Yield"
           icon={<Sprout className="size-3.5 text-primary" strokeWidth={1.75} />}
+          action={
+            !showYieldForm && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[11px]"
+                onClick={handleAddYield}
+                data-testid="crop-yield-add"
+              >
+                <Plus className="size-3" strokeWidth={1.75} /> Add
+              </Button>
+            )
+          }
         >
           {latestCycle ? (
-            <div className="space-y-1 text-[11px] leading-5 text-foreground">
+            <div className="space-y-1 text-[13px] leading-5 text-foreground">
               <p><span className="text-muted-foreground">Target:</span> {latestCycle.targetYield != null ? `${latestCycle.targetYield} t/ha` : '—'}</p>
               <p><span className="text-muted-foreground">Actual:</span> {latestCycle.actualYield != null ? `${latestCycle.actualYield} t/ha` : '—'}</p>
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground">No yield data recorded.</p>
+            <p className="text-[13px] text-muted-foreground">No yield data recorded.</p>
           )}
 
           {showYieldForm && firstSeasonId && latestCycleIndex >= 0 && (
@@ -148,19 +174,6 @@ export default function CropTab({ fieldId }: CropTabProps) {
               </div>
             </div>
           )}
-
-          {!showYieldForm && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="mt-2 h-7 px-2 text-[11px]"
-              onClick={handleAddYield}
-              data-testid="crop-yield-add"
-            >
-              <Plus className="size-3" strokeWidth={1.75} /> Add
-            </Button>
-          )}
         </CropInfoCard>
       </div>
 
@@ -171,7 +184,7 @@ export default function CropTab({ fieldId }: CropTabProps) {
           title="Risk information"
           locked
         >
-          <p className="text-[11px] leading-4 text-muted-foreground">
+          <p className="text-[13px] leading-4 text-muted-foreground">
             Risk diagnostics are available on the Essential or Professional plan.
           </p>
         </CropInfoCard>
@@ -181,7 +194,7 @@ export default function CropTab({ fieldId }: CropTabProps) {
           title="NDVI value split"
           locked
         >
-          <p className="text-[11px] leading-4 text-muted-foreground">
+          <p className="text-[13px] leading-4 text-muted-foreground">
             Vegetation-class split is available on the Essential or Professional plan.
           </p>
         </CropInfoCard>
@@ -196,12 +209,14 @@ function CropInfoCard({
   testId,
   icon,
   locked = false,
+  action,
 }: {
   title: string;
   children: React.ReactNode;
   testId: string;
   icon?: React.ReactNode;
   locked?: boolean;
+  action?: React.ReactNode;
 }) {
   return (
     <div
@@ -214,15 +229,18 @@ function CropInfoCard({
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           {icon}
-          <p className="text-[12px] font-medium text-foreground">{title}</p>
+          <p className="text-[13px] font-medium text-foreground">{title}</p>
         </div>
-        {locked && (
-          <Lock
-            className="size-3 text-muted-foreground"
-            strokeWidth={1.75}
-            aria-label="Plan-gated feature"
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {action}
+          {locked && (
+            <Lock
+              className="size-3 text-muted-foreground"
+              strokeWidth={1.75}
+              aria-label="Plan-gated feature"
+            />
+          )}
+        </div>
       </div>
       <div className="space-y-1.5">{children}</div>
     </div>

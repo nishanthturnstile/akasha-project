@@ -17,7 +17,7 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { useConfig, useSeasons } from '@/lib/queries';
 import { resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
-import maplibregl from 'maplibre-gl';
+import type maplibregl from 'maplibre-gl';
 import type { TerraDraw } from 'terra-draw';
 import type { Field, PlotGeometry } from '@/types/api';
 
@@ -141,7 +141,11 @@ export default function EditFieldDialog({
 
   const handleMapReady = useCallback((map: maplibregl.Map) => {
     setMiniMap(map);
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-left');
+    void import('maplibre-gl').then(({ default: maplibregl }) => {
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-left');
+    }).catch((exc: unknown) => {
+      setError(exc instanceof Error ? exc.message : 'Failed to initialise map controls.');
+    });
     const bounds = polygonBounds(field.geometry);
     if (bounds) {
       map.fitBounds(bounds, { padding: 24, maxZoom: 20 });
@@ -328,13 +332,13 @@ export default function EditFieldDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
-          onInteractOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
+          onInteractOutside={ (e) => e.preventDefault() }
+          onEscapeKeyDown={ (e) => e.preventDefault() }
           className="glass fixed left-1/2 top-[8vh] z-popover w-[min(56rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
         >
           <VisuallyHidden>
@@ -353,107 +357,107 @@ export default function EditFieldDialog({
 
           <div className="p-6 space-y-6">
             <div className="grid grid-cols-2 gap-6">
-              {/* Left column: mini-map with polygon edit */}
+              {/* Left column: mini-map with polygon edit */ }
               <div>
-                {basemapResolution ? (
-                  <div className="relative h-[320px] w-full rounded-xl overflow-hidden border border-border">
+                { basemapResolution ? (
+                  <div className="relative h-80 w-full rounded-xl overflow-hidden border border-border">
                     <MapLayerManager
-                      basemap={basemapResolution}
-                      center={center}
-                      zoom={15}
-                      scene={null}
-                      opacity={1}
-                      visible={true}
-                      onBasemapError={() => {}}
-                      onMapReady={handleMapReady}
+                      basemap={ basemapResolution }
+                      center={ center }
+                      zoom={ 15 }
+                      scene={ null }
+                      opacity={ 1 }
+                      visible={ true }
+                      onBasemapError={ () => {} }
+                      onMapReady={ handleMapReady }
                     />
-                    {miniMap && isMultiPart && (
+                    { miniMap && isMultiPart && (
                       <FieldBoundaryLayer
-                        map={miniMap}
-                        plot={null}
-                        geometry={field.geometry}
-                        featureId={`edit-field-${field.id}`}
-                        name={field.name}
+                        map={ miniMap }
+                        plot={ null }
+                        geometry={ field.geometry }
+                        featureId={ `edit-field-${field.id}` }
+                        name={ field.name }
                       />
-                    )}
-                    {isMultiPart && (
+                    ) }
+                    { isMultiPart && (
                       <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-sm text-muted-foreground">
                         Multi-part field editing is not available in this dialog.
                       </div>
-                    )}
+                    ) }
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-[320px] rounded-xl border border-border bg-muted/30 text-sm text-muted-foreground">
+                  <div className="flex h-80 items-center justify-center rounded-xl border border-border bg-muted/30 text-sm text-muted-foreground">
                     Loading map…
                   </div>
-                )}
+                ) }
               </div>
 
-              {/* Right column: field details */}
+              {/* Right column: field details */ }
               <div className="space-y-5">
                 <div className="grid grid-cols-1 gap-2">
                   <label className="text-sm font-medium text-foreground">Field name</label>
                   <input
                     className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={ name }
+                    onChange={ (e) => setName(e.target.value) }
                   />
                 </div>
 
                 <div className="rounded-lg border border-border/60 bg-muted/10 px-4 py-3">
                   <span className="text-sm text-muted-foreground">Area: </span>
                   <span className="text-sm font-semibold text-foreground">
-                    {currentArea != null ? `${currentArea.toFixed(2)} ha` : '—'}
+                    { currentArea != null ? `${currentArea.toFixed(2)} ha` : '—' }
                   </span>
                 </div>
 
-                {seasonsQ.data && (
+                { seasonsQ.data && (
                   <div className="border border-border rounded-xl">
                     <div className="px-4 py-3 border-b border-border/60">
                       <h4 className="text-sm font-semibold text-foreground">Vegetation cycles</h4>
                     </div>
-                    <div className="max-h-[300px] overflow-y-auto p-4 space-y-3">
-                      {seasonsQ.data
+                    <div className="max-h-75 overflow-y-auto p-4 space-y-3">
+                      { seasonsQ.data
                         .filter((s) => field.seasonIds.includes(s.id))
                         .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
                         .map((season) => {
                           const isExpanded = expandedSeasons.has(season.id);
                           const cycles = vegetationCycles[season.id] ?? [];
                           return (
-                            <div key={season.id} className="border border-border/60 rounded-lg overflow-hidden">
-                              <div className={cn(
+                            <div key={ season.id } className="border border-border/60 rounded-lg overflow-hidden">
+                              <div className={ cn(
                                 'flex w-full items-center justify-between px-4 py-3 text-sm font-medium bg-gray-200/70 text-gray-800',
                                 isExpanded ? 'bg-gray-300/70 text-gray-900' : 'hover:bg-gray-100',
-                              )}>
+                              ) }>
                                 <button
                                   type="button"
-                                  onClick={() => toggleSeason(season.id)}
+                                  onClick={ () => toggleSeason(season.id) }
                                   className="flex items-center gap-2 flex-1 text-left"
                                 >
-                                  {isExpanded
+                                  { isExpanded
                                     ? <ChevronDown className="size-4 text-gray-600 shrink-0" />
-                                    : <ChevronRight className="size-4 text-gray-600 shrink-0" />}
-                                  <span>{season.name}</span>
+                                    : <ChevronRight className="size-4 text-gray-600 shrink-0" /> }
+                                  <span>{ season.name }</span>
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => clearSeasonCycles(season.id)}
+                                  onClick={ () => clearSeasonCycles(season.id) }
                                   className="rounded-md p-1 text-black hover:text-destructive hover:bg-destructive/10 transition-colors"
                                   title="Remove all vegetation cycles"
                                 >
                                   <Trash2 className="size-4" />
                                 </button>
                               </div>
-                              {isExpanded && (
+                              { isExpanded && (
                                 <div className="border-t border-border/60 p-4 space-y-4">
-                                  {cycles.length === 0 && (
+                                  { cycles.length === 0 && (
                                     <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
-                                  )}
-                                  {cycles.map((cycle) => (
-                                    <div key={cycle.id} className="relative border border-border/50 rounded-lg p-4 space-y-4">
+                                  ) }
+                                  { cycles.map((cycle) => (
+                                    <div key={ cycle.id } className="relative border border-border/50 rounded-lg p-4 space-y-4">
                                       <button
                                         type="button"
-                                        onClick={() => removeCycle(season.id, cycle.id)}
+                                        onClick={ () => removeCycle(season.id, cycle.id) }
                                         className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                                       >
                                         <Trash2 className="size-4" />
@@ -461,16 +465,16 @@ export default function EditFieldDialog({
                                       <div>
                                         <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Crop name</label>
                                         <Select
-                                          value={cycle.cropName}
-                                          onValueChange={(v) => updateCycle(season.id, cycle.id, 'cropName', v)}
+                                          value={ cycle.cropName }
+                                          onValueChange={ (v) => updateCycle(season.id, cycle.id, 'cropName', v) }
                                         >
                                           <SelectTrigger>
                                             <SelectValue placeholder="Select crop" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            {CROP_OPTIONS.map((crop) => (
-                                              <SelectItem key={crop} value={crop}>{crop}</SelectItem>
-                                            ))}
+                                            { CROP_OPTIONS.map((crop) => (
+                                              <SelectItem key={ crop } value={ crop }>{ crop }</SelectItem>
+                                            )) }
                                           </SelectContent>
                                         </Select>
                                       </div>
@@ -480,23 +484,23 @@ export default function EditFieldDialog({
                                           <div>
                                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Planting date</label>
                                             <DatePicker
-                                              value={cycle.plantingDate}
-                                              onChange={(v) => updateCycle(season.id, cycle.id, 'plantingDate', v)}
+                                              value={ cycle.plantingDate }
+                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'plantingDate', v) }
                                             />
                                           </div>
                                           <div>
                                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Irrigation type</label>
                                             <Select
-                                              value={cycle.irrigationType}
-                                              onValueChange={(v) => updateCycle(season.id, cycle.id, 'irrigationType', v)}
+                                              value={ cycle.irrigationType }
+                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'irrigationType', v) }
                                             >
                                               <SelectTrigger>
                                                 <SelectValue placeholder="Select" />
                                               </SelectTrigger>
                                               <SelectContent>
-                                                {IRRIGATION_OPTIONS.map((opt) => (
-                                                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                                                ))}
+                                                { IRRIGATION_OPTIONS.map((opt) => (
+                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
+                                                )) }
                                               </SelectContent>
                                             </Select>
                                           </div>
@@ -504,10 +508,10 @@ export default function EditFieldDialog({
                                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target yield (t/ha)</label>
                                             <input
                                               type="number"
-                                              min={0}
-                                              step={0.01}
-                                              value={cycle.targetYield ?? ''}
-                                              onChange={(e) => updateCycle(season.id, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null)}
+                                              min={ 0 }
+                                              step={ 0.01 }
+                                              value={ cycle.targetYield ?? '' }
+                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null) }
                                               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
                                             />
                                           </div>
@@ -517,23 +521,23 @@ export default function EditFieldDialog({
                                           <div>
                                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Harvesting date</label>
                                             <DatePicker
-                                              value={cycle.harvestingDate}
-                                              onChange={(v) => updateCycle(season.id, cycle.id, 'harvestingDate', v)}
+                                              value={ cycle.harvestingDate }
+                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'harvestingDate', v) }
                                             />
                                           </div>
                                           <div>
                                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Tillage type</label>
                                             <Select
-                                              value={cycle.tillageType}
-                                              onValueChange={(v) => updateCycle(season.id, cycle.id, 'tillageType', v)}
+                                              value={ cycle.tillageType }
+                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'tillageType', v) }
                                             >
                                               <SelectTrigger>
                                                 <SelectValue placeholder="Select" />
                                               </SelectTrigger>
                                               <SelectContent>
-                                                {TILLAGE_OPTIONS.map((opt) => (
-                                                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                                                ))}
+                                                { TILLAGE_OPTIONS.map((opt) => (
+                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
+                                                )) }
                                               </SelectContent>
                                             </Select>
                                           </div>
@@ -541,10 +545,10 @@ export default function EditFieldDialog({
                                             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Actual yield (t/ha)</label>
                                             <input
                                               type="number"
-                                              min={0}
-                                              step={0.01}
-                                              value={cycle.actualYield ?? ''}
-                                              onChange={(e) => updateCycle(season.id, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null)}
+                                              min={ 0 }
+                                              step={ 0.01 }
+                                              value={ cycle.actualYield ?? '' }
+                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null) }
                                               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
                                             />
                                           </div>
@@ -554,40 +558,40 @@ export default function EditFieldDialog({
                                       <div>
                                         <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Notes</label>
                                         <input
-                                          value={cycle.notes}
-                                          onChange={(e) => updateCycle(season.id, cycle.id, 'notes', e.target.value)}
+                                          value={ cycle.notes }
+                                          onChange={ (e) => updateCycle(season.id, cycle.id, 'notes', e.target.value) }
                                           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
                                         />
                                       </div>
                                     </div>
-                                  ))}
+                                  )) }
                                   <button
                                     type="button"
-                                    onClick={() => addCycle(season.id)}
+                                    onClick={ () => addCycle(season.id) }
                                     className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                                   >
-                                    <Plus className="size-4" strokeWidth={1.75} />
+                                    <Plus className="size-4" strokeWidth={ 1.75 } />
                                     Add vegetation cycle
                                   </button>
                                 </div>
-                              )}
+                              ) }
                             </div>
                           );
-                        })}
+                        }) }
                     </div>
                   </div>
-                )}
+                ) }
               </div>
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            { error && <p className="text-sm text-destructive">{ error }</p> }
 
             <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
               <div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleDelete}
+                  onClick={ handleDelete }
                   className="text-destructive border-destructive/40 hover:bg-destructive/10"
                 >
                   Delete field
@@ -599,7 +603,7 @@ export default function EditFieldDialog({
                     Cancel
                   </button>
                 </Dialog.Close>
-                <Button variant="primary" size="md" onClick={handleSave}>
+                <Button variant="primary" size="md" onClick={ handleSave }>
                   Save
                 </Button>
               </div>

@@ -288,7 +288,7 @@ display-only SAR, context, and archive sources.
 - [Engineering Do's and Don'ts](../engineering-dos-donts.md)
 - [Architecture and Tech Stack](../architecture-tech-stack.md)
 - [Staging Ingestion Developer Guide](../staging-ingestion-developer-guide.md)
-- [Sentinel-1 GRD COG Prep Runbook](../sentinel-1-grd-cog-prep-runbook.md)
+- [Sentinel-1 GRD COG Prep Runbook](../archive/sentinel-1-grd-cog-prep-runbook.md)
 - [EOS-04 SAR MRS L2B COG Prep Runbook](../eos04-sar-mrs-l2b-cog-prep-runbook.md)
 - [NISAR SSAR Beta GCOV COG Prep Runbook](../nisar-ssar-beta-gcov-cog-prep-runbook.md)
 - Copernicus Data Space Ecosystem APIs: https://documentation.dataspace.copernicus.eu/APIs.html

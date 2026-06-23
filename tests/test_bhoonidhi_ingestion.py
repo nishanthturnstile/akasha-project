@@ -195,6 +195,98 @@ def test_catalog_emits_three_band_liss4_resourcesat_item():
     } == {5.0}
 
 
+def test_catalog_emits_manifest_derived_liss4_composite_item():
+    manifest = {
+        "source_id": "resourcesat-2a-liss4-mx70-l2",
+        "collection": "ResourceSat-2A_LISS4-MX70_L2",
+        "composite": True,
+        "aoi_id": "bangalore-60km",
+        "composite_date": "2026-01-30",
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-30",
+        "composite_resolution_meters": 5.8,
+        "composite_grid_crs": "EPSG:32643",
+        "composite_grid_bounds": [716000.0, 1385000.0, 721800.0, 1390800.0],
+        "composite_grid_dimensions": [1000, 1000],
+        "analytic_band_order": ["BAND2", "BAND3", "BAND4"],
+        "band_role_mapping": {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4"},
+        "contributing_scenes": ["scene-a", "scene-b"],
+        "bbox": [77.0, 12.0, 78.0, 13.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]
+            ],
+        },
+        "outputs": {
+            "analytic": {
+                "path": "analytic.tif",
+                "band_count": 3,
+                "dtype": "uint16",
+                "nodata": 0,
+                "resolution": [5.8, 5.8],
+                "crs": "EPSG:32643",
+                "width": 1000,
+                "height": 1000,
+            },
+            "mask": {
+                "path": "mask.tif",
+                "band_count": 1,
+                "dtype": "uint8",
+                "nodata": 0,
+                "resolution": [5.8, 5.8],
+                "crs": "EPSG:32643",
+                "width": 1000,
+                "height": 1000,
+            },
+        },
+        "properties": {
+            "akasha:metrics_provisional": True,
+            "akasha:coverage_percent": 12.5,
+        },
+    }
+
+    item = catalog.build_stac_item_from_prepare_manifest(manifest)
+
+    assert item["collection"] == "resourcesat-2a-liss4-mx70-l2"
+    assert item["id"] == "resourcesat-2a-liss4-mx70-l2_composite_bangalore-60km_2026-01-30"
+    assert item["properties"]["instruments"] == ["liss-4"]
+    assert item["properties"]["gsd"] == 5.8
+    assert item["properties"]["akasha:composite"] is True
+    assert item["properties"]["akasha:aoi_id"] == "bangalore-60km"
+    assert item["properties"]["akasha:band_role_mapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+    }
+    assert [band["name"] for band in item["assets"]["analytic"]["eo:bands"]] == [
+        "BAND2",
+        "BAND3",
+        "BAND4",
+    ]
+    assert len(item["assets"]["analytic"]["raster:bands"]) == 3
+    assert len(item["assets"]["mask"]["raster:bands"]) == 1
+    expected_prefix = (
+        "s3://akasha-cogs/resourcesat-2a-liss4-mx70-l2/"
+        "composite/bangalore-60km/2026-01-30/"
+    )
+    assert item["assets"]["analytic"]["href"] == f"{expected_prefix}analytic.tif"
+    assert item["assets"]["mask"]["href"] == f"{expected_prefix}mask.tif"
+
+
+def test_resourcesat_sample_items_are_not_loaded_as_production_seed_items(tmp_path, monkeypatch):
+    seed_dir = tmp_path / "seed"
+    stac_dir = seed_dir / "stac"
+    stac_dir.mkdir(parents=True)
+    (stac_dir / "resourcesat-2a-liss4-mx70-l2-sample-item.json").write_text(
+        json.dumps({"id": "placeholder", "collection": "resourcesat-2a-liss4-mx70-l2"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SEED_DATA_DIR", str(seed_dir))
+
+    assert config.item_files("resourcesat-2a-liss4-mx70-l2") == []
+
+
 def test_source_collection_supports_eos06_phase5_context_source():
     assert (
         bhoonidhi.source_collection("eos-06-ocm-lac-ndvi-8day-360m")

@@ -2,8 +2,9 @@
 """Generate + upload SYNTHETIC demo COGs so the index/overlay pipeline renders.
 
 This is a DEV/DEMO utility, not part of the real ingestion pipeline. Real COGs are
-operator-provided (see docs/sentinel-2-l2a-cog-prep-runbook.md). It exists only so
-the EOS-style colorized index overlay can be exercised end-to-end without a real
+operator-provided (legacy Sentinel reference:
+docs/archive/sentinel-2-l2a-cog-prep-runbook.md). It exists only so the EOS-style colorized
+index overlay can be exercised end-to-end without a real
 Bhoonidhi/CDSE download in a dev environment.
 
 It writes a 4-band ResourceSat-2A LISS-3 analytic COG (BAND2/3/4/5 = green/red/

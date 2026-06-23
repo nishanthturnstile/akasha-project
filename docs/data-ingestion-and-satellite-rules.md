@@ -4,7 +4,8 @@
 
 This document is the source of truth for imagery sources, COG layout, STAC
 metadata, masking, and index calculation rules. Product UX belongs in
-`product-plan.md`; service architecture belongs in `architecture-tech-stack.md`;
+`india-specific-productization-plan.md`, `map-screen-redesign.md`, and
+`design-system.md`; service architecture belongs in `architecture-tech-stack.md`;
 deployment/runtime details belong in `infra/selfhosted/README.md`.
 
 ## Production Source Strategy
@@ -17,7 +18,7 @@ regression and migration checks unless explicitly enabled.
 |---|---|---|---|
 | ResourceSat-2A LISS-3 BOA | ISRO/NRSC Bhoonidhi | Primary | Field-level optical analytics, FCC display, NDVI/MSAVI/NDMI/NDWI_GREEN_NIR. |
 | ResourceSat-2A AWiFS BOA | ISRO/NRSC Bhoonidhi | Gated | Coarser optical context/analytics after validation. |
-| ResourceSat-2A LISS-4 | ISRO/NRSC Bhoonidhi | Gated | Higher-resolution context after band/radiometry validation. |
+| ResourceSat-2A LISS-4 | ISRO/NRSC Bhoonidhi | Active: high-resolution field enhancement for NDVI/MSAVI/NDWI_GREEN_NIR with LISS-3 fallback | Verified Jan 30 staging composite for field-level high-resolution enhancement where coverage exists; LISS-3 remains the fallback. |
 | EOS-06 OCM NDVI | ISRO/NRSC Bhoonidhi | Gated | Coarse precomputed NDVI context only; not field-level stats. |
 | EOS-04 SAR / NISAR | ISRO/NRSC Bhoonidhi | Gated SAR | Radar context; never optical vegetation-index sources. |
 | Cartosat-3 | ISRO/NRSC Bhoonidhi | Gated/manual | High-resolution visual context only until access, licensing, and product format are confirmed. |

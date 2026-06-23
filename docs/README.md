@@ -1,24 +1,37 @@
 # Akasha Documentation
 
-Start with [`platform-plan.md`](./platform-plan.md). It is the index for the split, non-overlapping documentation pack.
+Start with [`platform-plan.md`](./platform-plan.md). It is the current documentation index and
+source-of-truth boundary map for Akasha.
 
-`platform-plan.md` also contains a prompt-slice table for incremental, functionality-by-functionality prompting.
+## Active source-of-truth docs
 
-Operational runbooks:
-
-- [`developer-setup-guide.md`](./developer-setup-guide.md) — complete macOS/Windows local setup, backend/frontend hot reload workflow, rebuild rules, and Alembic migration process.
-- [`sentinel-2-l2a-cog-prep-runbook.md`](./sentinel-2-l2a-cog-prep-runbook.md) — repeatable process for coverage-manifest discovery, Sentinel-2 L2A SAFE ZIP download, COG preparation, and manifest-driven ingestion.
-- [`sentinel-1-grd-cog-prep-runbook.md`](./sentinel-1-grd-cog-prep-runbook.md) — Sentinel-1 GRD SAFE ZIP preprocessing with SNAP GPT into SAR backscatter COGs.
-
-Research and productization notes:
-
+- [`architecture-tech-stack.md`](./architecture-tech-stack.md) — services, BFF API contracts, frontend architecture, and deployment topology.
+- [`data-ingestion-and-satellite-rules.md`](./data-ingestion-and-satellite-rules.md) — imagery sources, COG/STAC metadata, masks, index math, and source onboarding rules.
+- [`engineering-dos-donts.md`](./engineering-dos-donts.md) — implementation guardrails and anti-pattern checklist.
+- [`auth-team-admin-plan.md`](./auth-team-admin-plan.md) — hand-rolled auth, teams, RBAC, and account-management design.
 - [`india-specific-productization-plan.md`](./india-specific-productization-plan.md) — India-specific product modules and validation priorities.
+- [`design-system.md`](./design-system.md) — current Akasha visual design direction and UI tokens.
+- [`map-screen-redesign.md`](./map-screen-redesign.md) — active map-screen redesign plan; keep visible until completed or superseded.
 
-Implementation plans:
+## Operational runbooks
 
-- [`mvp-execution-plan.md`](./mvp-execution-plan.md) — MVP execution scope and sequencing.
-- [`impl-plan/`](./impl-plan/) — focused implementation plans for retained native data and UI work.
+- [`developer-setup-guide.md`](./developer-setup-guide.md) — macOS/Windows local setup, backend/frontend hot reload workflow, rebuild rules, and Alembic migration process.
+- [`staging-ingestion-developer-guide.md`](./staging-ingestion-developer-guide.md) — staging ingestion job workflow for team-triggered ingestion.
+- [`eos04-sar-mrs-l2b-cog-prep-runbook.md`](./eos04-sar-mrs-l2b-cog-prep-runbook.md) — EOS-04 SAR MRS L2B COG preparation.
+- [`nisar-ssar-beta-gcov-cog-prep-runbook.md`](./nisar-ssar-beta-gcov-cog-prep-runbook.md) — NISAR SSAR beta GCOV COG preparation.
 
-Prompt packs:
+Legacy Sentinel runbooks are archived and should be used only for explicit regression or migration work:
 
-- [`prompts/`](./prompts/) — slice-specific implementation prompts for the Akasha-native platform.
+- [`archive/sentinel-2-l2a-cog-prep-runbook.md`](./archive/sentinel-2-l2a-cog-prep-runbook.md)
+- [`archive/sentinel-1-grd-cog-prep-runbook.md`](./archive/sentinel-1-grd-cog-prep-runbook.md)
+
+## Active implementation plans
+
+- [`impl-plan/`](./impl-plan/) — focused plans for work that is current, pending, or intentionally still visible.
+- [`impl-plan/archive/`](./impl-plan/archive/) — completed or superseded implementation plans retained for traceability.
+
+## Reference and archive
+
+- [`reference/`](./reference/) — durable reference material and matrices.
+- [`eos-platform/`](./eos-platform/) — EOS Platform reference notes used for product comparisons.
+- [`archive/`](./archive/) — historical product/MVP docs, legacy runbooks, completed prompt packs, and informal notes.

@@ -106,7 +106,7 @@ export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRa
                         disabled={ disabled }
                         onClick={ toggleOpen }
                         className={ cn(
-                            'glass inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors duration-fast ease-standard',
+                            'glass inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-[13px] font-medium transition-colors duration-fast ease-standard',
                             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             hasRange
                                 ? 'border-primary/50 bg-primary/10 text-foreground'
@@ -116,7 +116,7 @@ export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRa
                     >
                         <CalendarRange className="size-4" strokeWidth={ 1.75 } />
                         { triggerLabel && (
-                            <span className="font-mono tnum text-[11px]">{ triggerLabel }</span>
+                            <span className="font-mono tnum text-[12px]">{ triggerLabel }</span>
                         ) }
                     </button>
                 </TooltipTrigger>
@@ -131,20 +131,20 @@ export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRa
                     className="glass absolute bottom-full left-0 z-popover mb-2 w-64 rounded-md p-3 shadow-e2"
                 >
                     <div className="mb-2 flex items-center justify-between">
-                        <span className="text-[12px] font-medium text-foreground">Filter by period</span>
+                        <span className="text-[13px] font-medium text-foreground">Filter by period</span>
                         { hasRange && (
                             <button
                                 type="button"
                                 onClick={ clear }
                                 data-testid="timeline-period-clear"
-                                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-muted-foreground hover:bg-accent/40 hover:text-foreground"
                             >
                                 <X className="size-3" strokeWidth={ 1.75 } /> Clear
                             </button>
                         ) }
                     </div>
                     <div className="flex flex-col gap-2">
-                        <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                        <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
                             <span>From</span>
                             <input
                                 id={ fromInputId }
@@ -156,7 +156,7 @@ export function CalendarRangePicker({ from, to, onChange, disabled }: CalendarRa
                                 className="h-8 rounded-md border border-border/60 bg-card/40 px-2 text-[12px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             />
                         </label>
-                        <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                        <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
                             <span>To</span>
                             <input
                                 id={ toInputId }

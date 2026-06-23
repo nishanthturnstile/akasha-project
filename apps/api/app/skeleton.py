@@ -243,7 +243,7 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
 }
 
 # --------------------------------------------------------------------------
-# Slice / phase roadmap (mvp-execution-plan.md). Slice 0 is active.
+# Slice / phase roadmap (historical docs/archive/mvp-execution-plan.md). Slice 0 is active.
 # --------------------------------------------------------------------------
 ROADMAP: list[dict[str, str]] = [
     {"id": "slice0", "phase": "Phase 0", "name": "Repository & service skeleton", "status": "done"},

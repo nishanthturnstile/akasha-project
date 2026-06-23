@@ -1,8 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { ChevronDown, ChevronRight, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Select,
@@ -14,6 +15,7 @@ import {
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { useConfig, useSeasons } from '@/lib/queries';
+import { useVegetationCycles } from '@/hooks/useVegetationCycles';
 import { resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
 import type maplibregl from 'maplibre-gl';
@@ -83,18 +85,6 @@ const TILLAGE_OPTIONS = [
   'Conventional', 'Reduced', 'No-till', 'Strip-till', 'Conservation', 'Other',
 ];
 
-interface VegetationCycleForm {
-  id: string;
-  cropName: string;
-  plantingDate: string;
-  irrigationType: string;
-  targetYield: number | null;
-  harvestingDate: string;
-  tillageType: string;
-  actualYield: number | null;
-  notes: string;
-}
-
 export default function EditFieldDialog({
   field,
   open,
@@ -106,14 +96,13 @@ export default function EditFieldDialog({
   const [error, setError] = useState<string | null>(null);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
-  const [isRedrawing, setIsRedrawing] = useState(false);
 
   const drawRef = useRef<TerraDraw | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const seasonsQ = useSeasons();
   const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set());
-  const [vegetationCycles, setVegetationCycles] = useState<Record<string, VegetationCycleForm[]>>({});
+  const { cycles: vegetationCycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } = useVegetationCycles(field.id);
 
   const configQ = useConfig();
 
@@ -141,9 +130,14 @@ export default function EditFieldDialog({
 
   const handleMapReady = useCallback((map: maplibregl.Map) => {
     setMiniMap(map);
+    void import('maplibre-gl').then(({ default: maplibregl }) => {
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-left');
+    }).catch((exc: unknown) => {
+      setError(exc instanceof Error ? exc.message : 'Failed to initialise map controls.');
+    });
     const bounds = polygonBounds(field.geometry);
     if (bounds) {
-      map.fitBounds(bounds, { padding: 24, maxZoom: 18 });
+      map.fitBounds(bounds, { padding: 24, maxZoom: 20 });
     }
   }, [field.geometry]);
 
@@ -153,18 +147,17 @@ export default function EditFieldDialog({
       cleanupRef.current = null;
     }
     drawRef.current = null;
-    setIsRedrawing(false);
   }, []);
 
-  // TerraDraw initialised only during active redraw — fresh polygon mode, no pre-loaded geometry
+  // TerraDraw SelectMode — click polygon to select, then drag vertices to edit
   useEffect(() => {
-    if (!open || !miniMap || isMultiPart || !isRedrawing) return;
+    if (!open || !miniMap || isMultiPart) return;
 
     let cancelled = false;
 
     void (async () => {
       try {
-        const [{ TerraDraw, TerraDrawPolygonMode }, { TerraDrawMapLibreGLAdapter }] =
+        const [{ TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode }, { TerraDrawMapLibreGLAdapter }] =
           await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
 
         if (cancelled) return;
@@ -177,16 +170,46 @@ export default function EditFieldDialog({
                 fillColor: '#3b82f6',
                 fillOpacity: 0.25,
                 outlineColor: '#2563eb',
-                outlineOpacity: 1,
                 outlineWidth: 3,
+              },
+            }),
+            new TerraDrawSelectMode({
+              styles: {
+                selectedPolygonColor: '#3b82f6',
+                selectedPolygonFillOpacity: 0.25,
+                selectedPolygonOutlineColor: '#2563eb',
+                selectedPolygonOutlineWidth: 3,
+              },
+              flags: {
+                polygon: {
+                  feature: {
+                    coordinates: {
+                      draggable: true,
+                      midpoints: { draggable: true },
+                      deletable: true,
+                    },
+                  },
+                },
               },
             }),
           ],
         });
 
         draw.start();
-        draw.setMode('polygon');
+        draw.setMode('select');
         drawRef.current = draw;
+
+        if (field.geometry.type === 'Polygon') {
+          const results = draw.addFeatures([
+            {
+              type: 'Feature',
+              geometry: field.geometry,
+              properties: { mode: 'polygon' },
+            },
+          ]);
+          const id = results[0]?.id;
+          if (id) draw.selectFeature(id);
+        }
 
         draw.on('change', () => {
           const geometry = latestPolygon(draw);
@@ -215,18 +238,7 @@ export default function EditFieldDialog({
       }
       drawRef.current = null;
     };
-  }, [open, miniMap, isRedrawing, isMultiPart, stopDraw]);
-
-  const handleRedraw = useCallback(() => {
-    setEditedGeometry(null);
-    setIsRedrawing(true);
-  }, []);
-
-  const handleCancelRedraw = useCallback(() => {
-    stopDraw();
-    setEditedGeometry(null);
-    setError(null);
-  }, [stopDraw]);
+  }, [open, miniMap, isMultiPart, stopDraw, field.geometry]);
 
   const toggleSeason = useCallback((seasonId: string) => {
     setExpandedSeasons((prev) => {
@@ -237,42 +249,14 @@ export default function EditFieldDialog({
     });
   }, []);
 
-  const addCycle = useCallback((seasonId: string) => {
-    const newCycle: VegetationCycleForm = {
-      id: crypto.randomUUID(),
-      cropName: '',
-      plantingDate: '',
-      irrigationType: '',
-      targetYield: null,
-      harvestingDate: '',
-      tillageType: '',
-      actualYield: null,
-      notes: '',
-    };
-    setVegetationCycles((prev) => ({
-      ...prev,
-      [seasonId]: [...(prev[seasonId] ?? []), newCycle],
-    }));
-  }, []);
-
-  const removeCycle = useCallback((seasonId: string, cycleId: string) => {
-    setVegetationCycles((prev) => ({
-      ...prev,
-      [seasonId]: (prev[seasonId] ?? []).filter((c) => c.id !== cycleId),
-    }));
-  }, []);
-
-  const updateCycle = useCallback(
-    (seasonId: string, cycleId: string, field: keyof VegetationCycleForm, value: string | number | null) => {
-      setVegetationCycles((prev) => ({
-        ...prev,
-        [seasonId]: (prev[seasonId] ?? []).map((c) =>
-          c.id === cycleId ? { ...c, [field]: value } : c,
-        ),
-      }));
-    },
-    [],
-  );
+  const handleClearSeason = useCallback((seasonId: string) => {
+    clearSeasonCycles(seasonId);
+    setExpandedSeasons((prev) => {
+      const next = new Set(prev);
+      next.delete(seasonId);
+      return next;
+    });
+  }, [clearSeasonCycles]);
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -297,276 +281,278 @@ export default function EditFieldDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
-          className="glass fixed left-1/2 top-[10vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto max-h-[85vh] rounded-lg p-0"
+          onInteractOutside={ (e) => e.preventDefault() }
+          onEscapeKeyDown={ (e) => e.preventDefault() }
+          className="glass fixed left-1/2 top-[8vh] z-popover w-[min(56rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
         >
           <VisuallyHidden>
             <Dialog.Title>Edit field</Dialog.Title>
             <Dialog.Description>Edit field name and adjust its boundary on the map.</Dialog.Description>
           </VisuallyHidden>
 
-          <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-            <h3 className="text-base font-display font-semibold">Edit field</h3>
+          <div className="flex items-center justify-between border-b border-border/60 px-6 py-4">
+            <h3 className="text-lg font-display font-semibold">Edit field</h3>
             <Dialog.Close asChild>
-              <button aria-label="Close" className="rounded-md p-1 text-muted-foreground hover:bg-accent/40">
-                <X className="size-4" />
+              <button aria-label="Close" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/40">
+                <X className="size-5" />
               </button>
             </Dialog.Close>
           </div>
 
-          <div className="p-4 space-y-4">
-            {basemapResolution ? (
-              <div className="relative h-[260px] w-full rounded-lg overflow-hidden border border-border">
-                <MapLayerManager
-                  basemap={basemapResolution}
-                  center={center}
-                  zoom={15}
-                  scene={null}
-                  opacity={1}
-                  visible={true}
-                  onBasemapError={() => {}}
-                  onMapReady={handleMapReady}
-                />
-                {miniMap && !isRedrawing && (
-                  <FieldBoundaryLayer
-                    map={miniMap}
-                    plot={null}
-                    geometry={field.geometry}
-                    featureId={`edit-field-${field.id}`}
-                    name={field.name}
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              {/* Left column: mini-map with polygon edit */ }
+              <div>
+                { basemapResolution ? (
+                  <div className="relative h-80 w-full rounded-xl overflow-hidden border border-border">
+                    <MapLayerManager
+                      basemap={ basemapResolution }
+                      center={ center }
+                      zoom={ 15 }
+                      scene={ null }
+                      opacity={ 1 }
+                      visible={ true }
+                      onBasemapError={ () => {} }
+                      onMapReady={ handleMapReady }
+                    />
+                    { miniMap && isMultiPart && (
+                      <FieldBoundaryLayer
+                        map={ miniMap }
+                        plot={ null }
+                        geometry={ field.geometry }
+                        featureId={ `edit-field-${field.id}` }
+                        name={ field.name }
+                      />
+                    ) }
+                    { isMultiPart && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-sm text-muted-foreground">
+                        Multi-part field editing is not available in this dialog.
+                      </div>
+                    ) }
+                  </div>
+                ) : (
+                  <div className="flex h-80 items-center justify-center rounded-xl border border-border bg-muted/30 text-sm text-muted-foreground">
+                    Loading map…
+                  </div>
+                ) }
+              </div>
+
+              {/* Right column: field details */ }
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 gap-2">
+                  <label className="text-sm font-medium text-foreground">Field name</label>
+                  <input
+                    className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={ name }
+                    onChange={ (e) => setName(e.target.value) }
                   />
-                )}
-                {isMultiPart && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-sm text-muted-foreground">
-                    Multi-part field editing is not available in this dialog.
-                  </div>
-                )}
-                {!isMultiPart && open && (
-                  <div className="absolute bottom-2 right-2 flex gap-1">
-                    {isRedrawing ? (
-                      <button
-                        type="button"
-                        onClick={handleCancelRedraw}
-                        className="rounded bg-background/80 px-2 py-1 text-[11px] text-foreground shadow hover:bg-background transition-colors"
-                      >
-                        Cancel redraw
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleRedraw}
-                        className="flex items-center gap-1 rounded bg-background/80 px-2 py-1 text-[11px] text-foreground shadow hover:bg-background transition-colors"
-                      >
-                        <RotateCcw className="size-3" strokeWidth={1.75} />
-                        Redraw
-                      </button>
-                    )}
-                  </div>
-                )}
-                {!isMultiPart && isRedrawing && open && (
-                  <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded bg-background/80 px-2 py-1 text-[11px] text-muted-foreground shadow">
-                    <Pencil className="size-3" strokeWidth={1.75} />
-                    Click to place vertices, double-click to close
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-[260px] rounded-lg border border-border bg-muted/30 text-sm text-muted-foreground">
-                Loading map…
-              </div>
-            )}
+                </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <label className="text-sm">Field name</label>
-              <input
-                className="rounded-md border border-border bg-background px-3 py-2"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
+                <div className="rounded-lg border border-border/60 bg-muted/10 px-4 py-3">
+                  <span className="text-sm text-muted-foreground">Area: </span>
+                  <span className="text-sm font-semibold text-foreground">
+                    { currentArea != null ? `${currentArea.toFixed(2)} ha` : '—' }
+                  </span>
+                </div>
 
-            <div className="text-sm text-muted-foreground">
-              Area: {currentArea != null ? `${currentArea.toFixed(2)} ha` : '—'}
-            </div>
+                { seasonsQ.data && (
+                  <div className="border border-border rounded-xl">
+                    <div className="px-4 py-3 border-b border-border/60">
+                      <h4 className="text-sm font-semibold text-foreground">Vegetation cycles</h4>
+                    </div>
+                    <div className="max-h-75 overflow-y-auto p-4 space-y-3">
+                      { seasonsQ.data
+                        .filter((s) => field.seasonIds.includes(s.id))
+                        .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+                        .map((season) => {
+                          const isExpanded = expandedSeasons.has(season.id);
+                          const cycles = vegetationCycles[season.id] ?? [];
+                          return (
+                            <div key={ season.id } className="border border-border/60 rounded-lg overflow-hidden">
+                              <div className={ cn(
+                                'flex w-full items-center justify-between px-4 py-3 text-sm font-medium bg-gray-200/70 text-gray-800',
+                                isExpanded ? 'bg-gray-300/70 text-gray-900' : 'hover:bg-gray-100',
+                              ) }>
+                                <button
+                                  type="button"
+                                  onClick={ () => toggleSeason(season.id) }
+                                  className="flex items-center gap-2 flex-1 text-left"
+                                >
+                                  { isExpanded
+                                    ? <ChevronDown className="size-4 text-gray-600 shrink-0" />
+                                    : <ChevronRight className="size-4 text-gray-600 shrink-0" /> }
+                                  <span>{ season.name }</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={ () => handleClearSeason(season.id) }
+                                  className="rounded-md p-1 text-black hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                  title="Remove all vegetation cycles"
+                                >
+                                  <Trash2 className="size-4" />
+                                </button>
+                              </div>
+                              { isExpanded && (
+                                <div className="border-t border-border/60 p-4 space-y-4">
+                                  { cycles.length === 0 && (
+                                    <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
+                                  ) }
+                                  { cycles.map((cycle) => (
+                                    <div key={ cycle.id } className="relative border border-border/50 rounded-lg p-4 space-y-4">
+                                      <button
+                                        type="button"
+                                        onClick={ () => removeCycle(season.id, cycle.id) }
+                                        className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                      >
+                                        <Trash2 className="size-4" />
+                                      </button>
+                                      <div>
+                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Crop name</label>
+                                        <Select
+                                          value={ cycle.cropName }
+                                          onValueChange={ (v) => updateCycle(season.id, cycle.id, 'cropName', v) }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Select crop" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            { CROP_OPTIONS.map((crop) => (
+                                              <SelectItem key={ crop } value={ crop }>{ crop }</SelectItem>
+                                            )) }
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
 
-            {seasonsQ.data && (
-              <div className="max-h-[240px] overflow-y-auto space-y-2 border border-border rounded-lg p-3">
-                <h4 className="text-sm font-medium mb-2">Vegetation cycles</h4>
-                {seasonsQ.data
-                  .filter((s) => field.seasonIds.includes(s.id))
-                  .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
-                  .map((season) => {
-                    const isExpanded = expandedSeasons.has(season.id);
-                    const cycles = vegetationCycles[season.id] ?? [];
-                    return (
-                      <div key={season.id} className="border border-border/60 rounded-md">
-                        <button
-                          type="button"
-                          onClick={() => toggleSeason(season.id)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium hover:bg-accent/20 transition-colors"
-                        >
-                          <span>{season.name}</span>
-                          {isExpanded
-                            ? <ChevronDown className="size-4 text-muted-foreground" />
-                            : <ChevronRight className="size-4 text-muted-foreground" />}
-                        </button>
-                        {isExpanded && (
-                          <div className="border-t border-border/60 p-3 space-y-3">
-                            {cycles.length === 0 && (
-                              <p className="text-xs text-muted-foreground">No vegetation cycles added yet.</p>
-                            )}
-                            {cycles.map((cycle) => (
-                              <div key={cycle.id} className="border border-border/50 rounded-md p-3 space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-xs text-muted-foreground">Crop name</label>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-4">
+                                          <div>
+                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Planting date</label>
+                                            <DatePicker
+                                              value={ cycle.plantingDate }
+                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'plantingDate', v) }
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Irrigation type</label>
+                                            <Select
+                                              value={ cycle.irrigationType }
+                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'irrigationType', v) }
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="Select" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                { IRRIGATION_OPTIONS.map((opt) => (
+                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
+                                                )) }
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target yield (t/ha)</label>
+                                            <input
+                                              type="number"
+                                              min={ 0 }
+                                              step={ 0.01 }
+                                              value={ cycle.targetYield ?? '' }
+                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null) }
+                                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                          <div>
+                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Harvesting date</label>
+                                            <DatePicker
+                                              value={ cycle.harvestingDate }
+                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'harvestingDate', v) }
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Tillage type</label>
+                                            <Select
+                                              value={ cycle.tillageType }
+                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'tillageType', v) }
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="Select" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                { TILLAGE_OPTIONS.map((opt) => (
+                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
+                                                )) }
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Actual yield (t/ha)</label>
+                                            <input
+                                              type="number"
+                                              min={ 0 }
+                                              step={ 0.01 }
+                                              value={ cycle.actualYield ?? '' }
+                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null) }
+                                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Notes</label>
+                                        <input
+                                          value={ cycle.notes }
+                                          onChange={ (e) => updateCycle(season.id, cycle.id, 'notes', e.target.value) }
+                                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+                                        />
+                                      </div>
+                                    </div>
+                                  )) }
                                   <button
                                     type="button"
-                                    onClick={() => removeCycle(season.id, cycle.id)}
-                                    className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                    onClick={ () => addCycle(season.id) }
+                                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                                   >
-                                    <Trash2 className="size-4" fill="currentColor" />
+                                    <Plus className="size-4" strokeWidth={ 1.75 } />
+                                    Add vegetation cycle
                                   </button>
                                 </div>
-                                <Select
-                                  value={cycle.cropName}
-                                  onValueChange={(v) => updateCycle(season.id, cycle.id, 'cropName', v)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select crop" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {CROP_OPTIONS.map((crop) => (
-                                      <SelectItem key={crop} value={crop}>{crop}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-3">
-                                    <div>
-                                      <label className="text-xs text-muted-foreground mb-1 block">Planting date</label>
-                                      <DatePicker
-                                        value={cycle.plantingDate}
-                                        onChange={(v) => updateCycle(season.id, cycle.id, 'plantingDate', v)}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-xs text-muted-foreground mb-1 block">Irrigation type</label>
-                                      <Select
-                                        value={cycle.irrigationType}
-                                        onValueChange={(v) => updateCycle(season.id, cycle.id, 'irrigationType', v)}
-                                      >
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {IRRIGATION_OPTIONS.map((opt) => (
-                                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div>
-                                      <label className="text-xs text-muted-foreground mb-1 block">Target yield (t/ha)</label>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        step={0.01}
-                                        value={cycle.targetYield ?? ''}
-                                        onChange={(e) => updateCycle(season.id, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null)}
-                                        className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="space-y-3">
-                                    <div>
-                                      <label className="text-xs text-muted-foreground mb-1 block">Harvesting date</label>
-                                      <DatePicker
-                                        value={cycle.harvestingDate}
-                                        onChange={(v) => updateCycle(season.id, cycle.id, 'harvestingDate', v)}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-xs text-muted-foreground mb-1 block">Tillage type</label>
-                                      <Select
-                                        value={cycle.tillageType}
-                                        onValueChange={(v) => updateCycle(season.id, cycle.id, 'tillageType', v)}
-                                      >
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {TILLAGE_OPTIONS.map((opt) => (
-                                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div>
-                                      <label className="text-xs text-muted-foreground mb-1 block">Actual yield (t/ha)</label>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        step={0.01}
-                                        value={cycle.actualYield ?? ''}
-                                        onChange={(e) => updateCycle(season.id, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null)}
-                                        className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
-                                  <input
-                                    value={cycle.notes}
-                                    onChange={(e) => updateCycle(season.id, cycle.id, 'notes', e.target.value)}
-                                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => addCycle(season.id)}
-                              className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border/60 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                            >
-                              <Plus className="size-3.5" strokeWidth={1.75} />
-                              Add vegetation cycle
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                              ) }
+                            </div>
+                          );
+                        }) }
+                    </div>
+                  </div>
+                ) }
               </div>
-            )}
+            </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            { error && <p className="text-sm text-destructive">{ error }</p> }
 
-            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+            <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
               <div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleDelete}
+                  onClick={ handleDelete }
                   className="text-destructive border-destructive/40 hover:bg-destructive/10"
                 >
                   Delete field
                 </Button>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <Dialog.Close asChild>
-                  <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm">
+                  <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors">
                     Cancel
                   </button>
                 </Dialog.Close>
-                <Button variant="primary" size="sm" onClick={handleSave}>
+                <Button variant="primary" size="md" onClick={ handleSave }>
                   Save
                 </Button>
               </div>

@@ -33,7 +33,8 @@ function renderHeader(overrides: Partial<Parameters<typeof FieldContextHeader>[0
         onBack: vi.fn(),
         onEditGeometry: vi.fn(),
         onOpenCommand: vi.fn(),
-        onGetOverview: vi.fn(),
+        allFields: [],
+        onNavigate: vi.fn(),
         ...overrides,
     };
     render(<FieldContextHeader { ...props } />);
@@ -71,11 +72,5 @@ describe('FieldContextHeader', () => {
         expect(props.onBack).toHaveBeenCalledTimes(1);
         expect(props.onEditGeometry).toHaveBeenCalledTimes(1);
         expect(props.onOpenCommand).toHaveBeenCalledTimes(1);
-    });
-
-    it('disables the Overview placeholder (plan-gated entry-point)', () => {
-        renderHeader();
-        const overview = screen.getByTestId('field-header-overview') as HTMLButtonElement;
-        expect(overview.disabled).toBe(true);
     });
 });

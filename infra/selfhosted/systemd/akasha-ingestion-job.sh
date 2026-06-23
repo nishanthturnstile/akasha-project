@@ -44,6 +44,12 @@ job_dir_for() {
 
 write_request_and_queued_status() {
   local request_path="${1:-}"
+  local request_tmp=""
+  if [[ -z "${request_path}" || "${request_path}" == "-" ]]; then
+    request_tmp="$(mktemp)"
+    cat >"${request_tmp}"
+    request_path="${request_tmp}"
+  fi
   python - "${JOB_ROOT}" "${request_path}" <<'PY'
 import json
 import os
@@ -53,11 +59,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 job_root, request_path = sys.argv[1], sys.argv[2]
-if request_path and request_path != "-":
-    with open(request_path, encoding="utf-8") as fh:
-        request = json.load(fh)
-else:
-    request = json.load(sys.stdin)
+with open(request_path, encoding="utf-8") as fh:
+  request = json.load(fh)
 
 job_id = request.get("job_id")
 if not job_id:
@@ -94,6 +97,9 @@ with open(os.path.join(job_dir, "status.json"), "w", encoding="utf-8") as fh:
     fh.write("\n")
 print(job_id)
 PY
+  if [[ -n "${request_tmp}" ]]; then
+    rm -f "${request_tmp}"
+  fi
 }
 
 start_job() {
@@ -109,12 +115,21 @@ start_job() {
   if command -v systemd-run >/dev/null 2>&1; then
     local unit="akasha-ingest-job-${job_id}"
     systemctl reset-failed "${unit}.service" >/dev/null 2>&1 || true
-    systemd-run --collect --unit "${unit}" "${RUNNER}" "${job_id}" >/dev/null
-  else
-    setsid nohup "${RUNNER}" "${job_id}" >>"${job_dir}/runner.launch.log" 2>&1 &
-    echo "$!" >"${job_dir}/runner.pid"
-    chmod 640 "${job_dir}/runner.pid"
+    if systemd-run --collect --unit "${unit}" "${RUNNER}" "${job_id}" >"${job_dir}/runner.launch.log" 2>&1; then
+      chmod 640 "${job_dir}/runner.launch.log" 2>/dev/null || true
+      printf '{"job_id":"%s","state":"queued"}\n' "${job_id}"
+      return 0
+    fi
+    chmod 640 "${job_dir}/runner.launch.log" 2>/dev/null || true
   fi
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid nohup "${RUNNER}" "${job_id}" >>"${job_dir}/runner.launch.log" 2>&1 &
+  else
+    nohup "${RUNNER}" "${job_id}" >>"${job_dir}/runner.launch.log" 2>&1 &
+  fi
+  echo "$!" >"${job_dir}/runner.pid"
+  chmod 640 "${job_dir}/runner.pid" "${job_dir}/runner.launch.log" 2>/dev/null || true
   printf '{"job_id":"%s","state":"queued"}\n' "${job_id}"
 }
 

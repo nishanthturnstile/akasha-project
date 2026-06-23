@@ -48,6 +48,16 @@ discover_compose() {
   # The default policy expands to the safe command contract: docker compose ... --pull never.
 }
 
+priority_prefix() {
+  priority_cmd=()
+  if command -v ionice >/dev/null 2>&1; then
+    priority_cmd+=(ionice -c "${AKASHA_INGESTION_IONICE_CLASS:-2}" -n "${AKASHA_INGESTION_IONICE_LEVEL:-7}")
+  fi
+  if command -v nice >/dev/null 2>&1; then
+    priority_cmd+=(nice -n "${AKASHA_INGESTION_NICE:-10}")
+  fi
+}
+
 update_status() {
   local state="$1"
   local exit_code="${2:-}"
@@ -237,8 +247,8 @@ PY
 preflight() {
   [[ -d "${job_dir}" ]] || { update_status failed 2 preflight "job directory missing"; exit 2; }
   [[ -f "${request_path}" ]] || { update_status failed 2 preflight "request.json missing"; exit 2; }
-  if [[ -e /srv/akasha && ! -w /srv/akasha ]]; then
-    update_status failed 2 preflight "/srv/akasha is not writable"
+  if [[ ! -w "${JOB_ROOT}" ]]; then
+    update_status failed 2 preflight "job root is not writable: ${JOB_ROOT}"
     exit 2
   fi
   mkdir -p "${RAW_ROOT}" "${TEMP_ROOT}" "$(dirname "${LEDGER_PATH}")"
@@ -259,10 +269,6 @@ preflight() {
   fi
   worker_lock_path="/srv/akasha/ingestion/bhoonidhi-sync.${aoi_id}.worker.lock"
   mkdir -p "$(dirname "${worker_lock_path}")"
-  if ! flock -n "${worker_lock_path}" -c true; then
-    update_status blocked_by_lock 75 lock "shared worker lock is held"
-    exit 75
-  fi
 }
 
 run_job() {
@@ -310,16 +316,17 @@ run_job() {
   [[ "${force_upload}" == "true" ]] && sync_args+=(--force)
   [[ "${retain_raw_downloads}" == "true" ]] && sync_args+=(--retain-raw-downloads)
   [[ "${keep_intermediate}" == "true" ]] && sync_args+=(--keep-intermediate)
+  priority_prefix
 
   {
-    printf '%q ' docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker python worker.py "${sync_args[@]}"
+    printf '%q ' "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker python worker.py "${sync_args[@]}"
     printf '\n'
   } | redact_stream >"${command_path}"
   chmod 640 "${command_path}"
 
   cd "${compose_dir}"
   set +e
-  docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker \
+  "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker \
     python worker.py "${sync_args[@]}" 2>&1 | redact_stream | tee -a "${log_path}"
   local exit_code=${PIPESTATUS[0]}
   set -e
@@ -413,7 +420,8 @@ PY
     exit 0
   fi
   cd "${compose_dir}"
-  docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker \
+  priority_prefix
+  "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker \
     python worker.py verify-composite --manifest "${manifest}"
 }
 

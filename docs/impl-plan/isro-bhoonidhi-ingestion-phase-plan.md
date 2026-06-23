@@ -292,8 +292,8 @@ Relevant current behavior:
   `infra/docker/docker-compose.yml`, `infra/selfhosted/coolify-compose.yml`, `infra/selfhosted/env.example`,
   `infra/selfhosted/README.md`, `infra/gateway/.env.example`,
   `docs/architecture-tech-stack.md`, `docs/data-ingestion-and-satellite-rules.md`,
-  `docs/engineering-dos-donts.md`, `docs/emergent-context.md`, `docs/platform-plan.md`,
-  `docs/sentinel-2-l2a-cog-prep-runbook.md`, `docs/sentinel-1-grd-cog-prep-runbook.md`,
+  `docs/engineering-dos-donts.md`, `docs/archive/emergent-context.md`, `docs/platform-plan.md`,
+  `docs/archive/sentinel-2-l2a-cog-prep-runbook.md`, `docs/archive/sentinel-1-grd-cog-prep-runbook.md`,
   `data/seed/README.md`, `data/seed/stac/sentinel-*`, `scripts/*sentinel*`, repo-root
   `tests/test_*sentinel*`, frontend test fixtures/types referencing Sentinel or SCL fields, and
   `AGENTS.md` / `CLAUDE.md`.
@@ -698,7 +698,7 @@ polygon stats; no object/internal URLs exposed.
 | P8-001 | Switch the production default source to `resourcesat-2a-liss3-boa` (`DEFAULT_SOURCE_ID` in `apps/api/.env.example`, `infra/docker/docker-compose.yml`, `infra/selfhosted/coolify-compose.yml`, `infra/selfhosted/env.example`, and deployment docs). |
 | P8-002 | Replace every `COLLECTION_ID = "sentinel-2-l2a"` resolver default/fallback in `catalog_resolver.py`, `/api/layers/default`, and `StatisticsRequest.sourceId` defaults. |
 | P8-003 | Remove Sentinel seed COGs/STAC from production deployments. |
-| P8-004 | Remove or rewrite Sentinel scripts, tests, validators, smoke-test defaults, frontend fixtures, and docs (`scripts/*sentinel*`, repo-root `tests/test_*sentinel*`, `docs/sentinel-*-runbook.md`, `docs/emergent-context.md`, `docs/platform-plan.md`, `data/seed/README.md`, `data/seed/stac/sentinel-*`, `infra/selfhosted/README.md`, Sentinel sections of `architecture-tech-stack.md` / `data-ingestion-and-satellite-rules.md` / `engineering-dos-donts.md`, `AGENTS.md` / `CLAUDE.md`, and frontend tests/types referencing Sentinel source ids or SCL fields). Preserve the index-agnostic pure-numpy statistics tests. |
+| P8-004 | Remove or rewrite Sentinel scripts, tests, validators, smoke-test defaults, frontend fixtures, and docs (`scripts/*sentinel*`, repo-root `tests/test_*sentinel*`, archived Sentinel runbooks under `docs/archive/`, `docs/archive/emergent-context.md`, `docs/platform-plan.md`, `data/seed/README.md`, `data/seed/stac/sentinel-*`, `infra/selfhosted/README.md`, Sentinel sections of `architecture-tech-stack.md` / `data-ingestion-and-satellite-rules.md` / `engineering-dos-donts.md`, `AGENTS.md` / `CLAUDE.md`, and frontend tests/types referencing Sentinel source ids or SCL fields). Preserve the index-agnostic pure-numpy statistics tests. |
 | P8-005 | Update deployment env examples and self-hosted/Coolify docs to ISRO defaults; remove or clearly mark legacy `DEFAULT_AOI_ID=bangalore` and old `bangalore-aoi.geojson` references after `AOI_CONFIG_PATH` is authoritative. |
 
 Exit criteria: production has no Sentinel selectable/default source; ResourceSat is the default;

@@ -298,7 +298,7 @@ python worker.py build-composite --source resourcesat-2a-liss3-boa --aoi mysore-
 
 EOS-04 and NISAR SAR sources are registered as gated context layers until a validated native
 operator-download/prep workflow is available. The `ingestion-sar` service still contains the legacy
-Sentinel-1 regression path; use `docs/sentinel-1-grd-cog-prep-runbook.md` only for that explicit
+Sentinel-1 regression path; use `docs/archive/sentinel-1-grd-cog-prep-runbook.md` only for that explicit
 legacy workflow, not for production ISRO SAR onboarding.
 
 ## Centralized ad hoc ingestion jobs

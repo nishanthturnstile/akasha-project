@@ -403,6 +403,12 @@ def test_sources_endpoint_contract():
     assert liss4["supportedIndices"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
     assert "NDMI" not in liss4["supportedIndices"]
     assert "NDRE" not in liss4["supportedIndices"]
+    assert "NDMI" not in liss4["displayModes"]
+    assert "NDRE" not in liss4["displayModes"]
+    assert "RECI" not in liss4["displayModes"]
+    assert "NDMI" not in liss4["mapDisplayModes"]
+    assert "NDRE" not in liss4["mapDisplayModes"]
+    assert "RECI" not in liss4["mapDisplayModes"]
     assert liss4["bandRoleMapping"] == {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4"}
     assert liss4["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDWI_GREEN_NIR"]
     assert liss4["mapDisplayModes"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]

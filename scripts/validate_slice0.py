@@ -48,11 +48,11 @@ EXPECTED_SERVICES = {
 }
 
 REQUIRED_PATHS = [
-    # source-of-truth docs (kept safe)
+    # active and archived source-of-truth/historical docs (kept safe)
     "docs/engineering-dos-donts.md",
-    "docs/mvp-execution-plan.md",
+    "docs/archive/mvp-execution-plan.md",
     "docs/architecture-tech-stack.md",
-    "docs/emergent-context.md",
+    "docs/archive/emergent-context.md",
     # api
     "apps/api/app/main.py",
     "apps/api/app/skeleton.py",

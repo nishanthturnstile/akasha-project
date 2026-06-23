@@ -220,6 +220,8 @@ _SOURCE_REGISTRY.update(
             "maskMethod": "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)",
             "availableMaskOptions": ["clouds", "cloudShadows"],
             "metricsProvisional": True,
+            "availabilityStatus": "active",
+            "gatedReason": None,
         },
         "eos-06-ocm-lac-ndvi-8day-360m": {
             "id": "eos-06-ocm-lac-ndvi-8day-360m",

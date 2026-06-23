@@ -330,18 +330,15 @@ function stubAkashaFetch({
 }
 
 describe('MapPage native source behavior', () => {
-  it('shows the field-required analytics state before a field is selected', async () => {
+  it('shows the empty map state before a field is selected', async () => {
     stubAkashaFetch();
 
     renderMapPage();
 
-    await screen.findByTestId('index-panel');
+    await screen.findByTestId('map-layer-manager');
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toBe('');
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe('');
     expect(screen.getByTestId('attribution').textContent).toContain('OpenStreetMap');
-    expect(
-      screen.getByText('Select a field to view cloud-masked statistics and trend analytics.'),
-    ).toBeTruthy();
   });
 
   it('shows SAR notes and hides optical index controls after SAR selection', async () => {
@@ -349,14 +346,10 @@ describe('MapPage native source behavior', () => {
 
     renderMapPage();
 
-    await screen.findByTestId('index-panel');
+    await screen.findByTestId('map-layer-manager');
 
     fireEvent.click(screen.getByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-eos-04-sar-mrs-l2b'));
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('index-panel')).toBeNull();
-    });
 
     await waitFor(() => {
       expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
@@ -434,7 +427,6 @@ describe('MapPage selected-field native analytics', () => {
 
     renderMapPage({ selectedPlotId: 'plot-1' });
 
-    await screen.findByTestId('index-panel');
     await waitFor(() => {
       const manager = screen.getByTestId('map-layer-manager');
       expect(manager.getAttribute('data-tile-template')).toBe('');
@@ -444,14 +436,6 @@ describe('MapPage selected-field native analytics', () => {
       );
     });
     expect(screen.getByTestId('layer-display-trigger').textContent).toContain('NDVI');
-
-    const chartTab = await screen.findByTestId('index-panel-tab-chart');
-    fireEvent.mouseDown(chartTab);
-    fireEvent.click(chartTab);
-
-    expect((await screen.findAllByText('0.56')).length).toBeGreaterThan(0);
-    expect(screen.getByTestId('field-trend-chart')).toBeTruthy();
-    expect(screen.getByText('Akasha masked-raster analytics')).toBeTruthy();
   });
 
   it('shows only index overlay modes in the layer picker', async () => {
@@ -467,7 +451,7 @@ describe('MapPage selected-field native analytics', () => {
     expect(screen.queryByTestId('display-mode-FCC')).toBeNull();
   });
 
-  it('syncs the field statistics index when the native display mode changes', async () => {
+  it('updates the field overlay when the native display mode changes', async () => {
     stubAkashaFetch({ plots: [FIELD_PLOT] });
 
     renderMapPage({ selectedPlotId: 'plot-1' });
@@ -485,11 +469,7 @@ describe('MapPage selected-field native analytics', () => {
       const calls = (globalThis.fetch as unknown as {
         mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
       }).mock.calls;
-      const statsCall = calls
-        .filter(([input]) => String(input) === '/api/fields/plot-1/indices/statistics')
-        .map(([, init]) => (typeof init?.body === 'string' ? init.body : ''))
-        .find((body) => body.includes('"indexType":"MSAVI"'));
-      expect(statsCall).toBeTruthy();
+      expect(calls.some(([input]) => String(input).includes('/overlay/MSAVI.png'))).toBe(true);
     });
   });
 

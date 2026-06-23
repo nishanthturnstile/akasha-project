@@ -47,6 +47,9 @@ def test_env_example_contains_task_007_defaults_exactly():
         "AKASHA_INGESTION_DEFAULT_MAX_DOWNLOADS=3",
         "AKASHA_INGESTION_DEFAULT_MIN_COVERAGE_PERCENT=95",
         "AKASHA_INGESTION_LOG_RETENTION_DAYS=14",
+        "AKASHA_INGESTION_NICE=10",
+        "AKASHA_INGESTION_IONICE_CLASS=2",
+        "AKASHA_INGESTION_IONICE_LEVEL=7",
         "AKASHA_SYNC_RAW_ROOT=/srv/akasha/data/raw/bhoonidhi",
         "AKASHA_SYNC_TEMP_ROOT=/srv/akasha/data/work/bhoonidhi",
         "AKASHA_SYNC_LEDGER_PATH=/srv/akasha/ingestion/ledger.sqlite",
@@ -62,6 +65,8 @@ def test_wrapper_contract_sources_env_starts_detached_and_writes_job_state():
     assert "/etc/akasha/ingestion-jobs.env" in wrapper
     assert "/srv/akasha/ingestion/jobs" in wrapper
     assert "request.json" in wrapper
+    assert "mktemp" in wrapper
+    assert "cat >\"${request_tmp}\"" in wrapper
     assert "status.json" in wrapper
     assert "queued" in wrapper
     assert "systemd-run" in wrapper
@@ -83,6 +88,12 @@ def test_runner_contract_uses_compose_worker_lock_redaction_and_group_only_artif
     assert "docker compose" in runner
     assert "ingestion-worker" in runner
     assert "python worker.py" in runner
+    assert "priority_prefix" in runner
+    assert "ionice -c" in runner
+    assert "nice -n" in runner
+    assert "AKASHA_INGESTION_NICE:-10" in runner
+    assert "AKASHA_INGESTION_IONICE_CLASS:-2" in runner
+    assert "AKASHA_INGESTION_IONICE_LEVEL:-7" in runner
     assert "bhoonidhi-sync" in runner
     assert "--pull \"${pull_policy}\"" in runner
     assert "AKASHA_SYNC_PULL_POLICY:-never" in runner
@@ -106,7 +117,7 @@ def test_installer_and_forced_command_contracts():
     assert "/opt/akasha/bin" in installer
     assert "/srv/akasha/ingestion/jobs" in installer
     assert "akasha-ingesters" in installer
-    assert "install -d -m 2750" in installer
+    assert "install -d -m 2770" in installer
     assert "/etc/akasha/ingestion-jobs.env" in installer
     assert "--dry-run" in installer
     assert "--uninstall" in installer
@@ -151,6 +162,6 @@ def test_installer_dry_run_outputs_expected_job_setup_actions():
     assert "/opt/akasha/bin/akasha-ingestion-forced-command.sh" in result.stdout
     assert "/srv/akasha/ingestion/jobs" in result.stdout
     assert "/etc/akasha/ingestion-jobs.env" in result.stdout
-    assert "2750" in result.stdout
+    assert "2770" in result.stdout
     assert "akasha-ingesters" in result.stdout
     assert "authorized_keys" in result.stdout

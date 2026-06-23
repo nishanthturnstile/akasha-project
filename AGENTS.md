@@ -203,6 +203,22 @@ CQL2 `Online=Y` filter), then `scripts/prepare_resourcesat_liss3_boa_cogs.py` +
 `worker.py build-composite` / `worker.py ingest-manifest`. Legacy Sentinel-2 and Sentinel-1 helper
 scripts remain for regression/migration reference only, not the production ingestion path.
 
+### Staging VM ingestion guardrails
+
+These are hard rules for `akasha-staging` and any Bhoonidhi/ResourceSat ingestion work:
+
+- **Keep all raster/raw/work/COG data on `/srv/akasha`**. Do not place bulk downloads,
+  extracted rasters, prepared COGs, composite intermediates, or validation scratch data on `/`,
+  `/tmp`, `/var/tmp`, `/var/lib/docker`, or `/data/coolify`.
+- **Run ingestion only through the wrapper**: use `python scripts/staging_ingestion_job.py ...`
+  from a workstation or `/opt/akasha/bin/akasha-ingestion-job.sh ...` on the VM. The wrapper owns
+  job state, locks, redaction, bounded defaults, and low-priority `ionice`/`nice` execution.
+- **Do not run direct `docker run ... worker.py verify-composite` or direct
+  `docker compose run ... ingestion-worker python worker.py ...` on `akasha-staging`** unless an
+  operator is performing emergency recovery with explicit I/O throttling and monitoring. Direct
+  LISS-4 verify/composite runs have previously wedged SSH and the Azure VM Agent via disk I/O
+  pressure.
+
 ## Frontend rules
 - Map renderer is **MapLibre GL JS**; plot drawing uses **Terra Draw + MapLibre adapter**. Do not
   use `@mapbox/mapbox-gl-draw` (it targets Mapbox GL).
@@ -216,6 +232,6 @@ scripts remain for regression/migration reference only, not the production inges
 Key files: `architecture-tech-stack.md` (services, BFF API contracts), `data-ingestion-and-satellite-rules.md`
 (imagery/COG/STAC/mask/index rules), `engineering-dos-donts.md` (guardrail checklist),
 `auth-team-admin-plan.md` (auth/RBAC design), `india-specific-productization-plan.md`
-(ISRO/Bhoonidhi product layer), `emergent-context.md` (per-phase handoff notes),
+(ISRO/Bhoonidhi product layer), `archive/emergent-context.md` (historical per-phase handoff notes),
 and [infra/selfhosted/README.md](infra/selfhosted/README.md) (Coolify/Azure deployment).
 Pinned image/dependency versions matter (GDAL/rasterio/rio-tiler/TiTiler) — do not float to `latest`.

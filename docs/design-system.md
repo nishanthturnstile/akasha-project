@@ -6,7 +6,7 @@ Transform `docs/design-system.md` from a generic shadcn `globals.css` token dump
 ## Context (verified from repo)
 - Stack: React + Vite + TypeScript, **MapLibre GL JS**, **Terra Draw**, **shadcn/ui + Tailwind CSS** (`docs/architecture-tech-stack.md`).
 - Key components already named in architecture: `MapPage`, `LayerPanel`, `PlotToolbar`, `IndexPanel`, `MapLayerManager` (`architecture-tech-stack.md:61-68`).
-- Product: map-first browsing of true-colour imagery; source/date selector; AOI cloud/usable-pixel indicator; opacity + visibility; draw/import/export plots; on-demand NDVI/NDRE/NDMI/NDWI statistics with legend (`product-plan.md`).
+- Product: map-first browsing, source/date selector, AOI cloud/usable-pixel indicator, opacity + visibility, draw/import/export plots, and on-demand vegetation-index statistics are now tracked through `india-specific-productization-plan.md`, `map-screen-redesign.md`, and active plans in `docs/impl-plan/`.
 - Current `design-system.md` is literally a CSS token file → it will be rewritten as a true markdown design doc that still ships the implementable CSS + Tailwind tokens.
 
 ## Creative concept (approved direction)

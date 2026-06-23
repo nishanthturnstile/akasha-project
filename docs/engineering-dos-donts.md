@@ -119,9 +119,11 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 - Do treat Bhoonidhi/API/licensing and redistribution constraints as source-specific release gates.
 - Do add new satellite sources as STAC collections.
 - Do keep source-specific quirks behind ingestion/catalog metadata.
+- Do run Bhoonidhi/Bhuvan downloads only from the approved Aakasha Staging egress IP. That egress IP must be a reserved static Azure public IP unless NRSC/Bhoonidhi whitelisting rules change.
 
 ### Don't
 
 - Don't promise high-resolution ISRO imagery until pricing/access/licensing are confirmed.
 - Don't mix SAR products into optical index workflows.
 - Don't design frontend features that assume one provider forever.
+- Don't copy raw Bhoonidhi provider archives to developer laptops; sync only prepared COG/TIFF artifacts approved by the staging ingestion workflow.

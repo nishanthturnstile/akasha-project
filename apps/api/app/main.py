@@ -46,6 +46,7 @@ from .routers.account_router import router as account_router
 from .routers.analytics_router import router as field_analytics_router
 from .routers.auth_router import router as auth_router
 from .routers.bhoonidhi_router import router as bhoonidhi_diagnostics_router
+from .routers.crops_router import router as crops_router
 from .routers.data_manager_router import router as data_manager_router
 from .routers.field_exports_router import router as field_exports_router
 from .routers.field_group_router import router as field_groups_router
@@ -258,6 +259,9 @@ app.include_router(reports_router)
 
 # --- Risk/Crop Intelligence API -------------------------------------------
 app.include_router(risk_router)
+
+# --- Reference / Lookup Data API -----------------------------------------
+app.include_router(crops_router)
 
 # --- Auth/Team/Admin/Notifications API ------------------------------------
 app.include_router(auth_router)

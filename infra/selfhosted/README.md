@@ -93,7 +93,7 @@ The staging workflow builds and pushes these images from the client repository o
 - `ghcr.io/akasha-techcatalyst/akasha-ingestion-worker:<git-sha>`
 - `ghcr.io/akasha-techcatalyst/akasha-ingestion-sar:<git-sha>`
 
-It then renders `coolify-compose.yml` with `IMAGE_TAG=<git-sha>`, patches the Coolify staging service stack, and triggers a Coolify deployment.
+It then renders `coolify-compose.yml` with `IMAGE_TAG=<git-sha>` and patches the Coolify staging service stack with `instant_deploy=true`, so Coolify queues the service deployment as part of the service update.
 
 Before patching Coolify, staging and production deploy workflows verify that all four immutable
 SHA-tagged images exist in GHCR. If any image is missing, the workflow must fail before the

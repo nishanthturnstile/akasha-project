@@ -9,6 +9,7 @@ interface MapControlsProps {
   legendOpen?: boolean;
   onFindSelectedField?: () => void;
   onLegendOpenChange?: (open: boolean) => void;
+  simplified?: boolean;
 }
 
 function ControlButton({
@@ -52,6 +53,7 @@ export function MapControls({
   legendOpen = true,
   onFindSelectedField,
   onLegendOpenChange,
+  simplified = false,
 }: MapControlsProps) {
   const [bearing, setBearing] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -115,11 +117,15 @@ export function MapControls({
       >
         <Compass className="size-5" strokeWidth={ 1.75 } />
       </ControlButton>
-      <div className="h-px w-full bg-border" />
-      <ControlButton label="Find my location" testId="geolocate-btn" onClick={ geolocate }>
-        <LocateFixed className="size-5" strokeWidth={ 1.75 } />
-      </ControlButton>
-      { onFindSelectedField && (
+      { !simplified && (
+        <>
+          <div className="h-px w-full bg-border" />
+          <ControlButton label="Find my location" testId="geolocate-btn" onClick={ geolocate }>
+            <LocateFixed className="size-5" strokeWidth={ 1.75 } />
+          </ControlButton>
+        </>
+      ) }
+      { !simplified && onFindSelectedField && (
         <>
           <div className="h-px w-full bg-border" />
           <ControlButton
@@ -132,7 +138,7 @@ export function MapControls({
           </ControlButton>
         </>
       ) }
-      { onLegendOpenChange && (
+      { !simplified && onLegendOpenChange && (
         <>
           <div className="h-px w-full bg-border" />
           <ControlButton

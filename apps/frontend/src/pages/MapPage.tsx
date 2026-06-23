@@ -32,7 +32,6 @@ import { FieldContextHeader } from '@/components/map/FieldContextHeader';
 import { LayerControlBar } from '@/components/layers/LayerControlBar';
 import { TimelineBar } from '@/components/timeline/TimelineBar';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
-import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -294,7 +293,7 @@ function resolveDisplayMode(
   return availableModes.find((mode) => mode.toUpperCase() === normalized) ?? fallback;
 }
 
-export default function MapPage() {
+export default function MapPage({ hideFieldHeader, hidePlotToolbar, simplifiedMapControls, topLeftCoords }: { hideFieldHeader?: boolean; hidePlotToolbar?: boolean; simplifiedMapControls?: boolean; topLeftCoords?: boolean } = {}) {
   useMapUrlState();
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -330,7 +329,7 @@ export default function MapPage() {
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
-  const [preferHighRes, setPreferHighRes] = useState(true);
+  const [preferHighRes] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [deleteFieldTarget, setDeleteFieldTarget] = useState<{
     id: string;
@@ -762,10 +761,8 @@ export default function MapPage() {
   const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
     ? selectedDisplayMode
     : analyticsSupportedIndices[0] ?? config.defaultIndex ?? 'NDVI';
-  const showIndexPanel = analyticsEnabled;
-
   return (
-    <div className="relative h-full min-h-160 w-full overflow-hidden bg-background" data-testid="map-page">
+    <div className="relative h-full w-full overflow-hidden bg-background" data-testid="map-page">
       {/* Accessibility: bypass the map canvas (WCAG 2.4.1). */ }
       <a
         href="#timeline-bar"
@@ -831,7 +828,7 @@ export default function MapPage() {
       />
 
       {/* Top chrome: field context · layers · search · theme · all-fields trigger */ }
-      { overlaysVisible && <FieldContextHeader
+      { !hideFieldHeader && overlaysVisible && <FieldContextHeader
         selectedPlot={ selectedPlot }
         onBack={ () => view.clearSelectedPlot() }
         onEditGeometry={ () =>
@@ -867,7 +864,7 @@ export default function MapPage() {
       ) }
 
       {/* Left: field tools */ }
-      { overlaysVisible && (
+      { !hidePlotToolbar && overlaysVisible && (
         <div className="absolute left-4 top-17 z-toolbar">
         <PlotToolbar
           activeAction={ fieldMode === 'draw' ? 'draw' : null }
@@ -890,32 +887,16 @@ export default function MapPage() {
         />
       </div>  ) }
 
-      { overlaysVisible && <div className="absolute right-4 top-17 z-panel flex max-w-90 flex-col gap-3">
-        { showIndexPanel && (
-          <div className="hidden xl:block">
-            <IndexPanel
-              selectedPlot={ selectedPlot }
-              selectedDate={ selectedDate }
-              sourceId={ effectiveSourceId }
-              displayMode={ selectedDisplayMode }
-              supportedIndices={ analyticsSupportedIndices }
-              cloudMask={ effectiveCloudMask }
-              sourceMaskMethod={ selectedSource?.maskMethod ?? null }
-              sourceMetricsProvisional={ Boolean(selectedSource?.metricsProvisional) }
-              periodFrom={ periodFrom }
-              periodTo={ periodTo }
-              preferHighRes={ preferHighRes }
-              onPreferHighResChange={ setPreferHighRes }
-            />
-          </div>
-        ) }
-      </div>  }
+      { overlaysVisible && topLeftCoords && (
+        <div className="absolute left-4 top-4 z-toolbar">
+          <CoordinateReadout
+            map={ map }
+            indexLookup={ isIndexLayer && selectedPlot && selectedDate && effectiveSourceId ? indexLookup : undefined }
+          />
+        </div>
+      ) }
 
       { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
-        <CoordinateReadout
-          map={ map }
-          indexLookup={ isIndexLayer && selectedPlot && selectedDate && effectiveSourceId ? indexLookup : undefined }
-        />
         <MeasureTool
           activeTool={ activeMapTool }
           map={ map }
@@ -967,6 +948,7 @@ export default function MapPage() {
             if (selectedPlot) focusPlot(map, selectedPlot);
           } }
           onLegendOpenChange={ view.setLegendOpen }
+          simplified={ simplifiedMapControls }
         />
       </div>
 

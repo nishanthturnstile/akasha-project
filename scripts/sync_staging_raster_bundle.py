@@ -16,11 +16,11 @@ bucket and pgSTAC catalog using worker.py ingest-manifest.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import posixpath
 import shutil
 import subprocess
-import sys
 import tarfile
 from pathlib import Path, PurePosixPath
 
@@ -56,7 +56,76 @@ def _ssh_capture(host: str, script: str) -> str:
     return result.stdout.strip()
 
 
+def _remote_path_under_root(path: str, root: str) -> bool:
+    root = posixpath.normpath(root.rstrip("/"))
+    path = posixpath.normpath(path)
+    return path == root or path.startswith(root + "/")
+
+
+def _remote_composite_parts(remote_dir: str, remote_root: str) -> tuple[str, str, str]:
+    relative = posixpath.relpath(
+        posixpath.normpath(remote_dir),
+        posixpath.normpath(remote_root.rstrip("/")),
+    )
+    parts = PurePosixPath(relative).parts
+    if len(parts) != 4 or parts[1] != "composite":
+        raise SystemExit(
+            "remote composite path must be under "
+            f"{remote_root.rstrip('/')}/<source>/composite/<aoi>/<date>: {remote_dir}"
+        )
+    return parts[0], parts[2], parts[3]
+
+
+def _resolve_pull_target(args: argparse.Namespace) -> None:
+    if args.job_id and args.remote_manifest:
+        raise SystemExit("Use --job-id or --remote-manifest, not both.")
+
+    if args.job_id:
+        result_path = f"/srv/akasha/ingestion/jobs/{args.job_id}/result.json"
+        result = json.loads(
+            _ssh_capture(
+                args.host,
+                "set -euo pipefail\ncat " + _quote(result_path),
+            )
+        )
+        source = result.get("source_id")
+        aoi = result.get("aoi_id")
+        composite_date = result.get("composite_date")
+        if not composite_date:
+            raise SystemExit(
+                f"job {args.job_id} result.json composite_date is missing or empty; "
+                "dry-run or no-new-data jobs do not have a bundle to sync."
+            )
+        if not source or not aoi:
+            raise SystemExit(
+                f"job {args.job_id} result.json must include source_id, aoi_id, and composite_date."
+            )
+        args.source = source
+        args.aoi = aoi
+        args.date = composite_date
+        return
+
+    if args.remote_manifest:
+        remote_manifest = posixpath.normpath(args.remote_manifest)
+        if not args.remote_manifest.endswith("/prepare_manifest.json"):
+            raise SystemExit("--remote-manifest must end with /prepare_manifest.json")
+        if not _remote_path_under_root(remote_manifest, args.remote_root):
+            raise SystemExit(
+                f"--remote-manifest must be under --remote-root ({args.remote_root}): "
+                f"{args.remote_manifest}"
+            )
+        remote_dir = posixpath.dirname(remote_manifest)
+        source, aoi, composite_date = _remote_composite_parts(remote_dir, args.remote_root)
+        args.source = source
+        args.aoi = aoi
+        args.date = composite_date
+        args._remote_dir = remote_dir
+
+
 def _remote_composite_dir(args: argparse.Namespace) -> str:
+    if getattr(args, "_remote_dir", None):
+        return args._remote_dir
+
     base = posixpath.join(args.remote_root.rstrip("/"), args.source, "composite", args.aoi)
     if args.date:
         remote_dir = posixpath.join(base, args.date)
@@ -142,6 +211,11 @@ def _pull_bundle(args: argparse.Namespace, remote_dir: str) -> Path:
     if not manifest.is_file():
         raise SystemExit(f"bundle pulled but manifest is missing: {manifest}")
     print(f"local bundle: {local_dir}")
+    source, aoi, composite_date = _remote_composite_parts(remote_dir, args.remote_root)
+    print(f"local_manifest={manifest}")
+    print(f"source={source}")
+    print(f"aoi={aoi}")
+    print(f"date={composite_date}")
     return manifest
 
 
@@ -232,6 +306,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source", default=DEFAULT_SOURCE)
     parser.add_argument("--aoi", default=DEFAULT_AOI)
     parser.add_argument("--date", help="Composite date to pull. Defaults to latest available.")
+    parser.add_argument(
+        "--job-id",
+        help=(
+            "Read /srv/akasha/ingestion/jobs/<job_id>/result.json on staging and "
+            "sync the produced composite."
+        ),
+    )
+    parser.add_argument(
+        "--remote-manifest",
+        help=(
+            "Absolute staging path to a prepare_manifest.json under --remote-root; "
+            "its parent directory is pulled."
+        ),
+    )
     parser.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT)
     parser.add_argument("--local-root", default="data/seed/rasters")
     parser.add_argument("--overwrite", action="store_true")
@@ -269,6 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    _resolve_pull_target(args)
     remote_dir = _remote_composite_dir(args)
     manifest = _pull_bundle(args, remote_dir)
     if args.import_local:

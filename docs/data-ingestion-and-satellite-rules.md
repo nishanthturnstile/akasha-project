@@ -17,12 +17,30 @@ regression and migration checks unless explicitly enabled.
 |---|---|---|---|
 | ResourceSat-2A LISS-3 BOA | ISRO/NRSC Bhoonidhi | Primary | Field-level optical analytics, FCC display, NDVI/MSAVI/NDMI/NDWI_GREEN_NIR. |
 | ResourceSat-2A AWiFS BOA | ISRO/NRSC Bhoonidhi | Gated | Coarser optical context/analytics after validation. |
-| ResourceSat-2A LISS-4 | ISRO/NRSC Bhoonidhi | Gated | Higher-resolution context after band/radiometry validation. |
+| ResourceSat-2A LISS-4 | ISRO/NRSC Bhoonidhi | Gated: staging validation in progress | High-resolution field enhancement for NDVI/MSAVI/NDWI_GREEN_NIR after staging composite verification; LISS-3 remains the fallback. |
 | EOS-06 OCM NDVI | ISRO/NRSC Bhoonidhi | Gated | Coarse precomputed NDVI context only; not field-level stats. |
 | EOS-04 SAR / NISAR | ISRO/NRSC Bhoonidhi | Gated SAR | Radar context; never optical vegetation-index sources. |
 | Cartosat-3 | ISRO/NRSC Bhoonidhi | Gated/manual | High-resolution visual context only until access, licensing, and product format are confirmed. |
 | Sentinel-2 L2A | ESA / Copernicus | Legacy opt-in | Regression/migration path; not production-selectable by default. |
 | Sentinel-1 GRD | ESA / Copernicus | Legacy/gated SAR | SAR context; no optical indices. |
+
+## New Satellite Source Onboarding Rule
+
+Every new satellite source must stay gated until it has all of the following:
+
+- A pipeline registry entry that defines source id, provider, supported roles,
+  band/order metadata, default display mode, mask behavior, and index support.
+- A source-specific transform/prep script or adapter for native provider
+  products; do not reuse ResourceSat/Sentinel assumptions unless the source
+  metadata proves they match.
+- Validation tests for registry behavior, transform outputs, COG/STAC metadata,
+  masks, and source-specific supported/unsupported indices.
+- A staging dry-run from the approved staging egress path.
+- A capped real staging run, normally with `--max-downloads 1` first.
+- Source-appropriate verification before the source is exposed for team use or
+  marked selectable in the product. Use `worker.py verify-composite` only for
+  optical sources that produce dated composite COGs; use source-aware raster,
+  SAR, context, or archive verification for non-composite sources.
 
 ## AOI Rules
 
@@ -179,7 +197,9 @@ STAC registration uses upsert semantics.
    items.
 5. `worker.py build-composite` builds AOI/date composites from validated scenes.
 6. `worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi
-   bangalore-60km` verifies the runtime COGs and dated STAC item.
+  bangalore-60km` verifies the ResourceSat runtime composite COGs and dated STAC item.
+  For SAR/context/archive sources, use the source-aware raster verification command
+  defined by the ingestion roadmap instead of `verify-composite`.
 
 ## Date-Level Serving Rules
 

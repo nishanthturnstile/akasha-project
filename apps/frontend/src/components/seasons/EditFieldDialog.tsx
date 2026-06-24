@@ -14,19 +14,20 @@ import {
 } from '@/components/ui/select';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
-import { useConfig, useSeasons } from '@/lib/queries';
-import { useVegetationCycles } from '@/hooks/useVegetationCycles';
+import { useConfig, useCrops, useIrrigationTypes, useSeasons, useTillageTypes, useVarieties, queryKeys } from '@/lib/queries';
+import { useQueryClient } from '@tanstack/react-query';
+import { useVegetationCycles, type VegetationCycleForm } from '@/hooks/useVegetationCycles';
 import { resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
 import type maplibregl from 'maplibre-gl';
 import type { TerraDraw } from 'terra-draw';
-import type { Field, PlotGeometry } from '@/types/api';
+import type { Crop, Field, IrrigationType, PlotGeometry, TillageType, VegetationCycleCreate } from '@/types/api';
 
 interface Props {
   field: Field;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry) => void;
+  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[]) => void;
   onDelete?: (fieldId: string) => void;
 }
 
@@ -72,19 +73,6 @@ function isPolygonGeometry(geometry: PlotGeometry | undefined): geometry is Plot
   return geometry?.type === 'Polygon';
 }
 
-const CROP_OPTIONS = [
-  'Wheat', 'Rice', 'Corn', 'Soybean', 'Barley', 'Cotton', 'Sugarcane',
-  'Potato', 'Tomato', 'Sunflower', 'Mustard', 'Groundnut', 'Pulses', 'Other',
-];
-
-const IRRIGATION_OPTIONS = [
-  'Drip', 'Sprinkler', 'Flood', 'Furrow', 'Center pivot', 'Rainfed', 'Other',
-];
-
-const TILLAGE_OPTIONS = [
-  'Conventional', 'Reduced', 'No-till', 'Strip-till', 'Conservation', 'Other',
-];
-
 export default function EditFieldDialog({
   field,
   open,
@@ -101,10 +89,51 @@ export default function EditFieldDialog({
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const seasonsQ = useSeasons();
+  const cropsQ = useCrops();
+  const irrigationTypesQ = useIrrigationTypes();
+  const tillageTypesQ = useTillageTypes();
   const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set());
-  const { cycles: vegetationCycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } = useVegetationCycles(field.id);
+  const { cycles: vegetationCycles, setFieldCycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } = useVegetationCycles(field.id);
 
+  const queryClient = useQueryClient();
   const configQ = useConfig();
+
+  // Seed store from field.vegetationData when dialog opens
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!open) { seededRef.current = false; return; }
+    const data = field.vegetationData;
+    if (!data || data.length === 0) return;
+    // Wait for all reference data to load so names resolve properly
+    if (!cropsQ.data || !irrigationTypesQ.data || !tillageTypesQ.data) return;
+    if (seededRef.current) return;
+    seededRef.current = true;
+    const bySeason: Record<string, VegetationCycleForm[]> = {};
+    for (const vc of data) {
+      const sid = vc.seasonId;
+      if (!bySeason[sid]) bySeason[sid] = [];
+      const crop = cropsQ.data.find((c) => c.id === vc.cropType);
+      const varietyName = vc.varietyName ?? '';
+      const irr = irrigationTypesQ.data?.find((t) => t.id === vc.irrigationType);
+      const till = tillageTypesQ.data?.find((t) => t.id === vc.tillageType);
+      bySeason[sid].push({
+        id: vc.id,
+        cropName: crop?.name ?? String(vc.cropType),
+        variety: varietyName,
+        maturity: vc.maturity ?? '',
+        year: vc.year ?? null,
+        plantingDate: vc.sowingDate ?? `${new Date().getFullYear()}-01-01`,
+        irrigationType: irr?.name ?? '',
+        targetYield: vc.targetYield ?? null,
+        harvestingDate: vc.harvestingDate ?? '',
+        tillageType: till?.name ?? '',
+        actualYield: vc.actualYield ?? null,
+        isCutOff: vc.isCutOff ?? false,
+        notes: vc.notes ?? '',
+      });
+    }
+    setFieldCycles(bySeason);
+  }, [open, field.vegetationData, cropsQ.data, irrigationTypesQ.data, tillageTypesQ.data, setFieldCycles]);
 
   const basemapResolution = useMemo(() => {
     if (!configQ.data) return null;
@@ -264,14 +293,46 @@ export default function EditFieldDialog({
       return;
     }
     setError(null);
+
+    // Convert vegetation cycles to API format
+    const vegPayload: VegetationCycleCreate[] = [];
+    for (const [seasonId, cycles] of Object.entries(vegetationCycles)) {
+      for (const cycle of cycles) {
+        const crop = cropsQ.data?.find((c) => c.name === cycle.cropName);
+        let varietyId: number | null = null;
+        if (cycle.variety && crop) {
+          const cached = queryClient.getQueryData<{ items: Array<{ id: number; name: string }> }>(queryKeys.varieties(crop.id));
+          if (cached) {
+            const v = cached.items.find((vi) => vi.name === cycle.variety);
+            if (v) varietyId = v.id;
+          }
+        }
+        const irr = irrigationTypesQ.data?.find((t) => t.name === cycle.irrigationType);
+        const till = tillageTypesQ.data?.find((t) => t.name === cycle.tillageType);
+        vegPayload.push({
+          seasonId,
+          year: cycle.year ?? new Date().getFullYear(),
+          cropType: crop?.id ?? 0,
+          cropVariety: varietyId,
+          sowingDate: cycle.plantingDate || null,
+          harvestingDate: cycle.harvestingDate || null,
+          targetYield: cycle.targetYield,
+          actualYield: cycle.actualYield,
+          irrigationType: irr?.id ?? null,
+          tillageType: till?.id ?? null,
+          maturity: cycle.maturity || null,
+          notes: cycle.notes || null,
+          isCutOff: cycle.isCutOff || null,
+        });
+      }
+    }
+
     onSave?.(
       field.id,
       name.trim(),
       geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
+      vegPayload.length > 0 ? vegPayload : undefined,
     );
-    if (!geometryChanged && !editedGeometry) {
-      // Name-only save - just close
-    }
     onOpenChange(false);
   };
 
@@ -403,116 +464,16 @@ export default function EditFieldDialog({
                                     <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
                                   ) }
                                   { cycles.map((cycle) => (
-                                    <div key={ cycle.id } className="relative border border-border/50 rounded-lg p-4 space-y-4">
-                                      <button
-                                        type="button"
-                                        onClick={ () => removeCycle(season.id, cycle.id) }
-                                        className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                      >
-                                        <Trash2 className="size-4" />
-                                      </button>
-                                      <div>
-                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Crop name</label>
-                                        <Select
-                                          value={ cycle.cropName }
-                                          onValueChange={ (v) => updateCycle(season.id, cycle.id, 'cropName', v) }
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="Select crop" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            { CROP_OPTIONS.map((crop) => (
-                                              <SelectItem key={ crop } value={ crop }>{ crop }</SelectItem>
-                                            )) }
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-
-                                      <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-4">
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Planting date</label>
-                                            <DatePicker
-                                              value={ cycle.plantingDate }
-                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'plantingDate', v) }
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Irrigation type</label>
-                                            <Select
-                                              value={ cycle.irrigationType }
-                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'irrigationType', v) }
-                                            >
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                { IRRIGATION_OPTIONS.map((opt) => (
-                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
-                                                )) }
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target yield (t/ha)</label>
-                                            <input
-                                              type="number"
-                                              min={ 0 }
-                                              step={ 0.01 }
-                                              value={ cycle.targetYield ?? '' }
-                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null) }
-                                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Harvesting date</label>
-                                            <DatePicker
-                                              value={ cycle.harvestingDate }
-                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'harvestingDate', v) }
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Tillage type</label>
-                                            <Select
-                                              value={ cycle.tillageType }
-                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'tillageType', v) }
-                                            >
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                { TILLAGE_OPTIONS.map((opt) => (
-                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
-                                                )) }
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Actual yield (t/ha)</label>
-                                            <input
-                                              type="number"
-                                              min={ 0 }
-                                              step={ 0.01 }
-                                              value={ cycle.actualYield ?? '' }
-                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null) }
-                                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                                            />
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <div>
-                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Notes</label>
-                                        <input
-                                          value={ cycle.notes }
-                                          onChange={ (e) => updateCycle(season.id, cycle.id, 'notes', e.target.value) }
-                                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                                        />
-                                      </div>
-                                    </div>
+                                    <CycleCard
+                                      key={ `${cycle.id}-${cycle.cropName}` }
+                                      cycle={ cycle }
+                                      seasonId={ season.id }
+                                      cropsData={ cropsQ.data }
+                                      irrigationTypesData={ irrigationTypesQ.data }
+                                      tillageTypesData={ tillageTypesQ.data }
+                                      onUpdateCycle={ updateCycle }
+                                      onRemoveCycle={ removeCycle }
+                                    />
                                   )) }
                                   <button
                                     type="button"
@@ -561,5 +522,328 @@ export default function EditFieldDialog({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function sowingDateLabel(seedingTypeId: number | null | undefined, isCutOff: boolean): string {
+  switch (seedingTypeId) {
+    case 1: return 'Sowing date';
+    case 2: return 'Planting date';
+    case 3: return isCutOff ? 'Cut-off (start) date' : 'Planting date';
+    case 4: return 'Bud swelling start date';
+    case 5: return 'Bud sprouting start date';
+    default: return 'Sowing date';
+  }
+}
+
+function CycleCard({
+  cycle,
+  seasonId,
+  cropsData,
+  irrigationTypesData,
+  tillageTypesData,
+  onUpdateCycle,
+  onRemoveCycle,
+}: {
+  cycle: VegetationCycleForm;
+  seasonId: string;
+  cropsData: Crop[] | undefined;
+  irrigationTypesData: IrrigationType[] | undefined;
+  tillageTypesData: TillageType[] | undefined;
+  onUpdateCycle: (seasonId: string, cycleId: string, key: keyof VegetationCycleForm, value: string | number | boolean | null) => void;
+  onRemoveCycle: (seasonId: string, cycleId: string) => void;
+}) {
+  const selectedCrop = cropsData?.find((c) => c.name === cycle.cropName) ?? null;
+  const varietiesQ = useVarieties(selectedCrop?.id);
+  const allVarieties = useMemo(() => varietiesQ.data?.items ?? [], [varietiesQ.data?.items]);
+  const PAGE_SIZE = 20;
+  const [varietyCount, setVarietyCount] = useState(PAGE_SIZE);
+  const [varietyOpen, setVarietyOpen] = useState(false);
+  const [varietySearch, setVarietySearch] = useState('');
+  const varietyRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const filteredVarieties = varietySearch
+    ? allVarieties.filter((v) => v.name.toLowerCase().includes(varietySearch.toLowerCase()))
+    : allVarieties;
+  const visibleVarieties = filteredVarieties.slice(0, varietyCount);
+  const hasMore = filteredVarieties.length > varietyCount;
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (!hasMore) return;
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) {
+        setVarietyCount((v) => Math.min(v + PAGE_SIZE, filteredVarieties.length));
+      }
+    };
+    el.addEventListener('scroll', onScroll);
+    // Also check on mount (in case content fits without scrolling)
+    requestAnimationFrame(() => {
+      if (el.scrollHeight <= el.clientHeight && hasMore) {
+        setVarietyCount(filteredVarieties.length);
+      }
+    });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [hasMore, filteredVarieties.length, varietySearch, varietyOpen]);
+
+  useEffect(() => {
+    if (varietyOpen) searchRef.current?.focus();
+  }, [varietyOpen]);
+
+  useEffect(() => {
+    if (!varietyOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (varietyRef.current && !varietyRef.current.contains(e.target as Node)) {
+        setVarietyOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [varietyOpen]);
+
+  const varietyDisabled = !selectedCrop || !selectedCrop.hasVariety;
+
+  const maturityOpts = useMemo(() => {
+    const opts: string[] = [];
+    if (cycle.variety && selectedCrop) {
+      const v = allVarieties.find((v) => v.name === cycle.variety);
+      if (v?.maturityOptions) opts.push(...v.maturityOptions);
+    }
+    if (opts.length === 0 && selectedCrop?.maturityOptions) {
+      opts.push(...selectedCrop.maturityOptions);
+    }
+    return opts;
+  }, [cycle.variety, selectedCrop, allVarieties]);
+  const maturityDisabled = maturityOpts.length === 0;
+  const maturitySingle = maturityOpts.length === 1;
+  const dateLabel = sowingDateLabel(selectedCrop?.seedingTypeId, cycle.isCutOff);
+  const isPlantingCutting = selectedCrop?.seedingTypeId === 3;
+
+  useEffect(() => {
+    if (maturitySingle && cycle.maturity !== maturityOpts[0]) {
+      onUpdateCycle(seasonId, cycle.id, 'maturity', maturityOpts[0]);
+    }
+  }, [maturitySingle, maturityOpts, cycle.maturity, seasonId, cycle.id, onUpdateCycle]);
+
+  return (
+    <div className="relative border border-border/50 rounded-lg p-4 space-y-4">
+      <button
+        type="button"
+        onClick={ () => onRemoveCycle(seasonId, cycle.id) }
+        className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+      >
+        <Trash2 className="size-4" />
+      </button>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Crop name</label>
+        <Select
+          value={ cycle.cropName }
+          onValueChange={ (v) => {
+            onUpdateCycle(seasonId, cycle.id, 'cropName', v);
+            onUpdateCycle(seasonId, cycle.id, 'variety', '');
+            onUpdateCycle(seasonId, cycle.id, 'maturity', '');
+          } }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select crop" />
+            { (() => {
+              if (!cycle.cropName || !cropsData) return null;
+              const sel = cropsData.find((c) => c.name === cycle.cropName);
+              if (!sel) return null;
+              const badges: string[] = [];
+              if (sel.hasVariety) badges.push('v');
+              if (sel.maturityOptions && sel.maturityOptions.length > 0) badges.push('m');
+              if (sel.seedingTypeId === 3) badges.push('c');
+              return badges.length > 0 ? (
+                <span className="ml-auto text-muted-foreground/60 text-[10px] tracking-wider">
+                  { badges.join(' ') }
+                </span>
+              ) : null;
+            })() }
+          </SelectTrigger>
+          <SelectContent>
+            { (cropsData ?? []).map((crop) => {
+              const badges: string[] = [];
+              if (crop.hasVariety) badges.push('v');
+              if (crop.maturityOptions && crop.maturityOptions.length > 0) badges.push('m');
+              if (crop.seedingTypeId === 3) badges.push('c');
+              return (
+                <SelectItem key={ crop.id } value={ crop.name }>
+                  <span>{ crop.name }</span>
+                  { badges.length > 0 && (
+                    <span className="ml-2 text-muted-foreground/60 text-[10px] tracking-wider">
+                      { badges.join(' ') }
+                    </span>
+                  ) }
+                </SelectItem>
+              );
+            }) }
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div ref={ varietyRef } className="relative">
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Variety</label>
+          <button
+            type="button"
+            disabled={ varietyDisabled }
+            onClick={ () => { setVarietyOpen(!varietyOpen); setVarietySearch(''); setVarietyCount(PAGE_SIZE); } }
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-left focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            { cycle.variety || <span className="text-muted-foreground">{ varietyDisabled ? 'Not available' : 'Search variety…' }</span> }
+          </button>
+          { varietyOpen && !varietyDisabled && (
+            <div className="absolute z-[70] mt-1 w-full rounded-md border border-border bg-popover text-popover-foreground shadow-e2">
+              <div className="p-1">
+                <input
+                  ref={ searchRef }
+                  type="text"
+                  value={ varietySearch }
+                  onChange={ (e) => { setVarietySearch(e.target.value); setVarietyCount(PAGE_SIZE); } }
+                  placeholder="Type to search…"
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div ref={ scrollRef } className="max-h-48 overflow-y-auto p-1">
+                { visibleVarieties.length === 0 && (
+                  <div className="px-2 py-3 text-xs text-muted-foreground text-center">No varieties found</div>
+                ) }
+                { visibleVarieties.map((v) => (
+                  <div
+                    key={ v.id }
+                    role="option"
+                    aria-selected={ cycle.variety === v.name }
+                    onClick={ () => { onUpdateCycle(seasonId, cycle.id, 'variety', v.name); setVarietyOpen(false); } }
+                    className={ cn(
+                      'flex cursor-default items-center rounded-sm px-2 py-1.5 text-sm',
+                      cycle.variety === v.name ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
+                    ) }
+                  >
+                    { v.name }
+                  </div>
+                )) }
+              </div>
+            </div>
+          ) }
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Maturity</label>
+          <Select
+            value={ cycle.maturity }
+            onValueChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'maturity', v) }
+            disabled={ maturityDisabled || maturitySingle }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={ maturityDisabled ? 'Not available' : 'Select maturity' } />
+            </SelectTrigger>
+            <SelectContent>
+              { maturityOpts.map((opt) => (
+                <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
+              )) }
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{ dateLabel }</label>
+            <DatePicker
+              value={ cycle.plantingDate }
+              onChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'plantingDate', v) }
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Irrigation type</label>
+            <Select
+              value={ cycle.irrigationType }
+              onValueChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'irrigationType', v) }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select" />
+              </SelectTrigger>
+              <SelectContent>
+                { (irrigationTypesData ?? []).map((opt) => (
+                  <SelectItem key={ opt.id } value={ opt.name }>{ opt.name }</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target yield (t/ha)</label>
+            <input
+              type="number"
+              min={ 0 }
+              step={ 0.01 }
+              value={ cycle.targetYield ?? '' }
+              onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null) }
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          { isPlantingCutting && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={ cycle.isCutOff }
+                onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'isCutOff', e.target.checked) }
+                className="size-4 rounded border-border accent-primary"
+              />
+              <span className="text-xs text-muted-foreground">Cut-off (start) date</span>
+            </label>
+          ) }
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Harvesting date</label>
+            <DatePicker
+              value={ cycle.harvestingDate }
+              onChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'harvestingDate', v) }
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Tillage type</label>
+            <Select
+              value={ cycle.tillageType }
+              onValueChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'tillageType', v) }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select" />
+              </SelectTrigger>
+              <SelectContent>
+                { (tillageTypesData ?? []).map((opt) => (
+                  <SelectItem key={ opt.id } value={ opt.name }>{ opt.name }</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Actual yield (t/ha)</label>
+            <input
+              type="number"
+              min={ 0 }
+              step={ 0.01 }
+              value={ cycle.actualYield ?? '' }
+              onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null) }
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Notes</label>
+        <input
+          value={ cycle.notes }
+          onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'notes', e.target.value) }
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+    </div>
   );
 }

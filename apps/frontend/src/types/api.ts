@@ -38,6 +38,45 @@ export interface AppConfig {
   defaultIndex: string;
 }
 
+export interface IrrigationType {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface TillageType {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface Crop {
+  id: number;
+  name: string;
+  seedingTypeId: number | null;
+  color: string | null;
+  maturityOptions: string[] | null;
+  hasWeatherRisk: boolean;
+  hasVariety: boolean;
+  bbchMode: string | null;
+  characteristic: string | null;
+}
+
+export interface CropVariety {
+  id: number;
+  cropId: number;
+  name: string;
+  maturityOptions: string[] | null;
+}
+
+export interface PaginatedVarieties {
+  items: CropVariety[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pages: number;
+}
+
 export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
 export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
 export type SourceAvailabilityStatus = 'active' | 'gated';
@@ -817,6 +856,53 @@ export interface AssistantStatus {
   limitations: string[];
 }
 
+export interface VegetationCycleCreate {
+  seasonId: string;
+  year: number;
+  cropType: number;
+  cropVariety?: number | null;
+  sowingDate?: string | null;
+  harvestingDate?: string | null;
+  targetYield?: number | null;
+  actualYield?: number | null;
+  irrigationType?: number | null;
+  tillageType?: number | null;
+  maturity?: string | null;
+  fertilizer?: string | null;
+  hybrid?: string | null;
+  ndviList?: string | null;
+  notes?: string | null;
+  isCutOff?: boolean | null;
+}
+
+export interface VegetationCycleResponse {
+  id: string;
+  fieldId: string;
+  seasonId: string;
+  seasonName?: string | null;
+  year: number;
+  cropType: number;
+  cropName?: string | null;
+  cropVariety?: number | null;
+  varietyName?: string | null;
+  sowingDate?: string | null;
+  harvestingDate?: string | null;
+  targetYield?: number | null;
+  actualYield?: number | null;
+  irrigationType?: number | null;
+  irrigationTypeName?: string | null;
+  tillageType?: number | null;
+  tillageTypeName?: string | null;
+  maturity?: string | null;
+  fertilizer?: string | null;
+  hybrid?: string | null;
+  ndviList?: string | null;
+  notes?: string | null;
+  isCutOff?: boolean | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface FieldIdEntry {
   id: string;
   name: string;
@@ -859,6 +945,7 @@ export interface Field {
   geometry: PlotGeometry;
   groupId: string | null;
   seasonIds: string[];
+  vegetationData: VegetationCycleResponse[];
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -869,6 +956,7 @@ export interface FieldCreatePayload {
   areaHa?: number | null;
   groupId?: string | null;
   seasonIds?: string[];
+  vegetationData?: VegetationCycleCreate[];
 }
 
 export interface FieldUpdatePayload {
@@ -877,6 +965,7 @@ export interface FieldUpdatePayload {
   areaHa?: number | null;
   groupId?: string | null;
   seasonIds?: string[] | null;
+  vegetationData?: VegetationCycleCreate[] | null;
 }
 
 /** Standard BFF error envelope: { error: { code, message, details } }. */

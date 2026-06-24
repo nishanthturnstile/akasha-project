@@ -251,6 +251,7 @@ def _vegetation_cycle_data(
     )
     if season_id is not None:
         stmt = stmt.where(VegetationCycle.season_id == season_id)
+    stmt = stmt.order_by(VegetationCycle.created_at)
     rows = session.execute(stmt).all()
     return [
         _veg_cycle_to_dict(
@@ -287,6 +288,7 @@ def _vegetation_cycle_data_bulk(
             IrrigationType, VegetationCycle.irrigation_type_id == IrrigationType.id
         )
         .outerjoin(TillageType, VegetationCycle.tillage_type_id == TillageType.id)
+        .order_by(VegetationCycle.created_at)
     ).all()
     result: dict[uuid.UUID, list[dict[str, Any]]] = {}
     for row in rows:

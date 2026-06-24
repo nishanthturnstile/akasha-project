@@ -794,6 +794,37 @@ In addition to **Search archive**, every detail drawer exposes two further CTAs:
 - **Request data access** → `https://cidsaglobal.com/contact` (single contact form, no per-satellite parameter).
 - **Download spec sheet** → triggers a client-side PDF/CSV export of the open drawer's data (no public URL).
 
+### Scheduler source-state mapping
+
+The provider-agnostic ingestion scheduler uses the catalogue slug as the stable business key, but
+one catalogue platform may map to multiple Akasha source rows when instruments/products have
+different cadence, resolution, validation profiles, or product exposure. Every scheduler source row
+must include `catalogSlug`, `catalogPlatform`, `sourceId`, `providerAdapter`, `productFamily`,
+`instrumentMode`, `productVariant`, `analysisLevel`, `validationProfile`, and `productExposure`.
+
+| Catalogue slug | Initial Akasha source row(s) | Provider adapter | Initial scheduler/product state |
+|---|---|---|---|
+| `sentinel-2` | `sentinel-2-l2a` | `cdse` | Gated/operator-validation; product exposure disabled until CDSE validation. |
+| `sentinel-1` | `sentinel-1-grd` | `cdse` | Gated SAR; no optical indices; SAR validation profile required. |
+| `landsat-8` | `landsat-8-c2-l2` | `usgs` | Gated/operator-validation; cloud STAC+COG preferred. |
+| `landsat-9` | `landsat-9-c2-l2` | `usgs` | Gated/operator-validation; cloud STAC+COG preferred. |
+| `modis` | `modis-13q1-061` | `earthdata` | Regional context only; not field analytics. |
+| `resourcesat-2a` | `resourcesat-2a-liss3-boa`, `resourcesat-2a-liss4-mx70-l2`, `resourcesat-2a-awifs-boa` | `bhoonidhi` | LISS-3 active baseline; LISS-4 active field enhancement; AWiFS background/gated until coverage validation passes. |
+| `cartosat-3` | `cartosat-3-gated` | `vendor` / manual | Manual/VHR context placeholder; no programmatic Bhoonidhi catalog path yet. |
+| `eos-04-risat` | `eos-04-sar-mrs-l2b` | `bhoonidhi` | Gated SAR; MRS/CRS only; SAR validation profile required. |
+| `eos-06-oceansat-3` | `eos-06-ocm-lac-ndvi-8day-360m` | `bhoonidhi` | Regional precomputed NDVI context; not field analytics. |
+| `alos-2-palsar-2` | `alos2-palsar2` / `alos2-mosaic-25m` | `jaxa` | Commercial scenes blocked; free mosaic may be regional SAR/context after validation. |
+| `superview-neo-1` | `superview-neo-1` | `vendor` | Commercial blocked; paid task/order disabled by default. |
+| `planetscope` | `planetscope` | `planet` | Commercial blocked; search-only until contract/quota/readiness. |
+| `skysat` | `skysat` | `planet` | Commercial blocked; paid task/order disabled by default. |
+| `blacksky-gen-3` | `blacksky-gen-3` | `vendor` | Commercial blocked; paid task/order disabled by default. |
+| `kompsat-3a` | `kompsat-3a` | `vendor` | Commercial blocked; paid task/order disabled by default. |
+| `landsat-7` | `landsat-7-c2-l2` | `usgs` | Archive-only/on-demand; not routine scheduled. |
+| `landsat-5` | `landsat-5-c2-l2` | `usgs` | Archive-only/on-demand; not routine scheduled. |
+| `irs-1c` | `irs-1c-liss3-archive` | `bhoonidhi` | Archive-only/on-demand; validation profile required. |
+| `naip` | none for India AOIs | `usda`/cloud | Reference-only/out-of-AOI for `bangalore-60km`. |
+| `nisar` | `nisar-ssar-beta-gcov` | `bhoonidhi` / `asf` | Data-gated until calibrated ARD/GCOV products are validated. |
+
 ---
 
 ## 9. Glossary

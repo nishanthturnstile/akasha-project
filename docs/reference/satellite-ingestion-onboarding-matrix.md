@@ -47,6 +47,45 @@ A new platform is "ingestible the same way" only when each layer has an answer.
 The frontend ([apps/frontend/](../../apps/frontend/)) is **fully data-driven** from `/api/sources`;
 a standard optical/SAR source needs **zero** frontend code changes.
 
+### 1.1 Scheduler source-state and provider-adapter model
+
+The scheduler architecture in
+[architecture-satellite-ingestion-scheduler-1.md](../impl-plan/architecture-satellite-ingestion-scheduler-1.md)
+is the prerequisite for scaling this matrix beyond ResourceSat. It introduces two hard contracts:
+
+1. **Catalogue slug → source row mapping.** Every one of the 20 slugs in
+  [satellite-catalog.md](satellite-catalog.md) must map to at least one source-state row or an
+  explicit `out_of_aoi` / `reference_only` exclusion. One slug may map to multiple rows when
+  products differ materially; ResourceSat-2A maps to LISS-3, LISS-4, and AWiFS.
+2. **Provider adapters own provider behavior.** The scheduler decides due state, creates jobs,
+  records artifacts, and dispatches pipeline stages. Provider adapters own auth, pagination,
+  search, download/fetch, optional order/task, and provider-specific backoff.
+
+Required source-state fields are `catalogSlug`, `catalogPlatform`, `sourceId`,
+`providerAdapter`, `lifecycleState`, `scheduleState`, `capabilities`, `productExposure`,
+`commercialState`, `aoiScope`, `validationState`, `readinessReasons`, `validationProfile`,
+`cadence`, `hostPool`, and `ownedBy`.
+
+Invalid combinations fail closed. Examples: `commercial_blocked + order_enabled`,
+`archive_only + routine schedule`, `background_only + product_active`, `out_of_aoi + selectable`,
+and any executable row without a catalogue slug.
+
+| Provider adapter | Search | Download/fetch | Order/task | Runtime / gating |
+|---|---:|---:|---:|---|
+| `bhoonidhi` | ✅ | ✅ | ❌ | Staging safe-wrapper only for non-dry-run ISRO jobs. |
+| `cdse` | ✅ | ✅ | ❌ | OAuth2/Keycloak; any approved worker host. |
+| `usgs` | ✅ | ✅ cloud COG | ❌ | Prefer cloud-native STAC/COG; optional USGS/Earthdata auth. |
+| `earthdata` / `asf` | ✅ | ✅ | ❌ | Earthdata token; source-specific DAAC access. |
+| `planet` | ✅ | ✅ | ✅ | Commercial blocked until readiness + explicit paid-order flag. |
+| `jaxa` | ✅/manual | ✅/manual | optional | Free mosaic possible; scenes commercial-gated. |
+| `vendor` | provider-specific | provider-specific | ✅ | Commercial VHR disabled until contract/quota/readiness. |
+| `usda`/`naip` | ✅ | ✅ | ❌ | Reference/out-of-AOI for India deployments. |
+
+AWiFS is the canonical background-ingestion example: search/download/prepare attempts may run, but
+if validation returns low coverage, the job remains `validation_failed`, product exposure remains
+`background_only`, and AWiFS stays gated until a validated composite reaches the accepted coverage
+threshold.
+
 **The single biggest blocker for non-ISRO platforms:** shared orchestration, not just a new
 provider client. `worker.py` still instantiates `bhoonidhi.BhoonidhiClient()` directly in
 its `bhoonidhi-*` subcommands, the sync path is ResourceSat-specific, `verify-composite`

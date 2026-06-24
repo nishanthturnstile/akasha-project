@@ -36,6 +36,24 @@ The ad hoc runner shares the standard Bhoonidhi AOI worker lock. Source-specific
 their own wrapper locks; coordinate LISS-4 ad hoc runs with the timer window until those locks are
 unified.
 
+### Scheduler transition note
+
+The provider-agnostic ingestion scheduler is planned in
+[architecture-satellite-ingestion-scheduler-1.md](impl-plan/architecture-satellite-ingestion-scheduler-1.md).
+Until that scheduler is installed and cut over, this CLI remains the production-safe path for
+Bhoonidhi ad hoc jobs. During cutover, each source/AOI must have exactly one owner:
+
+| Ownership mode | Meaning |
+|---|---|
+| `legacy_timer` | Existing source-specific timer owns that source/AOI. |
+| `scheduler_dry_run` | Scheduler may plan/log due decisions but must not run real jobs. |
+| `scheduler_active` | Scheduler owns real jobs; corresponding legacy timer is disabled. |
+| `manual_only` | Operators trigger jobs manually through this CLI. |
+
+Do not run the scheduler and a legacy source-specific timer against the same source/AOI at the
+same time. Rollback is: stop/disable scheduler timer, re-enable the previous source timer/env,
+and confirm no queued/running scheduler job owns that source/AOI.
+
 ---
 
 ## 2. One-time setup (per developer)

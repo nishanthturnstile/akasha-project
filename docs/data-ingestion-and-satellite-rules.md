@@ -43,6 +43,32 @@ Every new satellite source must stay gated until it has all of the following:
   optical sources that produce dated composite COGs; use source-aware raster,
   SAR, context, or archive verification for non-composite sources.
 
+## Catalogue-wide Scheduler Rules
+
+The provider-agnostic ingestion scheduler is the architecture layer for scaling beyond
+ResourceSat. It must be implemented before onboarding new provider families in bulk.
+
+- Every scheduler source row must trace to a `docs/reference/satellite-catalog.md` slug through
+  `catalogSlug`; one catalogue platform may map to multiple source rows only through explicit
+  product variants, such as ResourceSat LISS-3, LISS-4, and AWiFS.
+- Scheduler source state must keep lifecycle, schedule, capability, product exposure, commercial,
+  AOI, validation, and readiness fields separate. Do not overload `mvp_enabled` or one status
+  string to mean all of those things.
+- Provider-specific HTTP/auth/search/download/order logic belongs only in provider adapters.
+  The scheduler owns due decisions, jobs, locks, redacted artifacts, canonical manifests, and
+  dispatch to prepare/validation stages.
+- Paid commercial order/task/subscription calls are disabled by default. They require commercial
+  readiness, an explicit operator flag, and source/provider-specific approval even if credentials
+  are configured.
+- AWiFS is allowed to run background search/download/prepare attempts while gated. If coverage
+  validation fails, keep product exposure background-only/gated and record the validation failure;
+  do not lower the threshold or activate AWiFS without a separate product decision.
+- Legacy source-specific timers and the scheduler must not own the same source/AOI at the same
+  time. Maintain a source-ownership/cutover matrix and rollback path while migrating timers.
+- Best-observation selection and mixed-source timelines are post-scheduler work. Existing
+  source-specific timelines stay authoritative until scheduler state and validation history are
+  reliable enough for backend-owned ranking.
+
 ## AOI Rules
 
 - `AOI_CONFIG_PATH` is the authoritative AOI input for the default deployment.

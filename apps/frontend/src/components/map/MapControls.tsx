@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
-import { Compass, Eye, EyeOff, LocateFixed, Maximize, Minimize, Minus, Plus } from 'lucide-react';
+import { Compass, Eye, EyeOff, LocateFixed, Minus, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MapControlsProps {
@@ -56,7 +56,6 @@ export function MapControls({
   simplified = false,
 }: MapControlsProps) {
   const [bearing, setBearing] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!map) return;
@@ -66,24 +65,6 @@ export function MapControls({
       map.off('rotate', onRotate);
     };
   }, [map]);
-
-  useEffect(() => {
-    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
-
-  const fullscreenSupported =
-    typeof document !== 'undefined' && Boolean(document.documentElement.requestFullscreen);
-
-  const toggleFullscreen = () => {
-    if (!fullscreenSupported) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined);
-    } else {
-      void document.documentElement.requestFullscreen().catch(() => undefined);
-    }
-  };
 
   const geolocate = () => {
     if (!map || !navigator.geolocation) return;
@@ -150,22 +131,6 @@ export function MapControls({
               <EyeOff className="size-5" strokeWidth={ 1.75 } />
             ) : (
               <Eye className="size-5" strokeWidth={ 1.75 } />
-            ) }
-          </ControlButton>
-        </>
-      ) }
-      { fullscreenSupported && (
-        <>
-          <div className="h-px w-full bg-border" />
-          <ControlButton
-            label={ isFullscreen ? 'Exit full screen' : 'Enter full screen' }
-            testId="fullscreen-btn"
-            onClick={ toggleFullscreen }
-          >
-            { isFullscreen ? (
-              <Minimize className="size-5" strokeWidth={ 1.75 } />
-            ) : (
-              <Maximize className="size-5" strokeWidth={ 1.75 } />
             ) }
           </ControlButton>
         </>

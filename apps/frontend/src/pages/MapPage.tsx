@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
-import { AlertTriangle, RefreshCw, Satellite, Search } from 'lucide-react';
+import { AlertTriangle, Maximize, Minimize, RefreshCw, Satellite, Search } from 'lucide-react';
 import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
 import {
   useConfig,
@@ -962,9 +962,10 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         { attribution }
       </div>
 
-      {/* Bottom: temporal filmstrip */ }
-      <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
-        <TimelineBar
+      {/* Bottom: temporal filmstrip + fullscreen card */ }
+      <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
+        <div id="timeline-bar" className="min-w-0 flex-1">
+          <TimelineBar
           dates={ activeTimelineDates }
           selectedDate={ selectedDate }
           onSelect={ view.setDate }
@@ -982,6 +983,24 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           periodTo={ periodTo }
             onPeriodChange={ view.setPeriod }
           />
+        </div>
+
+        {/* Fullscreen card — same height as timeline bar */}
+        <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
+          <button
+            type="button"
+            aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }
+            data-testid="map-fullscreen-btn"
+            onClick={ () => view.setMapFullscreen(!view.mapFullscreen) }
+            className="flex items-center justify-center text-foreground/80 transition-colors duration-fast hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring size-full"
+          >
+            { view.mapFullscreen ? (
+              <Minimize className="size-4" strokeWidth={ 1.75 } />
+            ) : (
+              <Maximize className="size-4" strokeWidth={ 1.75 } />
+            ) }
+          </button>
+        </div>
       </div>
 
       <AlertDialogRoot

@@ -45,6 +45,8 @@ export interface MapViewState {
     pendingAction: 'create-field' | null;
     /** Monotonic counter bumped on explicit focus requests (bypasses duplicate guard). */
     focusNonce: number;
+    /** Map card fills available height, hiding bottom analytics panel. */
+    mapFullscreen: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -72,6 +74,7 @@ export const initialMapViewState: MapViewState = {
     bottomBarVisible: true,
     pendingAction: null,
     focusNonce: 0,
+    mapFullscreen: false,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -96,6 +99,7 @@ export interface MapViewContextValue extends MapViewState {
     setBottomBarVisible: (visible: boolean) => void;
     setPendingAction: (action: 'create-field' | null) => void;
     setFocusNonce: (nonce: number) => void;
+    setMapFullscreen: (fullscreen: boolean) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

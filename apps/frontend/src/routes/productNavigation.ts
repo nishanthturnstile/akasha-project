@@ -33,6 +33,7 @@ export interface ProductNavItem {
 }
 
 export interface ProductNavGroup {
+  icon: LucideIcon;
   items: ProductNavItem[];
   label: string;
 }
@@ -42,6 +43,7 @@ export const MAIN_MONITORING_ROUTE = '/monitoring/field-analytics';
 export const productNavigation: ProductNavGroup[] = [
   {
     label: 'Monitoring',
+    icon: Activity,
     items: [
       {
         label: 'Global view',
@@ -82,6 +84,7 @@ export const productNavigation: ProductNavGroup[] = [
   },
   {
     label: 'Weather',
+    icon: CloudSun,
     items: [
       {
         label: 'Analytics',
@@ -101,6 +104,7 @@ export const productNavigation: ProductNavGroup[] = [
   },
   {
     label: 'Operations',
+    icon: NotebookTabs,
     items: [
       {
         label: 'Field activity log',
@@ -141,6 +145,7 @@ export const productNavigation: ProductNavGroup[] = [
   },
   {
     label: 'VRA maps',
+    icon: Layers3,
     items: [
       {
         label: 'Sowing',
@@ -181,6 +186,7 @@ export const productNavigation: ProductNavGroup[] = [
   },
   {
     label: 'Utility',
+    icon: Settings,
     items: [
       {
         label: 'AI assistant',

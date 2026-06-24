@@ -542,10 +542,12 @@ def extract_product(source_path: Path, work_dir: Path, *, overwrite: bool) -> Pa
 
 def find_band_asset(product_dir: Path, band_name: str) -> Path:
     matches = sorted(
-        path
-        for pattern in (f"*{band_name}*.tif", f"*{band_name}*.TIF")
-        for path in product_dir.rglob(pattern)
-        if path.is_file()
+        {
+            path.resolve(): path
+            for pattern in (f"*{band_name}*.tif", f"*{band_name}*.TIF")
+            for path in product_dir.rglob(pattern)
+            if path.is_file()
+        }.values()
     )
     if len(matches) != 1:
         found = "none" if not matches else ", ".join(path.as_posix() for path in matches[:10])

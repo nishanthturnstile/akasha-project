@@ -258,6 +258,7 @@ def test_build_resource_sat_composite_defaults_awifs_resolution(
         )
 
     def fake_write_intermediate_rasters(**kwargs):
+        captured["written_band_count"] = kwargs["analytic"].shape[0]
         kwargs["analytic_path"].parent.mkdir(parents=True, exist_ok=True)
         kwargs["analytic_path"].write_bytes(b"analytic")
         kwargs["mask_path"].write_bytes(b"mask")
@@ -291,6 +292,7 @@ def test_build_resource_sat_composite_defaults_awifs_resolution(
     )
 
     assert captured["resolution"] == 56.0
+    assert captured["written_band_count"] == 4
     assert result.output_dir == (
         tmp_path
         / "rasters"

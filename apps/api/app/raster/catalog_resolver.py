@@ -13,7 +13,8 @@ import json
 import os
 import urllib.request
 from dataclasses import dataclass
-from datetime import date as _date, timedelta
+from datetime import date as _date
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -156,8 +157,16 @@ _SOURCE_REGISTRY.update(
             "bandRoleMapping": {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5"},
             "maskAsset": "mask",
             "nodataPolicy": "mask_only",
-            "displayModes": ["FCC"],
+            "displayModes": ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
             "defaultDisplayMode": "FCC",
+            "mapDisplayModes": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+            "defaultMapDisplayMode": "NDVI",
+            "layerGroups": [
+                {"label": "Imagery", "modes": ["FCC"]},
+                {"label": "Vegetation Indices", "modes": ["NDVI", "MSAVI"]},
+                {"label": "Moisture Indices", "modes": ["NDMI"]},
+                {"label": "Water Index", "modes": ["NDWI_GREEN_NIR"]},
+            ],
             "description": "Gated regional ResourceSat-2A AWiFS BOA context source.",
             "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "optical",
@@ -166,7 +175,18 @@ _SOURCE_REGISTRY.update(
             "resolutionMeters": 56,
             "analysisLevel": "regional",
             "refreshPolicy": "Gated until AWiFS BOA download and COG prep are validated.",
-            "limitations": ["Registered for roadmap visibility; no composites are loaded yet."],
+            "limitations": [
+                "Coarse 56 m pixels; use for regional context and large-field analytics.",
+                (
+                    "Mask is Akasha threshold-derived and provisional until a native "
+                    "quality layer exists."
+                ),
+                (
+                    "AWiFS-specific EO wavelengths are pending NRSC validation; STAC "
+                    "currently uses the shared ResourceSat broad-band metadata aliases."
+                ),
+                "Not a replacement for LISS-3/LISS-4 field-level monitoring.",
+            ],
             "maskMethod": (
                 "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
                 "(pending AWiFS-specific native quality-layer validation; provisional)."
@@ -215,7 +235,10 @@ _SOURCE_REGISTRY.update(
             "limitations": [
                 "False-colour composite only; LISS-4 MX70 has no blue band.",
                 "NDMI/NDRE/RECI unsupported because LISS-4 MX70 has no SWIR or red-edge band.",
-                "Mask is Akasha threshold-derived and provisional until a native quality layer exists.",
+                (
+                    "Mask is Akasha threshold-derived and provisional until a native "
+                    "quality layer exists."
+                ),
             ],
             "maskMethod": "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)",
             "availableMaskOptions": ["clouds", "cloudShadows"],

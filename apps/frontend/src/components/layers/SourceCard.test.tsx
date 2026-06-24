@@ -62,6 +62,45 @@ describe('SourceCard', () => {
         );
     });
 
+    it('surfaces gated regional AWiFS copy and index display modes', () => {
+        const awifs: Source = {
+            id: 'resourcesat-2a-awifs-boa',
+            label: 'ResourceSat-2A AWiFS BOA',
+            provider: 'ISRO/NRSC Bhoonidhi',
+            kind: 'optical',
+            analysisLevel: 'regional',
+            availabilityStatus: 'gated',
+            gatedReason: 'No validated AWiFS BOA composite has been ingested.',
+            supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            defaultDisplayMode: 'FCC',
+            defaultMapDisplayMode: 'NDVI',
+            description: 'Gated regional ResourceSat-2A AWiFS BOA context source.',
+            limitations: [
+                'Coarse 56 m pixels; use for regional context and large-field analytics.',
+                'Not a replacement for LISS-3/LISS-4 field-level monitoring.',
+            ],
+        };
+
+        const { getByTestId } = renderCard({
+            source: awifs,
+            displayMode: 'NDVI',
+        });
+
+        expect(getByTestId('source-meta-resourcesat-2a-awifs-boa').textContent).toContain(
+            'Regional gated',
+        );
+        expect(getByTestId('source-gated-note').textContent).toContain(
+            'No validated AWiFS BOA composite has been ingested.',
+        );
+        expect(getByTestId('source-limitations').textContent).toContain(
+            'Coarse 56 m pixels; use for regional context and large-field analytics.',
+        );
+        expect(getByTestId('display-mode-NDMI')).not.toBeNull();
+        expect(getByTestId('display-mode-NDWI_GREEN_NIR')).not.toBeNull();
+    });
+
     it('does not render expanded limitations while inactive', () => {
         const { queryByTestId } = renderCard({ active: false });
 

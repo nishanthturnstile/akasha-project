@@ -393,8 +393,15 @@ def test_sources_endpoint_contract():
     assert rs["layerGroups"][3]["modes"] == ["NDWI_GREEN_NIR"]
     assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
     assert rs["metricsProvisional"] is True
-    assert sources["resourcesat-2a-awifs-boa"]["availabilityStatus"] == "gated"
-    assert sources["resourcesat-2a-awifs-boa"]["analysisLevel"] == "regional"
+    awifs = sources["resourcesat-2a-awifs-boa"]
+    assert awifs["availabilityStatus"] == "gated"
+    assert awifs["gatedReason"] == "No validated AWiFS BOA composite has been ingested."
+    assert awifs["analysisLevel"] == "regional"
+    assert awifs["resolutionMeters"] == 56
+    assert awifs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert awifs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert awifs["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert awifs["defaultDisplayMode"] == "FCC"
     assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "active"
     liss4 = catalog.source_payload("resourcesat-2a-liss4-mx70-l2")
     assert liss4["availabilityStatus"] == "active"
@@ -518,7 +525,10 @@ def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
         "offset": 0,
         "background_value": 0,
         "nodata_policy": "all-band-background-or-warp-gap",
-        "note": "LISS-4 L2 reflectance metadata is provisional until staging radiometry validation.",
+        "note": (
+            "LISS-4 L2 reflectance metadata is provisional until staging radiometry "
+            "validation."
+        ),
     }
     analytic = collection["item_assets"]["analytic"]
     assert [band["name"] for band in analytic["eo:bands"]] == ["BAND2", "BAND3", "BAND4"]
@@ -540,6 +550,47 @@ def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
         "s3://akasha-cogs/resourcesat-2a-liss4-mx70-l2/composite/bangalore-60km/"
     )
     assert item["assets"]["mask"]["href"].endswith("/mask.tif")
+
+
+def test_awifs_seed_collection_contract_is_regional_and_gated():
+    from app.raster import catalog_resolver as catalog
+
+    source_id = "resourcesat-2a-awifs-boa"
+    collection = catalog.get_collection(source_id)
+
+    assert collection["id"] == source_id
+    assert collection["summaries"]["instruments"] == ["awifs"]
+    assert collection["summaries"]["gsd"] == [56]
+    assert collection["akasha:bhoonidhi_collection_id"] == "ResourceSat-2A_AWIFS_BOA"
+    assert collection["akasha:analysis_level"] == "regional"
+    assert collection["akasha:availability_status"] == "gated"
+    assert collection["akasha:gated_reason"] == (
+        "No validated AWiFS BOA composite has been ingested."
+    )
+    assert collection["akasha:supported_indices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert collection["akasha:display_modes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert collection["akasha:default_display_mode"] == "FCC"
+    assert collection["akasha:fcc_role_order"] == ["NIR", "RED", "GREEN"]
+    assert collection["akasha:band_role_mapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+        "SWIR1": "BAND5",
+    }
+    assert collection["akasha:reflectance"] == {
+        "scale": 0.0001,
+        "offset": 0,
+        "background_value": 0,
+        "nodata_policy": "all-band-background-or-warp-gap",
+    }
+    mask_classes = collection["item_assets"]["mask"]["classification:classes"]
+    assert {klass["value"] for klass in mask_classes} == {
+        0,
+        1,
+        2,
+        3,
+        4,
+    }
 
 
 def test_latest_items_for_empty_registered_source_returns_typed_error(monkeypatch):

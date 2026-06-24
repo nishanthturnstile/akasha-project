@@ -39,8 +39,10 @@
   "akasha:supported_indices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
   "akasha:unsupported_indices": ["NDRE", "RECI"],
   "akasha:default_index": "NDVI",
-  "akasha:display_modes": ["FCC"],
+  "akasha:display_modes": ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
   "akasha:default_display_mode": "FCC",
+  "akasha:map_display_modes": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+  "akasha:default_map_display_mode": "NDVI",
   "akasha:tile_route_mode": "fcc",
   "akasha:fcc_role_order": ["NIR", "RED", "GREEN"],
   "akasha:band_role_mapping": {

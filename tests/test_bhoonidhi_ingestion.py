@@ -274,6 +274,97 @@ def test_catalog_emits_manifest_derived_liss4_composite_item():
     assert item["assets"]["mask"]["href"] == f"{expected_prefix}mask.tif"
 
 
+def test_catalog_emits_awifs_resourcesat_item():
+    manifest = {
+        "source_id": "resourcesat-2a-awifs-boa",
+        "collection": "ResourceSat-2A_AWIFS_BOA",
+        "composite": True,
+        "aoi_id": "bangalore-60km",
+        "composite_date": "2026-03-19",
+        "period_start": "2026-03-01",
+        "period_end": "2026-03-19",
+        "composite_resolution_meters": 56,
+        "composite_grid_crs": "EPSG:32643",
+        "composite_grid_bounds": [799960.0, 1290192.0, 800072.0, 1290304.0],
+        "composite_grid_dimensions": [2, 2],
+        "analytic_band_order": ["BAND2", "BAND3", "BAND4", "BAND5"],
+        "band_role_mapping": {
+            "GREEN": "BAND2",
+            "RED": "BAND3",
+            "NIR": "BAND4",
+            "SWIR1": "BAND5",
+        },
+        "contributing_scenes": [
+            {"id": "awifs-scene", "datetime": "2026-03-19T00:00:00Z"}
+        ],
+        "bbox": [77.0, 12.0, 78.0, 13.0],
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]
+            ],
+        },
+        "outputs": {
+            "analytic": {
+                "path": "analytic.tif",
+                "band_count": 4,
+                "dtype": "uint16",
+                "nodata": 0,
+                "resolution": [56, 56],
+                "crs": "EPSG:32643",
+                "width": 2,
+                "height": 2,
+            },
+            "mask": {
+                "path": "mask.tif",
+                "band_count": 1,
+                "dtype": "uint8",
+                "nodata": 0,
+                "resolution": [56, 56],
+                "crs": "EPSG:32643",
+                "width": 2,
+                "height": 2,
+            },
+        },
+        "properties": {
+            "akasha:metrics_provisional": True,
+            "akasha:coverage_percent": 98.0,
+        },
+    }
+
+    item = catalog.build_stac_item_from_prepare_manifest(manifest)
+
+    assert item["collection"] == "resourcesat-2a-awifs-boa"
+    assert item["id"] == "resourcesat-2a-awifs-boa_composite_bangalore-60km_2026-03-19"
+    assert item["properties"]["instruments"] == ["awifs"]
+    assert item["properties"]["gsd"] == 56
+    assert item["properties"]["akasha:composite"] is True
+    assert item["properties"]["akasha:band_role_mapping"] == {
+        "GREEN": "BAND2",
+        "RED": "BAND3",
+        "NIR": "BAND4",
+        "SWIR1": "BAND5",
+    }
+    assert [band["name"] for band in item["assets"]["analytic"]["eo:bands"]] == [
+        "BAND2",
+        "BAND3",
+        "BAND4",
+        "BAND5",
+    ]
+    assert len(item["assets"]["analytic"]["raster:bands"]) == 4
+    assert len(item["assets"]["mask"]["raster:bands"]) == 1
+    assert {
+        band["spatial_resolution"] for band in item["assets"]["analytic"]["raster:bands"]
+    } == {56}
+    assert item["properties"]["akasha:band_role_mapping"]["SWIR1"] == "BAND5"
+    expected_prefix = (
+        "s3://akasha-cogs/resourcesat-2a-awifs-boa/"
+        "composite/bangalore-60km/2026-03-19/"
+    )
+    assert item["assets"]["analytic"]["href"] == f"{expected_prefix}analytic.tif"
+    assert item["assets"]["mask"]["href"] == f"{expected_prefix}mask.tif"
+
+
 def test_resourcesat_sample_items_are_not_loaded_as_production_seed_items(tmp_path, monkeypatch):
     seed_dir = tmp_path / "seed"
     stac_dir = seed_dir / "stac"
@@ -285,6 +376,19 @@ def test_resourcesat_sample_items_are_not_loaded_as_production_seed_items(tmp_pa
     monkeypatch.setenv("SEED_DATA_DIR", str(seed_dir))
 
     assert config.item_files("resourcesat-2a-liss4-mx70-l2") == []
+
+
+def test_awifs_sample_items_are_not_loaded_as_production_seed_items(tmp_path, monkeypatch):
+    seed_dir = tmp_path / "seed"
+    stac_dir = seed_dir / "stac"
+    stac_dir.mkdir(parents=True)
+    (stac_dir / "resourcesat-2a-awifs-boa-sample-item.json").write_text(
+        json.dumps({"id": "placeholder", "collection": "resourcesat-2a-awifs-boa"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SEED_DATA_DIR", str(seed_dir))
+
+    assert config.item_files("resourcesat-2a-awifs-boa") == []
 
 
 def test_source_collection_supports_eos06_phase5_context_source():

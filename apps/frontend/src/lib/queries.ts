@@ -41,10 +41,14 @@ import {
   updateScoutTask,
   updateReportTemplate,
   getConfig,
+  getCrops,
   getDates,
   getDefaultLayer,
+  getIrrigationTypes,
   getPlots,
   getSources,
+  getTillageTypes,
+  getVarieties,
   importPlotsGeoJson,
   login,
   signup,
@@ -88,6 +92,10 @@ export const queryKeys = {
   sources: ['sources'] as const,
   dates: (sourceId: string) => ['dates', sourceId] as const,
   defaultLayer: ['layers', 'default'] as const,
+  crops: ['crops'] as const,
+  irrigationTypes: ['irrigation-types'] as const,
+  tillageTypes: ['tillage-types'] as const,
+  varieties: (cropId: number) => ['varieties', cropId] as const,
   plots: ['plots'] as const,
   fieldStatistics: (
     plotId: string,
@@ -227,6 +235,26 @@ export function useDates(sourceId: string | undefined) {
 
 export function useDefaultLayer() {
   return useQuery({ queryKey: queryKeys.defaultLayer, queryFn: getDefaultLayer });
+}
+
+export function useCrops() {
+  return useQuery({ queryKey: queryKeys.crops, queryFn: getCrops });
+}
+
+export function useIrrigationTypes() {
+  return useQuery({ queryKey: queryKeys.irrigationTypes, queryFn: getIrrigationTypes });
+}
+
+export function useTillageTypes() {
+  return useQuery({ queryKey: queryKeys.tillageTypes, queryFn: getTillageTypes });
+}
+
+export function useVarieties(cropId: number | undefined) {
+  return useQuery({
+    queryKey: cropId ? queryKeys.varieties(cropId) : (['varieties', 'none'] as const),
+    queryFn: () => getVarieties(cropId as number),
+    enabled: Boolean(cropId),
+  });
 }
 
 export function useImagerySourceMonitoring() {

@@ -3,12 +3,16 @@ import { useCallback, useSyncExternalStore } from 'react';
 export interface VegetationCycleForm {
   id: string;
   cropName: string;
+  variety: string;
+  maturity: string;
+  year: number | null;
   plantingDate: string;
   irrigationType: string;
   targetYield: number | null;
   harvestingDate: string;
   tillageType: string;
   actualYield: number | null;
+  isCutOff: boolean;
   notes: string;
 }
 
@@ -49,16 +53,24 @@ export function useVegetationCycles(fieldId: string) {
     useCallback(() => vegCycleStore.get(fieldId), [fieldId]),
   );
 
+  const setFieldCycles = useCallback((newCycles: Record<string, VegetationCycleForm[]>) => {
+    vegCycleStore.set(fieldId, newCycles);
+  }, [fieldId]);
+
   const addCycle = useCallback((seasonId: string) => {
     const newCycle: VegetationCycleForm = {
       id: crypto.randomUUID(),
       cropName: '',
-      plantingDate: '',
+      variety: '',
+      maturity: '',
+      year: new Date().getFullYear(),
+      plantingDate: `${new Date().getFullYear()}-01-01`,
       irrigationType: '',
       targetYield: null,
       harvestingDate: '',
       tillageType: '',
       actualYield: null,
+      isCutOff: false,
       notes: '',
     };
     const current = vegCycleStore.get(fieldId);
@@ -77,7 +89,7 @@ export function useVegetationCycles(fieldId: string) {
   }, [fieldId]);
 
   const updateCycle = useCallback(
-    (seasonId: string, cycleId: string, key: keyof VegetationCycleForm, value: string | number | null) => {
+    (seasonId: string, cycleId: string, key: keyof VegetationCycleForm, value: string | number | boolean | null) => {
       const current = vegCycleStore.get(fieldId);
       vegCycleStore.set(fieldId, {
         ...current,
@@ -98,5 +110,5 @@ export function useVegetationCycles(fieldId: string) {
     vegCycleStore.set(fieldId, rest);
   }, [fieldId]);
 
-  return { cycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } as const;
+  return { cycles, setFieldCycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } as const;
 }

@@ -1,6 +1,7 @@
 import type {
   ApiErrorShape,
   AppConfig,
+  Crop,
   DefaultLayer,
   FieldIndexExportOptions,
   FieldReportExportOptions,
@@ -14,12 +15,15 @@ import type {
   FieldActivityPayload,
   FieldActivityUpdatePayload,
   ActivityFilters,
+  IrrigationType,
+  PaginatedVarieties,
   ReportTemplate,
   ReportTemplatePayload,
   ReportTemplateUpdatePayload,
   ScoutTask,
   ScoutTaskPayload,
   ScoutTaskUpdatePayload,
+  TillageType,
   UploadedDataset,
   FieldGroup,
   FieldGroupPayload,
@@ -265,6 +269,17 @@ export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringRes
 
 export const getDefaultLayer = (): Promise<DefaultLayer> =>
   request<DefaultLayer>('/api/layers/default');
+
+export const getCrops = (): Promise<Crop[]> => request<Crop[]>('/api/crops');
+
+export const getIrrigationTypes = (): Promise<IrrigationType[]> =>
+  request<IrrigationType[]>('/api/irrigation-types');
+
+export const getTillageTypes = (): Promise<TillageType[]> =>
+  request<TillageType[]>('/api/tillage-types');
+
+export const getVarieties = (cropId: number): Promise<PaginatedVarieties> =>
+  request<PaginatedVarieties>(`/api/crops/${cropId}/varieties?page=1&page_size=500`);
 
 export const getPlots = (): Promise<Plot[]> => request<Plot[]>('/api/plots');
 

@@ -10,7 +10,7 @@ Covers TASK-060 from docs/impl-plan/architecture-satellite-ingestion-scheduler-1
   - No raw filesystem paths (/srv/akasha, /tmp, Windows drive paths) or full logs
     leak in frontend-safe responses
   - Source monitoring endpoint includes latest scheduler job and due/overdue fields
-  - Auth/team protection wired (disabled mode from conftest.py)
+  - Auth/team protection wired (owner/admin only; disabled mode from conftest.py)
 
 Uses temp dirs and SQLite fixtures — no real /srv/akasha files required.
 """
@@ -22,6 +22,7 @@ import sqlite3
 from pathlib import Path
 
 from app import ingestion_jobs, source_monitoring
+from app.auth import CurrentUser, TeamMembership, get_current_user
 from app.config import settings
 from app.main import app
 from fastapi.testclient import TestClient
@@ -116,9 +117,70 @@ def _make_job_dir(
     return jdir
 
 
+def _event(
+    job_id: str,
+    event_type: str,
+    timestamp: str,
+    payload: dict | None = None,
+) -> dict:
+    return {
+        "timestamp": timestamp,
+        "jobId": job_id,
+        "eventType": event_type,
+        "payload": payload or {},
+    }
+
+
+def _write_events_jsonl(job_dir: Path, entries: list[dict | str]) -> None:
+    lines = [
+        entry if isinstance(entry, str) else json.dumps(entry, ensure_ascii=False)
+        for entry in entries
+    ]
+    (job_dir / "events.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _make_scheduler_ledger(jobs_dir: Path, entries: dict) -> None:
     ledger = {"entries": entries}
     (jobs_dir / "scheduler_ledger.json").write_text(json.dumps(ledger), encoding="utf-8")
+
+
+def _schedule_for_next_due(monkeypatch, tmp_path, next_due_at: str) -> dict:
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_due_state"
+    _make_job_dir(
+        jobs_dir,
+        job_id=job_id,
+        observability_override={
+            "providerInputSummary": {
+                "scheduleState": "routine",
+                "provider": "bhoonidhi",
+            },
+            "nextDueAt": next_due_at,
+            "scheduleDecision": "cadence_elapsed",
+        },
+    )
+    _make_scheduler_ledger(
+        jobs_dir,
+        {
+            "resourcesat-2a-liss3-boa::bangalore-60km": {
+                "lastJobId": job_id,
+                "lastSucceededAt": "2026-06-20T01:30:00Z",
+                "lastWindowEnd": "2026-06-20T00:00:00Z",
+            }
+        },
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+    monkeypatch.setattr(
+        ingestion_jobs, "_now_iso", lambda: "2026-06-25T12:00:00Z"
+    )
+
+    resp = client.get("/api/monitoring/ingestion-schedules")
+    assert resp.status_code == 200
+    schedules = resp.json()["schedules"]
+    assert len(schedules) == 1
+    return schedules[0]
 
 
 def _make_sqlite_ledger(path: Path, rows: list[dict]) -> None:
@@ -328,6 +390,42 @@ def test_schedules_schedule_enabled_flag_reflects_state(monkeypatch, tmp_path):
     assert sched["scheduleState"] == "background_only"
 
 
+def test_schedules_marks_row_due_within_grace_window(monkeypatch, tmp_path):
+    sched = _schedule_for_next_due(
+        monkeypatch,
+        tmp_path,
+        "2026-06-25T06:00:00Z",
+    )
+
+    assert sched["nextDueAt"] == "2026-06-25T06:00:00Z"
+    assert sched["isDue"] is True
+    assert sched["isOverdue"] is False
+    assert sched["dueReason"] == "cadence_elapsed"
+
+
+def test_schedules_marks_row_overdue_after_24_hour_grace(monkeypatch, tmp_path):
+    sched = _schedule_for_next_due(
+        monkeypatch,
+        tmp_path,
+        "2026-06-24T11:59:00Z",
+    )
+
+    assert sched["isDue"] is True
+    assert sched["isOverdue"] is True
+
+
+def test_schedules_marks_future_row_not_due(monkeypatch, tmp_path):
+    sched = _schedule_for_next_due(
+        monkeypatch,
+        tmp_path,
+        "2026-06-25T12:01:00Z",
+    )
+
+    assert sched["isDue"] is False
+    assert sched["isOverdue"] is False
+    assert sched["dueReason"] == "cadence_elapsed"
+
+
 def test_schedules_enriches_failure_timestamps_from_sqlite(monkeypatch, tmp_path):
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()
@@ -360,6 +458,99 @@ def test_schedules_enriches_failure_timestamps_from_sqlite(monkeypatch, tmp_path
     sched = resp.json()["schedules"][0]
     # last_failure_at comes from SQLite enrichment for failed jobs
     assert sched["lastFailureAt"] is not None
+
+
+def test_schedules_enriches_run_and_failure_by_source_and_aoi(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    db = tmp_path / "job_ledger.db"
+    _make_sqlite_ledger(
+        db,
+        [
+            _row(
+                "job_20260620T010000Z_aoi_a_success",
+                aoi_id="aoi-a",
+                state="succeeded",
+                scheduled_at="2026-06-20T01:00:00Z",
+                finished_at="2026-06-20T01:30:00Z",
+            ),
+            _row(
+                "job_20260621T010000Z_aoi_b_fail",
+                aoi_id="aoi-b",
+                state="failed",
+                scheduled_at="2026-06-21T01:00:00Z",
+                finished_at="2026-06-21T01:30:00Z",
+                failure_kind="bhoonidhi_download",
+            ),
+        ],
+    )
+    _make_scheduler_ledger(
+        jobs_dir,
+        {
+            "resourcesat-2a-liss3-boa::aoi-a": {
+                "lastJobId": None,
+                "lastSucceededAt": "2026-06-20T01:30:00Z",
+            },
+            "resourcesat-2a-liss3-boa::aoi-b": {
+                "lastJobId": None,
+                "lastSucceededAt": None,
+            },
+        },
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", str(db), raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-schedules")
+    assert resp.status_code == 200
+    schedules = {item["aoiId"]: item for item in resp.json()["schedules"]}
+
+    assert schedules["aoi-a"]["lastRunAt"] == "2026-06-20T01:00:00Z"
+    assert schedules["aoi-a"]["lastFailureAt"] is None
+    assert schedules["aoi-b"]["lastRunAt"] == "2026-06-21T01:00:00Z"
+    assert schedules["aoi-b"]["lastFailureAt"] == "2026-06-21T01:30:00Z"
+
+
+def test_schedules_do_not_apply_source_level_ledger_rows_to_aoi_rows(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    db = tmp_path / "job_ledger.db"
+    _make_sqlite_ledger(
+        db,
+        [
+            _row(
+                "job_20260620T010000Z_source_level",
+                aoi_id=None,
+                state="failed",
+                scheduled_at="2026-06-20T01:00:00Z",
+                finished_at="2026-06-20T01:30:00Z",
+                failure_kind="source_level_failure",
+            ),
+        ],
+    )
+    _make_scheduler_ledger(
+        jobs_dir,
+        {
+            "resourcesat-2a-liss3-boa::aoi-a": {
+                "lastJobId": None,
+                "lastSucceededAt": None,
+            },
+            "resourcesat-2a-liss3-boa": {
+                "lastJobId": None,
+                "lastSucceededAt": None,
+            },
+        },
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", str(db), raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-schedules")
+    assert resp.status_code == 200
+    schedules = {item["aoiId"]: item for item in resp.json()["schedules"]}
+
+    assert schedules["aoi-a"]["lastRunAt"] is None
+    assert schedules["aoi-a"]["lastFailureAt"] is None
+    assert schedules[None]["lastRunAt"] == "2026-06-20T01:00:00Z"
+    assert schedules[None]["lastFailureAt"] == "2026-06-20T01:30:00Z"
 
 
 # ---------------------------------------------------------------------------
@@ -882,6 +1073,304 @@ def test_job_detail_ledger_rows_exclude_artifact_path(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Job events endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_job_events_returns_empty_list_when_events_file_missing(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_noevents"
+    _make_job_dir(jobs_dir, job_id=job_id)
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}/events")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["events"] == []
+    assert body["truncated"] is False
+    assert body["scannedCount"] == 0
+
+
+def test_job_events_returns_404_for_unknown_job(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-jobs/job_missing/events")
+    assert resp.status_code == 404
+
+
+def test_job_events_rejects_path_traversal_in_job_id(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-jobs/job..secret/events")
+    assert resp.status_code == 400
+
+
+def test_job_events_malformed_line_does_not_crash_or_leak_raw_line(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_malformed"
+    job_dir = _make_job_dir(jobs_dir, job_id=job_id)
+    raw_bad_line = (
+        '{"eventType": "broken", "raw": "/srv/akasha/RAW_MALFORMED_SECRET", '
+        '"password": "malformed-password"'
+    )
+    _write_events_jsonl(
+        job_dir,
+        [
+            _event(job_id, "job_created", "2026-06-20T01:00:00Z"),
+            raw_bad_line,
+            _event(
+                job_id,
+                "status_change",
+                "2026-06-20T01:01:00Z",
+                {"from": "planned", "to": "running"},
+            ),
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}/events")
+    assert resp.status_code == 200
+    body = resp.json()
+    text = json.dumps(body)
+    assert "RAW_MALFORMED_SECRET" not in text
+    assert "malformed-password" not in text
+    assert raw_bad_line not in text
+    assert body["status"] == "ok"
+    assert {event["eventType"] for event in body["events"]} >= {
+        "job_created",
+        "status_change",
+    }
+
+
+def test_job_events_returns_latest_events_with_truncation_metadata(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_latest"
+    job_dir = _make_job_dir(jobs_dir, job_id=job_id)
+    all_events = [
+        _event(
+            job_id,
+            "progress",
+            f"2026-06-20T01:{i // 60:02d}:{i % 60:02d}Z",
+            {"sequence": i},
+        )
+        for i in range(205)
+    ]
+    _write_events_jsonl(job_dir, all_events)
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}/events")
+    assert resp.status_code == 200
+    body = resp.json()
+    returned_sequences = [event["payload"]["sequence"] for event in body["events"]]
+    assert len(returned_sequences) == 200
+    assert returned_sequences == list(range(5, 205))
+    assert body["truncated"] is True
+    assert body["scannedCount"] == 205
+
+
+def test_job_events_redacts_paths_and_secrets(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_eventredact"
+    job_dir = _make_job_dir(jobs_dir, job_id=job_id)
+    _write_events_jsonl(
+        job_dir,
+        [
+            _event(
+                job_id,
+                "dry_run_plan",
+                "2026-06-20T01:00:00Z",
+                {
+                    "rawRoot": "/srv/akasha/data/raw/bhoonidhi",
+                    "downloadPath": "/tmp/coverage_manifest.json",
+                    "scratch": "/var/tmp/akasha-work",
+                    "windowsPath": "C:\\Users\\operator\\secret\\product.zip",
+                    "message": (
+                        "Authorization: Bearer bearer-token-value "
+                        "password=super-secret-password secret=super-secret-value "
+                        "token=token-value-123"
+                    ),
+                    "signedUrl": (
+                        "https://object-store.internal/akasha-cogs/analytic.tif?"
+                        "X-Amz-Signature=signature-secret-123&"
+                        "X-Amz-Credential=credential-secret-456&"
+                        "AWSAccessKeyId=AKIA_TEST_SECRET&token=signed-token-789"
+                    ),
+                    "internalUrls": [
+                        "http://minio:9000/akasha-cogs/analytic.tif",
+                        "http://postgis:5432/akasha",
+                        "http://stac-api:8080/collections",
+                    ],
+                    "Authorization": "Bearer auth-header-secret",
+                    "headers": {"authorization": "Bearer nested-auth-header-secret"},
+                    "providerCredentials": {
+                        "username": "bhoonidhi-user",
+                        "password": "bhoonidhi-password",
+                        "secret": "bhoonidhi-secret",
+                        "token": "bhoonidhi-token",
+                    },
+                    "objectStoreCredentials": {
+                        "accessKey": "object-access-key",
+                        "secretKey": "object-secret-key",
+                        "sessionToken": "object-session-token",
+                    },
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}/events")
+    assert resp.status_code == 200
+    body = resp.json()
+    _assert_no_raw_paths(body, context=f"/api/monitoring/ingestion-jobs/{job_id}/events")
+    text = json.dumps(body)
+    for forbidden in (
+        "bearer-token-value",
+        "super-secret-password",
+        "super-secret-value",
+        "token-value-123",
+        "signature-secret-123",
+        "credential-secret-456",
+        "signed-token-789",
+        "AKIA_TEST_SECRET",
+        "object-store.internal",
+        "minio:9000",
+        "postgis:5432",
+        "stac-api:8080",
+        "auth-header-secret",
+        "nested-auth-header-secret",
+        "bhoonidhi-password",
+        "bhoonidhi-secret",
+        "bhoonidhi-token",
+        "object-access-key",
+        "object-secret-key",
+        "object-session-token",
+        "Authorization",
+        "authorization",
+    ):
+        assert forbidden not in text
+
+
+def test_job_events_normalizes_current_emitted_event_types(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_mapping"
+    job_dir = _make_job_dir(jobs_dir, job_id=job_id)
+    _write_events_jsonl(
+        job_dir,
+        [
+            _event(job_id, "job_created", "2026-06-20T01:00:00Z"),
+            _event(
+                job_id,
+                "job_created",
+                "2026-06-20T01:00:30Z",
+                {"status": "running"},
+            ),
+            _event(
+                job_id,
+                "status_change",
+                "2026-06-20T01:01:00Z",
+                {"from": "planned", "to": "running"},
+            ),
+            _event(
+                job_id,
+                "status_change",
+                "2026-06-20T01:02:00Z",
+                {"from": "running", "to": "succeeded"},
+            ),
+            _event(job_id, "dry_run_plan", "2026-06-20T01:03:00Z"),
+            _event(
+                job_id,
+                "dry_run_plan",
+                "2026-06-20T01:03:30Z",
+                {"status": "failed"},
+            ),
+            _event(
+                job_id,
+                "future_event",
+                "2026-06-20T01:04:00Z",
+                {"status": "running"},
+            ),
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}/events")
+    assert resp.status_code == 200
+    events = resp.json()["events"]
+    assert [(event["eventType"], event["stage"], event["status"]) for event in events] == [
+        ("job_created", "planned", "planned"),
+        ("job_created", "planned", "planned"),
+        ("status_change", "running", "running"),
+        ("status_change", "terminal", "succeeded"),
+        ("dry_run_plan", "planned", "planned"),
+        ("dry_run_plan", "planned", "planned"),
+        ("future_event", "unknown", "unknown"),
+    ]
+    for event in events:
+        assert isinstance(event["message"], str)
+        assert event["message"]
+
+
+def test_job_events_redacts_quoted_json_secret_strings(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_jsonsecret"
+    job_dir = _make_job_dir(jobs_dir, job_id=job_id)
+    _write_events_jsonl(
+        job_dir,
+        [
+            _event(
+                job_id,
+                "status_change",
+                "2026-06-20T01:00:00Z",
+                {
+                    "to": "failed",
+                    "message": (
+                        'provider error {"password":"json-password", '
+                        '"token":"json-token", "secret": "json-secret"}'
+                    ),
+                    "details": (
+                        "nested {'accessKey': 'quoted-access-key', "
+                        "'credential': 'quoted-credential'}"
+                    ),
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}/events")
+    assert resp.status_code == 200
+    text = json.dumps(resp.json())
+    for forbidden in (
+        "json-password",
+        "json-token",
+        "json-secret",
+        "quoted-access-key",
+        "quoted-credential",
+    ):
+        assert forbidden not in text
+
+
+# ---------------------------------------------------------------------------
 # Missing artifact handling — fail-soft
 # ---------------------------------------------------------------------------
 
@@ -1384,6 +1873,71 @@ def test_source_monitoring_includes_scheduler_fields_in_response_model(monkeypat
 # ---------------------------------------------------------------------------
 
 
+def _override_current_user_role(role: str) -> None:
+    team_id = "22222222-2222-4222-8222-222222222222"
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        id="11111111-1111-4111-8111-111111111111",
+        username=f"{role}-user",
+        email=f"{role}@example.test",
+        display_name=f"{role.title()} User",
+        role=role,
+        current_team_id=team_id,
+        memberships=(TeamMembership(id=team_id, name="Test Team", role=role),),
+    )
+
+
+def _configure_ingestion_rbac_fixtures(monkeypatch, tmp_path) -> str:
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_rbac"
+    _make_job_dir(jobs_dir, job_id=job_id)
+    _make_scheduler_ledger(
+        jobs_dir,
+        {"resourcesat-2a-liss3-boa::bangalore-60km": {"lastJobId": job_id}},
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+    return job_id
+
+
+def test_ingestion_monitoring_endpoints_allow_owner_and_admin(monkeypatch, tmp_path):
+    job_id = _configure_ingestion_rbac_fixtures(monkeypatch, tmp_path)
+    endpoints = (
+        "/api/monitoring/ingestion-schedules",
+        "/api/monitoring/ingestion-jobs",
+        f"/api/monitoring/ingestion-jobs/{job_id}",
+        f"/api/monitoring/ingestion-jobs/{job_id}/events",
+    )
+
+    for role in ("owner", "admin"):
+        _override_current_user_role(role)
+        try:
+            for endpoint in endpoints:
+                resp = client.get(endpoint)
+                assert resp.status_code == 200, f"{role=} should access {endpoint}"
+        finally:
+            app.dependency_overrides.clear()
+
+
+def test_ingestion_monitoring_endpoints_reject_member_and_viewer(monkeypatch, tmp_path):
+    job_id = _configure_ingestion_rbac_fixtures(monkeypatch, tmp_path)
+    endpoints = (
+        "/api/monitoring/ingestion-schedules",
+        "/api/monitoring/ingestion-jobs",
+        f"/api/monitoring/ingestion-jobs/{job_id}",
+        f"/api/monitoring/ingestion-jobs/{job_id}/events",
+    )
+
+    for role in ("member", "viewer"):
+        _override_current_user_role(role)
+        try:
+            for endpoint in endpoints:
+                resp = client.get(endpoint)
+                assert resp.status_code == 403, f"{role=} should be forbidden from {endpoint}"
+        finally:
+            app.dependency_overrides.clear()
+
+
 def test_monitoring_endpoints_require_auth_when_enabled(monkeypatch, tmp_path):
     """With auth_mode=enabled, endpoints should fail without a session cookie."""
     db = tmp_path / "job_ledger.db"
@@ -1399,7 +1953,7 @@ def test_monitoring_endpoints_require_auth_when_enabled(monkeypatch, tmp_path):
 
     resp = client.get("/api/monitoring/ingestion-jobs")
     # When auth is enabled and no session cookie is present, the endpoint returns 401.
-    # The route is gated by get_current_team via Depends(get_current_team).
+    # The route is owner/admin-gated through require_role.
     assert resp.status_code == 401
 
 
@@ -1431,6 +1985,7 @@ def test_monitoring_apis_documented_in_openapi():
     assert "/api/monitoring/ingestion-schedules" in paths
     assert "/api/monitoring/ingestion-jobs" in paths
     assert "/api/monitoring/ingestion-jobs/{job_id}" in paths
+    assert "/api/monitoring/ingestion-jobs/{job_id}/events" in paths
 
     schemas = schema["components"]["schemas"]
     assert "IngestionScheduleItem" in schemas
@@ -1438,13 +1993,16 @@ def test_monitoring_apis_documented_in_openapi():
     assert "IngestionJobSummary" in schemas
     assert "IngestionJobListResponse" in schemas
     assert "IngestionJobDetail" in schemas
+    assert "IngestionJobEvent" in schemas
+    assert "IngestionJobEventsResponse" in schemas
 
     schedule_props = schemas["IngestionScheduleItem"]["properties"]
     for field in (
         "sourceId", "provider", "adapter", "aoiId",
         "lifecycleState", "scheduleState", "scheduleEnabled",
         "productExposure", "lastRunAt", "lastSuccessAt", "lastFailureAt",
-        "nextDueAt", "nextWindowStart", "nextWindowEnd", "cadenceDays", "dueReason",
+        "nextDueAt", "isDue", "isOverdue", "nextWindowStart", "nextWindowEnd",
+        "cadenceDays", "dueReason",
     ):
         assert field in schedule_props, f"scheduleItem missing field {field!r}"
 
@@ -1466,6 +2024,14 @@ def test_monitoring_apis_documented_in_openapi():
         "artifactHandles", "ledgerRows",
     ):
         assert field in detail_props, f"jobDetail missing field {field!r}"
+
+    event_props = schemas["IngestionJobEvent"]["properties"]
+    for field in ("timestamp", "eventType", "stage", "status", "message", "payload"):
+        assert field in event_props, f"jobEvent missing field {field!r}"
+
+    event_response_props = schemas["IngestionJobEventsResponse"]["properties"]
+    for field in ("status", "generatedAt", "events", "truncated", "scannedCount"):
+        assert field in event_response_props, f"jobEventsResponse missing field {field!r}"
 
 
 # ---------------------------------------------------------------------------

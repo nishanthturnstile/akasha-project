@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock,
   Download,
+  LockKeyhole,
   Loader2,
   RefreshCw,
   Search,
@@ -40,23 +41,31 @@ type StateBadgeVariant = 'success' | 'warning' | 'destructive' | 'info' | 'neutr
 
 function stateVariant(state: string): StateBadgeVariant {
   const s = state.toLowerCase();
-  if (s === 'succeeded' || s === 'completed' || s === 'done' || s === 'success') return 'success';
-  if (s === 'running' || s === 'pending' || s === 'scheduled') return 'warning';
-  if (s === 'failed' || s === 'error' || s === 'cancelled') return 'destructive';
-  if (s === 'ready' || s === 'queued') return 'info';
+  if (s === 'succeeded') return 'success';
+  if (s === 'running' || s === 'queued') return 'info';
+  if (
+    s === 'planned'
+    || s === 'blocked_by_lock'
+    || s === 'skipped_not_due'
+    || s === 'skipped_gated'
+  ) return 'warning';
+  if (s === 'failed' || s === 'validation_failed' || s === 'cancelled') return 'destructive';
   return 'neutral';
 }
 
 function StateIcon({ state }: { state: string }) {
   const s = state.toLowerCase();
-  if (s === 'succeeded' || s === 'completed' || s === 'done' || s === 'success') {
+  if (s === 'succeeded') {
     return <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />;
   }
   if (s === 'running') return <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />;
-  if (s === 'pending' || s === 'scheduled') {
+  if (s === 'planned' || s === 'queued' || s === 'skipped_not_due') {
     return <Clock className="h-3.5 w-3.5" aria-hidden="true" />;
   }
-  if (s === 'failed' || s === 'error') {
+  if (s === 'blocked_by_lock' || s === 'skipped_gated') {
+    return <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />;
+  }
+  if (s === 'failed' || s === 'validation_failed' || s === 'cancelled') {
     return <XCircle className="h-3.5 w-3.5" aria-hidden="true" />;
   }
   return <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />;
@@ -72,7 +81,7 @@ function JobRow({ job }: { job: IngestionJobSummary }) {
     <tr className="group border-t border-border/60 align-top hover:bg-accent/40 transition-colors">
       <td className="py-3 pr-4">
         <Link
-          to={ `/monitoring/ingestion-jobs/${encodeURIComponent(job.jobId)}` }
+          to={ `/admin/ingestion/jobs/${encodeURIComponent(job.jobId)}` }
           className="inline-flex items-center gap-1.5 font-mono text-xs text-info hover:underline focus-visible:underline outline-none"
           aria-label={ `View job ${job.jobId}` }
         >
@@ -138,11 +147,16 @@ function JobRow({ job }: { job: IngestionJobSummary }) {
 
 const STATE_OPTIONS = [
   { value: '', label: 'All states' },
-  { value: 'pending', label: 'Pending' },
+  { value: 'planned', label: 'Planned' },
+  { value: 'queued', label: 'Queued' },
   { value: 'running', label: 'Running' },
   { value: 'succeeded', label: 'Succeeded' },
   { value: 'failed', label: 'Failed' },
+  { value: 'validation_failed', label: 'Validation failed' },
+  { value: 'blocked_by_lock', label: 'Blocked by lock' },
   { value: 'cancelled', label: 'Cancelled' },
+  { value: 'skipped_not_due', label: 'Skipped not due' },
+  { value: 'skipped_gated', label: 'Skipped gated' },
 ];
 
 function FilterBar({

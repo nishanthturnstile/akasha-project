@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import IngestionJobsList from '@/pages/monitoring/IngestionJobsList';
@@ -142,7 +142,7 @@ describe('IngestionJobsList', () => {
       name: /View job job-abc123456789012345678/,
     });
     expect((detailLink as HTMLAnchorElement).href).toContain(
-      '/monitoring/ingestion-jobs/' + encodeURIComponent('job-abc123456789012345678'),
+      '/admin/ingestion/jobs/' + encodeURIComponent('job-abc123456789012345678'),
     );
   });
 
@@ -190,5 +190,107 @@ describe('IngestionJobsList', () => {
         String(call[0]).includes('/api/monitoring/ingestion-jobs'),
       ),
     ).toBe(true);
+  });
+
+  it('offers only canonical scheduler states in the state filter', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(jobsPayload)));
+
+    renderPage();
+
+    const stateSelect = screen.getByLabelText('Filter by job state');
+    const options = within(stateSelect).getAllByRole('option') as HTMLOptionElement[];
+
+    expect(options.map((option) => option.value)).toEqual([
+      '',
+      'planned',
+      'queued',
+      'running',
+      'succeeded',
+      'failed',
+      'validation_failed',
+      'blocked_by_lock',
+      'cancelled',
+      'skipped_not_due',
+      'skipped_gated',
+    ]);
+    expect(options.map((option) => option.textContent)).toEqual([
+      'All states',
+      'Planned',
+      'Queued',
+      'Running',
+      'Succeeded',
+      'Failed',
+      'Validation failed',
+      'Blocked by lock',
+      'Cancelled',
+      'Skipped not due',
+      'Skipped gated',
+    ]);
+    expect(options.some((option) => option.value === 'pending')).toBe(false);
+    expect(options.some((option) => option.value === 'scheduled')).toBe(false);
+  });
+
+  it('sends the selected canonical scheduler state as the API filter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(jobsPayload));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Filter by job state'), {
+      target: { value: 'validation_failed' },
+    });
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          String(call[0]).includes('state=validation_failed'),
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it('maps canonical scheduler states to the planned badge color families', async () => {
+    const canonicalJobs = [
+      { state: 'planned', expectedClass: 'text-warning' },
+      { state: 'queued', expectedClass: 'text-info' },
+      { state: 'running', expectedClass: 'text-info' },
+      { state: 'succeeded', expectedClass: 'text-success' },
+      { state: 'failed', expectedClass: 'text-destructive' },
+      { state: 'validation_failed', expectedClass: 'text-destructive' },
+      { state: 'blocked_by_lock', expectedClass: 'text-warning' },
+      { state: 'cancelled', expectedClass: 'text-destructive' },
+      { state: 'skipped_not_due', expectedClass: 'text-warning' },
+      { state: 'skipped_gated', expectedClass: 'text-warning' },
+      { state: 'provider_paused', expectedClass: 'text-muted-foreground' },
+    ].map(({ state }) => ({
+      ...jobsPayload.jobs[0],
+      jobId: `job-${state}`,
+      state,
+      message: `${state} message`,
+    }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ ...jobsPayload, jobs: canonicalJobs }),
+    ));
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('provider_paused')).toBeTruthy(),
+    );
+
+    for (const { state, expectedClass } of [
+      { state: 'planned', expectedClass: 'text-warning' },
+      { state: 'queued', expectedClass: 'text-info' },
+      { state: 'running', expectedClass: 'text-info' },
+      { state: 'succeeded', expectedClass: 'text-success' },
+      { state: 'failed', expectedClass: 'text-destructive' },
+      { state: 'validation_failed', expectedClass: 'text-destructive' },
+      { state: 'blocked_by_lock', expectedClass: 'text-warning' },
+      { state: 'cancelled', expectedClass: 'text-destructive' },
+      { state: 'skipped_not_due', expectedClass: 'text-warning' },
+      { state: 'skipped_gated', expectedClass: 'text-warning' },
+      { state: 'provider_paused', expectedClass: 'text-muted-foreground' },
+    ]) {
+      expect(screen.getByText(state).className).toContain(expectedClass);
+    }
   });
 });

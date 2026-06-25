@@ -5,11 +5,71 @@ import sqlite3
 from datetime import UTC, datetime
 
 from app import source_monitoring
+from app.auth import CurrentUser, TeamMembership, get_current_user
 from app.config import settings
 from app.main import app
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
+
+def _override_current_user_role(role: str) -> None:
+    team_id = "22222222-2222-4222-8222-222222222222"
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        id="11111111-1111-4111-8111-111111111111",
+        username=f"{role}-user",
+        email=f"{role}@example.test",
+        display_name=f"{role.title()} User",
+        role=role,
+        current_team_id=team_id,
+        memberships=(TeamMembership(id=team_id, name="Test Team", role=role),),
+    )
+
+
+def _stub_empty_monitoring_payload(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "source_freshness_stale_days", 45, raising=False)
+    monkeypatch.setattr(
+        source_monitoring,
+        "_now",
+        lambda: datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    monkeypatch.setattr(source_monitoring.catalog, "list_sources", lambda: [])
+    monkeypatch.setattr(
+        source_monitoring,
+        "_ingestion_ledger_summary",
+        lambda: {"status": "ok", "bySource": []},
+    )
+    monkeypatch.setattr(
+        source_monitoring,
+        "_storage_usage",
+        lambda: {"status": "ok", "byPrefix": []},
+    )
+
+
+def test_imagery_source_monitoring_allows_owner_and_admin(monkeypatch):
+    _stub_empty_monitoring_payload(monkeypatch)
+
+    for role in ("owner", "admin"):
+        _override_current_user_role(role)
+        try:
+            response = client.get("/api/monitoring/imagery-sources")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 200
+
+
+def test_imagery_source_monitoring_rejects_member_and_viewer(monkeypatch):
+    _stub_empty_monitoring_payload(monkeypatch)
+
+    for role in ("member", "viewer"):
+        _override_current_user_role(role)
+        try:
+            response = client.get("/api/monitoring/imagery-sources")
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 403
 
 
 def test_imagery_source_monitoring_does_not_expose_ledger_paths(monkeypatch):

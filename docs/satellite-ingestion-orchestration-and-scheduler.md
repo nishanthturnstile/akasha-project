@@ -21,7 +21,8 @@ scheduler. It explains, in one place:
 2. **What is working today** — and what is intentionally still gated.
 3. **How to trigger ingestion** — CLI, dry-run, staging wrapper, and the systemd timer.
 4. **How to control it** — source-state gates, locks, cutover, and rollback.
-5. **How to add a new satellite** — a copy-paste checklist for ISRO and non-ISRO sources.
+5. **How to observe it** — CLI, redacted APIs, and the internal admin console.
+6. **How to add a new satellite** — a copy-paste checklist for ISRO and non-ISRO sources.
 
 It is the *narrative companion* to three deeper documents. Read those when you need the
 exact field-level rules:
@@ -37,6 +38,10 @@ exact field-level rules:
 > lifecycle*; **provider adapters** own the connection/auth/search/download/order differences;
 > **validation profiles** decide whether a product is good enough to expose. None of these layers
 > hard-code satellite names.
+>
+> **Admin console boundary:** visual ingestion orchestration is an **internal owner/admin console**
+> under `/admin/ingestion/*`. It is not a public product feature and does not belong in the
+> crop/field-oriented product Monitoring surface.
 
 ---
 
@@ -106,10 +111,10 @@ adapter and a validation profile), not rewriting scheduling, monitoring, or prod
 | Locks | [services/ingestion/akasha_ingest/scheduler_locks.py](../services/ingestion/akasha_ingest/scheduler_locks.py) | Global + per-source/AOI file locks, PID/TTL stale-lock reclaim, **legacy Bhoonidhi lock-path compatibility**. |
 | Validation profiles | [services/ingestion/akasha_ingest/validation_profiles.py](../services/ingestion/akasha_ingest/validation_profiles.py) | `optical_composite`, `optical_scene`, `sar_backscatter`, `precomputed_context`, `archive_only`, `visual_only` + LISS-3 invariant constants. |
 | Worker CLI | [services/ingestion/worker.py](../services/ingestion/worker.py) | `schedule-plan`, `schedule-due-sources`, `schedule-source`, `verify-raster-product`, `verify-composite`, and the `bhoonidhi-*` compatibility commands. |
-| BFF monitoring | [apps/api/app/ingestion_jobs.py](../apps/api/app/ingestion_jobs.py) | `GET /api/monitoring/ingestion-schedules`, `…/ingestion-jobs`, `…/ingestion-jobs/{jobId}` over **redacted snapshots only**. |
-| Source monitoring | [apps/api/app/source_monitoring.py](../apps/api/app/source_monitoring.py) | Links each imagery source to its latest scheduler job + due/overdue status. |
+| BFF admin monitoring | [apps/api/app/ingestion_jobs.py](../apps/api/app/ingestion_jobs.py) | Same-origin `/api/monitoring/*` endpoints for ingestion schedules, jobs, job details, and events. They are owner/admin-gated and return **redacted, opaque** snapshots only. |
+| Source monitoring | [apps/api/app/source_monitoring.py](../apps/api/app/source_monitoring.py) | Admin/operator source scheduler health: latest scheduler job + due/overdue status. Product Monitoring remains crop/field oriented. |
 | Best-observation | [apps/api/app/raster/catalog_resolver.py](../apps/api/app/raster/catalog_resolver.py) | `resolve_best_observation()` ranks validated sources per date (Phase 11). |
-| Operator UI | `apps/frontend/src/pages/monitoring/IngestionJobsList.tsx`, `IngestionJobDetail.tsx` | Job list + detail (state, counts, redacted summaries, verification problems). |
+| Admin ingestion UI | `apps/frontend/src/pages/monitoring/*` | Internal owner/admin pages at `/admin/ingestion`, `/admin/ingestion/jobs`, `/admin/ingestion/jobs/:jobId`, and `/admin/ingestion/schedules`. |
 | Deployment | [infra/selfhosted/systemd/](../infra/selfhosted/systemd/) | `akasha-ingestion-scheduler.{timer,service,sh}`, `ingestion-scheduler.env.example`, installer. |
 | Staging wrapper | [scripts/staging_ingestion_job.py](../scripts/staging_ingestion_job.py) | Operator entry point: `trigger`, `job-inspect`, `job-artifact`, `schedule-plan`, `schedule-next`. |
 
@@ -441,14 +446,28 @@ Per-provider auth and feasibility details are in
 
 - **CLI:** `worker.py schedule-plan --json` (due reasons),
   `scripts/staging_ingestion_job.py job-inspect/job-artifact/schedule-next`.
-- **API (auth-gated, redacted only):**
+- **Admin API (same-origin, owner/admin-gated, redacted/opaque only):**
   `GET /api/monitoring/ingestion-schedules`,
   `GET /api/monitoring/ingestion-jobs?limit=…&sourceId=…&state=…`,
-  `GET /api/monitoring/ingestion-jobs/{jobId}`. These read only the redacted scheduler
-  snapshot/ledger via explicit config — **never** raw provider archives, signed URLs, credentials,
-  or filesystem paths. Artifact handles are opaque (`<jobId>:<artifactType>`).
-- **UI:** the monitoring section renders the job list + detail and links each imagery source card to
-  its latest scheduler job.
+  `GET /api/monitoring/ingestion-jobs/{jobId}`,
+  `GET /api/monitoring/ingestion-jobs/{jobId}/events`, and admin source-health endpoints under
+  `/api/monitoring/*`. These remain behind the same app/gateway origin and require owner/admin
+  RBAC. They read only the redacted scheduler snapshot/ledger via explicit config — **never** raw
+  provider archives, signed URLs, credentials, internal hosts, or filesystem paths. Artifact handles
+  are opaque (`<jobId>:<artifactType>`), and event payloads are recursively sanitized before they
+  reach the browser.
+- **Admin UI:** visual ingestion orchestration lives only in the internal owner/admin console:
+  - `/admin/ingestion` — source/scheduler overview.
+  - `/admin/ingestion/jobs` — scheduler job queue.
+  - `/admin/ingestion/jobs/:jobId` — job detail, redacted artifacts, and pipeline/timeline.
+  - `/admin/ingestion/schedules` — cadence, due/overdue, and validation state.
+- **Product Monitoring boundary:** product Monitoring remains crop/field oriented. It must not expose
+  ingestion job queues, scheduler internals, provider health, raw artifacts, or source cutover state to
+  member/viewer users.
+- **Deprecated compatibility aliases:** `/monitoring/global`, `/monitoring/ingestion-jobs`, and
+  `/monitoring/ingestion-jobs/:jobId` are temporary owner/admin-gated redirects to the canonical
+  admin routes. Remove these aliases after `/admin/ingestion/*` stabilizes and bookmarks/tests have
+  migrated.
 - **Alerts/runbooks:** failures are classified into operator-actionable kinds — `missed_due_run`,
   `repeated_failures`, `stale_search`, `failed_validation`, `low_coverage`, `disk_pressure`,
   `minio_upload_failed`, `stac_registration_failed`, `provider_auth_or_rate_limit`, `stale_lock`,

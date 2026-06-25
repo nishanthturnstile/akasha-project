@@ -1,6 +1,6 @@
 ---
 goal: Build an internal admin-only ingestion orchestration console for scheduler jobs, schedules, and pipeline timelines
-version: 1.0
+version: 1.1
 date_created: 2026-06-25
 last_updated: 2026-06-25
 owner: Akasha Engineering (BFF + frontend + ingestion operations)
@@ -13,7 +13,9 @@ This plan moves all ingestion/satellite orchestration monitoring out of the prod
 
 The current codebase already supports role-based access control. Backend memberships use the roles `owner`, `admin`, `member`, and `viewer` in `apps/api/app/models.py`, and `apps/api/app/auth.py` exposes `require_role("owner", "admin")`. Frontend `/api/account/me` data already includes `currentTeam.role` in `apps/frontend/src/types/api.ts`. Therefore this plan uses existing owner/admin RBAC and does **not** introduce a static email allowlist.
 
-Current ingestion monitoring pages and APIs exist, but they are under `/monitoring/*` and are not strictly admin-only. This plan makes `/admin/ingestion/*` the canonical operator surface, keeps any old `/monitoring/ingestion-jobs` route only as a temporary admin-gated compatibility alias during migration, and adds a visual pipeline/timeline view for scheduler jobs.
+Current ingestion monitoring pages and APIs exist, but they are under `/monitoring/*` and are not strictly admin-only. This plan makes `/admin/ingestion/*` the canonical operator surface, keeps any old `/monitoring/ingestion-jobs` route only as a temporary admin-gated redirect during migration, and adds a visual pipeline/timeline view for scheduler jobs.
+
+Review update (2026-06-25): before implementation starts, the plan must close the issues found in the GPT-5.5 + Opus review: the product/admin ownership of `MonitoringGlobalView`, the stage/event data contract for the pipeline timeline, stronger event payload redaction, schedule due/overdue semantics, deterministic event pagination, canonical redirect behavior for legacy aliases, and frontend scheduler status vocabulary.
 
 ## 1. Requirements & Constraints
 
@@ -21,7 +23,7 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 
 - **REQ-001**: The orchestration console must be internal/admin-only and must not appear in normal product navigation for `member` or `viewer` users.
 - **REQ-002**: The canonical route namespace must be `/admin/ingestion/*`.
-- **REQ-003**: Existing `/monitoring/ingestion-jobs` and `/monitoring/ingestion-jobs/:jobId` routes may remain temporarily, but they must be owner/admin gated and redirect or alias to the admin routes.
+- **REQ-003**: Existing `/monitoring/ingestion-jobs` and `/monitoring/ingestion-jobs/:jobId` routes may remain temporarily, but they must be owner/admin gated redirects to the canonical admin routes.
 - **REQ-004**: Product-facing monitoring remains focused on crop/field monitoring. Ingestion scheduler health, source freshness, job queues, and pipeline events belong to the admin console.
 - **REQ-005**: Owner/admin users can view admin ingestion routes and APIs. Member/viewer users cannot view admin nav, cannot open admin routes, and cannot call admin ingestion monitoring APIs.
 - **REQ-006**: The admin console must show what is scheduled, what ran, current state, job output, validation outcome, and failure reason.
@@ -29,6 +31,9 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **REQ-008**: The admin schedules view must show source/AOI schedule state, last run, last success, last failure, next due, cadence, due/overdue, product exposure, and validation state.
 - **REQ-009**: Admin UI must be read-only in the first implementation. Retry/rerun/live actions are out of scope for this plan because they can trigger provider calls and require a separate safety design.
 - **REQ-010**: If local development uses `AUTH_MODE=disabled`, the dev user may keep owner role through the existing development auth behavior. Deployed environments must rely on real auth and roles.
+- **REQ-011**: Product `/monitoring/global` must not remain a non-admin route backed by admin-only source scheduler data. The implementation must either move it fully to `/admin/ingestion` or split product-safe source monitoring from admin-only scheduler fields.
+- **REQ-012**: Pipeline stages must be backed by an explicit data contract. Each displayed stage must map to an emitted event, a job-detail field, an artifact handle, or an intentionally labelled placeholder; the UI must not imply that unobserved stages ran successfully.
+- **REQ-013**: Schedule due/overdue state must have one canonical interpretation shared by backend and frontend.
 
 ### Security requirements
 
@@ -39,6 +44,7 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **SEC-005**: Job event payloads read from `events.jsonl` must be recursively sanitized before returning to the browser.
 - **SEC-006**: Admin route visibility must not be treated as security. Hidden nav is required, but APIs must still reject non-admin requests.
 - **SEC-007**: The admin console must stay same-origin under the app/gateway. Do not create a public service/domain for scheduler artifacts.
+- **SEC-008**: The BFF sanitizer used for event payloads must redact signed URL query parameters, internal hostnames, auth headers, secret-shaped keys, bearer tokens, provider/object-store credentials, and host filesystem paths. Do not assume the existing monitoring sanitizer is sufficient until tests prove this contract.
 
 ### UI/UX requirements
 
@@ -48,13 +54,17 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **UI-004**: Job status colors must be consistent: green for succeeded, blue for running, amber for skipped/gated/deferred, red for failed/validation failed, gray for not reached.
 - **UI-005**: Pipeline stages must be understandable without reading logs. Each stage must show state, timestamp when available, and a short message or metric.
 - **UI-006**: Clicking a pipeline stage should focus or link to the relevant existing detail section where practical: search/select → Candidates, download → Downloads, verify → Verification, ledger → Ledger, failure → Logs.
+- **UI-007**: Frontend filters, badges, and colors must cover canonical scheduler states: `planned`, `queued`, `running`, `succeeded`, `failed`, `validation_failed`, `blocked_by_lock`, `cancelled`, `skipped_not_due`, and `skipped_gated`.
 
 ### Data requirements
 
 - **DATA-001**: Use existing scheduler artifacts as the source of truth: `request.json`, `status.json`, `result.json`, `observability.json`, `events.jsonl`, `scheduler_ledger.json`, and SQLite `scheduler_jobs` ledger.
-- **DATA-002**: The first timeline implementation may derive stages from existing job detail fields when `events.jsonl` is missing.
-- **DATA-003**: The event endpoint must cap returned events to a deterministic safe limit, initially 200 events.
+- **DATA-002**: The first timeline implementation must use explicit stage data-source mapping. Existing job detail fields are the primary fallback where events are absent or do not yet cover a stage.
+- **DATA-003**: The event endpoint must cap returned events to a deterministic safe limit, initially the latest 200 events, returned in chronological order.
 - **DATA-004**: Malformed `events.jsonl` lines must not crash the endpoint. They should be skipped or returned as sanitized parse-error events with no raw line content.
+- **DATA-005**: Event responses must validate that the job exists separately from whether `events.jsonl` exists. A real job with no events returns an empty list; a missing job returns 404.
+- **DATA-006**: Event responses must include truncation metadata such as `truncated` and, when practical, `totalEventsScanned`.
+- **DATA-007**: `IngestionScheduleItem` must expose backend-derived due/overdue fields, or the plan must define exact frontend derivation from `generatedAt`, `nextDueAt`, and the same grace rule used by source monitoring.
 
 ### Constraints
 
@@ -74,6 +84,9 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **FACT-005**: `apps/frontend/src/components/auth/AuthGate.tsx` currently gates login/onboarding but does not gate roles.
 - **FACT-006**: `apps/frontend/src/routes/ProductRoutes.tsx` currently mounts ingestion job pages under `/monitoring/ingestion-jobs`.
 - **FACT-007**: `apps/frontend/src/routes/productNavigation.ts` currently keeps product monitoring and utility navigation in one list and has no role-aware item model.
+- **FACT-008**: Scheduler `events.jsonl` currently has reliable emissions for `job_created`, `status_change`, and `dry_run_plan`; richer names such as `search_done`, `download_progress`, and `validation_result` must be added before the UI can treat them as event-first sources.
+- **FACT-009**: `MonitoringGlobalView` currently consumes `/api/monitoring/imagery-sources` and is mounted under product `/monitoring/global`; this conflicts with admin-only source scheduler fields unless the route or API is split.
+- **FACT-010**: The current BFF monitoring sanitizer redacts common credential substrings and raw paths but does not fully cover signed URLs and internal hostnames required by this plan.
 
 ## 2. Implementation Steps
 
@@ -87,6 +100,7 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 | TASK-002 | Add BFF tests in `apps/api/tests/test_ingestion_jobs.py` that monkeypatch auth dependencies or use existing auth test helpers to prove owner/admin can access ingestion job endpoints and member/viewer receive 403. Cover list, detail, and schedules. | | |
 | TASK-003 | Decide the source-monitoring admin boundary in code: operational ingestion fields (`latestSchedulerJobId`, `latestSchedulerJobState`, `schedulerNextDueAt`, `schedulerIsDue`, `schedulerIsOverdue`, scheduler failure summaries) must be moved to an admin-only endpoint or guarded behind owner/admin role. Implement the simpler first version by adding owner/admin role gating to `apps/api/app/source_monitoring.py` if the page remains an operator page. | | |
 | TASK-004 | Add or update tests in `apps/api/tests/test_source_monitoring.py` proving non-admin roles cannot access scheduler/source operational monitoring when it is admin-only. | | |
+| TASK-004A | Resolve the `MonitoringGlobalView` ownership decision before coding the route migration. Preferred first release: move `MonitoringGlobalView` to `/admin/ingestion`, remove it from product navigation, and redirect or replace product `/monitoring/global` so member/viewer users do not hit an admin-gated 403 page. Alternative: split `/api/monitoring/imagery-sources` into product-safe source freshness and admin-only scheduler fields. | | |
 
 ### Implementation Phase 2 — Canonical admin route namespace
 
@@ -97,7 +111,7 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 | TASK-005 | Modify `apps/frontend/src/components/auth/AuthGate.tsx` to accept `requiredRoles?: string[]`. If `account.data.currentTeam.role` is not in `requiredRoles`, render a redirect to `MAIN_MONITORING_ROUTE` or a small `Forbidden` panel. The redirect/panel must not reveal admin page data. | | |
 | TASK-006 | Add a focused frontend test for `AuthGate` or route behavior proving a `member` role cannot render admin children and an `owner` role can. Use existing `/api/account/me` mock patterns from `apps/frontend/src/routes/ProductRoutes.test.tsx`. | | |
 | TASK-007 | Modify `apps/frontend/src/routes/ProductRoutes.tsx` to add canonical admin routes: `/admin/ingestion`, `/admin/ingestion/jobs`, `/admin/ingestion/jobs/:jobId`, and `/admin/ingestion/schedules`. Wrap these routes with `AuthGate requireOnboardingComplete requiredRoles={["owner", "admin"]}`. | | |
-| TASK-008 | Keep `/monitoring/ingestion-jobs` and `/monitoring/ingestion-jobs/:jobId` only as temporary owner/admin-gated aliases. Implement them as redirects to `/admin/ingestion/jobs` and `/admin/ingestion/jobs/:jobId`, or keep rendering the same components behind the admin gate for one development cycle. | | |
+| TASK-008 | Keep `/monitoring/ingestion-jobs` and `/monitoring/ingestion-jobs/:jobId` only as temporary owner/admin-gated aliases. Implement them as redirects to `/admin/ingestion/jobs` and `/admin/ingestion/jobs/:jobId`; the `:jobId` redirect must preserve the encoded job ID. Do not keep rendering the same components under the product namespace. | | |
 | TASK-009 | Add `apps/frontend/src/routes/ProductRoutes.test.tsx` tests proving `/admin/ingestion/jobs` renders for owner/admin and redirects/blocks for member/viewer. Add tests proving `/monitoring/ingestion-jobs` does not expose content to member/viewer. | | |
 
 ### Implementation Phase 3 — Admin-only navigation model
@@ -108,8 +122,9 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 |------|-------------|-----------|------|
 | TASK-010 | Extend `apps/frontend/src/routes/productNavigation.ts` item types with optional `requiredRoles?: string[]` and optional `surface?: "product" | "admin"`. Do not show admin items to non-admin roles. | | |
 | TASK-011 | Add an admin navigation group named `Admin` or `Operations Admin` with items: `Ingestion overview` at `/admin/ingestion`, `Ingestion jobs` at `/admin/ingestion/jobs`, and `Schedules` at `/admin/ingestion/schedules`. Each item must use `requiredRoles: ["owner", "admin"]` and `surface: "admin"`. | | |
-| TASK-012 | Modify `apps/frontend/src/components/shell/AppShell.tsx` to filter navigation groups and mobile nav items using `account.data.currentTeam.role`. The `Monitoring` product group must keep field/crop/product pages only and must not include ingestion job queue links. | | |
+| TASK-012 | Modify `apps/frontend/src/components/shell/AppShell.tsx` to filter navigation groups and mobile nav items using `account.data.currentTeam.role`. The `Monitoring` product group must keep field/crop/product pages only and must not include ingestion job queue links or admin source/scheduler health pages. | | |
 | TASK-013 | Add `AppShell` or `ProductRoutes` tests proving admin nav appears for owner/admin and is hidden for member/viewer. | | |
+| TASK-013A | Normalize frontend scheduler status vocabulary in filters, badges, colors, and tests to the canonical scheduler states: `planned`, `queued`, `running`, `succeeded`, `failed`, `validation_failed`, `blocked_by_lock`, `cancelled`, `skipped_not_due`, and `skipped_gated`. | | |
 
 ### Implementation Phase 4 — Backend job events endpoint
 
@@ -117,9 +132,11 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-014 | Add response models in `apps/api/app/ingestion_jobs.py`: `IngestionJobEvent` and `IngestionJobEventsResponse`. Required fields: `timestamp`, `eventType`, `stage`, `status`, `message`, and `payload`. `payload` must be sanitized using the existing recursive monitoring sanitizer. | | |
-| TASK-015 | Add `GET /api/monitoring/ingestion-jobs/{job_id}/events` in `apps/api/app/ingestion_jobs.py`. It must validate `job_id` using the same traversal checks as job detail, read `<jobs_dir>/<job_id>/events.jsonl`, cap to 200 events, skip malformed JSON lines, and return `status="ok"` with an empty list if no events file exists. | | |
-| TASK-016 | Map raw scheduler event types to normalized pipeline stages. Initial mapping: `job_created -> planned`, `status_change -> running|terminal`, `dry_run_plan -> planned`, `search_done -> search`, `download_progress -> download`, `validation_result -> verify`, `error -> failed`. Unknown event types use `stage="unknown"` and `status="unknown"`. | | |
+| TASK-014 | Add response models in `apps/api/app/ingestion_jobs.py`: `IngestionJobEvent` and `IngestionJobEventsResponse`. Required fields: `timestamp`, `eventType`, `stage`, `status`, `message`, and `payload`. `payload` must be sanitized using the strengthened recursive BFF sanitizer from TASK-014A. | | |
+| TASK-014A | Strengthen the recursive BFF sanitizer before exposing event payloads. It must redact signed URL query parameters, internal hostnames, auth headers, secret-shaped keys, bearer tokens, provider/object-store credentials, `/srv/akasha`, `/tmp`, `/var/tmp`, and Windows local paths. | | |
+| TASK-015 | Add `GET /api/monitoring/ingestion-jobs/{job_id}/events` in `apps/api/app/ingestion_jobs.py`. It must validate `job_id` using the same traversal checks as job detail, verify the job directory/status exists, read `<jobs_dir>/<job_id>/events.jsonl`, return the latest 200 events in chronological order, include `truncated` metadata, skip malformed JSON lines or return sanitized parse-error events, and return `status="ok"` with an empty list only when the job exists but no events file exists. | | |
+| TASK-016 | Map raw scheduler event types to normalized pipeline stages using only event types that are actually emitted in the current release: `job_created -> planned`, `status_change -> running|terminal`, and `dry_run_plan -> planned`. Unknown event types use `stage="unknown"` and `status="unknown"`. Richer mappings such as `search_done`, `download_progress`, `validation_result`, and `error` require TASK-016A instrumentation first. | | |
+| TASK-016A | Decide whether rich event-first pipeline stages are in scope for this implementation. If yes, add ingestion/orchestrator `append_event` emissions and tests for approved runtime, lock acquire/block, search, select, download, prepare, composite, verify, upload, STAC registration, ledger write, and failures before the frontend treats those stages as event-backed. If no, the frontend must label uninstrumented stages as inferred or unavailable. | | |
 | TASK-017 | Add tests in `apps/api/tests/test_ingestion_jobs.py` for the events endpoint: owner/admin access, member/viewer 403, missing events file, malformed line skip, path traversal rejection, and redaction of `/srv/akasha`, `/tmp`, `C:\\Users`, bearer token, password, signed URL, and internal host values. | | |
 
 ### Implementation Phase 5 — Pipeline/timeline visualization in job detail
@@ -131,7 +148,8 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 | TASK-018 | Add frontend types in `apps/frontend/src/types/api.ts`: `IngestionJobEvent`, `IngestionJobEventsResponse`, `PipelineStageId`, and `PipelineStageState`. | | |
 | TASK-019 | Add `getIngestionJobEvents(jobId: string)` in `apps/frontend/src/lib/api.ts` and `useIngestionJobEvents(jobId)` in `apps/frontend/src/lib/queries.ts`. | | |
 | TASK-020 | Create `apps/frontend/src/pages/monitoring/components/OrchestrationPipeline.tsx`. It must accept `job: IngestionJobDetail` and `events?: IngestionJobEvent[]`. It must render ordered stages: planned, approved_runtime, lock, search, select, download, prepare, composite, verify, upload, stac, ledger. | | |
-| TASK-021 | Implement event-first stage derivation in `OrchestrationPipeline.tsx`. If no events exist, derive fallback stages from job fields: `state`, `foundCount`, `selectedCount`, `downloadedCount`, `verificationSummary`, `artifactHandles`, `ledgerRows`, and `failureKind`. | | |
+| TASK-020A | Add a stage data-source matrix near the component implementation or in tests. For each stage, define whether it is event-backed, inferred from job detail, inferred from artifact handles/ledger rows, or intentionally unavailable. The UI must visually distinguish `not_reached`, `inferred`, `unavailable`, `running`, `succeeded`, `failed`, and `validation_failed`. | | |
+| TASK-021 | Implement stage derivation in `OrchestrationPipeline.tsx` using the explicit stage data-source matrix. Existing job detail fields are the primary fallback where events do not cover a stage: `state`, `foundCount`, `selectedCount`, `downloadedCount`, `verificationSummary`, `artifactHandles`, `ledgerRows`, and `failureKind`. Do not mark uninstrumented stages as succeeded merely because the overall job succeeded. | | |
 | TASK-022 | Modify `apps/frontend/src/pages/monitoring/IngestionJobDetail.tsx` to add a `Pipeline` tab before `Summary`. The tab must render `OrchestrationPipeline` and show an admin-only/internal label. | | |
 | TASK-023 | Add tests in `apps/frontend/src/pages/monitoring/IngestionJobDetail.test.tsx` proving the Pipeline tab renders success, running, failed, skipped-gated, and missing-events fallback states without showing raw paths. | | |
 
@@ -142,7 +160,8 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
 | TASK-024 | Create or adapt `apps/frontend/src/pages/monitoring/IngestionSchedules.tsx` for `/admin/ingestion/schedules`. It must call the existing `useIngestionSchedules` query and render source/AOI schedule rows. | | |
-| TASK-025 | The schedules page must display: source ID, provider, AOI, lifecycle state, schedule state, product exposure, validation state, last run, last success, last failure, next due, next window, cadence days, due reason, due/overdue status. | | |
+| TASK-024A | Extend the schedule API contract with canonical due/overdue semantics. Preferred: add backend-derived `isDue` and `isOverdue` fields to `IngestionScheduleItem` using the same grace rule as source monitoring. If deriving client-side instead, document the exact formula from `generatedAt`, `nextDueAt`, and grace duration and test it. | | |
+| TASK-025 | The schedules page must display: source ID, provider, AOI, lifecycle state, schedule state, product exposure, validation state, last run, last success, last failure, next due, next window, cadence days, due reason, due/overdue status. Due/overdue badges must use the canonical semantics from TASK-024A. | | |
 | TASK-026 | Add filters for source ID, provider, schedule state, product exposure, due/overdue, and validation state. Keep filters client-side initially. | | |
 | TASK-027 | Add frontend tests for schedule rendering, unconfigured state, empty state, due/overdue badge rendering, and admin-only route access. | | |
 
@@ -178,11 +197,11 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 | TASK-037 | Run backend full tests: `cd apps/api && python -m pytest -q`. Expected: all pass. | | |
 | TASK-038 | Run root scheduler tests: `python -m pytest tests/ -q`. Expected: all pass except known skips. | | |
 | TASK-039 | Run lint: `python -m ruff check apps/api services/ingestion scripts tests`. Expected: all checks pass. | | |
-| TASK-040 | Run frontend focused tests: `cd apps/frontend && corepack yarn vitest run src/pages/monitoring/IngestionJobDetail.test.tsx src/pages/monitoring/IngestionJobsList.test.tsx src/pages/monitoring/MonitoringGlobalView.test.tsx src/routes/ProductRoutes.test.tsx src/components/shell/AppShell.test.tsx`. Expected: all pass. | | |
+| TASK-040 | Run frontend focused tests: `cd apps/frontend && corepack yarn vitest run src/pages/monitoring/IngestionJobDetail.test.tsx src/pages/monitoring/IngestionJobsList.test.tsx src/pages/monitoring/MonitoringGlobalView.test.tsx src/pages/monitoring/IngestionSchedules.test.tsx src/routes/ProductRoutes.test.tsx src/components/shell/AppShell.test.tsx`. Expected: all pass. | | |
 | TASK-041 | Run frontend full verification: `cd apps/frontend && corepack yarn test && corepack yarn build`. Expected: tests pass and production build succeeds. | | |
 | TASK-042 | Run slice validators: `python scripts/validate_slice0.py`, `python scripts/validate_slice1.py`, `python scripts/validate_slice2.py`. Expected: all pass. | | |
 | TASK-043 | Manual verification with an owner/admin user: admin nav is visible, `/admin/ingestion/*` routes open, pipeline tab renders, and API calls return 200. | | |
-| TASK-044 | Manual verification with a member/viewer user: admin nav is hidden, `/admin/ingestion/*` routes are blocked, old `/monitoring/ingestion-jobs` aliases are blocked, and API calls return 403. | | |
+| TASK-044 | Manual verification with a member/viewer user in a real-auth environment: admin nav is hidden, `/admin/ingestion/*` routes are blocked, old `/monitoring/ingestion-jobs` aliases are blocked, and API calls return 403. Do not count `AUTH_MODE=disabled` local dev as sufficient for this deny-path check because it returns a dev owner user. | | |
 
 ## 3. Alternatives
 
@@ -202,13 +221,15 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **DEP-006**: Existing monitoring pages `MonitoringGlobalView`, `IngestionJobsList`, and `IngestionJobDetail`.
 - **DEP-007**: Existing BFF redaction and sanitization helpers in `apps/api/app/ingestion_jobs.py`.
 - **DEP-008**: Existing TanStack Query setup in `apps/frontend/src/lib/queries.ts`.
+- **DEP-009**: Existing scheduler event emissions are limited; rich event-first pipeline stages depend on new ingestion/orchestrator instrumentation if those stages must show real timestamps.
+- **DEP-010**: Existing product `/monitoring/global` route must be migrated, replaced, or split before source scheduler fields are made admin-only.
 
 ## 5. Files
 
 - **FILE-001**: `docs/impl-plan/feature-admin-ingestion-orchestration-console-1.md` — this implementation plan.
 - **FILE-002**: `apps/api/app/auth.py` — existing RBAC dependency `require_role`; no new auth framework required.
 - **FILE-003**: `apps/api/app/ingestion_jobs.py` — add owner/admin router dependency and events endpoint.
-- **FILE-004**: `apps/api/app/source_monitoring.py` — gate or move operational scheduler fields to admin-only access.
+- **FILE-004**: `apps/api/app/source_monitoring.py` — gate or move operational scheduler fields to admin-only access; if product-safe source monitoring remains, split the API contract rather than exposing scheduler fields to non-admins.
 - **FILE-005**: `apps/api/tests/test_ingestion_jobs.py` — add admin role, events, and redaction tests.
 - **FILE-006**: `apps/api/tests/test_source_monitoring.py` — add admin-only source scheduler monitoring tests.
 - **FILE-007**: `apps/frontend/src/components/auth/AuthGate.tsx` — add optional role-gating support.
@@ -220,7 +241,7 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **FILE-013**: `apps/frontend/src/lib/queries.ts` — add events query hook.
 - **FILE-014**: `apps/frontend/src/pages/monitoring/IngestionJobsList.tsx` — reuse as admin job queue page.
 - **FILE-015**: `apps/frontend/src/pages/monitoring/IngestionJobDetail.tsx` — add Pipeline tab.
-- **FILE-016**: `apps/frontend/src/pages/monitoring/MonitoringGlobalView.tsx` — reuse or wrap as admin ingestion overview.
+- **FILE-016**: `apps/frontend/src/pages/monitoring/MonitoringGlobalView.tsx` — move/reuse only as admin ingestion overview unless the source-monitoring API is split into product-safe and admin-only contracts.
 - **FILE-017**: `apps/frontend/src/pages/monitoring/IngestionSchedules.tsx` — create schedules/cadence page.
 - **FILE-018**: `apps/frontend/src/pages/monitoring/AdminIngestionOverview.tsx` — create admin landing page wrapper if needed.
 - **FILE-019**: `apps/frontend/src/pages/monitoring/components/OrchestrationPipeline.tsx` — create visual stage timeline.
@@ -240,16 +261,18 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **TEST-001**: `cd apps/api && python -m pytest tests/test_ingestion_jobs.py -q` must prove owner/admin can access ingestion job APIs and member/viewer cannot.
 - **TEST-002**: `cd apps/api && python -m pytest tests/test_source_monitoring.py -q` must prove scheduler operational source monitoring is admin-only or does not leak scheduler fields to non-admin users.
 - **TEST-003**: `cd apps/api && python -m pytest tests/test_ingestion_jobs.py::test_job_events_redacts_paths_and_secrets -q` must prove the events endpoint redacts `/srv/akasha`, `/tmp`, `C:\\Users`, bearer tokens, passwords, signed URLs, and internal hosts.
-- **TEST-004**: `cd apps/api && python -m pytest -q` must pass.
-- **TEST-005**: `python -m pytest tests/ -q` must pass the root scheduler/ingestion tests.
-- **TEST-006**: `python -m ruff check apps/api services/ingestion scripts tests` must pass.
-- **TEST-007**: `cd apps/frontend && corepack yarn vitest run src/routes/ProductRoutes.test.tsx src/components/shell/AppShell.test.tsx` must prove admin routes/nav are visible only to owner/admin.
-- **TEST-008**: `cd apps/frontend && corepack yarn vitest run src/pages/monitoring/IngestionJobDetail.test.tsx` must prove the Pipeline tab renders stage states and does not show raw paths.
-- **TEST-009**: `cd apps/frontend && corepack yarn vitest run src/pages/monitoring/IngestionJobsList.test.tsx src/pages/monitoring/MonitoringGlobalView.test.tsx` must pass after route migration.
-- **TEST-010**: `cd apps/frontend && corepack yarn test && corepack yarn build` must pass.
-- **TEST-011**: `python scripts/validate_slice0.py && python scripts/validate_slice1.py && python scripts/validate_slice2.py` must pass.
-- **TEST-012**: Manual owner/admin verification must confirm `/admin/ingestion`, `/admin/ingestion/jobs`, `/admin/ingestion/jobs/:jobId`, and `/admin/ingestion/schedules` open and show expected data.
-- **TEST-013**: Manual member/viewer verification must confirm admin nav is hidden, admin routes are blocked, compatibility aliases are blocked, and admin APIs return 403.
+- **TEST-004**: `cd apps/api && python -m pytest tests/test_ingestion_jobs.py::test_job_events_returns_latest_events_with_truncation_metadata -q` must prove latest-200 event semantics, chronological return order, and missing-job vs missing-events behavior.
+- **TEST-005**: If TASK-016A adds rich scheduler events, `python -m pytest tests/test_orchestrator.py tests/test_phase7_bhoonidhi_scheduler.py -q` must prove the expected stage events are emitted and sanitized.
+- **TEST-006**: `cd apps/api && python -m pytest -q` must pass.
+- **TEST-007**: `python -m pytest tests/ -q` must pass the root scheduler/ingestion tests.
+- **TEST-008**: `python -m ruff check apps/api services/ingestion scripts tests` must pass.
+- **TEST-009**: `cd apps/frontend && corepack yarn vitest run src/routes/ProductRoutes.test.tsx src/components/shell/AppShell.test.tsx` must prove admin routes/nav are visible only to owner/admin, product `/monitoring/global` is no longer a broken non-admin operator route, and legacy ingestion aliases redirect to the canonical admin routes.
+- **TEST-010**: `cd apps/frontend && corepack yarn vitest run src/pages/monitoring/IngestionJobDetail.test.tsx` must prove the Pipeline tab renders stage states, distinguishes inferred/unavailable stages, handles skipped/blocked/validation-failed states, and does not show raw paths.
+- **TEST-011**: `cd apps/frontend && corepack yarn vitest run src/pages/monitoring/IngestionJobsList.test.tsx src/pages/monitoring/MonitoringGlobalView.test.tsx src/pages/monitoring/IngestionSchedules.test.tsx` must pass after route migration, status vocabulary normalization, and due/overdue semantics.
+- **TEST-012**: `cd apps/frontend && corepack yarn test && corepack yarn build` must pass.
+- **TEST-013**: `python scripts/validate_slice0.py && python scripts/validate_slice1.py && python scripts/validate_slice2.py` must pass.
+- **TEST-014**: Manual owner/admin verification must confirm `/admin/ingestion`, `/admin/ingestion/jobs`, `/admin/ingestion/jobs/:jobId`, and `/admin/ingestion/schedules` open and show expected data.
+- **TEST-015**: Manual member/viewer verification in a real-auth environment must confirm admin nav is hidden, admin routes are blocked, compatibility aliases are blocked, and admin APIs return 403. Do not use `AUTH_MODE=disabled` as the deny-path proof.
 
 ## 7. Risks & Assumptions
 
@@ -259,6 +282,9 @@ Current ingestion monitoring pages and APIs exist, but they are under `/monitori
 - **RISK-004**: Renaming routes can break existing test links or development bookmarks. Mitigation: temporary owner/admin-gated aliases from `/monitoring/ingestion-jobs` to `/admin/ingestion/jobs`.
 - **RISK-005**: Adding retry actions too early can trigger live provider work accidentally. Mitigation: first admin console release is read-only.
 - **RISK-006**: Source monitoring may contain both product-safe and admin-only fields. Mitigation: gate operational source monitoring or split product-safe and admin endpoints.
+- **RISK-007**: Pipeline UI can imply stage fidelity that current scheduler events do not provide. Mitigation: add event instrumentation before event-first UI, or explicitly label stages as inferred/unavailable and test the data-source matrix.
+- **RISK-008**: Sanitizer drift can leak signed URLs or internal hosts through event payloads. Mitigation: strengthen the BFF sanitizer and add redaction tests before exposing events.
+- **RISK-009**: Local `AUTH_MODE=disabled` can hide route-gating defects. Mitigation: require real-auth manual member/viewer verification before release.
 - **ASSUMPTION-001**: Owner/admin roles are sufficient for the first internal admin console release.
 - **ASSUMPTION-002**: A dedicated `operator` role is not required for the first release.
 - **ASSUMPTION-003**: Local development may use `AUTH_MODE=disabled`, which returns a dev owner user; this is acceptable for local-only workflows.

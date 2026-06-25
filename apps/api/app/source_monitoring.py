@@ -13,14 +13,14 @@ from fastapi import APIRouter, Depends
 from pydantic import ConfigDict, Field
 
 from .api_models import ApiModel
-from .auth import get_current_team
+from .auth import require_role
 from .config import settings
 from .raster import catalog_resolver as catalog
 
 router = APIRouter(
     prefix="/api/monitoring",
     tags=["monitoring"],
-    dependencies=[Depends(get_current_team)],
+    dependencies=[Depends(require_role("owner", "admin"))],
 )
 
 

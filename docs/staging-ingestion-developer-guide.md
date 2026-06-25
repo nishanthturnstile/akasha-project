@@ -86,13 +86,57 @@ while investigating.
    sudo systemctl stop akasha-ingestion-scheduler.timer akasha-ingestion-scheduler.service
    sudo systemctl disable akasha-ingestion-scheduler.timer
    ```
-2. Confirm no scheduler job is queued/running for the source/AOI in the monitoring UI or job list.
+2. Confirm no scheduler job is queued/running for the source/AOI in `/admin/ingestion/jobs` or the
+   CLI job list.
 3. Trigger a bounded manual run only if needed through `scripts/staging_ingestion_job.py trigger`.
 4. Re-enable the scheduler timer after the issue is understood and the dry-run plan looks correct.
 
 Monitoring APIs may expose only redacted scheduler snapshots and opaque artifact handles. Raw
 provider archives, full logs, internal paths, signed URLs, and credentials remain wrapper/CLI-only
 operator concerns.
+
+### Admin ingestion console (read-only)
+
+Owner/admin operators can also inspect staging ingestion state in the app's internal admin console.
+This console is for operations visibility only; it complements the staging wrapper commands, job
+logs, and validation flow in this guide, but does **not** replace them.
+
+Access steps:
+
+1. Sign in with a team role of `owner` or `admin`. In deployed environments, access is based on the
+   real team role from Akasha auth/RBAC; local `AUTH_MODE=disabled` may appear as a dev owner only
+   for local development.
+2. Open the admin navigation group (`Admin` / `Operations Admin`) and use these canonical routes:
+   - `/admin/ingestion` — ingestion overview and scheduler/source health.
+   - `/admin/ingestion/jobs` — job queue and recent scheduler/manual runs.
+   - `/admin/ingestion/jobs/<job_id>` — job detail, including pipeline/timeline, output,
+     validation status, failure reason, and redacted event/log summaries.
+   - `/admin/ingestion/schedules` — source/AOI cadence, due/overdue state, last run, and exposure
+     status.
+3. If you are a normal product `member` or `viewer`, you should not see ingestion orchestration in
+   product navigation or admin navigation. Direct admin URLs and admin ingestion APIs are blocked;
+   hidden navigation is only a convenience, not the security boundary.
+
+The first admin console release is deliberately **read-only**. Retry, rerun, live provider calls,
+downloads, validation execution, artifact sync, and any other state-changing operations stay
+CLI/wrapper-only unless a separate safety design approves UI actions. Keep using:
+
+```bash
+python scripts/staging_ingestion_job.py list --host akasha-staging
+python scripts/staging_ingestion_job.py status <job_id> --host akasha-staging
+python scripts/staging_ingestion_job.py logs <job_id> --host akasha-staging --follow
+python scripts/staging_ingestion_job.py validate <job_id> --host akasha-staging
+```
+
+Temporary compatibility aliases such as `/monitoring/global`, `/monitoring/ingestion-jobs`, and
+`/monitoring/ingestion-jobs/<job_id>` may redirect owner/admin users to the canonical admin routes
+during migration. Treat those aliases as deprecated development bookmarks and update links to
+`/admin/ingestion/*`.
+
+The console must preserve the staging guardrails: no public service/domain, no direct Docker heavy
+commands from the browser, no raw provider archives, no credentials, no signed URLs, and no raw
+host filesystem paths in UI responses. Bulk raster/raw/work/COG data remains staging-side under
+`/srv/akasha` only and is handled through the approved wrapper paths.
 
 ---
 
@@ -365,8 +409,8 @@ Every job writes durable artifacts you can inspect via the CLI (no SSH needed):
 | `job.log` | Redacted combined stdout/stderr (what `logs` streams) |
 | `result.json` | Final manifest/composite paths, `composite_date`, verification summary |
 
-**Not in this phase:** there is no web dashboard yet — everything is this CLI. A persistent,
-app-backed job view is the deferred follow-up phase.
+The admin ingestion console reads only redacted, operator-safe summaries of this state. Use the CLI
+commands above for authoritative logs, validation, retry/rerun, and local sync workflows.
 
 ---
 

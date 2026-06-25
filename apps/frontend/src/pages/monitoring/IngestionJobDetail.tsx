@@ -5,16 +5,18 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  LockKeyhole,
   Loader2,
   RefreshCw,
   XCircle,
 } from 'lucide-react';
-import { useIngestionJob } from '@/lib/queries';
+import { useIngestionJob, useIngestionJobEvents } from '@/lib/queries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import type { IngestionJobDetail } from '@/types/api';
+import type { IngestionJobDetail, IngestionJobEvent } from '@/types/api';
+import OrchestrationPipeline from './components/OrchestrationPipeline';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,23 +43,31 @@ type StateBadgeVariant = 'success' | 'warning' | 'destructive' | 'info' | 'neutr
 
 function stateVariant(state: string): StateBadgeVariant {
   const s = state.toLowerCase();
-  if (s === 'succeeded' || s === 'completed' || s === 'done' || s === 'success') return 'success';
-  if (s === 'running' || s === 'pending' || s === 'scheduled') return 'warning';
-  if (s === 'failed' || s === 'error' || s === 'cancelled') return 'destructive';
-  if (s === 'ready' || s === 'queued') return 'info';
+  if (s === 'succeeded') return 'success';
+  if (s === 'running' || s === 'queued') return 'info';
+  if (
+    s === 'planned'
+    || s === 'blocked_by_lock'
+    || s === 'skipped_not_due'
+    || s === 'skipped_gated'
+  ) return 'warning';
+  if (s === 'failed' || s === 'validation_failed' || s === 'cancelled') return 'destructive';
   return 'neutral';
 }
 
 function StateIcon({ state }: { state: string }) {
   const s = state.toLowerCase();
-  if (s === 'succeeded' || s === 'completed' || s === 'done' || s === 'success') {
+  if (s === 'succeeded') {
     return <CheckCircle2 className="h-4 w-4" aria-hidden="true" />;
   }
   if (s === 'running') return <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />;
-  if (s === 'pending' || s === 'scheduled') {
+  if (s === 'planned' || s === 'queued' || s === 'skipped_not_due') {
     return <Clock className="h-4 w-4" aria-hidden="true" />;
   }
-  if (s === 'failed' || s === 'error') {
+  if (s === 'blocked_by_lock' || s === 'skipped_gated') {
+    return <LockKeyhole className="h-4 w-4" aria-hidden="true" />;
+  }
+  if (s === 'failed' || s === 'validation_failed' || s === 'cancelled') {
     return <XCircle className="h-4 w-4" aria-hidden="true" />;
   }
   return <AlertTriangle className="h-4 w-4" aria-hidden="true" />;
@@ -159,6 +169,41 @@ function ProblemList({ items, label }: { items: string[]; label: string }) {
 // ---------------------------------------------------------------------------
 // Tab panels
 // ---------------------------------------------------------------------------
+
+function PipelineTab({
+  job,
+  events,
+  eventsError,
+  eventsLoading,
+}: {
+  job: IngestionJobDetail;
+  events: IngestionJobEvent[];
+  eventsError: unknown;
+  eventsLoading: boolean;
+}) {
+  return (
+    <div className="grid gap-3">
+      { eventsLoading && (
+        <p
+          className="rounded-md border border-info/30 bg-info/10 px-3 py-2 text-sm text-info"
+          role="status"
+        >
+          Loading pipeline events. Job-detail fallback evidence remains available.
+        </p>
+      ) }
+      { Boolean(eventsError) && (
+        <p
+          className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+          role="status"
+        >
+          Pipeline events are unavailable. Showing the internal orchestration view from safe job-detail
+          fallback data.
+        </p>
+      ) }
+      <OrchestrationPipeline job={ job } events={ events } />
+    </div>
+  );
+}
 
 function SummaryTab({ job }: { job: IngestionJobDetail }) {
   return (
@@ -480,7 +525,9 @@ export default function IngestionJobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
   const safeJobId = jobId ?? '';
   const jobQ = useIngestionJob(safeJobId);
+  const eventsQ = useIngestionJobEvents(safeJobId);
   const job = jobQ.data;
+  const events = eventsQ.data?.events ?? [];
 
   return (
     <main
@@ -490,7 +537,7 @@ export default function IngestionJobDetail() {
       {/* Back navigation */}
       <div className="mb-3">
         <Link
-          to="/monitoring/ingestion-jobs"
+          to="/admin/ingestion/jobs"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Back to ingestion jobs list"
         >
@@ -564,9 +611,10 @@ export default function IngestionJobDetail() {
       {/* Content */}
       { job && (
         <section className="mt-4 rounded-xl border border-border/80 bg-card/90 p-4">
-          <Tabs defaultValue="summary">
+          <Tabs defaultValue="pipeline">
             <div className="overflow-x-auto pb-1">
               <TabsList className="mb-1 flex-nowrap whitespace-nowrap">
+                <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
                 <TabsTrigger value="summary">Summary</TabsTrigger>
                 <TabsTrigger value="provider-inputs">Provider Inputs</TabsTrigger>
                 <TabsTrigger value="candidates">Candidates</TabsTrigger>
@@ -577,6 +625,15 @@ export default function IngestionJobDetail() {
                 <TabsTrigger value="actions">Actions</TabsTrigger>
               </TabsList>
             </div>
+
+            <TabsContent value="pipeline" forceMount>
+              <PipelineTab
+                job={ job }
+                events={ events }
+                eventsError={ eventsQ.error }
+                eventsLoading={ eventsQ.isLoading }
+              />
+            </TabsContent>
 
             <TabsContent value="summary" forceMount>
               <SummaryTab job={ job } />

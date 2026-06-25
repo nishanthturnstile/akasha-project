@@ -18,8 +18,8 @@ from ..models import (
     IrrigationType,
     Season,
     TillageType,
-    VegetationCycle,
     Variety,
+    VegetationCycle,
 )
 from ..raster.errors import bad_request, invalid_geometry, not_found
 
@@ -123,7 +123,6 @@ def _validate_vegetation_cycles(
 ) -> None:
     if not vegetation_data:
         return
-    user_uuid = _uuid(user_id)
     for item in vegetation_data:
         sid = _uuid(item.get("seasonId"))
         if sid is None or sid not in season_uuids:

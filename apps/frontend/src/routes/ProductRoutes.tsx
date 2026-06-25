@@ -1,5 +1,5 @@
-import { lazy, Suspense, type ComponentType } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, type ComponentProps, type ComponentType } from 'react';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { AuthGate } from '@/components/auth/AuthGate';
 import { AppShell } from '@/components/shell/AppShell';
 import { NotFoundPage } from '@/components/shell/ModulePlaceholder';
@@ -7,9 +7,10 @@ import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
 
 const FieldAnalyticsPage = lazy(() => import('@/pages/monitoring/FieldAnalyticsPage'));
 const FieldCreatePage = lazy(() => import('@/pages/monitoring/FieldCreatePage'));
-const MonitoringGlobalView = lazy(() => import('@/pages/monitoring/MonitoringGlobalView'));
+const AdminIngestionOverview = lazy(() => import('@/pages/monitoring/AdminIngestionOverview'));
 const IngestionJobsList = lazy(() => import('@/pages/monitoring/IngestionJobsList'));
 const IngestionJobDetail = lazy(() => import('@/pages/monitoring/IngestionJobDetail'));
+const IngestionSchedules = lazy(() => import('@/pages/monitoring/IngestionSchedules'));
 
 function lazyPlaceholderPage(name: keyof typeof import('@/pages/product/ProductPlaceholderPages')) {
   return lazy(async () => {
@@ -46,6 +47,15 @@ const OnboardingStep2 = lazy(() => import('@/components/onboarding/OnboardingSte
 const OnboardingFieldCreate = lazy(() => import('@/components/onboarding/OnboardingFieldCreate'));
 const OnboardingStep3 = lazy(() => import('@/components/onboarding/OnboardingStep3'));
 
+const ADMIN_ROLES = ['owner', 'admin'];
+type RoleAwareAuthGateProps = Omit<ComponentProps<typeof AuthGate>, 'children'> & {
+  requiredRoles?: string[];
+};
+const ADMIN_AUTH_GATE_PROPS: RoleAwareAuthGateProps = {
+  requireOnboardingComplete: true,
+  requiredRoles: ADMIN_ROLES,
+};
+
 function onboardingRoute(Component: ComponentType) {
   return <AuthGate onboardingOnly>{ withSuspense(Component) }</AuthGate>;
 }
@@ -66,6 +76,19 @@ function withSuspense(Component: ComponentType) {
   );
 }
 
+function adminRoute(element: JSX.Element) {
+  return (
+    <AuthGate { ...ADMIN_AUTH_GATE_PROPS }>
+      { element }
+    </AuthGate>
+  );
+}
+
+function LegacyIngestionJobDetailRedirect() {
+  const { jobId } = useParams();
+  return <Navigate to={ `/admin/ingestion/jobs/${encodeURIComponent(jobId ?? '')}` } replace />;
+}
+
 export function ProductRoutes() {
   return (
     <Routes>
@@ -76,6 +99,12 @@ export function ProductRoutes() {
       <Route path="onboarding/step2" element={ onboardingRoute(OnboardingStep2) } />
       <Route path="onboarding/field-create" element={ onboardingRoute(OnboardingFieldCreate) } />
       <Route path="onboarding/step3" element={ onboardingRoute(OnboardingStep3) } />
+      <Route path="admin/ingestion" element={ adminRoute(<AppShell />) }>
+        <Route index element={ withSuspense(AdminIngestionOverview) } />
+        <Route path="jobs" element={ withSuspense(IngestionJobsList) } />
+        <Route path="jobs/:jobId" element={ withSuspense(IngestionJobDetail) } />
+        <Route path="schedules" element={ withSuspense(IngestionSchedules) } />
+      </Route>
       <Route element={ <AuthGate requireOnboardingComplete><AppShell /></AuthGate> }>
         <Route index element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />
         <Route path="map" element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />
@@ -87,9 +116,11 @@ export function ProductRoutes() {
           path="monitoring/field-analytics/field/:plotId"
           element={ withSuspense(FieldAnalyticsPage) }
         />
-        <Route path="monitoring/global" element={ withSuspense(MonitoringGlobalView) } />
-        <Route path="monitoring/ingestion-jobs" element={ withSuspense(IngestionJobsList) } />
-        <Route path="monitoring/ingestion-jobs/:jobId" element={ withSuspense(IngestionJobDetail) } />
+        {/* Deprecated compatibility aliases: temporary owner/admin-gated redirects only.
+            Do not add ingestion orchestration content back under product /monitoring/*. */ }
+        <Route path="monitoring/global" element={ adminRoute(<Navigate to="/admin/ingestion" replace />) } />
+        <Route path="monitoring/ingestion-jobs" element={ adminRoute(<Navigate to="/admin/ingestion/jobs" replace />) } />
+        <Route path="monitoring/ingestion-jobs/:jobId" element={ adminRoute(<LegacyIngestionJobDetailRedirect />) } />
         <Route path="monitoring/field-leaderboard" element={ withSuspense(FieldLeaderboardPage) } />
         <Route path="monitoring/reporting" element={ withSuspense(ReportingPage) } />
         <Route path="monitoring/diseases-pests" element={ withSuspense(DiseasesPestsPage) } />

@@ -265,6 +265,8 @@ export interface IngestionScheduleItem {
   nextWindowEnd?: string | null;
   cadenceDays?: number | null;
   dueReason?: string | null;
+  isDue?: boolean;
+  isOverdue?: boolean;
 }
 
 export interface IngestionScheduleResponse {
@@ -331,6 +333,61 @@ export interface IngestionJobDetail {
   rejectionReasons: string[];
   artifactHandles: Record<string, string>;
   ledgerRows: Record<string, unknown>[];
+}
+
+export type PipelineStageId =
+  | 'planned'
+  | 'approved_runtime'
+  | 'lock'
+  | 'search'
+  | 'select'
+  | 'download'
+  | 'prepare'
+  | 'composite'
+  | 'verify'
+  | 'upload'
+  | 'stac'
+  | 'ledger';
+
+export type PipelineStageState =
+  | 'not_reached'
+  | 'inferred'
+  | 'unavailable'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'validation_failed';
+
+export interface IngestionJobEvent {
+  timestamp: string;
+  eventType: string;
+  stage: PipelineStageId | 'running' | 'terminal' | 'unknown';
+  status:
+    | PipelineStageState
+    | 'planned'
+    | 'queued'
+    | 'blocked_by_lock'
+    | 'cancelled'
+    | 'skipped_not_due'
+    | 'skipped_gated'
+    | 'unknown';
+  message: string;
+  payload: Record<string, unknown>;
+}
+
+export interface IngestionJobEventsResponse {
+  status: string;
+  generatedAt: string;
+  jobId: string;
+  events: IngestionJobEvent[];
+  truncated: boolean;
+  scannedCount: number;
+  totalEventsScanned: number;
+  totalValidEvents: number;
+  malformedEventsSkipped?: number;
+  returnedCount?: number;
+  eventLimit?: number;
+  lastError?: string | null;
 }
 
 export interface IngestionJobFilters {

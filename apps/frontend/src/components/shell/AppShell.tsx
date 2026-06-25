@@ -38,7 +38,12 @@ import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
 import { queryClient } from '@/lib/queryClient';
 import { useAccountMe, useLogout, useSeasons, useDeleteSeason, useUpdateSeason, useFields } from '@/lib/queries';
-import { MAIN_MONITORING_ROUTE, productNavigation } from '@/routes/productNavigation';
+import {
+  MAIN_MONITORING_ROUTE,
+  productNavigation,
+  type ProductNavGroup,
+  type ProductNavItem,
+} from '@/routes/productNavigation';
 
 function formatDate(isoDate: string): string {
   if (!isoDate) return '—';
@@ -59,8 +64,26 @@ function slugFor(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function groupLabelForPath(pathname: string): string | null {
-  for (const group of productNavigation) {
+function shouldMatchNavItemExactly(path: string): boolean {
+  return path === '/admin/ingestion';
+}
+
+function isNavItemVisibleForRole(item: ProductNavItem, role?: string): boolean {
+  if (!item.requiredRoles || item.requiredRoles.length === 0) return true;
+  return Boolean(role && item.requiredRoles.includes(role));
+}
+
+function filterNavigationForRole(groups: ProductNavGroup[], role?: string): ProductNavGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => isNavItemVisibleForRole(item, role)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+function groupLabelForPath(pathname: string, groups: ProductNavGroup[]): string | null {
+  for (const group of groups) {
     const matches = group.items.some(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`),
     );
@@ -86,12 +109,18 @@ function loadRailCollapsed(): boolean {
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isAdminIngestionRoute = location.pathname.startsWith('/admin/ingestion');
   const view = useMapView();
   const account = useAccountMe();
   const logout = useLogout();
+  const currentRole = account.data?.currentTeam?.role;
+  const visibleNavigation = useMemo(
+    () => filterNavigationForRole(productNavigation, currentRole),
+    [currentRole],
+  );
   const activeGroupLabel = useMemo(
-    () => groupLabelForPath(location.pathname),
-    [location.pathname],
+    () => groupLabelForPath(location.pathname, visibleNavigation),
+    [location.pathname, visibleNavigation],
   );
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(activeGroupLabel ? [activeGroupLabel] : []),
@@ -101,7 +130,9 @@ export function AppShell() {
   const [seasonSheetOpen, setSeasonSheetOpen] = useState(false);
   const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
-  const [globalViewOpen, setGlobalViewOpen] = useState(!location.pathname.includes('/field/'));
+  const [globalViewOpen, setGlobalViewOpen] = useState(
+    !isAdminIngestionRoute && !location.pathname.includes('/field/'),
+  );
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
@@ -147,6 +178,7 @@ export function AppShell() {
   const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
+  const showGlobalViewPanel = !isAdminIngestionRoute && globalViewOpen;
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
@@ -189,12 +221,12 @@ export function AppShell() {
   }, [railCollapsed]);
 
   const primaryGroups = useMemo(
-    () => productNavigation.filter((group) => group.label !== UTILITY_LABEL),
-    [],
+    () => visibleNavigation.filter((group) => group.label !== UTILITY_LABEL),
+    [visibleNavigation],
   );
   const utilityGroup = useMemo(
-    () => productNavigation.find((group) => group.label === UTILITY_LABEL),
-    [],
+    () => visibleNavigation.find((group) => group.label === UTILITY_LABEL),
+    [visibleNavigation],
   );
 
   // Adjust state during render (React-recommended) so the group containing the
@@ -239,7 +271,7 @@ export function AppShell() {
         className={ cn(
           'grid h-screen w-screen overflow-hidden bg-background text-foreground lg:grid-rows-1',
           'grid-cols-1 grid-rows-[auto_minmax(0,1fr)]',
-          globalViewOpen
+          showGlobalViewPanel
             ? 'lg:grid-cols-[minmax(0,1fr)_20rem_var(--rail-w)]'
             : 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]',
         ) }
@@ -260,13 +292,14 @@ export function AppShell() {
           </div>
           <nav aria-label="Product modules" className="-mx-1 overflow-x-auto px-1">
             <div className="flex min-w-max gap-1 pb-1">
-              { productNavigation.flatMap((group) =>
+              { visibleNavigation.flatMap((group) =>
                 group.items.map((item) => {
                   const Icon = item.icon;
                   return (
                     <NavLink
                       key={ item.path }
                       to={ item.path }
+                      end={ shouldMatchNavItemExactly(item.path) }
                       data-testid={ `mobile-${testIdFor(item.label)}` }
                       className={ ({ isActive }) =>
                         cn(
@@ -289,7 +322,7 @@ export function AppShell() {
           <Outlet />
         </section>
 
-        { globalViewOpen && (
+        { showGlobalViewPanel && (
           <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
         ) }
 
@@ -580,30 +613,11 @@ export function AppShell() {
                           </p>
                           { group.items.map((item) => {
                             const ItemIcon = item.icon;
-                            if (item.label === 'Global view') {
-                              return (
-                                <button
-                                  key={ item.path }
-                                  type="button"
-                                  role="menuitem"
-                                  onClick={ () => {
-                                    setHoveredGroup(null);
-                                    setGlobalViewOpen(true);
-                                  } }
-                                  data-testid={ testIdFor(item.label) }
-                                  className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground"
-                                >
-                                  { ItemIcon && (
-                                    <ItemIcon className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
-                                  ) }
-                                  <span className="min-w-0 flex-1 truncate">{ item.label }</span>
-                                </button>
-                              );
-                            }
                             return (
                               <NavLink
                                 key={ item.path }
                                 to={ item.path }
+                                end={ shouldMatchNavItemExactly(item.path) }
                                 role="menuitem"
                                 data-testid={ testIdFor(item.label) }
                                 onClick={ () => {
@@ -611,9 +625,9 @@ export function AppShell() {
                                   setGlobalViewOpen(false);
                                 } }
                                 className={ ({ isActive }) =>
-                                cn(
-                                  'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                  isActive && !globalViewOpen && 'text-primary font-semibold',
+                                 cn(
+                                   'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                   isActive && !globalViewOpen && 'text-primary font-semibold',
                                   )
                                 }
                               >
@@ -666,46 +680,26 @@ export function AppShell() {
                     </button>
                     { isExpanded && (
                       <div id={ panelId } className="mt-1 flex flex-col gap-1">
-                        { group.items.map((item) => {
-                          if (item.label === 'Global view') {
-                            return (
-                              <button
-                                key={ item.path }
-                                type="button"
-                                onClick={ () => setGlobalViewOpen(true) }
-                                data-testid={ testIdFor(item.label) }
-                                data-active={ globalViewOpen || undefined }
-                                className={ cn(
-                                  'group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                  globalViewOpen
-                                    ? 'text-primary font-semibold'
-                                    : 'text-muted-foreground',
-                                ) }
-                              >
-                                <span className="min-w-0 flex-1 truncate">{ item.label }</span>
-                              </button>
-                            );
-                          }
-                          return (
-                            <NavLink
-                              key={ item.path }
-                              to={ item.path }
-                              data-testid={ testIdFor(item.label) }
-                              onClick={ () => setGlobalViewOpen(false) }
-                              className={ ({ isActive }) =>
-                                cn(
-                                  'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                  isActive && !globalViewOpen && 'text-primary font-semibold',
-                                )
-                              }
-                            >
-                              <span className="min-w-0 flex-1 truncate">{ item.label }</span>
-                              { item.status === 'planned' && (
-                                <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
-                              ) }
-                            </NavLink>
-                          );
-                        }) }
+                        { group.items.map((item) => (
+                          <NavLink
+                            key={ item.path }
+                            to={ item.path }
+                            end={ shouldMatchNavItemExactly(item.path) }
+                            data-testid={ testIdFor(item.label) }
+                            onClick={ () => setGlobalViewOpen(false) }
+                            className={ ({ isActive }) =>
+                              cn(
+                                'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                isActive && !globalViewOpen && 'text-primary font-semibold',
+                              )
+                            }
+                          >
+                            <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                            { item.status === 'planned' && (
+                              <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
+                            ) }
+                          </NavLink>
+                        )) }
                       </div>
                     ) }
                   </section>
@@ -734,6 +728,7 @@ export function AppShell() {
                         <TooltipTrigger asChild>
                           <NavLink
                             to={ item.path }
+                            end={ shouldMatchNavItemExactly(item.path) }
                             data-testid={ testIdFor(item.label) }
                             aria-label={ item.label }
                             className={ ({ isActive }) =>
@@ -754,6 +749,7 @@ export function AppShell() {
                     <NavLink
                       key={ item.path }
                       to={ item.path }
+                      end={ shouldMatchNavItemExactly(item.path) }
                       data-testid={ testIdFor(item.label) }
                       className={ ({ isActive }) =>
                         cn(

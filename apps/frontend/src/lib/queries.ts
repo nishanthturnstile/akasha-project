@@ -43,6 +43,7 @@ import {
   getIngestionSchedules,
   listIngestionJobs,
   getIngestionJob,
+  getIngestionJobEvents,
   getConfig,
   getCrops,
   getDates,
@@ -165,6 +166,8 @@ export const queryKeys = {
   ingestionJobs: (filters?: IngestionJobFilters) =>
     ['monitoring', 'ingestion-jobs', filters ?? {}] as const,
   ingestionJob: (jobId: string) => ['monitoring', 'ingestion-jobs', jobId] as const,
+  ingestionJobEvents: (jobId: string) =>
+    ['monitoring', 'ingestion-jobs', jobId, 'events'] as const,
   seasons: ['seasons'] as const,
   season: (seasonId: string) => ['seasons', seasonId] as const,
   fields: ['fields'] as const,
@@ -802,6 +805,14 @@ export function useIngestionJob(jobId: string) {
   return useQuery({
     queryKey: queryKeys.ingestionJob(jobId),
     queryFn: () => getIngestionJob(jobId),
+    enabled: Boolean(jobId),
+  });
+}
+
+export function useIngestionJobEvents(jobId: string) {
+  return useQuery({
+    queryKey: queryKeys.ingestionJobEvents(jobId),
+    queryFn: () => getIngestionJobEvents(jobId),
     enabled: Boolean(jobId),
   });
 }

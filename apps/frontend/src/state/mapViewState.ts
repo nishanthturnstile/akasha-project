@@ -47,6 +47,8 @@ export interface MapViewState {
     focusNonce: number;
     /** Map card fills available height, hiding bottom analytics panel. */
     mapFullscreen: boolean;
+    /** Timeline uses the best available observation resolver instead of one source's dates. */
+    bestMode: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -75,6 +77,7 @@ export const initialMapViewState: MapViewState = {
     pendingAction: null,
     focusNonce: 0,
     mapFullscreen: false,
+    bestMode: false,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -100,6 +103,7 @@ export interface MapViewContextValue extends MapViewState {
     setPendingAction: (action: 'create-field' | null) => void;
     setFocusNonce: (nonce: number) => void;
     setMapFullscreen: (fullscreen: boolean) => void;
+    setBestMode: (enabled: boolean) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

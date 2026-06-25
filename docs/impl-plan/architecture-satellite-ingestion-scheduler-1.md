@@ -81,8 +81,9 @@ Capabilities must be explicit and fail closed when unsupported.
 - **SEC-003**: The frontend must never call Bhoonidhi, CDSE, USGS, Earthdata, Planet, JAXA, MinIO, pgSTAC, PostGIS, or TiTiler directly. Browser calls remain same-origin `/api/*` and `/tiles/*` through the BFF/gateway.
 - **SEC-004**: Commercial order APIs must be disabled by default and require an explicit allow flag plus readiness state before executing quota/cost-incurring calls.
 - **SEC-005**: Unknown providers and unknown source IDs must fail closed with explicit errors.
-- **SEC-006**: Monitoring APIs must not expose raw server filesystem paths, signed provider URLs, object-store credentials, internal hostnames, or full logs to the frontend. Use redacted summaries and opaque artifact handles by default; raw artifact paths are CLI-only or restricted to elevated operator roles.
+- **SEC-006**: Scheduler monitoring APIs are the backend source of truth and must be redacted plus owner/admin-gated. They must not expose raw server filesystem paths, signed provider URLs, object-store credentials, internal hostnames, or full logs to the frontend. Use redacted summaries and opaque artifact handles by default; raw artifact paths are CLI-only or restricted to elevated operator roles.
 - **SEC-007**: Paid order/task/subscription methods must require all of: `commercialState != commercial_blocked`, `allowPaidOrder=true`, an operator-provided explicit command flag, and a documented commercial-readiness record for the source/provider. Tests must prove commercial adapters cannot place paid orders by default even when credentials exist.
+- **SEC-008**: Visual scheduler/orchestration UI is an internal admin console only. Owner/admin users may access it under `/admin/ingestion/*`; member/viewer users must not see ingestion job queues, source scheduler health, provider diagnostics, or scheduler actions through product Monitoring UX.
 
 ### Operational constraints
 
@@ -91,7 +92,7 @@ Capabilities must be explicit and fail closed when unsupported.
 - **OPS-003**: Jobs must use locks scoped by provider/source/AOI so one failed source does not block unrelated sources.
 - **OPS-004**: The scheduler may run frequently, but it must decide due sources from cadence and source state. Do not create one long-lived busy loop.
 - **OPS-005**: Initial implementation may use JSON job artifacts plus the existing SQLite ledger. SQL-backed job history can follow when UI/history retention requirements stabilize.
-- **OPS-006**: Scheduler monitoring must be available via CLI/API first. UI is useful but not required for the first operational release.
+- **OPS-006**: Scheduler monitoring must be available via CLI/API first. If a UI is built, it belongs under the owner/admin-only `/admin/ingestion/*` console. Product Monitoring remains a crop/field experience and must not expose scheduler queues or source scheduler health to member/viewer users.
 - **OPS-007**: The scheduler must have a safe cutover model: a global scheduler lock, provider/source/AOI worker locks compatible with existing Bhoonidhi jobs during migration, explicit max-concurrent-source limits, a dry-run/canary period, and a documented rollback path to legacy source-specific timers.
 - **OPS-008**: Scheduler and provider adapters must enforce approved-runtime preflights for staging-only providers. Bhoonidhi jobs fail closed unless they run through the safe wrapper or an explicitly approved dry-run/local-test mode.
 - **OPS-009**: Scheduler storage must define SQLite WAL/busy-timeout behavior, first-run due behavior, retention/pruning, stale-lock reclaim rules, and disk-pressure thresholds before the scheduler is enabled.
@@ -113,6 +114,7 @@ Capabilities must be explicit and fail closed when unsupported.
 - **DOC-003**: Update [data-ingestion-and-satellite-rules.md](../data-ingestion-and-satellite-rules.md) with scheduler/onboarding/validation/monitoring rules.
 - **DOC-004**: Update [staging-ingestion-developer-guide.md](../staging-ingestion-developer-guide.md) with orchestrator commands and staging-safe scheduler operations.
 - **DOC-005**: Keep the existing multi-source roadmap linked from this plan. This file provides the scheduler architecture layer; the existing roadmap still tracks provider onboarding tasks.
+- **DOC-006**: Keep admin ingestion-console documentation separate from crop/field Monitoring documentation. Temporary `/monitoring/global` and `/monitoring/ingestion-jobs` aliases are owner/admin-gated redirects only and are slated for removal after `/admin/ingestion/*` stabilizes.
 
 ## 2. Implementation Steps
 
@@ -251,31 +253,32 @@ Capabilities must be explicit and fail closed when unsupported.
 | TASK-052 | Update `tests/test_bhoonidhi_systemd_artifacts.py` or add `tests/test_ingestion_scheduler_systemd_artifacts.py` to assert the scheduler artifacts exist and preserve staging-safe behavior. | Yes | 2026-06-24 |
 | TASK-053 | Mark existing source-specific timers as compatibility mode in docs once the orchestrator timer is validated. Do not let legacy timers and the scheduler own the same source/AOI simultaneously; disable one source-specific timer only after canary parity is confirmed. Document rollback by stopping the scheduler timer and re-enabling the previous timer/env. | Yes | 2026-06-24 |
 
-### Implementation Phase 9 — Monitoring APIs
+### Implementation Phase 9 — Admin-gated monitoring APIs
 
-- GOAL-009: Expose schedule and job observability via authenticated BFF endpoints.
+- GOAL-009: Expose schedule and job observability via redacted, owner/admin-gated BFF endpoints. The backend authorization boundary is the source of truth; frontend admin routes are UX gates only.
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-054 | Add `apps/api/app/ingestion_jobs.py` with `GET /api/monitoring/ingestion-schedules`, `GET /api/monitoring/ingestion-jobs`, and `GET /api/monitoring/ingestion-jobs/{jobId}`. The BFF reads only the Phase 0 redacted scheduler snapshots/job summaries through explicit read-only config, not raw provider archives or unrestricted job directories. | Yes | 2026-06-24 |
-| TASK-055 | Wire the new router in `apps/api/app/main.py` with the same auth/team protection as existing monitoring routes. | Yes | 2026-06-24 |
+| TASK-054 | Add `apps/api/app/ingestion_jobs.py` with `GET /api/monitoring/ingestion-schedules`, `GET /api/monitoring/ingestion-jobs`, and `GET /api/monitoring/ingestion-jobs/{jobId}` as backend-owned scheduler observability endpoints. The BFF reads only the Phase 0 redacted scheduler snapshots/job summaries through explicit read-only config, not raw provider archives or unrestricted job directories, and every response is owner/admin-gated. | Yes | 2026-06-24 |
+| TASK-055 | Wire the new router in `apps/api/app/main.py` with explicit owner/admin authorization. Frontend route guards are only a usability layer; backend auth is authoritative and member/viewer requests must fail closed. | Yes | 2026-06-24 |
 | TASK-056 | Schedule response fields must include `sourceId`, `provider`, `adapter`, `aoiId`, typed source-state fields, `scheduleEnabled`, `productExposure`, `lastRunAt`, `lastSuccessAt`, `lastFailureAt`, `nextDueAt`, `nextWindowStart`, `nextWindowEnd`, `cadenceDays`, and `dueReason`. | Yes | 2026-06-24 |
 | TASK-057 | Job list response fields must include `jobId`, `sourceId`, `provider`, `aoiId`, `state`, `windowStart`, `windowEnd`, `foundCount`, `selectedCount`, `downloadedCount`, `rejectedCount`, `failureKind`, `message`, `startedAt`, `finishedAt`, and `updatedAt`. Add `limit`, `cursor`, `sourceId`, `aoiId`, `state`, `startedAfter`, and `startedBefore` filters. | Yes | 2026-06-24 |
 | TASK-058 | Job detail response fields must include redacted `request`, redacted provider input, search/download manifest summaries, candidate rejection reasons, validation checks/problems, ledger rows, and opaque artifact handles. Do not expose raw server paths or full logs in frontend-safe responses. | Yes | 2026-06-24 |
-| TASK-059 | Extend `apps/api/app/source_monitoring.py` so each source links to the latest scheduler job and includes schedule due/overdue status. | Yes | 2026-06-24 |
-| TASK-060 | Add BFF tests for job list/detail redaction, schedule state, pagination/filtering, missing artifact handling, no raw path leakage, role-gated operator artifact access if implemented, and source-monitoring integration. | Yes | 2026-06-24 |
+| TASK-059 | Extend owner/admin scheduler monitoring payloads so each source links to the latest scheduler job and includes schedule due/overdue status. Product Monitoring payloads for crop/field UX must not expose ingestion job queues or source scheduler health to member/viewer users. | Yes | 2026-06-24 |
+| TASK-060 | Add BFF tests for owner/admin allow, member/viewer deny, job list/detail redaction, schedule state, pagination/filtering, missing artifact handling, no raw path leakage, role-gated operator artifact access if implemented, and source-monitoring integration. | Yes | 2026-06-24 |
 
-### Implementation Phase 10 — Optional operator UI
+### Implementation Phase 10 — Admin ingestion console UI
 
-- GOAL-010: Add a UI only after API/CLI observability is stable.
+- GOAL-010: Add a visual scheduler/orchestration UI only after API/CLI observability is stable. The UI lives under `/admin/ingestion/*` for owner/admin users; product Monitoring remains crop/field UX.
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-061 | Add frontend API types and clients in `apps/frontend/src/types/api.ts`, `apps/frontend/src/lib/api.ts`, and `apps/frontend/src/lib/queries.ts` for ingestion schedules and jobs. | Yes | 2026-06-24 |
-| TASK-062 | Add `apps/frontend/src/pages/monitoring/IngestionJobsList.tsx` showing job ID, source, provider, AOI, state, window, counts, and latest message. | Yes | 2026-06-24 |
-| TASK-063 | Add `apps/frontend/src/pages/monitoring/IngestionJobDetail.tsx` with tabs: Summary, Provider Inputs, Candidates, Downloads, Verification, Ledger, Logs, and Actions. | Yes | 2026-06-24 |
-| TASK-064 | Add links from existing imagery source monitoring cards to the latest job detail for that source. | Yes | 2026-06-24 |
-| TASK-065 | Add frontend tests for job list/detail rendering, redacted secrets, failure reasons, and gated/background source display. | Yes | 2026-06-24 |
+| TASK-061 | Add frontend API types and clients in `apps/frontend/src/types/api.ts`, `apps/frontend/src/lib/api.ts`, and `apps/frontend/src/lib/queries.ts` for ingestion schedules and jobs. These clients call only same-origin BFF endpoints; they do not relax backend owner/admin checks. | Yes | 2026-06-24 |
+| TASK-062 | Add the owner/admin-only `/admin/ingestion/jobs` route using `apps/frontend/src/pages/monitoring/IngestionJobsList.tsx` or its renamed equivalent. It shows job ID, source, provider, AOI, state, window, counts, and latest message. | Yes | 2026-06-24 |
+| TASK-063 | Add the owner/admin-only `/admin/ingestion/jobs/:jobId` route using `apps/frontend/src/pages/monitoring/IngestionJobDetail.tsx` or its renamed equivalent. It has tabs: Summary, Provider Inputs, Candidates, Downloads, Verification, Ledger, Logs, and Actions. | Yes | 2026-06-24 |
+| TASK-064 | Add `/admin/ingestion` and `/admin/ingestion/schedules` entry points for owner/admin users. Do not add ingestion job queues or source scheduler health to the product Monitoring navigation for member/viewer users. | Yes | 2026-06-24 |
+| TASK-065 | Add frontend tests for owner/admin route access, member/viewer exclusion, job list/detail rendering, redacted secrets, failure reasons, gated/background source display, and product Monitoring remaining crop/field-only. | Yes | 2026-06-24 |
+| TASK-065A | Keep temporary `/monitoring/global`, `/monitoring/ingestion-jobs`, and `/monitoring/ingestion-jobs/:jobId` aliases as owner/admin-gated redirects to `/admin/ingestion/*` routes only during migration. Mark them for removal after the admin routes stabilize. | Planned | 2026-06-25 |
 
 ### Implementation Phase 11 — Best-observation resolver and frontend timeline
 
@@ -365,10 +368,10 @@ Capabilities must be explicit and fail closed when unsupported.
 - **FILE-032**: `apps/api/app/main.py` — Wire new BFF router.
 - **FILE-033**: `apps/api/app/raster/catalog_resolver.py` — Add best-observation resolver and source state integration.
 - **FILE-034**: `apps/frontend/src/types/api.ts` — Add job/schedule/best-observation types if UI is built.
-- **FILE-035**: `apps/frontend/src/lib/api.ts` — Add monitoring job/schedule clients if UI is built.
+- **FILE-035**: `apps/frontend/src/lib/api.ts` — Add ingestion job/schedule clients for admin console routes if UI is built.
 - **FILE-036**: `apps/frontend/src/lib/queries.ts` — Add TanStack Query hooks if UI is built.
-- **FILE-037**: `apps/frontend/src/pages/monitoring/IngestionJobsList.tsx` — Optional job list UI.
-- **FILE-038**: `apps/frontend/src/pages/monitoring/IngestionJobDetail.tsx` — Optional job detail UI.
+- **FILE-037**: `apps/frontend/src/pages/monitoring/IngestionJobsList.tsx` — Admin ingestion job list UI implementation file or legacy filename backing `/admin/ingestion/jobs`.
+- **FILE-038**: `apps/frontend/src/pages/monitoring/IngestionJobDetail.tsx` — Admin ingestion job detail UI implementation file or legacy filename backing `/admin/ingestion/jobs/:jobId`.
 - **FILE-039**: `apps/frontend/src/pages/MapPage.tsx` — Future best-available timeline mode wiring.
 - **FILE-040**: `apps/frontend/src/components/timeline/TimelineBar.tsx` — Future best/source timeline affordance.
 - **FILE-041**: `apps/frontend/src/components/timeline/DateChip.tsx` — Future observation provenance display.
@@ -394,8 +397,8 @@ Capabilities must be explicit and fail closed when unsupported.
 - **TEST-009**: Run scheduler dry-run for LISS-3, LISS-4, and AWiFS. Expected: LISS-3/LISS-4 active state is visible; AWiFS remains background/gated if coverage is not validated.
 - **TEST-010**: Run `python scripts/staging_ingestion_job.py job-inspect <job_id> --host akasha-staging --json`. Expected: redacted request, status, counts, artifact handles/operator paths, and next due fields are returned.
 - **TEST-011**: Run `python scripts/staging_ingestion_job.py schedule-plan --host akasha-staging --source resourcesat-2a-awifs-boa --aoi bangalore-60km --json`. Expected: plan explains whether AWiFS is due and why it remains gated/product-inactive.
-- **TEST-012**: After API endpoints exist, call `GET /api/monitoring/ingestion-schedules`, `GET /api/monitoring/ingestion-jobs?limit=20`, and `GET /api/monitoring/ingestion-jobs/{jobId}` through the authenticated BFF. Expected: no secrets, no raw server paths in frontend-safe payloads, complete bounded troubleshooting context, and correct typed source states.
-- **TEST-013**: If frontend monitoring UI is implemented, run `cd apps/frontend && corepack yarn test IngestionJobs MonitoringGlobalView` and `corepack yarn build`. Expected: job UI renders source/job states and TypeScript build passes.
+- **TEST-012**: After API endpoints exist, call `GET /api/monitoring/ingestion-schedules`, `GET /api/monitoring/ingestion-jobs?limit=20`, and `GET /api/monitoring/ingestion-jobs/{jobId}` through the authenticated BFF as owner/admin and as member/viewer. Expected: owner/admin receives redacted bounded troubleshooting context with correct typed source states; member/viewer receives fail-closed denial; no response leaks secrets or raw server paths.
+- **TEST-013**: If frontend admin ingestion UI is implemented, run `cd apps/frontend && corepack yarn test IngestionJobs MonitoringGlobalView AdminIngestionOverview IngestionSchedules ProductRoutes AppShell` and `corepack yarn build`. Expected: `/admin/ingestion/*` job UI renders source/job states for owner/admin, product Monitoring remains crop/field-only for member/viewer, temporary `/monitoring/global` and `/monitoring/ingestion-jobs` aliases redirect only after owner/admin gating, and TypeScript build passes.
 - **TEST-014**: For best-observation work, run backend and frontend tests proving backend-owned selection is used for tiles/stats/exports and source-specific mode is preserved.
 
 ## 7. Risks & Assumptions

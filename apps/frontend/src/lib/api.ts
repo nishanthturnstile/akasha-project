@@ -43,6 +43,7 @@ import type {
   IngestionScheduleResponse,
   IngestionJobListResponse,
   IngestionJobDetail,
+  IngestionJobEventsResponse,
   IngestionJobFilters,
   Plot,
   PlotCreatePayload,
@@ -742,3 +743,8 @@ export const listIngestionJobs = (filters?: IngestionJobFilters): Promise<Ingest
 
 export const getIngestionJob = (jobId: string): Promise<IngestionJobDetail> =>
   request<IngestionJobDetail>(`/api/monitoring/ingestion-jobs/${encodeURIComponent(jobId)}`);
+
+export const getIngestionJobEvents = (jobId: string): Promise<IngestionJobEventsResponse> =>
+  request<IngestionJobEventsResponse>(
+    `/api/monitoring/ingestion-jobs/${encodeURIComponent(jobId)}/events`,
+  );

@@ -7,12 +7,14 @@ interface AuthGateProps {
   children: JSX.Element;
   onboardingOnly?: boolean;
   requireOnboardingComplete?: boolean;
+  requiredRoles?: string[];
 }
 
 export function AuthGate({
   children,
   onboardingOnly = false,
   requireOnboardingComplete = false,
+  requiredRoles,
 }: AuthGateProps) {
   const location = useLocation();
   const account = useAccountMe();
@@ -50,6 +52,12 @@ export function AuthGate({
     }
     if (requireOnboardingComplete && !onboardingCompleted) {
       return <Navigate to="/onboarding/step1" replace />;
+    }
+    if (requiredRoles?.length) {
+      const role = account.data.currentTeam.role;
+      if (!requiredRoles.includes(role)) {
+        return <Navigate to={ MAIN_MONITORING_ROUTE } replace />;
+      }
     }
   }
 

@@ -285,7 +285,7 @@ describe('MonitoringGlobalView', () => {
     const jobLink = screen.getByTitle('Job job-sched-001 · succeeded');
     expect(jobLink).toBeTruthy();
     expect((jobLink as HTMLAnchorElement).href).toContain(
-      '/monitoring/ingestion-jobs/' + encodeURIComponent('job-sched-001'),
+      '/admin/ingestion/jobs/' + encodeURIComponent('job-sched-001'),
     );
   });
 

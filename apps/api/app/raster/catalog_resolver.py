@@ -167,14 +167,17 @@ _SOURCE_REGISTRY.update(
                 {"label": "Moisture Indices", "modes": ["NDMI"]},
                 {"label": "Water Index", "modes": ["NDWI_GREEN_NIR"]},
             ],
-            "description": "Gated regional ResourceSat-2A AWiFS BOA context source.",
+            "description": "Active regional ResourceSat-2A AWiFS BOA context source.",
             "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "optical",
             "defaultRescale": "0,3000",
             "tileRouteMode": "fcc",
             "resolutionMeters": 56,
             "analysisLevel": "regional",
-            "refreshPolicy": "Gated until AWiFS BOA download and COG prep are validated.",
+            "refreshPolicy": (
+                "Scheduler-active Bhoonidhi ingestion; regional composites use a 60% "
+                "minimum usable-coverage threshold."
+            ),
             "limitations": [
                 "Coarse 56 m pixels; use for regional context and large-field analytics.",
                 (
@@ -194,8 +197,8 @@ _SOURCE_REGISTRY.update(
             "excludedMaskClasses": [0, 2, 3],
             "availableMaskOptions": ["clouds", "cloudShadows"],
             "metricsProvisional": True,
-            "availabilityStatus": "gated",
-            "gatedReason": "No validated AWiFS BOA composite has been ingested.",
+            "availabilityStatus": "active",
+            "gatedReason": None,
         },
         "resourcesat-2a-liss4-mx70-l2": {
             "id": "resourcesat-2a-liss4-mx70-l2",

@@ -267,7 +267,7 @@ preflight() {
     update_status blocked_by_lock 75 lock "another queued/running job exists for source/AOI"
     exit 75
   fi
-  worker_lock_dir="${AKASHA_SCHEDULER_LOCK_DIR:-/srv/akasha/ingestion/locks}"
+  worker_lock_dir="${AKASHA_SCHEDULER_LOCK_DIR:-/srv/akasha/ingestion}"
   mkdir -p "${worker_lock_dir}"
 }
 
@@ -290,9 +290,9 @@ run_job() {
   preflight
 
   update_status running "" "" "running"
-  # Migrated to the provider-agnostic scheduler: the orchestrator owns the search
-  # window (registry composite_window_days), per-run download caps, coverage
-  # threshold, and the product ledger. Operators only choose source/AOI/dry-run.
+  # Migrated to the provider-agnostic scheduler. Operators may still submit
+  # bounded manual windows/caps; the orchestrator owns locks, job artifacts,
+  # scheduler ledger, and the ResourceSat pipeline lifecycle.
   local sync_args=(
     schedule-source
     --source "${source_id}"
@@ -300,6 +300,11 @@ run_job() {
     --approved-runtime
     --manual
     --window-days "${window_days}"
+    --window-start "${window_start}"
+    --window-end "${window_end}"
+    --limit "${limit}"
+    --max-downloads "${max_downloads}"
+    --min-coverage-percent "${min_coverage_percent}"
     --lock-dir "${worker_lock_dir}"
     --base-dir "${AKASHA_SCHEDULER_JOBS_DIR:-/srv/akasha/ingestion/scheduler/jobs}"
     --ledger-db-path "${AKASHA_SCHEDULER_LEDGER_DB:-/srv/akasha/ingestion/scheduler/scheduler.sqlite}"

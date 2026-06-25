@@ -320,7 +320,7 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** ISRO's mainstay for the Department of Agriculture's **national crop-area assessment programme (FASAL)**. Extensively used for sugarcane and horticulture mapping in Maharashtra and Karnataka.
 
-**Ingestion state.** Provider adapter: `bhoonidhi`; cadence class: `5_to_10_days`; three active source rows — **LISS-3** (`resourcesat-2a-liss3-boa`): schedule state `routine`, product exposure `product_active` (MVP baseline; optical composite, 95% coverage threshold); **LISS-4** (`resourcesat-2a-liss4-mx70-l2`): schedule state `routine`, product exposure `product_active` (field enhancement; narrow-swath); **AWiFS** (`resourcesat-2a-awifs-boa`): schedule state `background_only`, product exposure `background_only` (gated until coverage validation passes; reached only 62.98% against 95% threshold). All rows: staging_bhoonidhi host pool.
+**Ingestion state.** Provider adapter: `bhoonidhi`; cadence class: `5_to_10_days`; three active source rows — **LISS-3** (`resourcesat-2a-liss3-boa`): schedule state `routine`, product exposure `product_active` (MVP baseline; optical composite, 95% coverage threshold); **LISS-4** (`resourcesat-2a-liss4-mx70-l2`): schedule state `routine`, product exposure `product_active` (field enhancement; narrow-swath); **AWiFS** (`resourcesat-2a-awifs-boa`): schedule state `routine`, product exposure `product_active` for regional/coarse analytics with a 60% minimum usable-coverage threshold. All rows: staging_bhoonidhi host pool.
 
 ---
 
@@ -849,7 +849,7 @@ must include `catalogSlug`, `catalogPlatform`, `sourceId`, `providerAdapter`, `p
 | `landsat-8` | `landsat-8-c2-l2` | `usgs` | Gated/operator-validation; cloud STAC+COG preferred. |
 | `landsat-9` | `landsat-9-c2-l2` | `usgs` | Gated/operator-validation; cloud STAC+COG preferred. |
 | `modis` | `modis-13q1-061` | `earthdata` | Regional context only; not field analytics. |
-| `resourcesat-2a` | `resourcesat-2a-liss3-boa`, `resourcesat-2a-liss4-mx70-l2`, `resourcesat-2a-awifs-boa` | `bhoonidhi` | LISS-3 active baseline; LISS-4 active field enhancement; AWiFS background/gated until coverage validation passes. |
+| `resourcesat-2a` | `resourcesat-2a-liss3-boa`, `resourcesat-2a-liss4-mx70-l2`, `resourcesat-2a-awifs-boa` | `bhoonidhi` | LISS-3 active baseline; LISS-4 active field enhancement; AWiFS active regional/coarse product with 60% minimum usable coverage. |
 | `cartosat-3` | `cartosat-3-gated` | `vendor` / manual | Manual/VHR context placeholder; no programmatic Bhoonidhi catalog path yet. |
 | `eos-04-risat` | `eos-04-sar-mrs-l2b` | `bhoonidhi` | Gated SAR; MRS/CRS only; SAR validation profile required. |
 | `eos-06-oceansat-3` | `eos-06-ocm-lac-ndvi-8day-360m` | `bhoonidhi` | Regional precomputed NDVI context; not field analytics. |

@@ -703,9 +703,8 @@ class TestSchedulePlanExposesWhy:
     """plan_due_sources must expose a clear reason for every is_due=False decision."""
 
     def test_first_run_is_due_with_no_skip_reason(self, tmp_path):
-        # LISS-3 is owned_by=legacy_timer, so during cutover it is ownership-gated
-        # unless an operator supplies an explicit canary/manual override. With the
-        # override, a first run (no ledger entry) must be due with no skip_reason.
+        # With an explicit canary/manual override, a first run (no ledger entry)
+        # must be due with no skip_reason.
         decisions = plan_due_sources(
             source_ids=[_LISS3_SOURCE],
             aoi_ids=[_DEFAULT_AOI],

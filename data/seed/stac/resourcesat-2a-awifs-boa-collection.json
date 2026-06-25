@@ -10,7 +10,7 @@
   ],
   "id": "resourcesat-2a-awifs-boa",
   "title": "ResourceSat-2A AWiFS BOA (Bhoonidhi)",
-  "description": "ResourceSat-2A AWiFS bottom-of-atmosphere reflectance source for regional crop and context monitoring. AWiFS is coarser than LISS-3, so field-level analytics remain provisional until real AWiFS composites are validated over the AOI.",
+  "description": "ResourceSat-2A AWiFS bottom-of-atmosphere reflectance source for regional crop and context monitoring. AWiFS is coarser than LISS-3, so it is active for regional/coarse analytics while LISS-3/LISS-4 remain preferred for field-level monitoring.",
   "license": "proprietary",
   "keywords": ["isro", "nrsc", "bhoonidhi", "resourcesat-2a", "awifs", "boa", "regional", "composite"],
   "providers": [
@@ -33,8 +33,8 @@
   "akasha:bhoonidhi_collection_id": "ResourceSat-2A_AWIFS_BOA",
   "akasha:source_kind": "optical",
   "akasha:analysis_level": "regional",
-  "akasha:availability_status": "gated",
-  "akasha:gated_reason": "No validated AWiFS BOA composite has been ingested.",
+  "akasha:availability_status": "active",
+  "akasha:gated_reason": null,
   "akasha:aoi_id": "bangalore-60km",
   "akasha:supported_indices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
   "akasha:unsupported_indices": ["NDRE", "RECI"],
@@ -67,7 +67,7 @@
     "grid_crs": "EPSG:32643",
     "window_days": 45,
     "selection_rule": "best-available-valid-pixel-with-recency-tiebreak",
-    "status": "gated until AWiFS composite verification is validated"
+    "status": "active regional composite; minimum usable coverage threshold 60%"
   },
   "akasha:attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
   "item_assets": {

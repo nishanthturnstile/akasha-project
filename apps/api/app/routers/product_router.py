@@ -186,7 +186,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         source.get("defaultMapDisplayMode", source["defaultDisplayMode"])
     )
     if not date_pool:
-        display_mode = default_map_display_mode
+        display_mode = str(source["defaultDisplayMode"])
         return {
             "sourceId": source_id,
             "acquisitionDate": None,
@@ -212,7 +212,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     date = next((d for d in date_pool if d["isLatestUsable"]), date_pool[0])
     acquisition_date = date["acquisitionDate"]
     items = catalog.items_for_date(source_id, acquisition_date)
-    display_mode = default_map_display_mode
+    display_mode = str(source["defaultDisplayMode"])
     tile_url_template = (
         None
         if display_mode in catalog.supported_indices(source_id)

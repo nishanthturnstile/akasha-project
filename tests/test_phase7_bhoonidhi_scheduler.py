@@ -11,14 +11,13 @@ TASK-045: Dry-run stop-point parity between ``bhoonidhi-sync --dry-run`` and
           3. No live provider calls occur during any dry-run path.
           4. LISS-4 dry-run carries the same Phase 7 metadata as LISS-3 and AWiFS.
 
-TASK-046: AWiFS below-threshold coverage is background-gated and retryable.
+TASK-046: AWiFS regional product-active coverage is retryable.
 
-          5. AWiFS approved non-dry-run is allowed past validation-state gating so
-             a future background attempt can recover coverage, but the current live
-             orchestrator path fails closed with ``failure_kind="pipeline_deferred"``.
-          6. ``product_exposure`` stays ``BACKGROUND_ONLY`` after the attempt.
-          7. AWiFS source registry still records the previous low-coverage readiness reason.
-          8. AWiFS job result includes the deferred live-pipeline failure reason.
+             5. AWiFS approved non-dry-run is allowed through the live ResourceSat
+                 pipeline with a regional 60% minimum usable-coverage threshold.
+             6. ``product_exposure`` is ``PRODUCT_ACTIVE``.
+             7. AWiFS source registry has no readiness blockers.
+             8. AWiFS job result includes live pipeline counts when mocked.
 
 TASK-047: ``bhoonidhi-sync`` stays non-delegated until parity passes.
 
@@ -350,7 +349,7 @@ class TestDryRunParityAllSources:
 
 
 # ===========================================================================
-# TASK-046 — AWiFS below-threshold coverage stays background/gated
+# TASK-046 — AWiFS regional product-active coverage remains retryable
 # ===========================================================================
 
 

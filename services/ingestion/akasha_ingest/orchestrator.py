@@ -62,15 +62,16 @@ Fail-closed guards
 - ``ARCHIVE_ON_DEMAND`` and ``REFERENCE`` cadences are never auto-due.
 - ``AoiScope.OUT_OF_AOI`` and ``AoiScope.REFERENCE_ONLY`` are never planned.
 - ``CommercialState.COMMERCIAL_BLOCKED`` sources are always ``SKIPPED_GATED``.
-- ``bhoonidhi-sync`` command compatibility is preserved: this module does **not**
-  refactor or replace the ``bhoonidhi-sync`` command path (TASK-026).
+- ``bhoonidhi-sync`` command compatibility is preserved as a thin/manual worker
+    CLI wrapper, while scheduler-owned ResourceSat jobs run through this
+    orchestrator lifecycle.
 
-Phase 4 conservative execution
---------------------------------
-Real non-dry-run execution resolves the provider adapter (fail closed if
-unknown), then fails closed with ``pipeline_deferred`` until the real
-search/download/prepare/composite/ingest pipeline is wired. It must not record
-success or advance cadence for a no-op live path.
+Live execution
+--------------
+Approved ResourceSat/Bhoonidhi jobs execute the real
+search/download/prepare/composite/ingest pipeline. Non-Bhoonidhi provider
+pipelines remain fail-closed with ``pipeline_deferred`` until their adapter-
+specific pipelines are implemented.
 
 Stdlib only; no live provider calls at import time.
 """
@@ -119,10 +120,9 @@ from .source_registry import (
 # Constants
 # ---------------------------------------------------------------------------
 
-#: Default lock directory for scheduler and worker locks.
-#: Worker lock files land directly in this directory using legacy-compatible names
-#: (e.g. ``bhoonidhi-sync.<aoi>.worker.lock``) so that new and old wrapper code
-#: share the same lock files and do not dual-acquire.
+#: Default lock directory for scheduler and worker locks. Worker lock files land
+#: directly in this directory using canonical ``<source>.<aoi>.worker.lock``
+#: names so automatic and manual scheduler jobs do not dual-acquire.
 DEFAULT_LOCK_DIR: str = "/srv/akasha/ingestion/"
 
 #: Filename for the lightweight scheduler ledger under the base_dir.
@@ -885,6 +885,9 @@ def run_source_job(
     base_dir: str | Path = DEFAULT_JOB_BASE_DIR,
     lock_dir: str | Path = DEFAULT_LOCK_DIR,
     lookback_days: int = 12,
+    limit: int | None = None,
+    max_downloads: int | None = None,
+    min_coverage_percent: float | None = None,
     now: datetime | None = None,
     ledger_db_path: str | Path | None = None,
     schedule_decision: str | None = None,
@@ -908,11 +911,10 @@ def run_source_job(
         Records ``BLOCKED_BY_LOCK`` and returns.  Another job for the same
         source/AOI is active; retry on the next scheduler pass.
 
-    **approved non-dry-run (Phase 4 conservative)**:
-        Resolves the provider adapter (fails with ``FAILED / unknown_provider``
-        if unrecognised).  Records ``SUCCEEDED`` and updates the scheduler
-        ledger.  Full search/download/prepare/composite pipelines are deferred
-        to Phase 7 after parity tests (TASK-045).
+    **approved ResourceSat/Bhoonidhi non-dry-run**:
+        Resolves the provider adapter, acquires the worker lock, then executes
+        the ResourceSat search/download/prepare/composite/ingest pipeline.
+        Non-Bhoonidhi providers still fail closed with ``pipeline_deferred``.
 
     Parameters
     ----------
@@ -936,6 +938,12 @@ def run_source_job(
         Directory for scheduler and worker lock files.
     lookback_days:
         Lookback window width for auto-computed windows.
+    limit:
+        Optional provider search result cap for manual/ad hoc runs.
+    max_downloads:
+        Optional per-run download cap overriding the registry default.
+    min_coverage_percent:
+        Optional composite validation threshold overriding the registry default.
     now:
         UTC datetime override for deterministic tests.
     ledger_db_path:
@@ -1334,9 +1342,15 @@ def run_source_job(
                     window_start=window_start,
                     window_end=window_end,
                     datetime_range=_sync.datetime_range_for_window(window_start, window_end),
-                    limit=100,
-                    max_downloads=row.max_downloads or None,
-                    min_coverage_percent=row.min_coverage_percent or 95.0,
+                    limit=limit or 100,
+                    max_downloads=(
+                        max_downloads if max_downloads is not None else row.max_downloads or None
+                    ),
+                    min_coverage_percent=(
+                        min_coverage_percent
+                        if min_coverage_percent is not None
+                        else row.min_coverage_percent or 95.0
+                    ),
                 )
                 _ingest = run_resourcesat_ingest(_params, log=_logs.append)
             except (Exception, SystemExit) as exc:  # noqa: BLE001

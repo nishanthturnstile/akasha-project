@@ -1001,6 +1001,52 @@ def test_job_detail_does_not_leak_raw_paths(monkeypatch, tmp_path):
     _assert_no_raw_paths(resp.json(), context=f"/api/monitoring/ingestion-jobs/{job_id}")
 
 
+def test_job_detail_redacts_nested_verification_paths(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_nestedpath"
+    _make_job_dir(
+        jobs_dir,
+        job_id=job_id,
+        observability_override={
+            "providerInputSummary": {
+                "scheduleState": "routine",
+                "rawRoot": "/srv/akasha/data/raw/bhoonidhi",
+            },
+            "providerResponseSummary": {
+                "downloaded": [
+                    {
+                        "itemId": "product-1",
+                        "localPath": "C:\\Users\\operator\\secret\\product.zip",
+                    }
+                ]
+            },
+            "verificationSummary": {
+                "verdict": "pass",
+                "searchManifestPath": "/srv/akasha/data/work/coverage_manifest.json",
+                "downloadManifestPath": "/tmp/download_manifest.json",
+                "checks": [
+                    {
+                        "message": "verified /srv/akasha/data/work/composite/analytic.tif"
+                    }
+                ],
+            },
+        },
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    _assert_no_raw_paths(body, context=f"/api/monitoring/ingestion-jobs/{job_id}")
+    assert "searchManifestPath" not in body["verificationSummary"]
+    assert "downloadManifestPath" not in body["verificationSummary"]
+    assert "rawRoot" not in body["providerInputSummary"]
+    assert "localPath" not in body["providerResponseSummary"]["downloaded"][0]
+    assert "[REDACTED_PATH]" in body["verificationSummary"]["checks"][0]["message"]
+
+
 def test_job_detail_redacts_paths_from_failure_messages(monkeypatch, tmp_path):
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()

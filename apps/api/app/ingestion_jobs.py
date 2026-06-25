@@ -238,6 +238,42 @@ def _redact_string_list(values: list[str]) -> list[str]:
     return redacted
 
 
+def _is_raw_path_key(key: str) -> bool:
+    """Return True for nested monitoring keys that commonly carry host paths."""
+    compact = key.replace("_", "").replace("-", "").lower()
+    return compact.endswith("path") or compact in {
+        "localpath",
+        "rawroot",
+        "outdir",
+        "workdir",
+        "tempdir",
+        "ledgerpath",
+        "downloadedpath",
+    }
+
+
+def _sanitize_monitoring_value(value: Any) -> Any:
+    """Recursively remove host paths/secrets from scheduler artifacts.
+
+    Scheduler writers redact known secrets, but the BFF is the final browser
+    boundary. Be defensive here: drop path-shaped keys and redact path-shaped
+    substrings from arbitrary strings before returning monitoring payloads.
+    """
+    if isinstance(value, dict):
+        safe: dict[str, Any] = {}
+        for key, nested in value.items():
+            key_text = str(key)
+            if _is_raw_path_key(key_text):
+                continue
+            safe[key_text] = _sanitize_monitoring_value(nested)
+        return safe
+    if isinstance(value, list):
+        return [_sanitize_monitoring_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_error(value)
+    return value
+
+
 def _encode_ledger_cursor(scheduled_at: str, job_id: str) -> str:
     return f"{scheduled_at}|{job_id}"
 
@@ -849,21 +885,29 @@ def get_ingestion_job(job_id: str) -> IngestionJobDetail:
     window_start = req_data.get("windowStart") or status_data.get("windowStart")
     window_end = req_data.get("windowEnd") or status_data.get("windowEnd")
 
-    prov_input: dict[str, Any] = obs_data.get("providerInputSummary") or {}
-    prov_response: dict[str, Any] = obs_data.get("providerResponseSummary") or {}
-    verification: dict[str, Any] = obs_data.get("verificationSummary") or {}
+    prov_input: dict[str, Any] = _sanitize_monitoring_value(
+        obs_data.get("providerInputSummary") or {}
+    )
+    prov_response: dict[str, Any] = _sanitize_monitoring_value(
+        obs_data.get("providerResponseSummary") or {}
+    )
+    verification: dict[str, Any] = _sanitize_monitoring_value(
+        obs_data.get("verificationSummary") or {}
+    )
 
     # Strip artifact_summary_path from any result data (raw server path — SEC-006).
-    safe_result: dict[str, Any] = {
-        k: v for k, v in result_data.items() if k != "artifactSummaryPath"
-    }
+    safe_result: dict[str, Any] = _sanitize_monitoring_value(
+        {k: v for k, v in result_data.items() if k != "artifactSummaryPath"}
+    )
 
     # Build safe request payload (already redacted at scheduler write time).
-    safe_request: dict[str, Any] = {
-        k: v
-        for k, v in req_data.items()
-        if k not in {"artifactVersion", "redactionVersion"}
-    }
+    safe_request: dict[str, Any] = _sanitize_monitoring_value(
+        {
+            k: v
+            for k, v in req_data.items()
+            if k not in {"artifactVersion", "redactionVersion"}
+        }
+    )
 
     updated_at = (
         status_data.get("updatedAt")

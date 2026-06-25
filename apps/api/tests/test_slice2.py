@@ -394,8 +394,8 @@ def test_sources_endpoint_contract():
     assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
     assert rs["metricsProvisional"] is True
     awifs = sources["resourcesat-2a-awifs-boa"]
-    assert awifs["availabilityStatus"] == "gated"
-    assert awifs["gatedReason"] == "No validated AWiFS BOA composite has been ingested."
+    assert awifs["availabilityStatus"] == "active"
+    assert awifs["gatedReason"] is None
     assert awifs["analysisLevel"] == "regional"
     assert awifs["resolutionMeters"] == 56
     assert awifs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
@@ -435,14 +435,14 @@ def test_sources_endpoint_contract():
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["displayModes"] == ["NDVI_CONTEXT"]
-    # EOS-04 and NISAR are activated as display-only SAR sources (Phase 1):
-    # active, no optical indices, VV grayscale backscatter display only.
+    # EOS-04 and NISAR are scaffolded SAR sources: no optical indices,
+    # VV grayscale backscatter display only, gated until validation.
     assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
-    assert sources["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "active"
+    assert sources["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "gated"
     assert sources["eos-04-sar-mrs-l2b"]["supportedIndices"] == []
     assert sources["eos-04-sar-mrs-l2b"]["displayModes"] == ["VV_GRAYSCALE"]
     assert sources["nisar-ssar-beta-gcov"]["kind"] == "sar"
-    assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "active"
+    assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "gated"
     assert sources["nisar-ssar-beta-gcov"]["supportedIndices"] == []
     assert sources["nisar-ssar-beta-gcov"]["displayModes"] == ["VV_GRAYSCALE"]
     cartosat = sources["cartosat-3-gated"]
@@ -480,11 +480,10 @@ def test_legacy_sentinel_sources_are_opt_in(monkeypatch):
     assert s1["supportedIndices"] == []
 
 
-def test_phase5_gated_collection_contracts_are_loadable():
+def test_phase5_collection_contracts_are_loadable():
     from app.raster import catalog_resolver as catalog
 
     for source_id in (
-        "resourcesat-2a-awifs-boa",
         "eos-06-ocm-lac-ndvi-8day-360m",
         "irs-1c-liss3-archive",
         "cartosat-3-gated",
@@ -492,6 +491,11 @@ def test_phase5_gated_collection_contracts_are_loadable():
         collection = catalog.get_collection(source_id)
         assert collection["id"] == source_id
         assert collection.get("akasha:availability_status") == "gated"
+
+    awifs = catalog.get_collection("resourcesat-2a-awifs-boa")
+    assert awifs["id"] == "resourcesat-2a-awifs-boa"
+    assert awifs.get("akasha:availability_status") == "active"
+    assert awifs.get("akasha:gated_reason") is None
 
     # EOS-04 / NISAR SAR collections are loadable and now active (display-only).
     for source_id in ("eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"):
@@ -552,7 +556,7 @@ def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
     assert item["assets"]["mask"]["href"].endswith("/mask.tif")
 
 
-def test_awifs_seed_collection_contract_is_regional_and_gated():
+def test_awifs_seed_collection_contract_is_regional_and_active():
     from app.raster import catalog_resolver as catalog
 
     source_id = "resourcesat-2a-awifs-boa"
@@ -563,10 +567,8 @@ def test_awifs_seed_collection_contract_is_regional_and_gated():
     assert collection["summaries"]["gsd"] == [56]
     assert collection["akasha:bhoonidhi_collection_id"] == "ResourceSat-2A_AWIFS_BOA"
     assert collection["akasha:analysis_level"] == "regional"
-    assert collection["akasha:availability_status"] == "gated"
-    assert collection["akasha:gated_reason"] == (
-        "No validated AWiFS BOA composite has been ingested."
-    )
+    assert collection["akasha:availability_status"] == "active"
+    assert collection["akasha:gated_reason"] is None
     assert collection["akasha:supported_indices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert collection["akasha:display_modes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert collection["akasha:default_display_mode"] == "FCC"
@@ -649,8 +651,10 @@ def test_layers_default_tile_template_is_same_origin_api_route():
     body = r.json()
     assert body["sourceId"] == "resourcesat-2a-liss3-boa"
     assert body["acquisitionDate"] == "2026-03-19"
-    assert body["displayMode"] == "NDVI"
-    assert body["tileUrlTemplate"] is None
+    assert body["displayMode"] == "FCC"
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
+    )
 
 
 def _stac_item(item_id, acquisition_date, bbox, analytic_href, scl_href, usable=80.0):
@@ -1121,8 +1125,10 @@ def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite
     body = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa").json()
 
     assert body["acquisitionDate"] == "2026-04-18"
-    assert body["displayMode"] == "NDVI"
-    assert body["tileUrlTemplate"] is None
+    assert body["displayMode"] == "FCC"
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/resourcesat-2a-liss3-boa/2026-04-18/FCC/{z}/{x}/{y}.png"
+    )
 
 
 def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_missing(
@@ -1264,16 +1270,18 @@ def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
     assert body["cloudMaskedPercent"] is None
 
 
-def test_layers_default_uses_resourcesat_ndvi_overlay_mode():
+def test_layers_default_uses_resourcesat_natural_fcc_mode():
     r = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa")
     assert r.status_code == 200
     body = r.json()
     assert body["sourceId"] == "resourcesat-2a-liss3-boa"
-    assert body["displayMode"] == "NDVI"
+    assert body["displayMode"] == "FCC"
     assert body["defaultDisplayMode"] == "FCC"
     assert body["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert body["defaultMapDisplayMode"] == "NDVI"
-    assert body["tileUrlTemplate"] is None
+    assert body["tileUrlTemplate"] == (
+        "/api/tiles/resourcesat-2a-liss3-boa/2026-03-19/FCC/{z}/{x}/{y}.png"
+    )
 
 
 def test_context_source_default_layer_uses_declared_display_asset(monkeypatch):

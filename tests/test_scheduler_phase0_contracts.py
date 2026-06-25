@@ -88,11 +88,11 @@ def test_phase0_contract_defines_catalog_mapping_and_current_ownership_matrix() 
 
     assert "`resourcesat-2a`" in contract
     assert "`background_only`" in contract
-    assert "`legacy_timer`" in contract
     assert "`manual_only`" in contract
-    assert "akasha-bhoonidhi-sync.timer" in contract
-    assert "akasha-bhoonidhi-liss4-sync.timer" in contract
-    assert "systemctl enable --now akasha-bhoonidhi-sync.timer" in contract
+    assert "`scheduler_active`" in contract
+    assert "old source-specific Bhoonidhi timers were removed" in contract
+    assert "scripts/staging_ingestion_job.py trigger" in contract
+    assert "systemctl enable --now akasha-bhoonidhi-sync.timer" not in contract
 
 
 def test_phase0_contract_catalog_slugs_match_satellite_catalog() -> None:

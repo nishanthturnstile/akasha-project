@@ -24,17 +24,17 @@ to your laptop for local testing.
 | You never SSH into staging for an interactive shell | Job-control keys are locked to the job CLI. `sync-local` also needs an ops-approved artifact-sync SSH path because it reads final manifests/COGs with noninteractive `cat`/`tar`; it still must not expose a shell or raw provider archives. |
 | Bhoonidhi only runs on staging | It's the whitelisted IP; running it locally would fail and leak nothing useful. |
 | Only final COGs reach your laptop | No raw provider ZIPs, no credentials, ever. |
-| One running job per AOI worker lock | Prevents you + the scheduled timer + another dev from triple-hitting Bhoonidhi. Different sources on the same AOI serialize today. |
+| One running job per source/AOI worker lock | Prevents you + the scheduled timer + another dev from triple-hitting Bhoonidhi. Automatic and manual scheduler jobs share the same lock directory. |
 
 There are **two ways imagery gets produced** on staging:
 
-1. **Automatic** — scheduled timers (`akasha-bhoonidhi-sync`, plus source-specific timers such as
-   `akasha-bhoonidhi-liss4-sync`) keep staging fresh on their own.
+1. **Automatic** — the provider-agnostic scheduler timer (`akasha-ingestion-scheduler.timer`)
+  evaluates due sources and runs approved ResourceSat/Bhoonidhi jobs.
 2. **On-demand** — you trigger a job with the CLI when you need specific imagery now.
 
-The ad hoc runner shares the standard Bhoonidhi AOI worker lock. Source-specific timers may have
-their own wrapper locks; coordinate LISS-4 ad hoc runs with the timer window until those locks are
-unified.
+The ad hoc runner invokes `worker.py schedule-source --approved-runtime --manual` and shares the
+same canonical worker lock directory as the automatic scheduler, so a manual run and a scheduled
+run cannot overlap for the same source/AOI.
 
 ### Scheduler transition note
 
@@ -44,66 +44,51 @@ The Phase 0 scheduler contract is
 [satellite-ingestion-scheduler-contracts.md](reference/satellite-ingestion-scheduler-contracts.md).
 How the scheduler works end-to-end, how to trigger/control it, and how to add a new satellite are in
 [satellite-ingestion-orchestration-and-scheduler.md](satellite-ingestion-orchestration-and-scheduler.md).
-Until that scheduler is installed and cut over, this CLI remains the production-safe path for
-Bhoonidhi ad hoc jobs. The full ops runbook for compatibility mode cutover and rollback is in
-[infra/selfhosted/README.md](../infra/selfhosted/README.md).
+The legacy source-specific Bhoonidhi timers were removed during cutover; this CLI and the scheduler
+are now the supported paths.
 
-During cutover, each source/AOI must have exactly one owner:
+Each source/AOI must have exactly one active owner:
 
 | Ownership mode | Meaning |
 |---|---|
-| `legacy_timer` | Existing source-specific timer owns that source/AOI. These timers are also called **compatibility-mode timers** once the orchestrator is installed. |
 | `scheduler_dry_run` | Scheduler may plan/log due decisions but must not run real jobs. |
-| `scheduler_active` | Scheduler owns real jobs; corresponding compatibility-mode timer is disabled. |
+| `scheduler_active` | Scheduler owns real jobs. |
 | `manual_only` | Operators trigger jobs manually through this CLI; no timer owns this source/AOI. |
 
-**One-owner rule:** Do not run the scheduler and a compatibility-mode timer against the same
-source/AOI at the same time. Running both causes double-downloads, duplicate STAC items, and lock
-contention.
+**One-owner rule:** Do not start an ad hoc manual scheduler job while an automatic scheduler job is
+already in-flight for the same source/AOI. Both paths share the lock directory, but coordinate with
+the job list before forcing retries.
 
-Initial ownership stays with existing timers (the scheduler starts disabled):
+Current ResourceSat ownership:
 
-| Source/AOI | Current owner | Compatibility-mode timer | Scheduler state |
-|---|---|---|---|
-| `resourcesat-2a-liss3-boa` / `bangalore-60km` | `legacy_timer` | `akasha-bhoonidhi-sync.timer` | disabled |
-| `resourcesat-2a-liss4-mx70-l2` / `bangalore-60km` | `legacy_timer` | `akasha-bhoonidhi-liss4-sync.timer` | disabled |
-| `resourcesat-2a-awifs-boa` / `bangalore-60km` | `manual_only` | none | disabled |
+| Source/AOI | Current owner | Notes |
+|---|---|---|
+| `resourcesat-2a-liss3-boa` / `bangalore-60km` | `scheduler_active` | Production field analytics source. |
+| `resourcesat-2a-liss4-mx70-l2` / `bangalore-60km` | `scheduler_active` | High-resolution field analytics source. |
+| `resourcesat-2a-awifs-boa` / `bangalore-60km` | `scheduler_active` | Regional/coarse product-active source; 60% minimum usable coverage. |
 
-#### Canary flow
+#### Canary / dry-run flow
 
-1. Install the scheduler with `SCHEDULER_ENABLED=false` and `SCHEDULER_DRY_RUN=true`. Do **not**
-   disable any compatibility-mode timer yet.
-2. Let the scheduler run one dry-run cycle. Validate the schedule plan:
-   `cat /srv/akasha/ingestion/scheduler/schedule_state.json` and inspect the journal. Confirm due
-   decisions, lock paths, and next windows are correct for all registered sources.
-3. Select one canary source/AOI (`resourcesat-2a-liss3-boa` / `bangalore-60km`). Stop and disable
-   **only** its compatibility-mode timer before enabling scheduler active mode for that source/AOI.
-4. Enable `SCHEDULER_DRY_RUN=false` with `maxConcurrentSources=1`. Let one capped real job complete
-   and confirm the output matches what the compatibility timer previously produced.
-5. Only after canary parity is confirmed, extend scheduler ownership to additional sources/AOIs one
-   at a time.
+1. Keep `AKASHA_SCHEDULER_ACTIVE=false` or `AKASHA_SCHEDULER_DRY_RUN=true` for a plan-only pass.
+2. Inspect `journalctl -u akasha-ingestion-scheduler.service -n 100 --no-pager` and the BFF
+  monitoring pages for due decisions, windows, and lock behavior.
+3. For one manual canary, use `scripts/staging_ingestion_job.py trigger --source ... --dry-run`.
+4. When the canary looks correct, run one bounded live job with small `--max-downloads` and validate
+  the resulting composite before widening the run budget.
 
 #### Rollback
 
-Source-scoped rollback procedure (reverse the canary for the affected source/AOI):
+Rollback is scheduler-first: pause automatic scheduling, then use bounded manual scheduler runs
+while investigating.
 
 1. Stop and disable the scheduler timer:
    ```bash
    sudo systemctl stop akasha-ingestion-scheduler.timer akasha-ingestion-scheduler.service
    sudo systemctl disable akasha-ingestion-scheduler.timer
    ```
-2. Confirm no scheduler job is queued or running for the source/AOI — do not re-enable the
-   compatibility-mode timer while a scheduler job may still be in-flight:
-   ```bash
-   cat /srv/akasha/ingestion/scheduler/schedule_state.json
-   ```
-3. Restore any pre-cutover env overrides in `/etc/akasha/bhoonidhi-sync.env`, then re-enable the
-   corresponding compatibility-mode timer:
-   ```bash
-   sudo systemctl enable --now akasha-bhoonidhi-sync.timer
-   sudo systemctl enable --now akasha-bhoonidhi-liss4-sync.timer
-   ```
-4. Confirm the next legacy timer due time: `systemctl list-timers akasha-bhoonidhi-sync.timer`.
+2. Confirm no scheduler job is queued/running for the source/AOI in the monitoring UI or job list.
+3. Trigger a bounded manual run only if needed through `scripts/staging_ingestion_job.py trigger`.
+4. Re-enable the scheduler timer after the issue is understood and the dry-run plan looks correct.
 
 Monitoring APIs may expose only redacted scheduler snapshots and opaque artifact handles. Raw
 provider archives, full logs, internal paths, signed URLs, and credentials remain wrapper/CLI-only

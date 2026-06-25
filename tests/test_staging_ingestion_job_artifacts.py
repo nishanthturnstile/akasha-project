@@ -98,7 +98,11 @@ def test_runner_contract_uses_compose_worker_lock_redaction_and_group_only_artif
     assert "--pull \"${pull_policy}\"" in runner
     assert "AKASHA_SYNC_PULL_POLICY:-never" in runner
     assert "--lock-dir \"${worker_lock_dir}\"" in runner
-    assert "AKASHA_SCHEDULER_LOCK_DIR:-/srv/akasha/ingestion/locks" in runner
+    assert "AKASHA_SCHEDULER_LOCK_DIR:-/srv/akasha/ingestion" in runner
+    assert "--window-start \"${window_start}\"" in runner
+    assert "--window-end \"${window_end}\"" in runner
+    assert "--max-downloads \"${max_downloads}\"" in runner
+    assert "--min-coverage-percent \"${min_coverage_percent}\"" in runner
     assert "command.txt" in runner
     assert "job.log" in runner
     assert "redact_stream" in runner

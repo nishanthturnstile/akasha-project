@@ -1,8 +1,7 @@
 """Tests for the ingestion-scheduler systemd artifacts (TASK-052).
 
-Asserts that scheduler artifacts exist and preserve staging-safe behaviour without
-executing real systemd commands. Mirrors test_bhoonidhi_systemd_artifacts.py in
-structure and naming conventions.
+Asserts that scheduler artifacts exist and preserve staging-safe behaviour
+without executing real systemd commands.
 """
 import shutil
 import subprocess
@@ -67,7 +66,7 @@ def test_timer_not_enabled_by_default_comment():
     timer = read_artifact("timer")
     # Must mention that INSTALL is DISABLED by default.
     assert "INSTALL DISABLED" in timer or "disabled" in timer.lower()
-    # Must mention rollback or re-enable of legacy timers.
+    # Must mention rollback / disabling the scheduler timer.
     assert "ROLLBACK" in timer or "rollback" in timer.lower()
 
 
@@ -310,17 +309,15 @@ def test_wrapper_data_paths_stay_under_srv_akasha():
     assert "/srv/akasha/data/work/bhoonidhi" in service
 
 
-def test_wrapper_lock_dir_compatible_with_legacy_bhoonidhi_worker_locks():
-    """Lock directory must be /srv/akasha/ingestion (shared with Bhoonidhi worker locks)."""
+def test_wrapper_uses_canonical_scheduler_worker_lock_dir():
+    """Lock directory must be /srv/akasha/ingestion for all scheduler paths."""
     wrapper = read_artifact("wrapper")
-    # LOCK_DIR default is the same dir that holds bhoonidhi-sync.*.worker.lock files.
     assert "/srv/akasha/ingestion" in wrapper
     # Global scheduler lock is separate from the per-source worker locks.
     assert "scheduler.global.lock" in wrapper
-    # The wrapper must document that ResourceSat jobs reuse legacy worker lock names.
-    assert "reuse the legacy worker lock filenames" in wrapper
-    assert "bhoonidhi-sync.<aoi>.worker.lock" in wrapper
-    assert "mutually exclusive" in wrapper
+    # The wrapper must document canonical worker lock filenames.
+    assert "<source>.<aoi>.worker.lock" in wrapper
+    assert "akasha-ingestion-job-runner.sh" in wrapper
     assert "scheduler.<src>.<aoi>.lock" not in wrapper
 
 
@@ -344,8 +341,7 @@ def test_wrapper_logs_rollback_info_when_not_active():
     """Wrapper must log rollback information when running in plan-only mode."""
     wrapper = read_artifact("wrapper")
     assert "ROLLBACK" in wrapper or "rollback" in wrapper.lower()
-    # Must mention legacy timers in rollback context.
-    assert "legacy" in wrapper.lower() or "source-specific" in wrapper.lower()
+    assert "bounded manual scheduler runs" in wrapper
 
 
 def test_wrapper_includes_run_header_for_observability():
@@ -430,19 +426,19 @@ def test_env_example_contains_provider_knobs_for_bhoonidhi():
 
 
 def test_env_example_contains_ownership_matrix():
-    """Env example must include the legacy-timer/scheduler ownership matrix."""
+    """Env example must include the scheduler source/AOI ownership matrix."""
     env = read_artifact("env_example")
     # Must mention ownership tracking.
     assert "ownedBy" in env or "ownership" in env.lower()
     # Must list known sources.
     assert "resourcesat-2a-liss3-boa" in env
     assert "resourcesat-2a-liss4-mx70-l2" in env
-    # Must include rollback commands.
-    assert "systemctl enable" in env or "systemctl" in env
+    # Must document scheduler-active ownership after cutover.
+    assert "scheduler_active" in env
 
 
 def test_env_example_contains_rollback_commands():
-    """Env example must document rollback commands for legacy timers."""
+    """Env example must document rollback by pausing the scheduler timer."""
     env = read_artifact("env_example")
     assert "ROLLBACK" in env
     assert "systemctl" in env
@@ -548,22 +544,23 @@ def test_installer_prints_next_steps_and_rollback():
     assert "canary" in installer.lower() or "dry-run" in installer.lower() or "DRY_RUN" in installer
 
 
-# ── Compatibility / docs comments across artifacts ────────────────────────────
+# ── Scheduler ownership / docs comments across artifacts ─────────────────────
 
 
-def test_artifacts_mention_compatibility_mode():
-    """At least one artifact must document compatibility mode / legacy timer."""
+def test_artifacts_mention_deleted_legacy_timers():
+    """Artifacts must state deleted source-specific timers are not rollback targets."""
     combined = "\n".join(read_artifact(k) for k in EXPECTED_FILES)
-    # The docs should mention compatibility with legacy per-source timers.
-    assert "compatibility" in combined.lower() or "legacy" in combined.lower()
+    assert (
+        "timers were removed" in combined.lower()
+        or "deleted bhoonidhi timers" in combined.lower()
+    )
 
 
 def test_artifacts_mention_one_owner_rule():
-    """Artifacts must state that scheduler and legacy timer must not own the same source."""
+    """Artifacts must state automatic/manual scheduler paths share one lock namespace."""
     combined = "\n".join(read_artifact(k) for k in EXPECTED_FILES)
-    # One-owner rule: NEVER let scheduler and legacy timer own the same source/AOI.
     assert (
-        "simultaneously" in combined.lower()
+        "in-flight job" in combined.lower()
         or "NEVER" in combined
         or "never" in combined.lower()
     )
@@ -576,11 +573,10 @@ def test_artifacts_mention_canary_flow():
 
 
 def test_artifacts_mention_rollback():
-    """Artifacts must describe rollback from the scheduler to legacy timers."""
+    """Artifacts must describe rollback by pausing the scheduler."""
     combined = "\n".join(read_artifact(k) for k in EXPECTED_FILES)
     assert "ROLLBACK" in combined or "rollback" in combined.lower()
-    # Rollback must mention re-enabling legacy timers.
-    assert "akasha-bhoonidhi-sync.timer" in combined
+    assert "akasha-ingestion-job.sh" in combined
 
 
 # ── Installer dry-run (bash-only) ─────────────────────────────────────────────

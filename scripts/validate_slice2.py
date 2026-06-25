@@ -240,9 +240,10 @@ try:
     check(
         lay.status_code == 200
         and lay_body["defaultMapDisplayMode"] == "NDVI"
-        and lay_body["displayMode"] == "NDVI"
-        and lay_body["tileUrlTemplate"] is None,
-        "GET /api/layers/default defaults to NDVI index overlay (no FCC tile template)",
+        and lay_body["displayMode"] == "FCC"
+        and isinstance(lay_body["tileUrlTemplate"], str)
+        and "/api/tiles/resourcesat-2a-liss3-boa/" in lay_body["tileUrlTemplate"],
+        "GET /api/layers/default defaults to ResourceSat FCC imagery",
     )
     from app.raster import catalog_resolver as _catalog
 

@@ -93,10 +93,9 @@ must implement those contracts without changing frontend source ranking or mixed
 | `vendor` | provider-specific | provider-specific | ✅ | Commercial VHR disabled until contract/quota/readiness. |
 | `usda`/`naip` | ✅ | ✅ | ❌ | Reference/out-of-AOI for India deployments. |
 
-AWiFS is the canonical background-ingestion example: search/download/prepare attempts may run, but
-if validation returns low coverage, the job remains `validation_failed`, product exposure remains
-`background_only`, and AWiFS stays gated until a validated composite reaches the accepted coverage
-threshold.
+AWiFS is now the canonical regional/coarse ResourceSat product-active example: search/download/
+prepare attempts run through the scheduler, validation uses a 60% minimum usable-coverage threshold,
+and BFF exposure stays regional so field-level best-observation logic still prefers LISS-3/LISS-4.
 
 **The single biggest blocker for non-ISRO platforms:** shared orchestration, not just a new
 provider client. `worker.py` still instantiates `bhoonidhi.BhoonidhiClient()` directly in
@@ -186,13 +185,11 @@ never overridden by later gates.
 
 **Transition examples:**
 
-- **AWiFS gated → product-active path:**
-  Start with `scheduleState=background_only` + `productExposure=background_only`. Run
-  search/download/prepare/validate attempts. If validation passes (`validationState=validation_passed`),
-  an operator explicitly promotes `scheduleState=routine` and `productExposure=product_active`.
-  Until that promotion, AWiFS stays gated even if ingestion runs succeed. If validation fails
-  (`validationState=validation_failed`, `failureKind=low_coverage`), the source remains gated and
-  `productExposure` stays `background_only`.
+- **AWiFS regional product-active path:**
+  AWiFS now uses `scheduleState=routine`, `productExposure=product_active`, and
+  `validationState=validation_passed` with a 60% regional usable-coverage threshold. It remains
+  `analysisLevel=regional`, so it is selectable for regional/coarse context but is not a replacement
+  for LISS-3/LISS-4 field-level monitoring.
 
 - **New commercial source (e.g. PlanetScope) → approved path:**
   Default state is `commercialState=commercial_blocked` + `productExposure=hidden`. After a
@@ -378,7 +375,7 @@ known-but-not-yet-implemented providers raise `ProviderActionUnsupported` on eve
 
 | Tier | Meaning | Platforms |
 |---|---|---|
-| **T1 — Free, buildable now** | Open API + free data; ingest like ResourceSat once the provider client exists | Sentinel-2, Sentinel-1, Landsat 8, Landsat 9, MODIS, EOS-04, EOS-06, NISAR, **ResourceSat-2A LISS-3 ✅ active baseline; LISS-4 ✅ active field enhancement; AWiFS 🟡 gated** |
+| **T1 — Free, buildable now** | Open API + free data; ingest like ResourceSat once the provider client exists | Sentinel-2, Sentinel-1, Landsat 8, Landsat 9, MODIS, EOS-04, EOS-06, NISAR, **ResourceSat-2A LISS-3 ✅ active baseline; LISS-4 ✅ active field enhancement; AWiFS ✅ active regional** |
 | **T2 — Free, archive-only** | Free but no new acquisitions (history only) | Landsat 7, Landsat 5, IRS-1C |
 | **T3 — Commercial / paid** | API exists but gated behind a licensing/tasking contract + cost | PlanetScope, SkySat, SuperView NEO-1, BlackSky Gen 3, KOMPSAT-3A, ALOS-2, Cartosat-3 |
 | **T4 — Free but out-of-AOI** | Free + open but does not cover India | NAIP (US-only) |
@@ -391,7 +388,7 @@ known-but-not-yet-implemented providers raise `ProviderActionUnsupported` on eve
 |---|---|---|---|---|---|---|---|
 | ResourceSat-2A LISS-3 BOA | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | ✅ Active baseline |
 | ResourceSat-2A LISS-4 MX70 L2 | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | ✅ Active field enhancement |
-| ResourceSat-2A AWiFS BOA | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | 🟡 Gated until TASK-049 |
+| ResourceSat-2A AWiFS BOA | ISRO Bhoonidhi | Free | Password + **IP allow-list** | Optical | ✅ | reuse | ✅ Active regional/coarse |
 | Sentinel-2 L2A | ESA CDSE | Free | OAuth2 (Keycloak) | Optical | ✅ | **cdse** | 🟢 Buildable |
 | Sentinel-1 GRD | ESA CDSE | Free | OAuth2 (Keycloak) | SAR | ✅ | **cdse** | 🟢 Buildable |
 | Landsat 8 | USGS/NASA | Free | ERS / Earthdata / none (cloud) | Optical | ✅ | **usgs** | 🟢 Buildable |
@@ -433,11 +430,11 @@ Client + contract already implemented in [bhoonidhi.py](../../services/ingestion
 > Verified 2026-06-14: the Bhoonidhi catalog contains `ResourceSat-2A_LISS3_BOA` and the other
 > ResourceSat/EOS collections, but **Cartosat-3 is absent** (only a CartoSat-1 DEM collection exists).
 
-#### A.1 ResourceSat-2A variants — LISS-3 active, LISS-4/AWiFS gated
+#### A.1 ResourceSat-2A variants — LISS-3, LISS-4, and AWiFS active
 
 | Field | Value |
 |---|---|
-| Status / tier | LISS-3: active baseline · LISS-4: active field enhancement · AWiFS: gated until TASK-049 |
+| Status / tier | LISS-3: active baseline · LISS-4: active field enhancement · AWiFS: active regional/coarse |
 | Collections | `ResourceSat-2A_LISS3_BOA`, `ResourceSat-2A_LISS4-MX70_L2`, `ResourceSat-2A_AWIFS_BOA` |
 | Product / format | Bottom-of-atmosphere reflectance; raw uint16 DN GeoTIFF (`BAND2/3/4/5.tif`) |
 | Analytic bands | LISS-3/AWiFS: `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`; LISS-4: `[BAND2 Green, BAND3 Red, BAND4 NIR]` |
@@ -448,7 +445,7 @@ Client + contract already implemented in [bhoonidhi.py](../../services/ingestion
 | Indices | NDVI, MSAVI, NDMI, NDWI_GREEN_NIR (LISS-4: no NDMI — no SWIR; no NDRE — no red edge) |
 | India AOI | ✅ `bangalore-60km` |
 | Licensing | Redistribution approved by Bhoonidhi; attribute "ISRO-IRS, ISRO/NRSC, Bhoonidhi" |
-| Verdict | Variant-specific: LISS-3 is the verified reference implementation; LISS-4 is active as a high-resolution field enhancement where verified coverage exists; AWiFS remains gated until BOA composite validation and activation evidence. |
+| Verdict | Variant-specific: LISS-3 is the verified reference implementation; LISS-4 is active as a high-resolution field enhancement where verified coverage exists; AWiFS is active for regional/coarse analytics with a 60% minimum usable-coverage threshold. |
 
 #### A.2 EOS-04 (RISAT) — 🟡 gated, scaffolded
 

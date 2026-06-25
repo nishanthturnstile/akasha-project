@@ -7,16 +7,15 @@
 #   AKASHA_SCHEDULER_APPROVED_RUNTIME=true
 #   AKASHA_SCHEDULER_DRY_RUN=false
 #
-# ROLLBACK: sudo systemctl stop akasha-ingestion-scheduler.timer
-#           sudo systemctl disable akasha-ingestion-scheduler.timer
-#           sudo systemctl enable --now <source-specific-timer>.timer
-# See ingestion-scheduler.env.example for per-source ownership controls.
+# ROLLBACK: sudo systemctl disable --now akasha-ingestion-scheduler.timer
+#           Use akasha-ingestion-job.sh for bounded manual scheduler runs while
+#           the timer is paused. Deleted Bhoonidhi timers are not rollback targets.
 #
 # STAGING GUARDRAILS enforced here:
 #   - All data stays on /srv/akasha (no /tmp, /, /var/tmp, /var/lib/docker).
 #   - Global scheduler lock: /srv/akasha/ingestion/scheduler.global.lock (held by flock
-#     in the service unit). Worker source/AOI locks live in the same directory and are
-#     compatible with existing Bhoonidhi timer lock paths.
+#     in the service unit). Worker source/AOI locks live in the same directory
+#     for both automatic and manual scheduler jobs.
 #   - ionice/nice applied to docker compose runs.
 #   - Secrets and S3/MinIO paths are redacted from all log output.
 #   - No direct heavy ad hoc downloads: this script only invokes schedule-plan or
@@ -112,12 +111,9 @@ fi
 
 # ── Ensure required directories ───────────────────────────────────────────────
 # All raster/raw/work/COG/job data must stay under /srv/akasha (OPS-002).
-# Worker lock dir: compatible with existing Bhoonidhi timer lock paths because
-# ResourceSat scheduler jobs reuse the legacy worker lock filenames:
-#   bhoonidhi-sync.<aoi>.worker.lock
-#   bhoonidhi-liss4-sync.<aoi>.worker.lock
-# This makes scheduler jobs and compatibility-mode timers mutually exclusive
-# for the same source/AOI during cutover.
+# Worker lock dir: shared by automatic scheduler jobs and ad hoc
+# akasha-ingestion-job-runner.sh jobs, using canonical
+# <source>.<aoi>.worker.lock filenames.
 mkdir -p "${AKASHA_SCHEDULER_BASE_DIR}" "${AKASHA_SCHEDULER_LOCK_DIR}"
 chmod 750 "${AKASHA_SCHEDULER_BASE_DIR}" 2>/dev/null || true
 
@@ -129,7 +125,7 @@ log "timer=akasha-ingestion-scheduler.timer  active=${AKASHA_SCHEDULER_ACTIVE}  
 log "max_concurrent_sources=${AKASHA_SCHEDULER_MAX_CONCURRENT_SOURCES}  window_days=${AKASHA_SCHEDULER_WINDOW_DAYS}"
 log "base_dir=${AKASHA_SCHEDULER_BASE_DIR}  lock_dir=${AKASHA_SCHEDULER_LOCK_DIR}"
 if [[ "${AKASHA_SCHEDULER_ACTIVE}" != "true" ]]; then
-  log "ROLLBACK info: to restore legacy timers, stop this timer and re-enable source-specific timers"
+  log "ROLLBACK info: pause this timer and use bounded manual scheduler runs if needed"
 fi
 
 # ── Plan-only mode (AKASHA_SCHEDULER_ACTIVE != true) ─────────────────────────
@@ -198,7 +194,7 @@ fi
 if [[ "${AKASHA_SCHEDULER_DRY_RUN}" == "true" ]]; then
   log "Active mode: DRY-RUN (AKASHA_SCHEDULER_DRY_RUN=true) — creates job artifacts, no provider calls"
 else
-  log "Active mode: LIVE requested, but orchestrator live pipeline is fail-closed until parity wiring is complete"
+  log "Active mode: LIVE requested — ResourceSat/Bhoonidhi sources run through the orchestrator pipeline"
 fi
 
 due_cmd=(

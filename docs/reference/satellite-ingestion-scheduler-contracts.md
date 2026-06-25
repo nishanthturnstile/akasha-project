@@ -204,17 +204,11 @@ API rules:
 - Operator-only artifact access, if added later, requires owner/admin or a dedicated elevated
   operator role and must still return redacted content by default.
 
-## 6. Cutover, ownership, and rollback
+## 6. Ownership and rollback
 
-Install the scheduler disabled or dry-run first. Move one canary source/AOI at a time from legacy
-timers to scheduler ownership. A source/AOI must have exactly one owner.
-
-Once the orchestrator scheduler timer (`akasha-ingestion-scheduler.timer`) is installed and
-validated, the existing source-specific timers (`akasha-bhoonidhi-sync.timer`,
-`akasha-bhoonidhi-liss4-sync.timer`) are designated **compatibility-mode timers**. They remain
-installed but are disabled for every source/AOI the scheduler owns, and serve as the rollback path
-if the scheduler must be stopped. Do not disable a compatibility-mode timer until the canary for
-that source/AOI passes.
+Install the scheduler disabled or dry-run first. A source/AOI must have exactly one active owner.
+ResourceSat/Bhoonidhi production ownership has now moved to the provider-agnostic scheduler; the
+old source-specific Bhoonidhi timers were removed and are not rollback targets.
 
 Ownership fields:
 
@@ -222,39 +216,35 @@ Ownership fields:
 |---|---|
 | `sourceId` | Akasha source id. |
 | `aoiId` | AOI id, initially `bangalore-60km`. |
-| `ownedBy` | `legacy_timer` (compatibility mode), `scheduler_dry_run`, `scheduler_active`, or `manual_only`. `legacy_timer` and compatibility mode are synonymous: legacy timers become compatibility-mode timers once the orchestrator is installed. |
-| `legacyTimerName` | Existing timer name, if any. Retained as the rollback target even after scheduler cutover. |
+| `ownedBy` | `scheduler_dry_run`, `scheduler_active`, or `manual_only`. `legacy_timer` remains a historical enum value only; no current ResourceSat source uses it. |
 | `schedulerEnabled` | Boolean; true only for `scheduler_dry_run` or `scheduler_active`. |
 | `cutoverDate` | ISO date or `null`. |
-| `rollbackCommand` | Operator command or runbook reference for returning ownership to the previous compatibility-mode timer/env. |
+| `rollbackCommand` | Operator command or runbook reference for pausing scheduler ownership and using bounded manual scheduler runs. |
 
-Initial ownership matrix:
+Current ownership matrix:
 
-| `sourceId` | `aoiId` | `ownedBy` | `legacyTimerName` | `schedulerEnabled` | `cutoverDate` | Rollback command |
-|---|---|---|---|---:|---|---|
-| `resourcesat-2a-liss3-boa` | `bangalore-60km` | `legacy_timer` | `akasha-bhoonidhi-sync.timer` | `false` | `null` | `systemctl enable --now akasha-bhoonidhi-sync.timer` |
-| `resourcesat-2a-liss4-mx70-l2` | `bangalore-60km` | `legacy_timer` | `akasha-bhoonidhi-liss4-sync.timer` | `false` | `null` | `systemctl enable --now akasha-bhoonidhi-liss4-sync.timer` |
-| `resourcesat-2a-awifs-boa` | `bangalore-60km` | `manual_only` | `null` | `false` | `null` | Keep scheduler disabled; use `python scripts/staging_ingestion_job.py trigger --source resourcesat-2a-awifs-boa ...` for approved manual attempts. |
+| `sourceId` | `aoiId` | `ownedBy` | `schedulerEnabled` | `cutoverDate` | Rollback command |
+|---|---|---|---:|---|---|
+| `resourcesat-2a-liss3-boa` | `bangalore-60km` | `scheduler_active` | `true` | `2026-06-25` | Disable scheduler timer; use `scripts/staging_ingestion_job.py trigger --source resourcesat-2a-liss3-boa ...` for bounded manual runs. |
+| `resourcesat-2a-liss4-mx70-l2` | `bangalore-60km` | `scheduler_active` | `true` | `2026-06-25` | Disable scheduler timer; use `scripts/staging_ingestion_job.py trigger --source resourcesat-2a-liss4-mx70-l2 ...` for bounded manual runs. |
+| `resourcesat-2a-awifs-boa` | `bangalore-60km` | `scheduler_active` | `true` | `2026-06-25` | Disable scheduler timer; use `scripts/staging_ingestion_job.py trigger --source resourcesat-2a-awifs-boa ...` for bounded manual runs. |
 
-Cutover sequence:
+Canary sequence:
 
 1. Install scheduler in `dry_run` mode and verify redacted snapshots.
 2. Select one canary source/AOI, initially `resourcesat-2a-liss3-boa` + `bangalore-60km`.
-3. Confirm the scheduler lock namespace matches existing Bhoonidhi worker lock paths so double-runs
-   are blocked during migration.
-4. Disable the compatibility-mode timer for only that source/AOI (never disable before this step).
-5. Enable scheduler active mode with `maxConcurrentSources=1`.
-6. Verify one dry-run and one capped real run before adding more sources.
-7. Record `cutoverDate`, owner, and rollback command in the ownership matrix.
+3. Confirm automatic and ad hoc scheduler paths use the same canonical worker lock directory.
+4. Enable scheduler active mode with `maxConcurrentSources=1`.
+5. Verify one dry-run and one capped real run before widening the run budget.
+6. Record `cutoverDate`, owner, and rollback command in the ownership matrix.
 
 Rollback sequence:
 
 1. Stop scheduler active mode; stop and disable `akasha-ingestion-scheduler.timer`.
-2. Confirm no queued/running scheduler job owns the source/AOI before re-enabling the compatibility
-   timer (a running scheduler job and a live legacy timer on the same source/AOI would conflict).
+2. Confirm no queued/running scheduler job owns the source/AOI.
 3. Disable scheduler ownership for the source/AOI in the registry.
-4. Restore any pre-cutover environment overrides, then re-enable the compatibility-mode timer and env.
-5. Run monitoring/doctor checks and confirm the next compatibility timer due time.
+4. Use `scripts/staging_ingestion_job.py trigger` for bounded manual runs while the timer is paused.
+5. Run monitoring/doctor checks before re-enabling the scheduler timer.
 
 ## 7. Approved-runtime preflights
 
@@ -263,9 +253,9 @@ work starts.
 
 Bhoonidhi rules:
 
-- Non-dry-run Bhoonidhi jobs may run only through the staging systemd sync wrappers
-  (`/opt/akasha/bin/akasha-bhoonidhi-sync.sh`, `/opt/akasha/bin/akasha-bhoonidhi-liss4-sync.sh`)
-  or the restricted ad hoc wrapper (`/opt/akasha/bin/akasha-ingestion-job.sh`) on an approved host.
+- Non-dry-run Bhoonidhi jobs may run only through the scheduler wrapper
+  (`/opt/akasha/bin/akasha-ingestion-scheduler.sh`) or the restricted ad hoc wrapper
+  (`/opt/akasha/bin/akasha-ingestion-job.sh`) on an approved host.
 - Direct `worker.py schedule-*`, future scheduler commands, or direct Docker Compose invocations
   must fail closed unless the run is `dry_run` or an explicit local-test mode is enabled.
 - Approved-host checks must validate the host pool, `/srv/akasha` data root, source/AOI lock path,
@@ -317,7 +307,7 @@ Scheduler monitoring must classify failures into a small set of operator-actiona
 | `stac_registration_failed` | STAC upsert failed. | Check STAC API/pgSTAC health, then retry manifest ingest. |
 | `provider_auth_or_rate_limit` | Provider auth, 401/403/429, session cap, or rate-limit response. | Back off; rotate/check secrets only through deployment secret store. |
 | `stale_lock` | Lock older than stale-lock threshold with no owning process. | Reclaim only after confirming process death. |
-| `rollback_required` | Scheduler cutover run fails release gate. | Stop scheduler ownership and re-enable legacy timer per section 6. |
+| `rollback_required` | Scheduler run fails release gate. | Pause scheduler ownership and use bounded manual scheduler runs per section 6. |
 
 Runbooks must preserve the staging guardrails: keep raster data under `/srv/akasha`, use wrappers,
 avoid direct heavy Docker commands on staging, and redact secrets in every copied artifact.

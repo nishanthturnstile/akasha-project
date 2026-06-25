@@ -430,7 +430,7 @@ _AWIFS_BOA_SPEC = ValidationProfileSpec(
         "4 analytic bands [BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]. "
         "FCC display NIR/RED/GREEN. Akasha threshold mask v1; no SCL. "
         "Reflectance: scale 0.0001, offset 0.0. "
-        "Background-only: product exposure gated until composite coverage >= 95%."
+        "Product-active for regional/coarse analytics with a 60% minimum usable-coverage threshold."
     ),
 )
 

@@ -723,6 +723,15 @@ def finish_job(
     if status not in TERMINAL_STATUSES:
         raise ValueError(f"finish_job requires a terminal status; got {status!r}.")
 
+    def _count(name: str) -> int | None:
+        value = summary.get(name)
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
     ts_str = _now_iso(now)
     transition_status(
         job_id,
@@ -730,6 +739,11 @@ def finish_job(
         base_dir,
         failure_kind=failure_kind,
         failure_message=failure_message,
+        found_count=_count("foundCount"),
+        selected_count=_count("selectedCount"),
+        downloaded_count=_count("downloadedCount"),
+        rejected_count=_count("rejectedCount"),
+        failed_count=_count("failedCount"),
         now=now,
     )
     result = JobResult(

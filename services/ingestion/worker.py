@@ -867,6 +867,11 @@ def cmd_schedule_source(args: argparse.Namespace) -> int:
     dry_run = bool(getattr(args, "dry_run", False))
     local_test = bool(getattr(args, "local_test", False))
     approved_runtime = bool(getattr(args, "approved_runtime", False))
+    window_start = getattr(args, "window_start", None)
+    window_end = getattr(args, "window_end", None)
+    limit = getattr(args, "limit", None)
+    max_downloads = getattr(args, "max_downloads", None)
+    min_coverage_percent = getattr(args, "min_coverage_percent", None)
     trigger = "manual" if getattr(args, "manual", False) else "scheduler"
 
     try:
@@ -876,10 +881,15 @@ def cmd_schedule_source(args: argparse.Namespace) -> int:
             dry_run=dry_run,
             local_test=local_test,
             approved_runtime=approved_runtime,
+            window_start=window_start,
+            window_end=window_end,
             trigger=trigger,
             base_dir=base_dir,
             lock_dir=lock_dir,
             lookback_days=lookback_days,
+            limit=limit,
+            max_downloads=max_downloads,
+            min_coverage_percent=min_coverage_percent,
             ledger_db_path=ledger_db_path,
         )
     except ValueError as exc:
@@ -1332,6 +1342,34 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=12,
         help="Lookback window width in days (default: 12).",
+    )
+    p_sched_src.add_argument(
+        "--window-start",
+        default=None,
+        help="Explicit YYYY-MM-DD search/composite window start for manual runs.",
+    )
+    p_sched_src.add_argument(
+        "--window-end",
+        default=None,
+        help="Explicit YYYY-MM-DD search/composite window end for manual runs.",
+    )
+    p_sched_src.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Provider search result cap for this source run.",
+    )
+    p_sched_src.add_argument(
+        "--max-downloads",
+        type=int,
+        default=None,
+        help="Maximum new products to download in this source run.",
+    )
+    p_sched_src.add_argument(
+        "--min-coverage-percent",
+        type=float,
+        default=None,
+        help="Composite validation coverage threshold for this source run.",
     )
     p_sched_src.add_argument(
         "--base-dir",

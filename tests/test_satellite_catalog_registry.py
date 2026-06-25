@@ -717,7 +717,7 @@ def test_liss4_provider_is_bhoonidhi():
     assert row.provider_adapter == "bhoonidhi"
 
 
-# --- TASK-043: resourcesat-2a-awifs-boa background/gated invariants ----------
+# --- TASK-043: resourcesat-2a-awifs-boa regional product-active invariants ---
 
 
 def test_awifs_is_routine_schedule():

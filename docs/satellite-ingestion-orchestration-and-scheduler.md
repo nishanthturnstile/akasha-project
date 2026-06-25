@@ -277,32 +277,30 @@ It is installed **disabled or dry-run-only** for the cutover window (see §6).
 
 ### One-owner rule
 
-A `source/AOI` pair must have **exactly one** owner. Never let the scheduler and a legacy timer run
-the same source/AOI — that causes double downloads, duplicate STAC items, and lock contention.
+A `source/AOI` pair must have **exactly one** active owner. Never force a manual scheduler job while
+an automatic scheduler job is in-flight for the same source/AOI — that causes double downloads,
+duplicate STAC items, and lock contention.
 
 | `ownedBy` | Meaning |
 |---|---|
-| `legacy_timer` | Existing source-specific timer owns it (a.k.a. *compatibility-mode timer* once the orchestrator is installed). |
 | `scheduler_dry_run` | Scheduler may plan/log only. |
-| `scheduler_active` | Scheduler owns real jobs; the compatibility timer is disabled. |
+| `scheduler_active` | Scheduler owns real jobs. |
 | `manual_only` | Operators trigger via the staging CLI; no timer owns it. |
 
-### Cutover sequence (canary one source at a time)
+### Canary sequence
 
 1. Install the scheduler in `dry_run`; verify redacted snapshots + `schedule-plan`.
 2. Pick one canary, initially `resourcesat-2a-liss3-boa` / `bangalore-60km`.
-3. Confirm the scheduler lock namespace matches the existing Bhoonidhi worker lock paths
-   (`scheduler_locks.py` already maps LISS-3/LISS-4 to their legacy lock names).
-4. Disable the compatibility timer **for that source/AOI only**.
-5. Enable scheduler active with `maxConcurrentSources=1`.
-6. Verify one dry-run + one capped real run before adding more sources.
-7. Record `cutoverDate`, owner, and rollback command in the ownership matrix.
+3. Confirm automatic and ad hoc scheduler paths share the same canonical worker lock directory.
+4. Enable scheduler active with `maxConcurrentSources=1`.
+5. Verify one dry-run + one capped real run before widening the budget.
+6. Record `cutoverDate`, owner, and rollback command in the ownership matrix.
 
 ### Rollback
 
-Stop the scheduler timer → confirm no scheduler job owns the source/AOI → re-enable the
-compatibility-mode timer and any pre-cutover env. Full sequence + the ownership matrix are in the
-[Phase 0 contract §6](reference/satellite-ingestion-scheduler-contracts.md#6-cutover-ownership-and-rollback).
+Stop the scheduler timer → confirm no scheduler job owns the source/AOI → use bounded manual
+`schedule-source` runs if needed. Full sequence + the ownership matrix are in the
+[Phase 0 contract §6](reference/satellite-ingestion-scheduler-contracts.md#6-ownership-and-rollback).
 
 ### Commercial gates (cost safety)
 

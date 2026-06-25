@@ -25,11 +25,11 @@ def test_liss4_source_payload_is_active_after_staging_verification() -> None:
     assert "RECI" not in liss4["mapDisplayModes"]
 
 
-def test_awifs_source_payload_stays_gated_with_regional_limitations() -> None:
+def test_awifs_source_payload_is_active_with_regional_limitations() -> None:
     awifs = catalog.source_payload(RESOURCESAT_AWIFS_SOURCE_ID)
 
-    assert awifs["availabilityStatus"] == "gated"
-    assert awifs["gatedReason"] == "No validated AWiFS BOA composite has been ingested."
+    assert awifs["availabilityStatus"] == "active"
+    assert awifs["gatedReason"] is None
     assert awifs["analysisLevel"] == "regional"
     assert awifs["resolutionMeters"] == 56
     assert awifs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]

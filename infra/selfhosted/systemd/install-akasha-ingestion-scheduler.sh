@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Installs the Akasha ingestion scheduler systemd artifacts on the staging worker VM.
-# Mirrors install-akasha-bhoonidhi-sync.sh in structure and option naming.
+# Installs only the provider-agnostic scheduler artifacts; source-specific
+# Bhoonidhi timers were removed during the scheduler cutover.
 set -euo pipefail
 
 usage() {
@@ -117,8 +118,7 @@ Next steps before enabling live runs:
   3. When plan output is confirmed, set AKASHA_SCHEDULER_ACTIVE=true in the env file.
   4. Keep AKASHA_SCHEDULER_DRY_RUN=true and AKASHA_SCHEDULER_SOURCE=<one-source>
      for canary dry-run validation.
-  5. When canary passes parity, disable the legacy source timer before setting
-     AKASHA_SCHEDULER_DRY_RUN=false.
+  5. When canary passes, set AKASHA_SCHEDULER_DRY_RUN=false for live runs.
 
 Enable timer after validation:
   sudo systemctl enable --now akasha-ingestion-scheduler.timer
@@ -126,6 +126,5 @@ Enable timer after validation:
 
 Rollback:
   sudo systemctl disable --now akasha-ingestion-scheduler.timer
-  sudo systemctl enable --now akasha-bhoonidhi-sync.timer
-  sudo systemctl enable --now akasha-bhoonidhi-liss4-sync.timer
+  Use akasha-ingestion-job.sh for bounded manual schedule-source runs while the timer is paused.
 EOF

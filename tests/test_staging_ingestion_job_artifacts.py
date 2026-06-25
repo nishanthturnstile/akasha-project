@@ -94,10 +94,11 @@ def test_runner_contract_uses_compose_worker_lock_redaction_and_group_only_artif
     assert "AKASHA_INGESTION_NICE:-10" in runner
     assert "AKASHA_INGESTION_IONICE_CLASS:-2" in runner
     assert "AKASHA_INGESTION_IONICE_LEVEL:-7" in runner
-    assert "bhoonidhi-sync" in runner
+    assert "schedule-source" in runner
     assert "--pull \"${pull_policy}\"" in runner
     assert "AKASHA_SYNC_PULL_POLICY:-never" in runner
-    assert "bhoonidhi-sync.${aoi_id}.worker.lock" in runner
+    assert "--lock-dir \"${worker_lock_dir}\"" in runner
+    assert "AKASHA_SCHEDULER_LOCK_DIR:-/srv/akasha/ingestion/locks" in runner
     assert "command.txt" in runner
     assert "job.log" in runner
     assert "redact_stream" in runner

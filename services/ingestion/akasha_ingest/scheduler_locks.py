@@ -26,13 +26,7 @@ sleeping.  Production code must not replace it.
 
 Legacy Bhoonidhi compatibility
 -------------------------------
-Lock-file names for existing ResourceSat sources follow the old Bhoonidhi
-wrapper convention so that running new and old code against the same lock
-directory does not cause collisions or dual-acquire:
-
-- ``resourcesat-2a-liss3-boa``     → ``bhoonidhi-sync.{aoi_id}.worker.lock``
-- ``resourcesat-2a-liss4-mx70-l2`` → ``bhoonidhi-liss4-sync.{aoi_id}.worker.lock``
-- all other sources                → ``{source_id}.{aoi_id}.worker.lock``
+Worker lock files use the canonical ``{source_id}.{aoi_id}.worker.lock`` name.
 
 Stdlib only; no live provider calls.
 """
@@ -55,12 +49,6 @@ GLOBAL_LOCK_NAME = "scheduler.lock"
 #: Default TTL for stale-lock reclaim (seconds).  A lock older than this is
 #: considered stale only when its recorded PID is no longer alive.
 DEFAULT_STALE_TTL_SECONDS: int = 7200  # 2 hours
-
-#: Legacy source-ID → lock-file prefix map for Bhoonidhi wrapper compatibility.
-_LEGACY_SOURCE_PREFIXES: dict[str, str] = {
-    "resourcesat-2a-liss3-boa": "bhoonidhi-sync",
-    "resourcesat-2a-liss4-mx70-l2": "bhoonidhi-liss4-sync",
-}
 
 # ---------------------------------------------------------------------------
 # Injectable clock (for unit tests — do not replace in production)
@@ -214,16 +202,8 @@ def global_lock_path(lock_dir: str | Path) -> Path:
 
 
 def worker_lock_name(source_id: str, aoi_id: str) -> str:
-    """Return the canonical lock filename for a source/AOI worker job.
-
-    Applies legacy Bhoonidhi-compatible prefixes:
-
-    - ``resourcesat-2a-liss3-boa``     → ``bhoonidhi-sync.{aoi_id}.worker.lock``
-    - ``resourcesat-2a-liss4-mx70-l2`` → ``bhoonidhi-liss4-sync.{aoi_id}.worker.lock``
-    - everything else                  → ``{source_id}.{aoi_id}.worker.lock``
-    """
-    prefix = _LEGACY_SOURCE_PREFIXES.get(source_id, source_id)
-    return f"{prefix}.{aoi_id}.worker.lock"
+    """Return the canonical ``{source_id}.{aoi_id}.worker.lock`` filename."""
+    return f"{source_id}.{aoi_id}.worker.lock"
 
 
 def worker_lock_path(lock_dir: str | Path, source_id: str, aoi_id: str) -> Path:

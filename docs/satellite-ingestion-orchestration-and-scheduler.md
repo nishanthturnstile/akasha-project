@@ -196,13 +196,14 @@ or gated by ownership.
 **Job statuses** (`JobStatus`): `planned → queued → running → succeeded | failed |
 validation_failed | blocked_by_lock | cancelled | skipped_not_due | skipped_gated`.
 
-> ### Important: the live provider pipeline is intentionally fail-closed today
-> In an **approved, non-dry-run** run, `run_source_job()` currently records
-> **`FAILED / failureKind=pipeline_deferred`** instead of performing the real
-> search→download→prepare→composite→ingest. This is deliberate (the Phase 7 conservative gate): the
-> orchestrator is wired, observable, and tested end-to-end **except** for the final live pipeline
-> hand-off, which stays behind parity tests + fresh staging evidence. **Production ResourceSat
-> ingestion still runs through the legacy `bhoonidhi-sync` timers**, not the orchestrator. See
+> ### The live provider pipeline runs through the orchestrator
+> In an **approved, non-dry-run** run, `run_source_job()` executes the real ResourceSat pipeline
+> ([resourcesat_pipeline.run_resourcesat_ingest](../services/ingestion/akasha_ingest/resourcesat_pipeline.py)):
+> search→download→prepare→composite→verify→upload→STAC→cleanup. On success it records `SUCCEEDED`
+> and advances the scheduler cadence ledger; on a stage failure it records `FAILED` with a
+> classified `failureKind` (e.g. `low_coverage`, `stac_registration_failed`). The pipeline is covered
+> by mocked unit/integration tests; the **live end-to-end run is operator-side on the staging VM**
+> (Bhoonidhi's whitelisted egress). See
 > [§7 Current state](#7-current-state--what-works-and-what-is-pending).
 
 ---
@@ -249,9 +250,10 @@ python scripts/staging_ingestion_job.py job-artifact <job_id> request --host aka
 python scripts/staging_ingestion_job.py schedule-next --source resourcesat-2a-awifs-boa --aoi bangalore-60km
 ```
 
-The current production path for ResourceSat remains the legacy command/timers
-(`worker.py bhoonidhi-sync`, `akasha-bhoonidhi-sync.timer`,
-`akasha-bhoonidhi-liss4-sync.timer`). See
+The production path for ResourceSat is the orchestrator: the automatic
+`akasha-ingestion-scheduler.timer` runs `schedule-due-sources`, and the on-demand
+`staging_ingestion_job.py trigger` runs `schedule-source --approved-runtime`. The legacy
+`bhoonidhi-sync` timers have been removed. See
 [staging-ingestion-developer-guide.md](staging-ingestion-developer-guide.md).
 
 ### 5.3 Scheduled (systemd, installed disabled/dry-run first)
@@ -317,9 +319,9 @@ default — proven by [tests/test_provider_adapter_contract.py](../tests/test_pr
 
 | Source | `scheduleState` | `productExposure` | Owner today | Notes |
 |---|---|---|---|---|
-| `resourcesat-2a-liss3-boa` (LISS-3) | `routine` | **`product_active`** | `legacy_timer` (`akasha-bhoonidhi-sync.timer`) | MVP production default (FCC display). |
-| `resourcesat-2a-liss4-mx70-l2` (LISS-4) | `routine` | **`product_active`** | `legacy_timer` (`akasha-bhoonidhi-liss4-sync.timer`) | High-res field enhancement. |
-| `resourcesat-2a-awifs-boa` (AWiFS) | `background_only` | `background_only` | `manual_only` | `validation_failed` — 62.98% coverage vs 95% threshold (see `test_reports/awifs-validation-2026-06-23.md`). Stays gated. |
+| `resourcesat-2a-liss3-boa` (LISS-3) | `routine` | **`product_active`** | `scheduler_active` | MVP production default (FCC display). |
+| `resourcesat-2a-liss4-mx70-l2` (LISS-4) | `routine` | **`product_active`** | `scheduler_active` | High-res field enhancement. |
+| `resourcesat-2a-awifs-boa` (AWiFS) | `routine` | **`product_active`** | `scheduler_active` | Regional coarse (56 m); `validation_passed` with a 60% regional coverage threshold (prior 95% gate failed at 62.98%). `analysisLevel` stays regional so the best-observation resolver keeps it out of small-field decisions. |
 | Sentinel-2/-1, Landsat-8/9, MODIS, EOS-04/06, NISAR, IRS-1C, Cartosat-3, Planet/SkySat/SuperView/etc., NAIP | `disabled` / `manual_only` | `hidden` / `reference_only` | — | Scaffolded rows with explicit `readinessReasons`. |
 
 ### Build status by layer
@@ -331,7 +333,7 @@ default — proven by [tests/test_provider_adapter_contract.py](../tests/test_pr
 | Other provider adapters (cdse/usgs/earthdata/asf/planet/jaxa/vendor/usda) | 🟡 Placeholders (fail closed) |
 | Canonical manifests + redaction | ✅ Implemented + tested |
 | Orchestrator (`plan/run` + locks + ledger + artifacts) | ✅ Implemented + tested |
-| **Live provider pipeline through the orchestrator** | 🔴 **Deferred** — approved live run returns `FAILED/pipeline_deferred`; production still uses `bhoonidhi-sync` |
+| **Live provider pipeline through the orchestrator** | ✅ Implemented + mocked-tested — `run_source_job` runs `run_resourcesat_ingest` (success → `SUCCEEDED` + ledger advance); live staging run is operator-side |
 | Validation profiles (6) + LISS-3 invariants | ✅ Implemented + tested |
 | BFF monitoring endpoints + frontend job UI | ✅ Implemented + tested |
 | Best-observation resolver (`resolve_best_observation`) | ✅ Implemented |
@@ -339,16 +341,15 @@ default — proven by [tests/test_provider_adapter_contract.py](../tests/test_pr
 
 ### What "complete" means here
 
-The **architecture, contracts, observability, validation, monitoring, and safety gates are
-complete and tested**. The two intentional remaining items before the scheduler can *own* live
-production are:
+The **ResourceSat/Bhoonidhi migration is complete**: the orchestrator runs the real pipeline,
+LISS-3/LISS-4/AWiFS are `scheduler_active` (AWiFS is product-active with a regional coverage
+threshold), the cutover ownership gate and the legacy Bhoonidhi timers/lock-compat are removed, and
+the runtime entry points call the scheduler. The one remaining step is **operator-side**: run the
+live end-to-end ingestion on the staging VM (Bhoonidhi's whitelisted egress) to produce fresh
+COGs/STAC, since that cannot be executed from a developer workstation.
 
-1. **Wire the live pipeline** in `run_source_job()` (replace `pipeline_deferred` with the real
-   Bhoonidhi search→download→prepare→composite→ingest), behind the LISS-3 parity tests.
-2. **Cutover** LISS-3/LISS-4 from the legacy timers to `scheduler_active` after a staging canary.
-
-Everything else — including every non-ISRO provider — is **Phase 12 onboarding** that now only
-needs an adapter + registry row + validation profile, not scheduler changes.
+Every non-ISRO provider is **Phase 12 onboarding** that now only needs an adapter + registry row +
+validation profile, not scheduler changes.
 
 > **Test-file naming note:** the build plan lists aspirational test filenames
 > (`test_generic_scheduler_orchestrator.py`, `test_ingestion_jobs_monitoring.py`,

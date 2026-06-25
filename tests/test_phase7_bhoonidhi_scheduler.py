@@ -62,6 +62,7 @@ from akasha_ingest.orchestrator import (  # noqa: E402
     APPROVED_RUNTIME_ENV_VAR,
     run_source_job,
 )
+from akasha_ingest.resourcesat_pipeline import IngestResult  # noqa: E402
 from akasha_ingest.source_registry import (  # noqa: E402
     SOURCE_REGISTRY,
     ProductExposure,
@@ -110,6 +111,38 @@ def _dry_run_plan_payload(source_id: str, tmp_path: Path) -> dict:
     plan_events = [e for e in events if e["eventType"] == "dry_run_plan"]
     assert plan_events, f"No dry_run_plan event for {source_id}"
     return plan_events[0].get("payload", {})
+
+
+def _patch_live_pipeline_success(monkeypatch) -> None:
+    """Force the live ResourceSat/Bhoonidhi pipeline to succeed deterministically.
+
+    Patches AOI loading and the ingest entrypoint that the orchestrator imports
+    at call time so an approved non-dry-run job reaches SUCCEEDED without any
+    network, seed-file, or provider access.
+    """
+    monkeypatch.setattr(
+        "akasha_ingest.bhoonidhi.load_aoi",
+        lambda *args, **kwargs: {"type": "FeatureCollection", "features": []},
+    )
+
+    def _fake_ingest(params, *args, **kwargs):
+        return IngestResult(
+            source_id=params.source_id,
+            aoi_id=params.aoi_id,
+            window_start=params.window_start,
+            window_end=params.window_end,
+            verdict="succeeded",
+            found_count=1,
+            selected_count=1,
+            downloaded_count=1,
+            composite_built=True,
+            ingested=True,
+            coverage_met=True,
+        )
+
+    monkeypatch.setattr(
+        "akasha_ingest.resourcesat_pipeline.run_resourcesat_ingest", _fake_ingest
+    )
 
 
 # ===========================================================================
@@ -338,9 +371,10 @@ class TestAWiFSBelowThreshold:
         )
         assert result.status == str(JobStatus.FAILED)
 
-    def test_awifs_failure_kind_is_pipeline_deferred(self, tmp_path, monkeypatch):
-        """AWiFS background retry attempts must not be blocked as low_coverage upfront."""
+    def test_awifs_approved_run_succeeds(self, tmp_path, monkeypatch):
+        """AWiFS is product-active: an approved run executes the live pipeline."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _AWIFS_SOURCE,
             _DEFAULT_AOI,
@@ -350,11 +384,12 @@ class TestAWiFSBelowThreshold:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.failure_kind == "pipeline_deferred"
+        assert result.status == str(JobStatus.SUCCEEDED)
 
-    def test_awifs_observability_marks_pipeline_deferred(self, tmp_path, monkeypatch):
-        """AWiFS observability must show the safe deferred live-pipeline verdict."""
+    def test_awifs_observability_marks_succeeded(self, tmp_path, monkeypatch):
+        """AWiFS observability records the succeeded verdict on an approved run."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _AWIFS_SOURCE,
             _DEFAULT_AOI,
@@ -364,26 +399,24 @@ class TestAWiFSBelowThreshold:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
+        assert result.status == str(JobStatus.SUCCEEDED)
         obs_path = job_dir(result.job_id, tmp_path) / "observability.json"
-        assert obs_path.exists(), "observability.json not written for AWiFS deferred run"
+        assert obs_path.exists(), "observability.json not written for AWiFS approved run"
         obs = json.loads(obs_path.read_text(encoding="utf-8"))
         v_summary = obs.get("verificationSummary", {})
-        assert v_summary["verdict"] == "pipeline_deferred"
-        assert v_summary["productExposure"] == ProductExposure.BACKGROUND_ONLY.value
+        assert v_summary["verdict"] == "succeeded"
 
-    def test_awifs_registry_readiness_reasons_mention_coverage_threshold(self):
-        """AWiFS registry readinessReasons must mention the prior coverage threshold rejection."""
+    def test_awifs_registry_readiness_reasons_are_empty(self):
+        """AWiFS registry readinessReasons are empty now that validation passed."""
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        combined = " ".join(row.readiness_reasons).lower()
-        assert "coverage" in combined or "threshold" in combined, (
-            f"readinessReasons do not mention coverage/threshold: {row.readiness_reasons!r}"
-        )
+        assert row.readiness_reasons == ()
 
-    def test_awifs_product_exposure_stays_background_only_after_validation_failed(
+    def test_awifs_product_exposure_stays_product_active_after_run(
         self, tmp_path, monkeypatch
     ):
-        """Running AWiFS must not promote its product_exposure to PRODUCT_ACTIVE."""
+        """Running AWiFS keeps its product_exposure at PRODUCT_ACTIVE."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         run_source_job(
             _AWIFS_SOURCE,
             _DEFAULT_AOI,
@@ -394,16 +427,17 @@ class TestAWiFSBelowThreshold:
             now=_FIXED_NOW,
         )
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.product_exposure == ProductExposure.BACKGROUND_ONLY
+        assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE
 
-    def test_awifs_validation_state_is_failed_in_registry(self):
-        """AWiFS validation_state must be VALIDATION_FAILED in the source registry."""
+    def test_awifs_validation_state_is_passed_in_registry(self):
+        """AWiFS validation_state must be VALIDATION_PASSED in the source registry."""
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.validation_state == ValidationState.VALIDATION_FAILED
+        assert row.validation_state == ValidationState.VALIDATION_PASSED
 
-    def test_awifs_job_result_dict_has_failure_fields(self, tmp_path, monkeypatch):
-        """AWiFS job result dict must carry failureKind and failureMessage."""
+    def test_awifs_job_result_dict_has_success_fields(self, tmp_path, monkeypatch):
+        """AWiFS approved-run result dict reports a successful, failure-free outcome."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _AWIFS_SOURCE,
             _DEFAULT_AOI,
@@ -414,9 +448,8 @@ class TestAWiFSBelowThreshold:
             now=_FIXED_NOW,
         )
         result_dict = result.to_dict()
-        assert result_dict["failureKind"] == "pipeline_deferred"
-        assert result_dict["failureMessage"], "failureMessage must be non-empty"
-        assert "fail-closed" in result_dict["failureMessage"].lower()
+        assert result_dict["status"] == str(JobStatus.SUCCEEDED)
+        assert result_dict["failureKind"] is None
 
 
 # ===========================================================================
@@ -568,11 +601,12 @@ class TestLocalTestAlias:
 class TestSafeWrapperApprovedRuntime:
     """approved_runtime=True enables non-dry-run execution without live staging access."""
 
-    def test_approved_runtime_liss3_fails_closed_until_live_pipeline_exists(
+    def test_approved_runtime_liss3_runs_live_pipeline_and_succeeds(
         self, tmp_path, monkeypatch
     ):
-        """LISS-3 with approved_runtime=True fails closed until live pipeline is wired."""
+        """LISS-3 with approved_runtime=True executes the live pipeline and succeeds."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _LISS3_SOURCE,
             _DEFAULT_AOI,
@@ -582,12 +616,12 @@ class TestSafeWrapperApprovedRuntime:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
-        assert result.failure_kind == "pipeline_deferred"
+        assert result.status == str(JobStatus.SUCCEEDED)
 
     def test_approved_runtime_env_var_enables_liss3(self, tmp_path, monkeypatch):
         """AKASHA_APPROVED_RUNTIME=1 must enable LISS-3 without approved_runtime kwarg."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _LISS3_SOURCE,
             _DEFAULT_AOI,
@@ -597,8 +631,7 @@ class TestSafeWrapperApprovedRuntime:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
-        assert result.failure_kind == "pipeline_deferred"
+        assert result.status == str(JobStatus.SUCCEEDED)
 
     def test_no_approved_runtime_produces_skipped_gated(self, tmp_path, monkeypatch):
         """Without approved_runtime, LISS-3 non-dry-run must be SKIPPED_GATED."""

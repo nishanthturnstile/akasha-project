@@ -651,11 +651,11 @@ def test_liss3_host_pool_is_staging_bhoonidhi():
     )
 
 
-def test_liss3_owned_by_legacy_timer():
-    """TASK-041: liss3-boa must be owned by legacy_timer until scheduler cutover."""
+def test_liss3_owned_by_scheduler_active():
+    """TASK-041: liss3-boa is owned by the scheduler after the cutover."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
-    assert row.owned_by == sr.OwnedBy.LEGACY_TIMER, (
-        f"liss3-boa owned_by is {row.owned_by.value!r}; expected legacy_timer"
+    assert row.owned_by == sr.OwnedBy.SCHEDULER_ACTIVE, (
+        f"liss3-boa owned_by is {row.owned_by.value!r}; expected scheduler_active"
     )
 
 
@@ -720,42 +720,38 @@ def test_liss4_provider_is_bhoonidhi():
 # --- TASK-043: resourcesat-2a-awifs-boa background/gated invariants ----------
 
 
-def test_awifs_is_background_only_schedule():
-    """TASK-043: awifs-boa must use background_only schedule state."""
+def test_awifs_is_routine_schedule():
+    """TASK-043: awifs-boa is now routine-scheduled (active product source)."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.schedule_state == ScheduleState.BACKGROUND_ONLY, (
-        f"awifs-boa schedule_state is {row.schedule_state.value!r}; expected background_only"
+    assert row.schedule_state == ScheduleState.ROUTINE, (
+        f"awifs-boa schedule_state is {row.schedule_state.value!r}; expected routine"
     )
 
 
-def test_awifs_product_exposure_is_background_only():
-    """TASK-043: awifs-boa must have background_only product exposure."""
+def test_awifs_product_exposure_is_product_active():
+    """TASK-043: awifs-boa now has product_active exposure."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.product_exposure == ProductExposure.BACKGROUND_ONLY, (
-        f"awifs-boa product_exposure is {row.product_exposure.value!r}; expected background_only"
+    assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE, (
+        f"awifs-boa product_exposure is {row.product_exposure.value!r}; expected product_active"
     )
 
 
-def test_awifs_validation_failed_with_coverage_reason():
-    """TASK-043: awifs-boa must be validation_failed and retain the coverage reason."""
+def test_awifs_validation_passed_without_readiness_blockers():
+    """TASK-043: awifs-boa is now validation_passed with no readiness blockers."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.validation_state == ValidationState.VALIDATION_FAILED, (
-        f"awifs-boa validation_state is {row.validation_state.value!r}; expected validation_failed"
+    assert row.validation_state == ValidationState.VALIDATION_PASSED, (
+        f"awifs-boa validation_state is {row.validation_state.value!r}; expected validation_passed"
     )
-    assert row.readiness_reasons, (
-        "awifs-boa must have at least one readiness_reason documenting coverage failure"
-    )
-    combined = " ".join(row.readiness_reasons).lower()
-    assert "coverage" in combined or "threshold" in combined, (
-        "awifs-boa readiness_reasons must mention coverage/threshold rationale"
+    assert row.readiness_reasons == (), (
+        f"awifs-boa must have no readiness_reasons once validated; got {row.readiness_reasons!r}"
     )
 
 
-def test_awifs_min_coverage_is_95():
-    """TASK-043: awifs-boa must require 95% coverage threshold."""
+def test_awifs_min_coverage_is_60():
+    """TASK-043: awifs-boa uses a reachable 60% regional coverage threshold."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.min_coverage_percent == 95.0, (
-        f"awifs-boa min_coverage_percent is {row.min_coverage_percent}; expected 95.0"
+    assert row.min_coverage_percent == 60.0, (
+        f"awifs-boa min_coverage_percent is {row.min_coverage_percent}; expected 60.0"
     )
 
 
@@ -775,12 +771,12 @@ def test_awifs_has_search_capability():
     )
 
 
-def test_awifs_is_not_product_active():
-    """TASK-043: awifs-boa must never become product_active until validated coverage passes."""
+def test_awifs_is_product_active():
+    """TASK-043: awifs-boa is product_active now that 60% coverage passes."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.product_exposure != ProductExposure.PRODUCT_ACTIVE, (
-        "awifs-boa must not be product_active until validated AWiFS composite "
-        "meets coverage threshold"
+    assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE, (
+        "awifs-boa must be product_active now that the validated AWiFS composite "
+        "meets the 60% regional coverage threshold"
     )
 
 

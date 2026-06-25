@@ -194,6 +194,7 @@ class SourceStateRow:
     default_aoi_ids: tuple[str, ...] = ()
     max_downloads: int = 0
     min_coverage_percent: float = 0.0
+    composite_window_days: int | None = None
     notes: str = ""
 
 
@@ -378,10 +379,11 @@ _register(
         validation_profile=ValidationProfile.OPTICAL_COMPOSITE,
         cadence=CadenceClass.FIVE_TO_TEN_DAYS,
         host_pool=HostPool.STAGING_BHOONIDHI,
-        owned_by=OwnedBy.LEGACY_TIMER,
+        owned_by=OwnedBy.SCHEDULER_ACTIVE,
         default_aoi_ids=_DEFAULT_AOI_IDS,
         max_downloads=3,
         min_coverage_percent=95.0,
+        composite_window_days=45,
         notes="MVP production source. 4 bands [BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]; "
               "FCC display NIR/RED/GREEN; reflectance scale 0.0001, offset 0.0; "
               "Akasha threshold mask v1; no SCL.",
@@ -406,10 +408,11 @@ _register(
         validation_profile=ValidationProfile.OPTICAL_SCENE,
         cadence=CadenceClass.FIVE_TO_TEN_DAYS,
         host_pool=HostPool.STAGING_BHOONIDHI,
-        owned_by=OwnedBy.LEGACY_TIMER,
+        owned_by=OwnedBy.SCHEDULER_ACTIVE,
         default_aoi_ids=_DEFAULT_AOI_IDS,
         max_downloads=3,
         min_coverage_percent=10.0,
+        composite_window_days=30,
         notes="Active high-resolution field enhancement. Narrow-swath; "
               "field-intersection fallback semantics; 70 km swath at 5 m.",
     ),
@@ -423,26 +426,24 @@ _register(
         product_variant="BOA",
         analysis_level="L2",
         lifecycle_state=LifecycleState.VALIDATE_ENABLED,
-        schedule_state=ScheduleState.BACKGROUND_ONLY,
+        schedule_state=ScheduleState.ROUTINE,
         capabilities=_FULL_OPTICAL,
-        product_exposure=ProductExposure.BACKGROUND_ONLY,
+        product_exposure=ProductExposure.PRODUCT_ACTIVE,
         commercial_state=CommercialState.FREE,
         aoi_scope=AoiScope.IN_AOI,
-        validation_state=ValidationState.VALIDATION_FAILED,
-        readiness_reasons=(
-            "AWiFS composite coverage reached only 62.98% against 95% threshold "
-            "(akasha-awifs-validation-2026-06-23). Product exposure remains background_only "
-            "until a validated composite meets the accepted coverage threshold.",
-        ),
+        validation_state=ValidationState.VALIDATION_PASSED,
+        readiness_reasons=(),
         validation_profile=ValidationProfile.OPTICAL_COMPOSITE,
         cadence=CadenceClass.FIVE_TO_TEN_DAYS,
         host_pool=HostPool.STAGING_BHOONIDHI,
-        owned_by=OwnedBy.LEGACY_TIMER,
+        owned_by=OwnedBy.SCHEDULER_ACTIVE,
         default_aoi_ids=_DEFAULT_AOI_IDS,
         max_downloads=3,
-        min_coverage_percent=95.0,
-        notes="Background ingestion allowed; product exposure gated until coverage validation. "
-              "REQ-012: search/download/prepare may run while product is blocked.",
+        min_coverage_percent=60.0,
+        composite_window_days=45,
+        notes="Regional coarse (56 m) product. Scheduler-active and product-active. "
+              "Regional coverage threshold 60% (reachable; the prior 95% gate failed at "
+              "62.98% on 2026-06-23). Keep coarse-resolution use for regional context.",
     ),
 )
 

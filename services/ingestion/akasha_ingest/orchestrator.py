@@ -448,9 +448,7 @@ def _gate_reason(row: SourceStateRow, aoi_id: str) -> str | None:
 
 
 def _planning_ownership_gate(row: SourceStateRow, *, dry_run: bool) -> str | None:
-    """Return a scheduler-cutover gate reason for automatic due planning."""
-    if row.owned_by == OwnedBy.LEGACY_TIMER:
-        return "owned_by=legacy_timer; scheduler canary/manual override required before cutover"
+    """Return an ownership gate reason for automatic due planning."""
     if row.owned_by == OwnedBy.MANUAL_ONLY:
         return "owned_by=manual_only; explicit manual override required"
     if row.owned_by == OwnedBy.SCHEDULER_DRY_RUN and not dry_run:
@@ -470,6 +468,26 @@ def _is_bhoonidhi_source(row: SourceStateRow) -> bool:
     any live provider calls at import or call time.
     """
     return row.provider_adapter == _BHOONIDHI_PROVIDER_KEY
+
+
+def _classify_pipeline_failure(exc: BaseException) -> str:
+    """Map a ResourceSat pipeline exception to a monitoring failure-kind code."""
+    msg = str(exc).lower()
+    if "coverage" in msg:
+        return "low_coverage"
+    if "search" in msg or "429" in msg or "403" in msg or "auth" in msg:
+        return "provider_auth_or_rate_limit"
+    if "download failed" in msg:
+        return "download_failed"
+    if "stac" in msg or "pgstac" in msg:
+        return "stac_registration_failed"
+    if "storage upload" in msg or "minio" in msg:
+        return "minio_upload_failed"
+    if "conversion failed" in msg or "prepare" in msg or "gdal" in msg:
+        return "prepare_failed"
+    if "composite" in msg:
+        return "composite_failed"
+    return "ingest_failed"
 
 
 def _source_thresholds(row: SourceStateRow, *, lookback_days: int = 12) -> dict[str, Any]:
@@ -954,7 +972,8 @@ def run_source_job(
     is_dry = dry_run or local_test
 
     if window_start is None or window_end is None:
-        ws, we = _compute_window(_now, lookback_days=lookback_days)
+        effective_lookback = row.composite_window_days or lookback_days
+        ws, we = _compute_window(_now, lookback_days=effective_lookback)
         window_start = window_start or ws
         window_end = window_end or we
 
@@ -1293,6 +1312,121 @@ def run_source_job(
                 dry_run=False,
                 failure_kind="low_coverage",
                 failure_message=val_msg,
+            )
+
+        # ── Live ResourceSat/Bhoonidhi ingestion pipeline ──────────────────
+        if _is_bhoonidhi_source(row):
+            from akasha_ingest import bhoonidhi as _bh
+            from akasha_ingest import config as _cfg
+            from akasha_ingest import sync as _sync
+            from akasha_ingest.resourcesat_pipeline import (
+                IngestParams,
+                run_resourcesat_ingest,
+            )
+
+            _logs: list[str] = []
+            try:
+                _aoi = _bh.load_aoi(None, aoi_id=aoi_id, aoi_dir=_cfg.AOI_CONFIG_DIR)
+                _params = IngestParams(
+                    source_id=source_id,
+                    aoi=_aoi,
+                    aoi_id=aoi_id,
+                    window_start=window_start,
+                    window_end=window_end,
+                    datetime_range=_sync.datetime_range_for_window(window_start, window_end),
+                    limit=100,
+                    max_downloads=row.max_downloads or None,
+                    min_coverage_percent=row.min_coverage_percent or 95.0,
+                )
+                _ingest = run_resourcesat_ingest(_params, log=_logs.append)
+            except (Exception, SystemExit) as exc:  # noqa: BLE001
+                _fk = _classify_pipeline_failure(exc)
+                _fmsg = str(exc) or exc.__class__.__name__
+                finish_job(
+                    job_id,
+                    JobStatus.FAILED,
+                    {
+                        "sourceId": source_id,
+                        "aoiId": aoi_id,
+                        "provider": row.provider_adapter,
+                        "windowStart": window_start,
+                        "windowEnd": window_end,
+                        "failureKind": _fk,
+                    },
+                    base_dir,
+                    failure_kind=_fk,
+                    failure_message=_fmsg,
+                    now=_now,
+                )
+                _write_observability_safe(
+                    job_id, source_id, aoi_id, row.provider_adapter,
+                    str(JobStatus.FAILED), base_dir, _sql_ledger,
+                    scheduled_at=_scheduled_at, started_at=_job_started_at,
+                    finished_at=_now_iso(_now),
+                    window_start=window_start, window_end=window_end,
+                    sched_decision=_sched_decision, next_due_at=next_due_at,
+                    failure_kind=_fk,
+                    provider_input_summary=_prov_input,
+                    provider_response_summary={},
+                    verification_summary={"verdict": "failed", "failureKind": _fk},
+                )
+                return SourceJobResult(
+                    job_id=job_id,
+                    source_id=source_id,
+                    aoi_id=aoi_id,
+                    status=str(JobStatus.FAILED),
+                    dry_run=False,
+                    failure_kind=_fk,
+                    failure_message=_fmsg,
+                )
+
+            _summary = {
+                "sourceId": source_id,
+                "aoiId": aoi_id,
+                "provider": row.provider_adapter,
+                "windowStart": window_start,
+                "windowEnd": window_end,
+                "phase": "phase7_scheduler_path",
+                **_ingest.to_dict(),
+            }
+            finish_job(job_id, JobStatus.SUCCEEDED, _summary, base_dir, now=_now)
+            try:
+                SchedulerLedger(base_dir).record_success(
+                    source_id,
+                    aoi_id,
+                    job_id=job_id,
+                    window_end=window_end,
+                    succeeded_at=_now_iso(_now),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            _write_observability_safe(
+                job_id, source_id, aoi_id, row.provider_adapter,
+                str(JobStatus.SUCCEEDED), base_dir, _sql_ledger,
+                scheduled_at=_scheduled_at, started_at=_job_started_at,
+                finished_at=_now_iso(_now),
+                window_start=window_start, window_end=window_end,
+                sched_decision=_sched_decision, next_due_at=next_due_at,
+                failure_kind=None,
+                provider_input_summary=_prov_input,
+                provider_response_summary={
+                    "foundCount": _ingest.found_count,
+                    "selectedCount": _ingest.selected_count,
+                    "downloadedCount": _ingest.downloaded_count,
+                    "deferredCount": _ingest.deferred_count,
+                },
+                verification_summary=_ingest.to_dict(),
+                found_count=_ingest.found_count,
+                selected_count=_ingest.selected_count,
+                downloaded_count=_ingest.downloaded_count,
+            )
+            return SourceJobResult(
+                job_id=job_id,
+                source_id=source_id,
+                aoi_id=aoi_id,
+                status=str(JobStatus.SUCCEEDED),
+                dry_run=False,
+                summary=_summary,
             )
 
         _phase_key = "phase7_scheduler_path" if _is_bhoonidhi_source(row) else "phase4_conservative"

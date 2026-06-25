@@ -695,27 +695,50 @@ def _resolve_sync_window(args: argparse.Namespace, *, aoi_id: str, ledger_path: 
 
 
 def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
-    from akasha_ingest import bhoonidhi, catalog, composite, config, storage, sync
-    from akasha_ingest.manifests import REDACTION_VERSION
+    from akasha_ingest import config, sync
+    from akasha_ingest import resourcesat_pipeline as rp
 
     if args.source not in config.RESOURCESAT_BOA_COLLECTION_IDS:
         raise SystemExit("bhoonidhi-sync currently supports ResourceSat-2A BOA sources only")
-    collection = bhoonidhi.source_collection(args.source)
     aoi = _load_requested_aoi(args)
     aoi_id = _aoi_id(aoi, args.aoi)
-    out_dir = Path(args.out_dir or config.BHOONIDHI_TEMP_ROOT) / args.source / aoi_id
-    search_manifest_path = out_dir / "coverage_manifest.json"
-    new_manifest_path = out_dir / "coverage_manifest.new.json"
-    download_manifest_path = out_dir / "download_manifest.json"
     ledger_path = Path(args.ledger_path or config.BHOONIDHI_LEDGER_PATH)
     sync_window = _resolve_sync_window(args, aoi_id=aoi_id, ledger_path=ledger_path)
-    args.window_start = sync_window.window_start
-    args.window_end = sync_window.window_end
     datetime_range = args.datetime or sync_window.datetime_range
     lock_path = (
         Path(args.lock_path)
         if args.lock_path
         else ledger_path.with_suffix(ledger_path.suffix + ".lock")
+    )
+    params = rp.IngestParams(
+        source_id=args.source,
+        aoi=aoi,
+        aoi_id=aoi_id,
+        window_start=sync_window.window_start,
+        window_end=sync_window.window_end,
+        datetime_range=datetime_range,
+        limit=args.limit,
+        max_downloads=_max_downloads_per_sync(args),
+        min_coverage_percent=args.min_coverage_percent,
+        resolution=args.resolution,
+        padding_pixels=args.padding_pixels,
+        method=args.method,
+        out_dir=args.out_dir,
+        raw_root=args.raw_root,
+        ledger_path=ledger_path,
+        overwrite=args.overwrite,
+        keep_intermediate=args.keep_intermediate,
+        force=args.force,
+        skip_prepare=args.skip_prepare,
+        skip_prepare_validation=args.skip_prepare_validation,
+        skip_composite=args.skip_composite,
+        skip_composite_validation=args.skip_composite_validation,
+        skip_ingest=args.skip_ingest,
+        allow_missing_overviews=args.allow_missing_overviews,
+        retain_raw_downloads=args.retain_raw_downloads,
+        dry_run=args.dry_run,
+        backfill_index=sync_window.backfill_index,
+        backfill_total=sync_window.backfill_total,
     )
 
     lock = None
@@ -727,295 +750,11 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                 raise SystemExit(str(exc)) from exc
             print(f"sync lock: {lock.path}")
 
-        client = bhoonidhi.BhoonidhiClient()
-        conn = sync.connect_ledger(ledger_path)
-        search_product_id = f"sync:{aoi_id}:{datetime_range}"
-        try:
-            items = client.search(
-                collection=collection,
-                datetime_range=datetime_range,
-                intersects=aoi["geometry"],
-                limit=args.limit,
-            )
-        except Exception as exc:  # noqa: BLE001
-            sync.record_product(
-                conn,
-                source_id=args.source,
-                product_id=search_product_id,
-                status="failed",
-                error=f"Bhoonidhi search failed: {exc}",
-            )
-            raise
-        sync.record_product(
-            conn,
-            source_id=args.source,
-            product_id=search_product_id,
-            status="searched",
+        rp.run_resourcesat_ingest(
+            params,
+            log=print,
+            prepare_fn=lambda dm: _run_prepare_script(args, dm),
         )
-        manifest = bhoonidhi.build_search_manifest(
-            source_id=args.source,
-            collection=collection,
-            aoi=aoi,
-            datetime_range=datetime_range,
-            items=items,
-        )
-        bhoonidhi.write_manifest(manifest, search_manifest_path)
-
-        selection = sync.filter_new_candidates(manifest, conn=conn, source_id=args.source)
-        sync_meta = selection.manifest.setdefault("sync", {})
-        sync_meta["window_start"] = args.window_start
-        sync_meta["window_end"] = args.window_end
-        sync_meta["datetime_range"] = datetime_range
-        if sync_window.backfill_index and sync_window.backfill_total:
-            sync_meta["backfill_index"] = sync_window.backfill_index
-            sync_meta["backfill_total"] = sync_window.backfill_total
-        max_downloads = _max_downloads_per_sync(args)
-        deferred_product_ids: list[str] = []
-        if max_downloads is not None and len(selection.selected_product_ids) > max_downloads:
-            candidates = selection.manifest.get("candidates", [])
-            deferred_candidates = candidates[max_downloads:]
-            deferred_product_ids = [
-                str(candidate.get("item_id")) for candidate in deferred_candidates
-            ]
-            selection.manifest["candidates"] = candidates[:max_downloads]
-            selection.manifest["selection"] = {
-                "selected_product_ids": selection.selected_product_ids[:max_downloads]
-            }
-            sync_meta["deferred_product_ids"] = deferred_product_ids
-            sync_meta["max_downloads_per_sync"] = max_downloads
-        bhoonidhi.write_manifest(selection.manifest, new_manifest_path)
-        print(f"found {len(items)} Bhoonidhi item(s)")
-        print(f"selected {len(manifest['selection']['selected_product_ids'])} candidate(s)")
-        print(f"skipped existing {len(selection.skipped_product_ids)} product(s)")
-        print(f"new products {len(selection.selected_product_ids)}")
-        print(f"sync window: {args.window_start}..{args.window_end}")
-        if sync_window.backfill_index and sync_window.backfill_total:
-            print(
-                "backfill window "
-                f"{sync_window.backfill_index}/{sync_window.backfill_total}"
-            )
-        if deferred_product_ids:
-            print(
-                "deferred "
-                f"{len(deferred_product_ids)} product(s) due to max downloads per sync "
-                f"({max_downloads})"
-            )
-        print(f"manifest: {new_manifest_path}")
-        if args.dry_run:
-            print("dry-run: stopping before download/prepare/composite/ingest")
-            return 0
-
-        raw_root = Path(args.raw_root or config.BHOONIDHI_RAW_ROOT) / args.source
-        downloaded: list[dict[str, object]] = []
-        for candidate in selection.manifest.get("candidates", []):
-            product_id = candidate.get("item_id")
-            if not product_id:
-                continue
-            try:
-                result = client.download_product(
-                    product_id=str(product_id),
-                    collection=collection,
-                    destination=raw_root / f"{product_id}.zip",
-                )
-                candidate["download_status"] = result["status"]
-                candidate["downloaded_path"] = result["path"]
-                candidate["downloaded_bytes"] = result["bytes"]
-                downloaded.append(
-                    {
-                        **candidate,
-                        "item_id": product_id,
-                        **result,
-                        "downloaded_path": result["path"],
-                        "downloaded_bytes": result["bytes"],
-                        # canonical fields alongside legacy
-                        "itemId": product_id,
-                        "localPath": result["path"],
-                        "downloadedBytes": result["bytes"],
-                    }
-                )
-                sync.record_product(
-                    conn,
-                    source_id=args.source,
-                    product_id=str(product_id),
-                    status="downloaded",
-                    bytes_count=int(result.get("bytes") or 0),
-                )
-                print(f"download {product_id}: {result['status']} ({result['bytes']} bytes)")
-            except Exception as exc:  # noqa: BLE001
-                sync.record_product(
-                    conn,
-                    source_id=args.source,
-                    product_id=str(product_id),
-                    status="failed",
-                    error=f"download failed: {exc}",
-                )
-                raise
-        download_manifest = dict(selection.manifest)
-        download_manifest["downloaded"] = downloaded
-        # Canonical download manifest top-level keys (alongside legacy shape).
-        # manifestType is always overridden to "download" (the search manifest has "search").
-        download_manifest["manifestType"] = "download"
-        download_manifest.setdefault("jobId", None)
-        download_manifest.setdefault("sourceId", args.source)
-        download_manifest.setdefault("provider", "bhoonidhi")
-        download_manifest.setdefault("adapter", "bhoonidhi")
-        download_manifest.setdefault("redactionVersion", REDACTION_VERSION)
-        bhoonidhi.write_manifest(download_manifest, download_manifest_path)
-        print(f"download manifest: {download_manifest_path}")
-
-        if args.skip_prepare:
-            print("skip prepare requested")
-            return 0
-        if downloaded:
-            try:
-                _run_prepare_script(args, download_manifest_path)
-            except Exception as exc:  # noqa: BLE001
-                for row in downloaded:
-                    sync.record_product(
-                        conn,
-                        source_id=args.source,
-                        product_id=str(row["item_id"]),
-                        status="failed",
-                        bytes_count=int(row.get("bytes") or 0),
-                        error=f"conversion failed: {exc}",
-                    )
-                raise
-            for row in downloaded:
-                sync.record_product(
-                    conn,
-                    source_id=args.source,
-                    product_id=str(row["item_id"]),
-                    status="prepared",
-                    bytes_count=int(row.get("bytes") or 0),
-                )
-        else:
-            print("no new downloads; using existing prepared manifests for composite rebuild")
-
-        if args.skip_composite:
-            print("skip composite requested")
-            return 0
-        composite_product_id = _composite_ledger_product_id(args, aoi)
-        try:
-            manifest_paths = composite.scene_manifest_paths_for_window(
-                config.prepared_manifest_files(source_id=args.source),
-                window_start=args.window_start,
-                window_end=args.window_end,
-                source_id=args.source,
-                aoi_id=aoi_id,
-            )
-            if not manifest_paths:
-                detail = "no prepared scene manifests found for composite window"
-                if not selection.manifest.get("candidates"):
-                    print(f"{detail}; no new candidates found, skipping composite rebuild")
-                    return 0
-                sync.record_product(
-                    conn,
-                    source_id=args.source,
-                    product_id=composite_product_id,
-                    status="failed",
-                    error=f"composite failed: {detail}",
-                )
-                raise SystemExit(detail)
-            deps = composite.require_raster_deps()
-            build = composite.build_resource_sat_composite(
-                deps=deps,
-                manifest_paths=manifest_paths,
-                aoi=aoi,
-                output_root=config.raster_source_root(),
-                window_start=args.window_start,
-                window_end=args.window_end,
-                source_id=args.source,
-                resolution=args.resolution or composite.default_resolution(args.source),
-                padding_pixels=args.padding_pixels,
-                overwrite=args.overwrite,
-                skip_validation=args.skip_composite_validation,
-                keep_intermediate=args.keep_intermediate,
-            )
-            composite_product_id = f"composite:{aoi_id}:{build.manifest.parent.name}"
-            verify = composite.verify_composite_manifest(
-                deps=deps,
-                manifest_path=build.manifest,
-                source_id=args.source,
-                expected_aoi_id=aoi_id,
-                min_coverage_percent=args.min_coverage_percent,
-                require_overviews=not args.allow_missing_overviews,
-            )
-            if not verify.ok:
-                sync.record_product(
-                    conn,
-                    source_id=args.source,
-                    product_id=composite_product_id,
-                    status="failed",
-                    error=f"composite failed: {verify.detail}",
-                )
-                raise SystemExit(verify.detail)
-        except Exception as exc:  # noqa: BLE001
-            sync.record_product(
-                conn,
-                source_id=args.source,
-                product_id=composite_product_id,
-                status="failed",
-                error=f"composite failed: {exc}",
-            )
-            raise
-        print(verify.detail)
-
-        if args.skip_ingest:
-            print("skip ingest requested")
-            return 0
-        try:
-            print(storage.ensure_bucket())
-            for line in storage.seed_manifest_cogs([build.manifest], force=args.force):
-                print(line)
-        except Exception as exc:  # noqa: BLE001
-            sync.record_product(
-                conn,
-                source_id=args.source,
-                product_id=composite_product_id,
-                status="failed",
-                error=f"storage upload failed: {exc}",
-            )
-            raise
-        try:
-            print(catalog.load_manifest_items([build.manifest], method=args.method))
-        except Exception as exc:  # noqa: BLE001
-            sync.record_product(
-                conn,
-                source_id=args.source,
-                product_id=composite_product_id,
-                status="failed",
-                error=f"STAC registration failed: {exc}",
-            )
-            raise
-        post_ingest = composite.verify_composite_manifest(
-            deps=deps,
-            manifest_path=build.manifest,
-            source_id=args.source,
-            expected_aoi_id=aoi_id,
-            min_coverage_percent=args.min_coverage_percent,
-            require_overviews=not args.allow_missing_overviews,
-            require_catalog_item=True,
-            stac_api_url=config.STAC_API_URL,
-        )
-        if not post_ingest.ok:
-            sync.record_product(
-                conn,
-                source_id=args.source,
-                product_id=composite_product_id,
-                status="failed",
-                error=f"STAC registration failed: {post_ingest.detail}",
-            )
-            raise SystemExit(post_ingest.detail)
-        print(post_ingest.detail)
-        sync.record_product(
-            conn,
-            source_id=args.source,
-            product_id=composite_product_id,
-            status="composited",
-        )
-        deleted = sync.cleanup_downloads(downloaded, audit_retention=args.retain_raw_downloads)
-        if deleted:
-            print(f"deleted raw downloads: {len(deleted)}")
         return 0
     finally:
         if lock is not None:

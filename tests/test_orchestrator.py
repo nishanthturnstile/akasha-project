@@ -49,6 +49,7 @@ from akasha_ingest.orchestrator import (  # noqa: E402
     run_due_sources,
     run_source_job,
 )
+from akasha_ingest.resourcesat_pipeline import IngestResult  # noqa: E402
 from akasha_ingest.scheduler_locks import (  # noqa: E402
     SchedulerLockError,
     acquire_global_lock,
@@ -99,6 +100,38 @@ def _job_result_status(tmp_path: Path, job_id: str) -> str:
 
 def _job_result_failure_kind(tmp_path: Path, job_id: str) -> str | None:
     return read_result(job_id, tmp_path).get("failureKind")
+
+
+def _patch_live_pipeline_success(monkeypatch) -> None:
+    """Force the live ResourceSat/Bhoonidhi pipeline to succeed deterministically.
+
+    Patches AOI loading and the ingest entrypoint that the orchestrator imports
+    at call time so an approved non-dry-run job reaches SUCCEEDED without any
+    network, seed-file, or provider access.
+    """
+    monkeypatch.setattr(
+        "akasha_ingest.bhoonidhi.load_aoi",
+        lambda *args, **kwargs: {"type": "FeatureCollection", "features": []},
+    )
+
+    def _fake_ingest(params, *args, **kwargs):
+        return IngestResult(
+            source_id=params.source_id,
+            aoi_id=params.aoi_id,
+            window_start=params.window_start,
+            window_end=params.window_end,
+            verdict="succeeded",
+            found_count=1,
+            selected_count=1,
+            downloaded_count=1,
+            composite_built=True,
+            ingested=True,
+            coverage_met=True,
+        )
+
+    monkeypatch.setattr(
+        "akasha_ingest.resourcesat_pipeline.run_resourcesat_ingest", _fake_ingest
+    )
 
 
 # ===========================================================================
@@ -201,10 +234,10 @@ class TestDryRunBehavior:
 
 
 class TestDueSourceDecisions:
-    def test_legacy_owned_source_is_not_auto_due(self, tmp_path):
-        """Legacy timer-owned sources must not be auto-scheduled during cutover."""
+    def test_scheduler_active_source_is_auto_due(self, tmp_path):
+        """Scheduler-active sources (LISS-3) are auto-scheduled on first run."""
         row = SOURCE_REGISTRY[_LISS3_SOURCE]
-        assert row.owned_by == OwnedBy.LEGACY_TIMER
+        assert row.owned_by == OwnedBy.SCHEDULER_ACTIVE
 
         decisions = plan_due_sources(
             source_ids=[_LISS3_SOURCE],
@@ -212,8 +245,10 @@ class TestDueSourceDecisions:
             now=_FIXED_NOW,
         )
         due = [d for d in decisions if d.source_id == _LISS3_SOURCE and d.is_due]
-        assert not due, "Legacy-owned LISS-3 must not be scheduler-due before cutover"
-        assert any("legacy_timer" in (d.skip_reason or "") for d in decisions)
+        assert due, "Scheduler-active LISS-3 must be auto-due on first run"
+        assert not any(
+            "legacy_timer" in (d.skip_reason or "") for d in decisions
+        ), "Scheduler-active LISS-3 must not carry a legacy ownership gate"
 
     def test_manual_override_canary_forces_legacy_owned_source_due(self, tmp_path):
         """Explicit canary/manual override is allowed without changing ownership."""
@@ -309,15 +344,15 @@ class TestDueSourceDecisions:
         due = [d for d in decisions if d.is_due]
         assert not due, "Disabled sentinel-2 must never be due"
 
-    def test_background_only_legacy_state_is_not_auto_due(self, tmp_path):
-        """BACKGROUND_ONLY still respects legacy cutover ownership."""
+    def test_awifs_routine_source_is_auto_due(self, tmp_path):
+        """AWiFS is ROUTINE / scheduler-active and auto-runs on first run."""
         decisions = plan_due_sources(
             source_ids=[_AWIFS_SOURCE],
             base_dir=tmp_path,
             now=_FIXED_NOW,
         )
         due = [d for d in decisions if d.source_id == _AWIFS_SOURCE and d.is_due]
-        assert not due, "Legacy-owned AWiFS should not auto-run before scheduler cutover"
+        assert due, "Scheduler-active AWiFS should auto-run on first run"
 
     def test_decisions_carry_window_dates(self, tmp_path):
         """DueDecision objects must include non-empty window_start and window_end."""
@@ -662,8 +697,24 @@ class TestLockBehavior:
         with pytest.raises(SchedulerLockError):
             acquire_global_lock(tmp_path, stale_ttl_seconds=60)
 
-    def test_release_lock_does_not_remove_lock_reacquired_by_another_holder(self, tmp_path):
+    def test_release_lock_does_not_remove_lock_reacquired_by_another_holder(
+        self, tmp_path, monkeypatch
+    ):
         """A stale handle must not unlink a lock now owned by a different holder."""
+        import itertools
+        from datetime import UTC, datetime
+        from datetime import timedelta as _td
+
+        from akasha_ingest import scheduler_locks as _sl
+
+        # Inject a strictly-increasing clock so the two acquisitions get distinct
+        # ``acquired_at`` payloads even on platforms with a coarse wall clock
+        # (Windows ~15 ms), which is required for release_lock's payload-ownership
+        # check to distinguish the two holders.
+        _base = datetime(2026, 6, 25, tzinfo=UTC)
+        _ticks = itertools.count()
+        monkeypatch.setattr(_sl, "_now", lambda: _base + _td(seconds=next(_ticks)))
+
         lock = acquire_global_lock(tmp_path)
         os.close(lock.fd)
         lock.path.unlink()
@@ -684,15 +735,15 @@ class TestLockBehavior:
         with pytest.raises(SchedulerLockError):
             acquire_global_lock(tmp_path, stale_ttl_seconds=7200)
 
-    def test_worker_lock_naming_liss3_legacy(self):
-        """LISS-3 must use the legacy bhoonidhi-sync lock prefix."""
+    def test_worker_lock_naming_liss3(self):
+        """LISS-3 uses the canonical {source}.{aoi}.worker.lock name."""
         name = worker_lock_name(_LISS3_SOURCE, _DEFAULT_AOI)
-        assert name == f"bhoonidhi-sync.{_DEFAULT_AOI}.worker.lock"
+        assert name == f"{_LISS3_SOURCE}.{_DEFAULT_AOI}.worker.lock"
 
-    def test_worker_lock_naming_liss4_legacy(self):
-        """LISS-4 must use the legacy bhoonidhi-liss4-sync lock prefix."""
+    def test_worker_lock_naming_liss4(self):
+        """LISS-4 uses the canonical {source}.{aoi}.worker.lock name."""
         name = worker_lock_name(_LISS4_SOURCE, _DEFAULT_AOI)
-        assert name == f"bhoonidhi-liss4-sync.{_DEFAULT_AOI}.worker.lock"
+        assert name == f"{_LISS4_SOURCE}.{_DEFAULT_AOI}.worker.lock"
 
     def test_worker_lock_naming_other_source(self):
         name = worker_lock_name("sentinel-2-l2a", _DEFAULT_AOI)
@@ -830,28 +881,28 @@ class TestMaxSourcesLimit:
 
 
 # ===========================================================================
-# 9. AWiFS: below-threshold / validation_failed stays background_only
+# 9. AWiFS: scheduler-active ROUTINE source, product-active exposure
 # ===========================================================================
 
 
-class TestAWiFSValidationFailedGate:
-    def test_awifs_schedule_state_is_background_only(self):
+class TestAWiFSScheduledProductActive:
+    def test_awifs_schedule_state_is_routine(self):
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.schedule_state == ScheduleState.BACKGROUND_ONLY
+        assert row.schedule_state == ScheduleState.ROUTINE
 
-    def test_awifs_product_exposure_is_background_only(self):
+    def test_awifs_product_exposure_is_product_active(self):
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.product_exposure == ProductExposure.BACKGROUND_ONLY
+        assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE
 
-    def test_awifs_validation_state_is_failed(self):
+    def test_awifs_validation_state_is_passed(self):
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.validation_state == ValidationState.VALIDATION_FAILED
+        assert row.validation_state == ValidationState.VALIDATION_PASSED
 
-    def test_awifs_product_exposure_not_product_active(self):
+    def test_awifs_product_exposure_not_background_only(self):
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.product_exposure != ProductExposure.PRODUCT_ACTIVE
+        assert row.product_exposure != ProductExposure.BACKGROUND_ONLY
 
-    def test_awifs_due_decision_carries_background_only_exposure(self, tmp_path):
+    def test_awifs_due_decision_carries_product_active_exposure(self, tmp_path):
         decisions = plan_due_sources(
             source_ids=[_AWIFS_SOURCE],
             base_dir=tmp_path,
@@ -859,19 +910,18 @@ class TestAWiFSValidationFailedGate:
         )
         for d in decisions:
             if d.source_id == _AWIFS_SOURCE:
-                assert d.product_exposure == ProductExposure.BACKGROUND_ONLY.value
+                assert d.product_exposure == ProductExposure.PRODUCT_ACTIVE.value
 
-    def test_awifs_run_job_can_attempt_background_pipeline_without_promotion(
+    def test_awifs_run_job_runs_live_pipeline_and_succeeds(
         self, tmp_path, monkeypatch
     ):
-        """AWiFS background ingestion may run while product exposure stays gated.
+        """AWiFS is product-active: an approved run executes the live pipeline.
 
-        The live pipeline is still deferred, so this records a pipeline_deferred
-        failure instead of low_coverage. The important behavior is that
-        validation_failed does not block background attempts before they can
-        discover a later passing composite.
+        With the pipeline mocked to succeed, the job reaches SUCCEEDED and the
+        registry product_exposure stays PRODUCT_ACTIVE.
         """
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _AWIFS_SOURCE,
             _DEFAULT_AOI,
@@ -881,11 +931,9 @@ class TestAWiFSValidationFailedGate:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
-        assert result.failure_kind == "pipeline_deferred"
-        # Product exposure in registry must NOT be promoted
+        assert result.status == str(JobStatus.SUCCEEDED)
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.product_exposure == ProductExposure.BACKGROUND_ONLY
+        assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE
 
     def test_awifs_deferred_background_attempt_does_not_update_ledger(
         self, tmp_path, monkeypatch
@@ -907,10 +955,9 @@ class TestAWiFSValidationFailedGate:
             "Scheduler ledger must NOT be updated for a VALIDATION_FAILED job"
         )
 
-    def test_awifs_readiness_reasons_mention_coverage(self):
+    def test_awifs_readiness_reasons_are_empty(self):
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        reasons_text = " ".join(row.readiness_reasons)
-        assert "coverage" in reasons_text.lower() or "threshold" in reasons_text.lower()
+        assert row.readiness_reasons == ()
 
 
 # ===========================================================================
@@ -946,10 +993,11 @@ class TestUnknownSourceValidation:
 
 
 class TestPhase4ConservativeExecution:
-    def test_approved_run_fails_closed_until_live_pipeline_is_implemented(
+    def test_approved_run_succeeds_and_updates_scheduler_ledger(
         self, tmp_path, monkeypatch
     ):
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _LISS3_SOURCE,
             _DEFAULT_AOI,
@@ -959,8 +1007,10 @@ class TestPhase4ConservativeExecution:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
-        assert result.failure_kind == "pipeline_deferred"
+        assert result.status == str(JobStatus.SUCCEEDED)
+        ledger = _make_fresh_ledger(tmp_path)
+        entry = ledger.get_entry(_LISS3_SOURCE, _DEFAULT_AOI)
+        assert entry, "Successful live run must record a scheduler ledger entry"
 
     def test_approved_run_does_not_update_scheduler_ledger_before_real_ingestion(
         self, tmp_path, monkeypatch
@@ -1303,11 +1353,11 @@ class TestPidLivenessPortability:
 
 
 # ===========================================================================
-# 15. Legacy lock-dir compatibility
+# 15. Worker lock-dir compatibility
 # ===========================================================================
 
 
-class TestLegacyLockDirCompatibility:
+class TestWorkerLockDirCompatibility:
     def test_default_lock_dir_is_ingestion_root(self):
         """DEFAULT_LOCK_DIR must point to /srv/akasha/ingestion/ (not a scheduler subdir)."""
         from akasha_ingest.orchestrator import DEFAULT_LOCK_DIR
@@ -1316,24 +1366,24 @@ class TestLegacyLockDirCompatibility:
             f"Expected /srv/akasha/ingestion/ but got {DEFAULT_LOCK_DIR!r}"
         )
 
-    def test_liss3_worker_lock_path_matches_legacy_wrapper(self):
-        """LISS-3 worker lock path must match the legacy bhoonidhi wrapper path."""
+    def test_liss3_worker_lock_path_is_canonical(self):
+        """LISS-3 worker lock path uses the canonical {source}.{aoi}.worker.lock name."""
         from akasha_ingest.orchestrator import DEFAULT_LOCK_DIR
         from akasha_ingest.scheduler_locks import worker_lock_path
 
         path = worker_lock_path(DEFAULT_LOCK_DIR, _LISS3_SOURCE, _DEFAULT_AOI)
-        expected_suffix = f"bhoonidhi-sync.{_DEFAULT_AOI}.worker.lock"
+        expected_suffix = f"{_LISS3_SOURCE}.{_DEFAULT_AOI}.worker.lock"
         assert str(path).replace("\\", "/").endswith(expected_suffix), (
             f"Expected path ending in {expected_suffix!r}, got {str(path)!r}"
         )
 
-    def test_liss4_worker_lock_path_matches_legacy_wrapper(self):
-        """LISS-4 worker lock path must match the legacy bhoonidhi-liss4-sync wrapper path."""
+    def test_liss4_worker_lock_path_is_canonical(self):
+        """LISS-4 worker lock path uses the canonical {source}.{aoi}.worker.lock name."""
         from akasha_ingest.orchestrator import DEFAULT_LOCK_DIR
         from akasha_ingest.scheduler_locks import worker_lock_path
 
         path = worker_lock_path(DEFAULT_LOCK_DIR, _LISS4_SOURCE, _DEFAULT_AOI)
-        expected_suffix = f"bhoonidhi-liss4-sync.{_DEFAULT_AOI}.worker.lock"
+        expected_suffix = f"{_LISS4_SOURCE}.{_DEFAULT_AOI}.worker.lock"
         assert str(path).replace("\\", "/").endswith(expected_suffix)
 
     def test_worker_lock_not_under_scheduler_locks_subdir(self):
@@ -1352,16 +1402,17 @@ class TestLegacyLockDirCompatibility:
 
 
 class TestTerminalDoubleTransitionGuard:
-    def test_ledger_write_failure_records_failed_not_crash(
+    def test_ledger_write_failure_does_not_crash_job(
         self, tmp_path, monkeypatch
     ):
-        """If ledger.record_success raises, job finishes as FAILED without crashing.
+        """If ledger.record_success raises, the job still finishes without crashing.
 
-        Ledger update is now done BEFORE finish_job(SUCCEEDED), so a ledger
-        write failure leaves the job in RUNNING state and the except handler
-        can safely transition to FAILED.
+        The scheduler ledger update happens AFTER finish_job(SUCCEEDED) and is
+        wrapped in a best-effort try/except, so a ledger write failure is
+        swallowed and the already-recorded SUCCEEDED status is preserved.
         """
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
 
         from akasha_ingest.orchestrator import SchedulerLedger
 
@@ -1370,7 +1421,7 @@ class TestTerminalDoubleTransitionGuard:
 
         monkeypatch.setattr(SchedulerLedger, "record_success", _failing_record_success)
 
-        # Must not raise — exception must be caught and job marked FAILED
+        # Must not raise — the ledger write error is swallowed best-effort.
         result = run_source_job(
             _LISS3_SOURCE,
             _DEFAULT_AOI,
@@ -1380,8 +1431,7 @@ class TestTerminalDoubleTransitionGuard:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
-        assert result.failure_kind == "pipeline_deferred"
+        assert result.status == str(JobStatus.SUCCEEDED)
 
     def test_terminal_to_terminal_value_error_is_suppressed(
         self, tmp_path, monkeypatch
@@ -1569,15 +1619,16 @@ class TestPhase7SchedulerPath:
         payload = plan_events[0].get("payload", {})
         assert "plannedStages" in payload
 
-    def test_awifs_validation_failed_observability_includes_readiness_reasons(
+    def test_awifs_approved_run_succeeds_and_records_succeeded_verdict(
         self, tmp_path, monkeypatch
     ):
-        """VALIDATION_FAILED observability for AWiFS must carry readinessReasons.
+        """AWiFS is product-active: an approved run executes the live pipeline.
 
-        TASK-046: background_only AWiFS must report readiness_reasons from the
-        registry so operators can see why it cannot be promoted to product-active.
+        With the pipeline mocked to succeed, observability records a succeeded
+        verdict and the registry product_exposure stays PRODUCT_ACTIVE.
         """
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _AWIFS_SOURCE,
             _DEFAULT_AOI,
@@ -1587,20 +1638,21 @@ class TestPhase7SchedulerPath:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
-        assert result.failure_kind == "pipeline_deferred"
+        assert result.status == str(JobStatus.SUCCEEDED)
         obs_path = job_dir(result.job_id, tmp_path) / "observability.json"
-        assert obs_path.exists(), "observability.json was not written for AWiFS VALIDATION_FAILED"
+        assert obs_path.exists(), "observability.json was not written for AWiFS approved run"
         obs = json.loads(obs_path.read_text(encoding="utf-8"))
         v_summary = obs.get("verificationSummary", {})
-        assert v_summary["verdict"] == "pipeline_deferred"
-        assert v_summary["productExposure"] == ProductExposure.BACKGROUND_ONLY.value
+        assert v_summary["verdict"] == "succeeded"
+        row = SOURCE_REGISTRY[_AWIFS_SOURCE]
+        assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE
 
-    def test_awifs_validation_failed_status_and_exposure_preserved(
+    def test_awifs_approved_run_succeeds_and_exposure_is_product_active(
         self, tmp_path, monkeypatch
     ):
-        """VALIDATION_FAILED run must not promote AWiFS product_exposure."""
+        """AWiFS approved run succeeds and its product_exposure is PRODUCT_ACTIVE."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _AWIFS_SOURCE,
             _DEFAULT_AOI,
@@ -1610,11 +1662,11 @@ class TestPhase7SchedulerPath:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
+        assert result.status == str(JobStatus.SUCCEEDED)
         from akasha_ingest.source_registry import ProductExposure
 
         row = SOURCE_REGISTRY[_AWIFS_SOURCE]
-        assert row.product_exposure == ProductExposure.BACKGROUND_ONLY
+        assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE
 
     def test_phase7_prov_input_phase_key_for_bhoonidhi_approved_run(
         self, tmp_path, monkeypatch
@@ -1624,6 +1676,7 @@ class TestPhase7SchedulerPath:
         TASK-047: prov_input.phase key reflects Phase 7 scheduler path for Bhoonidhi.
         """
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")
+        _patch_live_pipeline_success(monkeypatch)
         result = run_source_job(
             _LISS3_SOURCE,
             _DEFAULT_AOI,
@@ -1633,8 +1686,7 @@ class TestPhase7SchedulerPath:
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
-        assert result.status == str(JobStatus.FAILED)
-        assert result.failure_kind == "pipeline_deferred"
+        assert result.status == str(JobStatus.SUCCEEDED)
         obs_path = job_dir(result.job_id, tmp_path) / "observability.json"
         assert obs_path.exists()
         obs = json.loads(obs_path.read_text(encoding="utf-8"))

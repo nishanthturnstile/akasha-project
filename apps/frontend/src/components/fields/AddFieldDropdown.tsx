@@ -6,6 +6,10 @@ import type { Field } from '@/types/api';
 interface AddFieldDropdownProps {
   fields: Field[];
   onNavigate: (path: string) => void;
+  /** When set, clicking a field calls this instead of navigating. */
+  onSelectField?: (fieldId: string) => void;
+  /** Pre‑selected season id to skip the season radio on the create page. */
+  defaultSeasonId?: string | null;
   /** Optional class for the trigger button. */
   triggerClassName?: string;
   /** Optional data-testid prefix. */
@@ -15,6 +19,8 @@ interface AddFieldDropdownProps {
 export function AddFieldDropdown({
   fields,
   onNavigate,
+  onSelectField,
+  defaultSeasonId,
   triggerClassName = '',
   testId = 'add-field',
 }: AddFieldDropdownProps) {
@@ -59,7 +65,6 @@ export function AddFieldDropdown({
           triggerClassName,
         )}
       >
-        <Plus className="size-3.5" strokeWidth={1.75} />
         Add Field
         <ChevronDown className={cn('size-3.5 transition-transform duration-fast', open && 'rotate-180')} strokeWidth={1.75} />
       </button>
@@ -89,7 +94,11 @@ export function AddFieldDropdown({
                   type="button"
                   onClick={() => {
                     setOpen(false);
-                    onNavigate(`/monitoring/field-analytics/field/${f.id}`);
+                    if (onSelectField) {
+                      onSelectField(f.id);
+                    } else {
+                      onNavigate(`/monitoring/field-analytics/field/${f.id}`);
+                    }
                   }}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px] text-foreground hover:bg-accent/40 transition-colors duration-fast"
                 >
@@ -106,7 +115,8 @@ export function AddFieldDropdown({
               type="button"
               onClick={() => {
                 setOpen(false);
-                onNavigate('/monitoring/field-create');
+                const path = defaultSeasonId ? `/monitoring/field-create?seasonId=${defaultSeasonId}` : '/monitoring/field-create';
+                onNavigate(path);
               }}
               className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[12px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors duration-fast"
             >

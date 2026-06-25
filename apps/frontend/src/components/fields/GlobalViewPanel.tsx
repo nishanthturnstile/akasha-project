@@ -215,6 +215,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
   const [query, setQuery] = useState('');
   const [editingField, setEditingField] = useState<Field | null>(null);
   const [deletingField, setDeletingField] = useState<Field | null>(null);
+  const [savingField, setSavingField] = useState(false);
 
   const allFields = useMemo(() => (Array.isArray(fieldsQ.data) ? fieldsQ.data : []), [fieldsQ.data]);
   const allSeasons = useMemo(
@@ -415,7 +416,14 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           field={editingField}
           open={!!editingField}
           onOpenChange={(open) => { if (!open) setEditingField(null); }}
-          onSave={(fieldId, name, geometry, vegetationData) => updateField.mutate({ fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}) } })}
+          onSave={(fieldId, name, geometry, vegetationData, groupId) => {
+            setSavingField(true);
+            updateField.mutate(
+              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}) } },
+              { onSuccess: () => { setSavingField(false); setEditingField(null); }, onError: () => setSavingField(false) },
+            );
+          }}
+          saving={savingField}
           onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
         />
       )}

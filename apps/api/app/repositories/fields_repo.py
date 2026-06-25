@@ -10,7 +10,17 @@ from shapely.geometry import shape
 from sqlalchemy import delete, select
 
 from ..db import session_scope
-from ..models import Field, FieldGroup, FieldSeason, Season
+from ..models import (
+    Crop,
+    Field,
+    FieldGroup,
+    FieldSeason,
+    IrrigationType,
+    Season,
+    TillageType,
+    VegetationCycle,
+    Variety,
+)
 from ..raster.errors import bad_request, invalid_geometry, not_found
 
 
@@ -105,7 +115,235 @@ def _field_season_data(session, season_ids: list[uuid.UUID]) -> dict[uuid.UUID, 
     }
 
 
-def _row_to_field(field: Any, season_data: dict[uuid.UUID, dict[str, Any]]) -> dict[str, Any]:
+def _validate_vegetation_cycles(
+    session: Any,
+    user_id: str,
+    vegetation_data: list[dict[str, Any]],
+    season_uuids: list[uuid.UUID],
+) -> None:
+    if not vegetation_data:
+        return
+    user_uuid = _uuid(user_id)
+    for item in vegetation_data:
+        sid = _uuid(item.get("seasonId"))
+        if sid is None or sid not in season_uuids:
+            raise bad_request(
+                "Vegetation cycle references a season not linked to the field.",
+                code="INVALID_VEG_CYCLE_SEASON",
+                seasonId=str(item.get("seasonId")),
+            )
+        crop_id = item.get("cropType")
+        if crop_id is None:
+            raise bad_request(
+                "Vegetation cycle crop type is required.",
+                code="MISSING_CROP_TYPE",
+            )
+        row = session.execute(select(Crop.id).where(Crop.id == crop_id)).first()
+        if row is None:
+            raise not_found(
+                "Crop not found.",
+                code="CROP_NOT_FOUND",
+                cropType=crop_id,
+            )
+        variety_id = item.get("cropVariety")
+        if variety_id is not None:
+            row = session.execute(
+                select(Variety.id).where(
+                    Variety.id == variety_id, Variety.crop_id == crop_id
+                )
+            ).first()
+            if row is None:
+                raise not_found(
+                    "Variety not found for the given crop.",
+                    code="VARIETY_NOT_FOUND",
+                    cropType=crop_id,
+                    cropVariety=variety_id,
+                )
+        irr_id = item.get("irrigationType")
+        if irr_id is not None:
+            row = session.execute(
+                select(IrrigationType.id).where(IrrigationType.id == irr_id)
+            ).first()
+            if row is None:
+                raise not_found(
+                    "Irrigation type not found.",
+                    code="IRRIGATION_TYPE_NOT_FOUND",
+                    irrigationType=irr_id,
+                )
+        till_id = item.get("tillageType")
+        if till_id is not None:
+            row = session.execute(
+                select(TillageType.id).where(TillageType.id == till_id)
+            ).first()
+            if row is None:
+                raise not_found(
+                    "Tillage type not found.",
+                    code="TILLAGE_TYPE_NOT_FOUND",
+                    tillageType=till_id,
+                )
+
+
+def _veg_cycle_to_dict(
+    row: Any,
+    season_name: str | None = None,
+    crop_name: str | None = None,
+    variety_name: str | None = None,
+    irrigation_type_name: str | None = None,
+    tillage_type_name: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "fieldId": str(row.field_id),
+        "seasonId": str(row.season_id),
+        "seasonName": season_name,
+        "year": row.year,
+        "cropType": row.crop_id,
+        "cropName": crop_name,
+        "cropVariety": row.variety_id,
+        "varietyName": variety_name,
+        "sowingDate": row.sowing_date.isoformat() if row.sowing_date else None,
+        "harvestingDate": row.harvesting_date.isoformat() if row.harvesting_date else None,
+        "targetYield": row.target_yield,
+        "actualYield": row.actual_yield,
+        "irrigationType": row.irrigation_type_id,
+        "irrigationTypeName": irrigation_type_name,
+        "tillageType": row.tillage_type_id,
+        "tillageTypeName": tillage_type_name,
+        "maturity": row.maturity,
+        "fertilizer": row.fertilizer,
+        "hybrid": row.hybrid,
+        "ndviList": row.ndvi_list,
+        "notes": row.notes,
+        "isCutOff": row.is_cut_off,
+        "createdAt": (
+            row.created_at.isoformat().replace("+00:00", "Z")
+            if row.created_at
+            else None
+        ),
+        "updatedAt": (
+            row.updated_at.isoformat().replace("+00:00", "Z")
+            if row.updated_at
+            else None
+        ),
+    }
+
+
+def _vegetation_cycle_data(
+    session: Any, field_id: uuid.UUID, season_id: uuid.UUID | None = None
+) -> list[dict[str, Any]]:
+    stmt = (
+        select(
+            VegetationCycle,
+            Season.name,
+            Crop.name,
+            Variety.name,
+            IrrigationType.name,
+            TillageType.name,
+        )
+        .where(VegetationCycle.field_id == field_id)
+        .join(Season, VegetationCycle.season_id == Season.season_id)
+        .join(Crop, VegetationCycle.crop_id == Crop.id)
+        .outerjoin(Variety, VegetationCycle.variety_id == Variety.id)
+        .outerjoin(
+            IrrigationType, VegetationCycle.irrigation_type_id == IrrigationType.id
+        )
+        .outerjoin(TillageType, VegetationCycle.tillage_type_id == TillageType.id)
+    )
+    if season_id is not None:
+        stmt = stmt.where(VegetationCycle.season_id == season_id)
+    stmt = stmt.order_by(VegetationCycle.created_at)
+    rows = session.execute(stmt).all()
+    return [
+        _veg_cycle_to_dict(
+            row[0],
+            season_name=row[1],
+            crop_name=row[2],
+            variety_name=row[3],
+            irrigation_type_name=row[4],
+            tillage_type_name=row[5],
+        )
+        for row in rows
+    ]
+
+
+def _vegetation_cycle_data_bulk(
+    session: Any, field_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    if not field_ids:
+        return {}
+    rows = session.execute(
+        select(
+            VegetationCycle,
+            Season.name,
+            Crop.name,
+            Variety.name,
+            IrrigationType.name,
+            TillageType.name,
+        )
+        .where(VegetationCycle.field_id.in_(field_ids))
+        .join(Season, VegetationCycle.season_id == Season.season_id)
+        .join(Crop, VegetationCycle.crop_id == Crop.id)
+        .outerjoin(Variety, VegetationCycle.variety_id == Variety.id)
+        .outerjoin(
+            IrrigationType, VegetationCycle.irrigation_type_id == IrrigationType.id
+        )
+        .outerjoin(TillageType, VegetationCycle.tillage_type_id == TillageType.id)
+        .order_by(VegetationCycle.created_at)
+    ).all()
+    result: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for row in rows:
+        vc = row[0]
+        entry = _veg_cycle_to_dict(
+            vc,
+            season_name=row[1],
+            crop_name=row[2],
+            variety_name=row[3],
+            irrigation_type_name=row[4],
+            tillage_type_name=row[5],
+        )
+        result.setdefault(vc.field_id, []).append(entry)
+    return result
+
+
+def _insert_vegetation_cycles(
+    session: Any,
+    field_id: uuid.UUID,
+    user_id: uuid.UUID,
+    vegetation_data: list[dict[str, Any]],
+) -> None:
+    if not vegetation_data:
+        return
+    for item in vegetation_data:
+        session.add(
+            VegetationCycle(
+                id=uuid.uuid4(),
+                field_id=field_id,
+                season_id=_uuid(item["seasonId"]),
+                year=item["year"],
+                crop_id=item["cropType"],
+                variety_id=item.get("cropVariety"),
+                sowing_date=item.get("sowingDate"),
+                harvesting_date=item.get("harvestingDate"),
+                target_yield=item.get("targetYield"),
+                actual_yield=item.get("actualYield"),
+                irrigation_type_id=item.get("irrigationType"),
+                tillage_type_id=item.get("tillageType"),
+                maturity=item.get("maturity"),
+                fertilizer=item.get("fertilizer"),
+                hybrid=item.get("hybrid"),
+                ndvi_list=item.get("ndviList"),
+                notes=item.get("notes"),
+                is_cut_off=item.get("isCutOff"),
+                user_id=user_id,
+            )
+        )
+
+
+def _row_to_field(
+    field: Any,
+    season_data: dict[uuid.UUID, dict[str, Any]],
+    veg_data: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return {
         "id": str(field.id),
         "userId": str(field.user_id),
@@ -122,6 +360,7 @@ def _row_to_field(field: Any, season_data: dict[uuid.UUID, dict[str, Any]]) -> d
             }
             for sid, v in season_data.items()
         ],
+        "vegetationData": veg_data or [],
         "createdAt": (
             field.created_at.isoformat().replace("+00:00", "Z")
             if field.created_at
@@ -146,12 +385,15 @@ def create_field(
     area_ha: float | None,
     group_id: str | None,
     season_ids: list[str] | None = None,
+    vegetation_data: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     with session_scope() as session:
         group_uuid = _uuid(group_id) if group_id else None
         season_uuids = _normalize_season_ids(season_ids)
+        veg_data = vegetation_data or []
         _validate_field_group(session, group_uuid)
         _validate_season_links(session, user_id, season_uuids)
+        _validate_vegetation_cycles(session, user_id, veg_data, season_uuids)
         field = Field(
             user_id=_uuid(user_id),
             name=name,
@@ -168,6 +410,8 @@ def create_field(
                 session.add(
                     FieldSeason(id=uuid.uuid4(), field_id=field.id, season_id=sid)
                 )
+        _insert_vegetation_cycles(session, field.id, _uuid(user_id), veg_data)
+        session.flush()
         session.refresh(field)
         sids = [
             row[0]
@@ -176,7 +420,8 @@ def create_field(
             ).all()
         ]
         season_data = _field_season_data(session, sids)
-        return _row_to_field(field, season_data)
+        veg_rows = _vegetation_cycle_data(session, field.id)
+        return _row_to_field(field, season_data, veg_rows)
 
 
 def list_fields(user_id: str) -> list[dict[str, Any]]:
@@ -186,8 +431,10 @@ def list_fields(user_id: str) -> list[dict[str, Any]]:
         user_uuid = _uuid(user_id)
         all_season_ids: set[uuid.UUID] = set()
         field_season_ids: dict[uuid.UUID, list[uuid.UUID]] = {}
+        field_ids: list[uuid.UUID] = []
         for field in fields:
             if field.user_id == user_uuid:
+                field_ids.append(field.id)
                 sids = [
                     row[0]
                     for row in session.execute(
@@ -199,12 +446,21 @@ def list_fields(user_id: str) -> list[dict[str, Any]]:
                 field_season_ids[field.id] = sids
                 all_season_ids.update(sids)
         season_data = _field_season_data(session, list(all_season_ids))
+        veg_by_field = _vegetation_cycle_data_bulk(session, field_ids)
         results = []
         for field in fields:
             if field.user_id == user_uuid:
                 sids = field_season_ids.get(field.id, [])
-                field_season_data = {sid: season_data[sid] for sid in sids if sid in season_data}
-                results.append(_row_to_field(field, field_season_data))
+                field_season_data = {
+                    sid: season_data[sid] for sid in sids if sid in season_data
+                }
+                results.append(
+                    _row_to_field(
+                        field,
+                        field_season_data,
+                        veg_by_field.get(field.id, []),
+                    )
+                )
         return results
 
 
@@ -221,15 +477,17 @@ def get_field(field_id: str, user_id: str) -> dict[str, Any] | None:
             ).all()
         ]
         season_data = _field_season_data(session, sids)
-        return _row_to_field(field, season_data)
+        veg_rows = _vegetation_cycle_data(session, field.id)
+        return _row_to_field(field, season_data, veg_rows)
 
 
 def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] | None:
-    allowed = {"name", "geometry", "area_ha", "groupId", "seasonIds"}
+    allowed = {"name", "geometry", "area_ha", "groupId", "seasonIds", "vegetationData"}
     values = {
         k: v
         for k, v in kwargs.items()
-        if k in allowed and (v is not None or k == "seasonIds")
+        if k in allowed
+        and (v is not None or k in ("seasonIds", "vegetationData"))
     }
     with session_scope() as session:
         field = session.execute(
@@ -250,6 +508,23 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
         )
         if season_uuids is not None:
             _validate_season_links(session, user_id, season_uuids)
+        veg_data = values.get("vegetationData")
+        if veg_data is not None:
+            effective_season_uuids = (
+                season_uuids
+                if season_uuids is not None
+                else [
+                    row[0]
+                    for row in session.execute(
+                        select(FieldSeason.season_id).where(
+                            FieldSeason.field_id == field.id
+                        )
+                    ).all()
+                ]
+            )
+            _validate_vegetation_cycles(
+                session, user_id, veg_data, effective_season_uuids
+            )
         for key in ("name", "geometry", "area_ha", "groupId"):
             if key in values:
                 if key == "geometry":
@@ -265,6 +540,12 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
                     FieldSeason(id=uuid.uuid4(), field_id=field.id, season_id=sid)
                 )
             session.flush()
+        if veg_data is not None:
+            session.execute(
+                delete(VegetationCycle).where(VegetationCycle.field_id == field.id)
+            )
+            _insert_vegetation_cycles(session, field.id, _uuid(user_id), veg_data)
+            session.flush()
         session.refresh(field)
         sids = [
             row[0]
@@ -273,7 +554,23 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
             ).all()
         ]
         season_data = _field_season_data(session, sids)
-        return _row_to_field(field, season_data)
+        veg_rows = _vegetation_cycle_data(session, field.id)
+        return _row_to_field(field, season_data, veg_rows)
+
+
+def list_vegetation_cycles(
+    field_id: str, user_id: str, season_id: str
+) -> list[dict[str, Any]]:
+    with session_scope() as session:
+        field = session.execute(
+            select(Field.id).where(
+                Field.id == _uuid(field_id),
+                Field.user_id == _uuid(user_id),
+            )
+        ).first()
+        if field is None:
+            return []
+        return _vegetation_cycle_data(session, _uuid(field_id), _uuid(season_id))
 
 
 def delete_field(field_id: str, user_id: str) -> bool:

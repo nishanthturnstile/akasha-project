@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from ..auth import CurrentUser, get_current_user
 from ..raster.errors import AkashaError, bad_request, field_backend_unavailable, not_found
 from ..repositories import fields_repo
-from ..schemas.fields import FieldCreate, FieldResponse, FieldUpdate
+from ..schemas.fields import FieldCreate, FieldResponse, FieldUpdate, VegetationCycleResponse
 
 logger = logging.getLogger("akasha.api.fields")
 router = APIRouter(prefix="/api", tags=["fields"], dependencies=[Depends(get_current_user)])
@@ -67,6 +67,7 @@ async def create_field(
     user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     name = _validate_field_name(payload.name)
+    veg_data = [v.model_dump(by_alias=True) for v in payload.vegetationData]
     return await _run_blocking(
         fields_repo.create_field,
         user.id,
@@ -75,6 +76,7 @@ async def create_field(
         payload.areaHa,
         payload.groupId,
         payload.seasonIds,
+        veg_data,
     )
 
 
@@ -84,6 +86,15 @@ async def get_field(field_id: str, user: CurrentUser = Depends(get_current_user)
     if field is None:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", fieldId=field_id)
     return field
+
+
+@router.get("/fields/{field_id}/vegetation-cycles", response_model=list[VegetationCycleResponse])
+async def list_vegetation_cycles(
+    field_id: str,
+    season_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    return await _run_blocking(fields_repo.list_vegetation_cycles, field_id, user.id, season_id)
 
 
 @router.patch("/fields/{field_id}", response_model=FieldResponse)

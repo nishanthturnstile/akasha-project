@@ -415,7 +415,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           field={editingField}
           open={!!editingField}
           onOpenChange={(open) => { if (!open) setEditingField(null); }}
-          onSave={(fieldId, name, geometry) => updateField.mutate({ fieldId, payload: { name, ...(geometry ? { geometry } : {}) } })}
+          onSave={(fieldId, name, geometry, vegetationData) => updateField.mutate({ fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}) } })}
           onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
         />
       )}

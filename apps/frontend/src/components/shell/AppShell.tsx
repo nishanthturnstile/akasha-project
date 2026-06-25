@@ -4,8 +4,9 @@ import {
   CalendarRange,
   ChevronDown,
   ChevronsLeft,
-  ChevronsRight,
+  Clock,
   LogOut,
+  Menu,
   Plus,
   Satellite,
   UserCircle2,
@@ -102,6 +103,7 @@ export function AppShell() {
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
   const [globalViewOpen, setGlobalViewOpen] = useState(!location.pathname.includes('/field/'));
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
+  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
   const seasonsQ = useSeasons();
   const deleteSeason = useDeleteSeason();
@@ -219,7 +221,7 @@ export function AppShell() {
     });
   };
 
-  const railWidth = railCollapsed ? '3.5rem' : '19rem';
+  const railWidth = railCollapsed ? '3.5rem' : '12rem';
 
   return (
     <TooltipProvider delayDuration={ 200 }>
@@ -302,14 +304,16 @@ export function AppShell() {
               railCollapsed && 'justify-center px-2',
             ) }
           >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
-              <Satellite className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
-            </div>
             { !railCollapsed && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-display text-base font-semibold leading-5">Akasha</p>
-                <p className="truncate text-[11px] text-muted-foreground">Crop intelligence</p>
-              </div>
+              <>
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+                  <Satellite className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-base font-semibold leading-5">Akasha</p>
+                  <p className="truncate text-[11px] text-muted-foreground">Crop intelligence</p>
+                </div>
+              </>
             ) }
             <Tooltip>
               <TooltipTrigger asChild>
@@ -322,7 +326,7 @@ export function AppShell() {
                   className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   { railCollapsed ? (
-                    <ChevronsRight className="size-4" strokeWidth={ 1.75 } />
+                    <Menu className="size-4" strokeWidth={ 1.75 } />
                   ) : (
                     <ChevronsLeft className="size-4" strokeWidth={ 1.75 } />
                   ) }
@@ -349,7 +353,7 @@ export function AppShell() {
             >
               <CalendarRange className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
               { !railCollapsed && (
-                <span className="min-w-0 flex-1 truncate font-bold text-base">
+                <span className="min-w-0 flex-1 truncate font-bold text-sm">
                   { currentSeason ? currentSeason.name : 'Season' }
                 </span>
               ) }
@@ -534,76 +538,105 @@ export function AppShell() {
                 const isExpanded = expandedGroups.has(group.label);
                 const panelId = `nav-group-panel-${slug}`;
                   if (railCollapsed) {
-                  // Collapsed rail: render every item as an icon-only NavLink (no group headers).
+                  const GroupIcon = group.icon;
+                  const isHovered = hoveredGroup === group.label;
+                  const panelFlyoutId = `nav-flyout-${slug}`;
                   return (
                     <section
                       key={ group.label }
                       aria-labelledby={ `nav-group-${slug}` }
-                      className="flex flex-col gap-1 border-b border-border/40 pb-2 last:border-b-0"
+                      className="relative border-b border-border/40 pb-2 last:border-b-0"
                     >
                       <h2 id={ `nav-group-${slug}` } className="sr-only">
                         { group.label }
                       </h2>
-                      { group.items.map((item) => {
-                        const Icon = item.icon;
-                        if (item.label === 'Global view') {
-                          return (
-                            <Tooltip key={ item.path }>
-                              <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={ group.label }
+                        aria-expanded={ isHovered }
+                        aria-controls={ panelFlyoutId }
+                        data-testid={ `nav-group-btn-${slug}` }
+                        onMouseEnter={ () => setHoveredGroup(group.label) }
+                        onMouseLeave={ () => setHoveredGroup(null) }
+                        className={ cn(
+                          'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                          activeGroupLabel === group.label && 'text-primary',
+                        ) }
+                      >
+                        { GroupIcon && (
+                          <GroupIcon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                        ) }
+                      </button>
+                      { isHovered && (
+                        <div
+                          id={ panelFlyoutId }
+                          role="menu"
+                          onMouseEnter={ () => setHoveredGroup(group.label) }
+                          onMouseLeave={ () => setHoveredGroup(null) }
+                          className="absolute right-full top-0 z-50 ml-3 w-56 rounded-lg border border-border/60 bg-popover p-2 shadow-elevation-high"
+                        >
+                          <p className="mb-1 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            { group.label }
+                          </p>
+                          { group.items.map((item) => {
+                            const ItemIcon = item.icon;
+                            if (item.label === 'Global view') {
+                              return (
                                 <button
+                                  key={ item.path }
                                   type="button"
-                                  onClick={ () => setGlobalViewOpen(true) }
+                                  role="menuitem"
+                                  onClick={ () => {
+                                    setHoveredGroup(null);
+                                    setGlobalViewOpen(true);
+                                  } }
                                   data-testid={ testIdFor(item.label) }
-                                  data-active={ globalViewOpen || undefined }
-                                  aria-label={ item.label }
-                                  className={ cn(
-                                    'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                    globalViewOpen && 'bg-primary/15 text-foreground',
-                                  ) }
+                                  className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground"
                                 >
-                                  <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                                  { ItemIcon && (
+                                    <ItemIcon className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+                                  ) }
+                                  <span className="min-w-0 flex-1 truncate">{ item.label }</span>
                                 </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                { item.label }
-                              </TooltipContent>
-                            </Tooltip>
-                          );
-                        }
-                        return (
-                          <Tooltip key={ item.path }>
-                            <TooltipTrigger asChild>
+                              );
+                            }
+                            return (
                               <NavLink
+                                key={ item.path }
                                 to={ item.path }
+                                role="menuitem"
                                 data-testid={ testIdFor(item.label) }
-                                aria-label={ item.label }
-                                onClick={ () => setGlobalViewOpen(false) }
+                                onClick={ () => {
+                                  setHoveredGroup(null);
+                                  setGlobalViewOpen(false);
+                                } }
                                 className={ ({ isActive }) =>
-                                  cn(
-                                    'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                    isActive && !globalViewOpen && 'bg-primary/15 text-foreground shadow-e1',
+                                cn(
+                                  'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                  isActive && !globalViewOpen && 'text-primary font-semibold',
                                   )
                                 }
                               >
-                                <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                                { ItemIcon && (
+                                  <ItemIcon className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+                                ) }
+                                <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                                { item.status === 'planned' && (
+                                  <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
+                                ) }
                               </NavLink>
-                            </TooltipTrigger>
-                            <TooltipContent side="left">
-                              { item.label }
-                              { item.status === 'planned' && (
-                                <span className="ml-1 text-[10px] uppercase text-muted-foreground">
-                                  · planned
-                                </span>
-                              ) }
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      }) }
+                            );
+                          }) }
+                        </div>
+                      ) }
                     </section>
                   );
                 }
                 return (
-                  <section key={ group.label } aria-labelledby={ `nav-group-${slug}` }>
+                  <section
+                    key={ group.label }
+                    aria-labelledby={ `nav-group-${slug}` }
+                  >
                     <h2 id={ `nav-group-${slug}` } className="sr-only">
                       { group.label }
                     </h2>
@@ -613,9 +646,15 @@ export function AppShell() {
                       data-testid={ `nav-group-toggle-${slug}` }
                       aria-expanded={ isExpanded }
                       aria-controls={ panelId }
-                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground"
+                      className={ cn(
+                        'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                        (isExpanded || activeGroupLabel === group.label) && 'bg-primary/10 text-primary',
+                      ) }
                     >
-                      <span className="truncate">{ group.label }</span>
+                      <span className="flex items-center gap-2 truncate">
+                        { group.icon && <group.icon className="size-3.5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" /> }
+                        <span>{ group.label }</span>
+                      </span>
                       <ChevronDown
                         className={ cn(
                           'size-4 shrink-0 text-muted-foreground transition-transform duration-fast',
@@ -628,7 +667,6 @@ export function AppShell() {
                     { isExpanded && (
                       <div id={ panelId } className="mt-1 flex flex-col gap-1">
                         { group.items.map((item) => {
-                          const Icon = item.icon;
                           if (item.label === 'Global view') {
                             return (
                               <button
@@ -638,17 +676,12 @@ export function AppShell() {
                                 data-testid={ testIdFor(item.label) }
                                 data-active={ globalViewOpen || undefined }
                                 className={ cn(
-                                  'group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-left transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                  'group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                                   globalViewOpen
-                                    ? 'bg-primary/15 text-foreground'
+                                    ? 'text-primary font-semibold'
                                     : 'text-muted-foreground',
                                 ) }
                               >
-                                <Icon
-                                  className="size-4 shrink-0"
-                                  strokeWidth={ 1.75 }
-                                  aria-hidden="true"
-                                />
                                 <span className="min-w-0 flex-1 truncate">{ item.label }</span>
                               </button>
                             );
@@ -661,21 +694,14 @@ export function AppShell() {
                               onClick={ () => setGlobalViewOpen(false) }
                               className={ ({ isActive }) =>
                                 cn(
-                                  'group flex items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                  isActive && !globalViewOpen && 'bg-primary/15 text-foreground shadow-e1',
+                                  'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                  isActive && !globalViewOpen && 'text-primary font-semibold',
                                 )
                               }
                             >
-                              <Icon
-                                className="size-4 shrink-0 text-muted-foreground group-hover:text-accent-foreground"
-                                strokeWidth={ 1.75 }
-                                aria-hidden="true"
-                              />
                               <span className="min-w-0 flex-1 truncate">{ item.label }</span>
                               { item.status === 'planned' && (
-                                <span className="rounded-sm bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                                  Planned
-                                </span>
+                                <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
                               ) }
                             </NavLink>
                           );
@@ -731,7 +757,7 @@ export function AppShell() {
                       data-testid={ testIdFor(item.label) }
                       className={ ({ isActive }) =>
                         cn(
-                          'group flex items-center gap-3 rounded-md px-2.5 py-2 text-[12px] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                          'group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                           isActive && 'bg-primary/15 text-foreground shadow-e1',
                         )
                       }
@@ -767,7 +793,7 @@ export function AppShell() {
                       data-testid="account-popover-trigger"
                       aria-label="Sign out"
                       className={ cn(
-                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-[12px] text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70',
+                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70',
                         railCollapsed ? 'size-9 justify-center px-0 py-0' : 'w-full',
                       ) }
                       disabled={ logout.isPending }
@@ -783,10 +809,10 @@ export function AppShell() {
                       ) }
                       { !railCollapsed && (
                         <span className="min-w-0 flex-1 truncate text-left">
-                          <span className="block truncate text-[12px] text-foreground/90">
-                            { account.data?.user?.displayName ?? 'Akasha user' }
-                          </span>
-                          <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span className="block truncate text-sm text-foreground/90">
+                          { account.data?.user?.displayName ?? 'Akasha user' }
+                        </span>
+                        <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
                             { account.data?.currentTeam?.name ?? 'Workspace' }
                           </span>
                         </span>

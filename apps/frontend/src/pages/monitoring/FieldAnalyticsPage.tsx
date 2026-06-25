@@ -16,7 +16,7 @@ function formatAreaHa(value: number | null | undefined): string {
 }
 
 export default function FieldAnalyticsPage() {
-  const { selectedPlotId, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, overlaysVisible } = useMapView();
+  const { selectedPlotId, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, overlaysVisible, mapFullscreen } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
 
@@ -85,13 +85,13 @@ export default function FieldAnalyticsPage() {
       </div>
       )}
 
-      {/* Map card — flex-1 when global view (full height), flex-[13] when analytics visible */}
-      <div className={cn('min-h-0 rounded-md border border-border overflow-hidden', overlaysVisible ? 'flex-[13]' : 'flex-1')}>
+      {/* Map card — flex-1 when fullscreen/global, flex-[13] when analytics visible */}
+      <div className={cn('min-h-0 rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'flex-[13]' : 'flex-1')}>
         <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords />
       </div>
 
-      {/* Analytics panel card — only when field selected and not in global view */}
-      {selectedField && overlaysVisible && (
+      {/* Analytics panel card — hidden when mapFullscreen is active */}
+      {selectedField && overlaysVisible && !mapFullscreen && (
         <div className="min-h-0 flex-[7] rounded-md border border-border bg-background">
           <FieldAnalyticsPanel
             field={selectedField}

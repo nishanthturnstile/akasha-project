@@ -44,11 +44,15 @@ import {
   listIngestionJobs,
   getIngestionJob,
   getConfig,
+  getCrops,
   getDates,
   getBestObservations,
   getDefaultLayer,
+  getIrrigationTypes,
   getPlots,
   getSources,
+  getTillageTypes,
+  getVarieties,
   importPlotsGeoJson,
   login,
   signup,
@@ -94,6 +98,10 @@ export const queryKeys = {
   sources: ['sources'] as const,
   dates: (sourceId: string) => ['dates', sourceId] as const,
   defaultLayer: ['layers', 'default'] as const,
+  crops: ['crops'] as const,
+  irrigationTypes: ['irrigation-types'] as const,
+  tillageTypes: ['tillage-types'] as const,
+  varieties: (cropId: number) => ['varieties', cropId] as const,
   plots: ['plots'] as const,
   fieldStatistics: (
     plotId: string,
@@ -241,6 +249,28 @@ export function useDefaultLayer() {
   return useQuery({ queryKey: queryKeys.defaultLayer, queryFn: getDefaultLayer });
 }
 
+
+export function useCrops() {
+  return useQuery({ queryKey: queryKeys.crops, queryFn: getCrops });
+}
+
+export function useIrrigationTypes() {
+  return useQuery({ queryKey: queryKeys.irrigationTypes, queryFn: getIrrigationTypes });
+}
+
+export function useTillageTypes() {
+  return useQuery({ queryKey: queryKeys.tillageTypes, queryFn: getTillageTypes });
+}
+
+export function useVarieties(cropId: number | undefined) {
+  return useQuery({
+    queryKey: cropId ? queryKeys.varieties(cropId) : (['varieties', 'none'] as const),
+    queryFn: () => getVarieties(cropId as number),
+    enabled: Boolean(cropId),
+  });
+}
+
+
 /**
  * Best-available observations across active sources (Phase 11 / TASK-070).
  * Disabled by default — enable explicitly via `options.enabled = true`.
@@ -256,6 +286,7 @@ export function useBestObservations(
     staleTime: 60 * 1000,
   });
 }
+
 
 export function useImagerySourceMonitoring() {
   return useQuery({
@@ -322,13 +353,13 @@ export function useFieldStatistics(
     queryKey:
       plotId && options.sourceId
         ? queryKeys.fieldStatistics(
-            plotId,
-            options.sourceId,
-            options.acquisitionDate,
-            options.indexType,
-            options.cloudMask,
-            options.preferHighRes,
-          )
+          plotId,
+          options.sourceId,
+          options.acquisitionDate,
+          options.indexType,
+          options.cloudMask,
+          options.preferHighRes,
+        )
         : (['fields', 'none', 'statistics'] as const),
     queryFn: () =>
       getFieldStatistics(plotId as string, {
@@ -356,13 +387,13 @@ export function useFieldTrend(
     queryKey:
       plotId && options.sourceId
         ? queryKeys.fieldTrend(
-            plotId,
-            options.sourceId,
-            options.indexType,
-            options.startDate,
-            options.endDate,
-            options.cloudMask,
-          )
+          plotId,
+          options.sourceId,
+          options.indexType,
+          options.startDate,
+          options.endDate,
+          options.cloudMask,
+        )
         : (['fields', 'none', 'trend'] as const),
     queryFn: () =>
       getFieldTrend(plotId as string, {

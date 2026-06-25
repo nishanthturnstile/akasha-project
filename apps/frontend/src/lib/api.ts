@@ -3,6 +3,7 @@ import type {
   AppConfig,
   BestObservationsParams,
   BestObservationsResponse,
+  Crop,
   DefaultLayer,
   FieldIndexExportOptions,
   FieldReportExportOptions,
@@ -16,12 +17,15 @@ import type {
   FieldActivityPayload,
   FieldActivityUpdatePayload,
   ActivityFilters,
+  IrrigationType,
+  PaginatedVarieties,
   ReportTemplate,
   ReportTemplatePayload,
   ReportTemplateUpdatePayload,
   ScoutTask,
   ScoutTaskPayload,
   ScoutTaskUpdatePayload,
+  TillageType,
   UploadedDataset,
   FieldGroup,
   FieldGroupPayload,
@@ -286,6 +290,16 @@ export const getBestObservations = (params: BestObservationsParams = {}): Promis
   const query = p.toString();
   return request<BestObservationsResponse>(`/api/observations/best${query ? `?${query}` : ''}`);
 };
+export const getCrops = (): Promise<Crop[]> => request<Crop[]>('/api/crops');
+
+export const getIrrigationTypes = (): Promise<IrrigationType[]> =>
+  request<IrrigationType[]>('/api/irrigation-types');
+
+export const getTillageTypes = (): Promise<TillageType[]> =>
+  request<TillageType[]>('/api/tillage-types');
+
+export const getVarieties = (cropId: number): Promise<PaginatedVarieties> =>
+  request<PaginatedVarieties>(`/api/crops/${cropId}/varieties?page=1&page_size=500`);
 
 export const getPlots = (): Promise<Plot[]> => request<Plot[]>('/api/plots');
 

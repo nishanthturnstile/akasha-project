@@ -451,6 +451,61 @@ class FieldSeason(UuidPkMixin, Base):
     )
 
 
+class VegetationCycle(UuidPkMixin, TimestampMixin, Base):
+    __tablename__ = "vegetation_cycles"
+    __table_args__ = (
+        UniqueConstraint(
+            "field_id", "season_id", "year", "crop_id",
+            name="vegetation_cycles_unique_per_field_season_year_crop",
+        ),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    field_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.fields.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    season_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.seasons.season_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    crop_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.crops.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    variety_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.varieties.id", ondelete="RESTRICT"),
+    )
+    sowing_date: Mapped[date | None] = mapped_column(Date)
+    harvesting_date: Mapped[date | None] = mapped_column(Date)
+    target_yield: Mapped[float | None] = mapped_column(Float)
+    actual_yield: Mapped[float | None] = mapped_column(Float)
+    irrigation_type_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.irrigation_types.id", ondelete="RESTRICT"),
+    )
+    tillage_type_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.tillage_types.id", ondelete="RESTRICT"),
+    )
+    maturity: Mapped[str | None] = mapped_column(Text)
+    fertilizer: Mapped[str | None] = mapped_column(Text)
+    hybrid: Mapped[str | None] = mapped_column(Text)
+    ndvi_list: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_cut_off: Mapped[bool | None] = mapped_column(Boolean)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+
 class Attachment(UuidPkMixin, TimestampMixin, OwnerTeamMixin, Base):
     __tablename__ = "attachments"
     __table_args__ = (
@@ -712,3 +767,6 @@ Index("field_seasons_field_idx", FieldSeason.field_id)
 Index("field_seasons_season_idx", FieldSeason.season_id)
 Index("crops_seeding_type_idx", Crop.seeding_type_id)
 Index("varieties_crop_id_idx", Variety.crop_id)
+Index("vegetation_cycles_field_idx", VegetationCycle.field_id)
+Index("vegetation_cycles_season_idx", VegetationCycle.season_id)
+Index("vegetation_cycles_user_idx", VegetationCycle.user_id)

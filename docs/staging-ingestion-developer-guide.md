@@ -38,21 +38,76 @@ unified.
 
 ### Scheduler transition note
 
-The provider-agnostic ingestion scheduler is planned in
+The provider-agnostic ingestion scheduler (`akasha-ingestion-scheduler.timer`) is documented in
 [architecture-satellite-ingestion-scheduler-1.md](impl-plan/architecture-satellite-ingestion-scheduler-1.md).
+The Phase 0 scheduler contract is
+[satellite-ingestion-scheduler-contracts.md](reference/satellite-ingestion-scheduler-contracts.md).
+How the scheduler works end-to-end, how to trigger/control it, and how to add a new satellite are in
+[satellite-ingestion-orchestration-and-scheduler.md](satellite-ingestion-orchestration-and-scheduler.md).
 Until that scheduler is installed and cut over, this CLI remains the production-safe path for
-Bhoonidhi ad hoc jobs. During cutover, each source/AOI must have exactly one owner:
+Bhoonidhi ad hoc jobs. The full ops runbook for compatibility mode cutover and rollback is in
+[infra/selfhosted/README.md](../infra/selfhosted/README.md).
+
+During cutover, each source/AOI must have exactly one owner:
 
 | Ownership mode | Meaning |
 |---|---|
-| `legacy_timer` | Existing source-specific timer owns that source/AOI. |
+| `legacy_timer` | Existing source-specific timer owns that source/AOI. These timers are also called **compatibility-mode timers** once the orchestrator is installed. |
 | `scheduler_dry_run` | Scheduler may plan/log due decisions but must not run real jobs. |
-| `scheduler_active` | Scheduler owns real jobs; corresponding legacy timer is disabled. |
-| `manual_only` | Operators trigger jobs manually through this CLI. |
+| `scheduler_active` | Scheduler owns real jobs; corresponding compatibility-mode timer is disabled. |
+| `manual_only` | Operators trigger jobs manually through this CLI; no timer owns this source/AOI. |
 
-Do not run the scheduler and a legacy source-specific timer against the same source/AOI at the
-same time. Rollback is: stop/disable scheduler timer, re-enable the previous source timer/env,
-and confirm no queued/running scheduler job owns that source/AOI.
+**One-owner rule:** Do not run the scheduler and a compatibility-mode timer against the same
+source/AOI at the same time. Running both causes double-downloads, duplicate STAC items, and lock
+contention.
+
+Initial ownership stays with existing timers (the scheduler starts disabled):
+
+| Source/AOI | Current owner | Compatibility-mode timer | Scheduler state |
+|---|---|---|---|
+| `resourcesat-2a-liss3-boa` / `bangalore-60km` | `legacy_timer` | `akasha-bhoonidhi-sync.timer` | disabled |
+| `resourcesat-2a-liss4-mx70-l2` / `bangalore-60km` | `legacy_timer` | `akasha-bhoonidhi-liss4-sync.timer` | disabled |
+| `resourcesat-2a-awifs-boa` / `bangalore-60km` | `manual_only` | none | disabled |
+
+#### Canary flow
+
+1. Install the scheduler with `SCHEDULER_ENABLED=false` and `SCHEDULER_DRY_RUN=true`. Do **not**
+   disable any compatibility-mode timer yet.
+2. Let the scheduler run one dry-run cycle. Validate the schedule plan:
+   `cat /srv/akasha/ingestion/scheduler/schedule_state.json` and inspect the journal. Confirm due
+   decisions, lock paths, and next windows are correct for all registered sources.
+3. Select one canary source/AOI (`resourcesat-2a-liss3-boa` / `bangalore-60km`). Stop and disable
+   **only** its compatibility-mode timer before enabling scheduler active mode for that source/AOI.
+4. Enable `SCHEDULER_DRY_RUN=false` with `maxConcurrentSources=1`. Let one capped real job complete
+   and confirm the output matches what the compatibility timer previously produced.
+5. Only after canary parity is confirmed, extend scheduler ownership to additional sources/AOIs one
+   at a time.
+
+#### Rollback
+
+Source-scoped rollback procedure (reverse the canary for the affected source/AOI):
+
+1. Stop and disable the scheduler timer:
+   ```bash
+   sudo systemctl stop akasha-ingestion-scheduler.timer akasha-ingestion-scheduler.service
+   sudo systemctl disable akasha-ingestion-scheduler.timer
+   ```
+2. Confirm no scheduler job is queued or running for the source/AOI — do not re-enable the
+   compatibility-mode timer while a scheduler job may still be in-flight:
+   ```bash
+   cat /srv/akasha/ingestion/scheduler/schedule_state.json
+   ```
+3. Restore any pre-cutover env overrides in `/etc/akasha/bhoonidhi-sync.env`, then re-enable the
+   corresponding compatibility-mode timer:
+   ```bash
+   sudo systemctl enable --now akasha-bhoonidhi-sync.timer
+   sudo systemctl enable --now akasha-bhoonidhi-liss4-sync.timer
+   ```
+4. Confirm the next legacy timer due time: `systemctl list-timers akasha-bhoonidhi-sync.timer`.
+
+Monitoring APIs may expose only redacted scheduler snapshots and opaque artifact handles. Raw
+provider archives, full logs, internal paths, signed URLs, and credentials remain wrapper/CLI-only
+operator concerns.
 
 ---
 

@@ -11,7 +11,6 @@ from typing import Any
 
 import numpy as np
 import pytest
-
 from app.config import settings
 from app.main import app
 from app.raster import catalog_resolver as catalog
@@ -716,8 +715,6 @@ def test_trend_uses_primary_source_not_liss4(monkeypatch):
         lambda _: [{"acquisitionDate": "2026-01-15"}],
     )
     resolver_calls: list[bool] = []
-
-    original_resolver = catalog.resolve_best_resolution_source
 
     def spy_resolver(**kw: Any) -> ResolutionResult:
         resolver_calls.append(kw.get("prefer_high_res", True))

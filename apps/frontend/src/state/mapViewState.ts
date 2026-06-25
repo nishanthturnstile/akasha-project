@@ -45,6 +45,8 @@ export interface MapViewState {
     pendingAction: 'create-field' | null;
     /** Monotonic counter bumped on explicit focus requests (bypasses duplicate guard). */
     focusNonce: number;
+    /** Best-available timeline mode: use backend-resolved source/date per chip. */
+    bestMode: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -72,6 +74,7 @@ export const initialMapViewState: MapViewState = {
     bottomBarVisible: true,
     pendingAction: null,
     focusNonce: 0,
+    bestMode: false,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -96,6 +99,8 @@ export interface MapViewContextValue extends MapViewState {
     setBottomBarVisible: (visible: boolean) => void;
     setPendingAction: (action: 'create-field' | null) => void;
     setFocusNonce: (nonce: number) => void;
+    /** Switch between best-available and source-specific timeline modes. */
+    setBestMode: (on: boolean) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

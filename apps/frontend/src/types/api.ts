@@ -183,6 +183,10 @@ export interface ImagerySourceMonitoringSource {
   ingestionFailureCountsByKind: Record<string, number>;
   lastIngestionFailure?: MonitoringFailure | null;
   hasUnresolvedIngestionFailure: boolean;
+  /** Latest scheduler job ID for this source (Phase 9 scheduler fields). */
+  latestSchedulerJobId?: string | null;
+  latestSchedulerJobState?: string | null;
+  latestSchedulerJobUpdatedAt?: string | null;
 }
 
 export interface ImagerySourceMonitoringResponse {
@@ -195,6 +199,109 @@ export interface ImagerySourceMonitoringResponse {
   sources: ImagerySourceMonitoringSource[];
   storage: StorageUsage;
   ingestionLedger: IngestionLedgerSummary;
+}
+
+// ---------------------------------------------------------------------------
+// Ingestion scheduler monitoring — Phase 9 BFF endpoints
+// ---------------------------------------------------------------------------
+
+export interface IngestionScheduleItem {
+  sourceId: string;
+  provider?: string | null;
+  adapter?: string | null;
+  aoiId?: string | null;
+  lifecycleState?: string | null;
+  scheduleState?: string | null;
+  capabilities: string[];
+  commercialState?: string | null;
+  aoiScope?: string | null;
+  validationState?: string | null;
+  scheduleEnabled: boolean;
+  productExposure?: string | null;
+  lastRunAt?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  nextDueAt?: string | null;
+  nextWindowStart?: string | null;
+  nextWindowEnd?: string | null;
+  cadenceDays?: number | null;
+  dueReason?: string | null;
+}
+
+export interface IngestionScheduleResponse {
+  status: string;
+  generatedAt: string;
+  schedules: IngestionScheduleItem[];
+  lastError?: string | null;
+}
+
+export interface IngestionJobSummary {
+  jobId: string;
+  sourceId: string;
+  provider?: string | null;
+  aoiId?: string | null;
+  state: string;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  foundCount?: number | null;
+  selectedCount?: number | null;
+  downloadedCount?: number | null;
+  rejectedCount?: number | null;
+  failureKind?: string | null;
+  message?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface IngestionJobListResponse {
+  status: string;
+  generatedAt: string;
+  jobs: IngestionJobSummary[];
+  nextCursor?: string | null;
+  lastError?: string | null;
+}
+
+export interface IngestionJobDetail {
+  jobId: string;
+  sourceId: string;
+  provider?: string | null;
+  aoiId?: string | null;
+  state: string;
+  request: Record<string, unknown>;
+  providerInputSummary: Record<string, unknown>;
+  providerResponseSummary: Record<string, unknown>;
+  searchManifestHandle?: string | null;
+  downloadManifestHandle?: string | null;
+  prepareManifestHandles: string[];
+  verificationSummary: Record<string, unknown>;
+  scheduleDecision?: string | null;
+  nextDueAt?: string | null;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  foundCount?: number | null;
+  selectedCount?: number | null;
+  downloadedCount?: number | null;
+  rejectedCount?: number | null;
+  failureKind?: string | null;
+  message?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  updatedAt?: string | null;
+  validationProblems: string[];
+  rejectionReasons: string[];
+  artifactHandles: Record<string, string>;
+  ledgerRows: Record<string, unknown>[];
+}
+
+export interface IngestionJobFilters {
+  limit?: number;
+  cursor?: string;
+  sourceId?: string;
+  aoiId?: string;
+  state?: string;
+  startedAfter?: string;
+  startedBefore?: string;
 }
 
 export interface SceneDate {
@@ -213,6 +320,64 @@ export interface SceneDate {
   bounds?: [number, number, number, number];
   /** Short sensor badge for the chip (e.g. `S2`, `S1`). */
   sensor?: string | null;
+  /** Best-mode provenance label for the chip (e.g. `LISS-4 · 5.8 m`). */
+  provenanceLabel?: string | null;
+  /** Best-mode resolved source ID (which source this candidate came from). */
+  resolvedSourceId?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Best-observation resolver (Phase 11 / TASK-066–071)
+// ---------------------------------------------------------------------------
+
+/** A ranked cross-source observation candidate from GET /api/observations/best. */
+export interface ObservationCandidate {
+  sourceId: string;
+  /** YYYY-MM-DD */
+  acquisitionDate: string;
+  resolutionMeters: number | null;
+  analysisLevel: string | null;
+  usablePixelPercent: number | null;
+  coveragePercent: number | null;
+  cloudMaskedPercent: number | null;
+  tileAvailable: boolean;
+  isLatestUsable: boolean;
+  /** Weighted [0, 100] score; higher is better. */
+  score: number;
+  sourcePriority: number;
+  provenanceNote: string | null;
+  /** True when the source is regional/coarse (e.g. AWiFS 56 m). */
+  isCoarse: boolean;
+  supportedIndices: string[];
+  /** Human-readable source label from the source registry. */
+  label: string;
+}
+
+export interface BestObservationsResponse {
+  candidates: ObservationCandidate[];
+  query: {
+    targetDate: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    lookbackDays: number | null;
+    indexType: string | null;
+    useCase: string;
+    allowCoarse: boolean;
+    windowDays: number;
+    maxCandidates: number;
+  };
+}
+
+export interface BestObservationsParams {
+  targetDate?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  lookbackDays?: number | null;
+  indexType?: string | null;
+  useCase?: 'field' | 'regional';
+  allowCoarse?: boolean;
+  windowDays?: number;
+  maxCandidates?: number;
 }
 
 export interface DefaultLayer {

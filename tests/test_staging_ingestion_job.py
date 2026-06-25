@@ -30,6 +30,24 @@ def test_parser_accepts_all_documented_subcommands():
         (["validate", "job-1"], "validate"),
         (["sync-local", "job-1", "--import-local", "--verify-local"], "sync-local"),
         (["doctor", "--azure-resource-group", "rg", "--azure-vm", "vm"], "doctor"),
+        (["job-inspect", "job-1", "--json"], "job-inspect"),
+        (["job-artifact", "job-1", "status"], "job-artifact"),
+        (["job-artifact", "job-1", "log", "--operator"], "job-artifact"),
+        (
+            [
+                "schedule-plan",
+                "--source",
+                "resourcesat-2a-liss3-boa",
+                "--aoi",
+                "bangalore-60km",
+                "--json",
+            ],
+            "schedule-plan",
+        ),
+        (
+            ["schedule-next", "--source", "resourcesat-2a-liss3-boa", "--aoi", "bangalore-60km"],
+            "schedule-next",
+        ),
     ]
 
     for argv, command in cases:
@@ -352,3 +370,309 @@ def test_doctor_returns_failure_when_required_checks_fail(monkeypatch, capsys):
 
     assert cli.main(["doctor"]) == 1
     assert "FAIL docker executable" in capsys.readouterr().out
+
+
+# --- TASK-030: job-inspect ---
+
+
+def test_job_inspect_sends_correct_remote_args(monkeypatch):
+    captured = {}
+
+    def fake_run_ssh(_host, remote_args, **_kwargs):
+        captured["remote_args"] = remote_args
+        return completed(["ssh"], '{"job_id":"job-1","state":"succeeded"}\n')
+
+    monkeypatch.setattr(cli, "run_ssh", fake_run_ssh)
+    assert cli.main(["job-inspect", "job-1", "--host", "staging"]) == 0
+    assert captured["remote_args"] == ["job-inspect", "job-1"]
+
+
+def test_job_inspect_json_flag_outputs_redacted_json(monkeypatch, capsys):
+    payload = {
+        "job_id": "job-1",
+        "state": "succeeded",
+        "secret_token": "supersecret",
+        "api_key": "mykey",
+        "log_path": "/srv/akasha/ingestion/jobs/job-1/job.log",
+        "artifact_summary_path": "/srv/akasha/ingestion/scheduler/jobs/job-1/observability.json",
+        "source_id": "resourcesat-2a-liss3-boa",
+    }
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], json.dumps(payload)),
+    )
+
+    assert cli.main(["job-inspect", "job-1", "--json"]) == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["state"] == "succeeded"
+    assert data["source_id"] == "resourcesat-2a-liss3-boa"
+    assert data["secret_token"] == "[REDACTED]"
+    assert data["api_key"] == "[REDACTED]"
+    assert data["log_path"] == "[REDACTED_PATH]"
+    assert data["artifact_summary_path"] == "[REDACTED_PATH]"
+    assert "/srv/akasha" not in out
+
+
+def test_job_inspect_human_output_omits_sensitive_keys(monkeypatch, capsys):
+    payload = {
+        "job_id": "job-1",
+        "state": "failed",
+        "message": "timeout",
+        "secret_token": "supersecret",
+    }
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], json.dumps(payload)),
+    )
+
+    assert cli.main(["job-inspect", "job-1"]) == 0
+    out = capsys.readouterr().out
+    assert "state: failed" in out
+    assert "message: timeout" in out
+    assert "supersecret" not in out
+
+
+# --- TASK-031: job-artifact ---
+
+
+def test_job_artifact_sends_correct_remote_args(monkeypatch):
+    captured = {}
+
+    def fake_run_ssh(_host, remote_args, **_kwargs):
+        captured["remote_args"] = remote_args
+        return completed(["ssh"], '{"state":"succeeded"}\n')
+
+    monkeypatch.setattr(cli, "run_ssh", fake_run_ssh)
+    assert cli.main(["job-artifact", "job-1", "status", "--host", "staging"]) == 0
+    assert captured["remote_args"] == ["job-artifact", "job-1", "status"]
+
+
+def test_job_artifact_operator_appends_flag(monkeypatch):
+    captured = {}
+
+    def fake_run_ssh(_host, remote_args, **_kwargs):
+        captured["remote_args"] = remote_args
+        return completed(["ssh"], "raw log line\n")
+
+    monkeypatch.setattr(cli, "run_ssh", fake_run_ssh)
+    assert cli.main(["job-artifact", "job-1", "log", "--operator", "--host", "staging"]) == 0
+    assert captured["remote_args"] == ["job-artifact", "job-1", "log", "--operator"]
+
+
+def test_job_artifact_redacts_json_by_default(monkeypatch, capsys):
+    payload = {
+        "state": "succeeded",
+        "s3_secret_key": "AKIASECRET",
+        "downloaded_path": "/srv/akasha/data/raw/bhoonidhi/file.zip",
+        "message": "ok",
+    }
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], json.dumps(payload)),
+    )
+
+    assert cli.main(["job-artifact", "job-1", "result"]) == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["s3_secret_key"] == "[REDACTED]"
+    assert data["downloaded_path"] == "[REDACTED_PATH]"
+    assert "/srv/akasha" not in out
+    assert data["message"] == "ok"
+
+
+def test_job_artifact_log_redacts_paths_by_default(monkeypatch, capsys):
+    raw = "log at /srv/akasha/ingestion/jobs/job-1/job.log\n"
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], raw),
+    )
+
+    assert cli.main(["job-artifact", "job-1", "log"]) == 0
+    out = capsys.readouterr().out
+    assert "/srv/akasha" not in out
+    assert "[REDACTED_PATH]" in out
+
+
+def test_job_artifact_operator_mode_emits_raw(monkeypatch, capsys):
+    raw = '{"log_path":"/srv/akasha/ingestion/jobs/job-1/job.log","secret":"x"}\n'
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], raw),
+    )
+
+    assert cli.main(["job-artifact", "job-1", "log", "--operator"]) == 0
+    assert capsys.readouterr().out == raw
+
+
+def test_job_artifact_rejects_invalid_artifact_type():
+    parser = cli.build_parser()
+    try:
+        parser.parse_args(["job-artifact", "job-1", "invalid-type"])
+        raise AssertionError("should have raised SystemExit")
+    except SystemExit as exc:
+        assert exc.code != 0
+
+
+# --- TASK-032: schedule-plan ---
+
+
+def test_schedule_plan_sends_correct_remote_args(monkeypatch):
+    captured = {}
+
+    def fake_run_ssh(_host, remote_args, **_kwargs):
+        captured["remote_args"] = remote_args
+        return completed(["ssh"], '{"source_id":"s","due":true}\n')
+
+    monkeypatch.setattr(cli, "run_ssh", fake_run_ssh)
+    assert (
+        cli.main(
+            [
+                "schedule-plan",
+                "--source",
+                "resourcesat-2a-liss3-boa",
+                "--aoi",
+                "bangalore-60km",
+                "--host",
+                "staging",
+            ]
+        )
+        == 0
+    )
+    assert captured["remote_args"] == [
+        "schedule-plan",
+        "--source",
+        "resourcesat-2a-liss3-boa",
+        "--aoi",
+        "bangalore-60km",
+    ]
+
+
+def test_schedule_plan_json_flag_outputs_redacted_json(monkeypatch, capsys):
+    payload = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "aoi_id": "bangalore-60km",
+        "due": True,
+        "reason": "cadence elapsed",
+        "secret_token": "tok",
+    }
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], json.dumps(payload)),
+    )
+
+    assert cli.main(["schedule-plan", "--json"]) == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["due"] is True
+    assert data["secret_token"] == "[REDACTED]"
+
+
+def test_schedule_plan_human_output(monkeypatch, capsys):
+    payload = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "aoi_id": "bangalore-60km",
+        "due": True,
+        "reason": "cadence elapsed",
+        "last_state": "succeeded",
+    }
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], json.dumps(payload)),
+    )
+
+    assert cli.main(["schedule-plan"]) == 0
+    out = capsys.readouterr().out
+    assert "source_id: resourcesat-2a-liss3-boa" in out
+    assert "reason: cadence elapsed" in out
+    assert "last_state: succeeded" in out
+
+
+# --- TASK-033: schedule-next ---
+
+
+def test_schedule_next_sends_correct_remote_args(monkeypatch):
+    captured = {}
+
+    def fake_run_ssh(_host, remote_args, **_kwargs):
+        captured["remote_args"] = remote_args
+        return completed(["ssh"], '{"source_id":"s","next_due":"2026-07-01"}\n')
+
+    monkeypatch.setattr(cli, "run_ssh", fake_run_ssh)
+    assert (
+        cli.main(
+            [
+                "schedule-next",
+                "--source",
+                "resourcesat-2a-liss3-boa",
+                "--aoi",
+                "bangalore-60km",
+                "--host",
+                "staging",
+            ]
+        )
+        == 0
+    )
+    assert captured["remote_args"] == [
+        "schedule-next",
+        "--source",
+        "resourcesat-2a-liss3-boa",
+        "--aoi",
+        "bangalore-60km",
+    ]
+
+
+def test_schedule_next_human_output(monkeypatch, capsys):
+    payload = {
+        "source_id": "resourcesat-2a-liss3-boa",
+        "aoi_id": "bangalore-60km",
+        "next_due": "2026-07-08T00:00:00Z",
+        "window_start": "2026-06-23",
+        "window_end": "2026-07-08",
+        "cadence_days": 15,
+        "reason": "last succeeded 2026-06-23",
+    }
+
+    monkeypatch.setattr(
+        cli,
+        "run_ssh",
+        lambda *_args, **_kwargs: completed(["ssh"], json.dumps(payload)),
+    )
+
+    assert cli.main(["schedule-next"]) == 0
+    out = capsys.readouterr().out
+    assert "next_due: 2026-07-08T00:00:00Z" in out
+    assert "cadence_days: 15" in out
+    assert "reason: last succeeded 2026-06-23" in out
+
+
+def test_redact_helper_recursive():
+    obj = {
+        "job_id": "j1",
+        "config": {"api_key": "secret", "user": "admin"},
+        "items": [{"password": "pw", "name": "x"}],
+        "log": "see /srv/akasha/ingestion/jobs/job-1/job.log",
+        "inline_path": "downloaded /srv/akasha/data/raw/file.zip",
+    }
+    result = cli._redact(obj)
+    assert result["job_id"] == "j1"
+    assert result["config"]["api_key"] == "[REDACTED]"
+    assert result["config"]["user"] == "admin"
+    assert result["items"][0]["password"] == "[REDACTED]"
+    assert result["items"][0]["name"] == "x"
+    assert "[REDACTED_PATH]" in result["log"]
+    assert "[REDACTED_PATH]" in result["inline_path"]

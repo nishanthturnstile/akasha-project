@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime
 
@@ -9,6 +10,39 @@ from app.main import app
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
+
+def test_imagery_source_monitoring_does_not_expose_ledger_paths(monkeypatch):
+    monkeypatch.setattr(settings, "source_freshness_stale_days", 45, raising=False)
+    monkeypatch.setattr(
+        source_monitoring,
+        "_now",
+        lambda: datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    monkeypatch.setattr(source_monitoring.catalog, "list_sources", lambda: [])
+    monkeypatch.setattr(
+        source_monitoring,
+        "_ingestion_ledger_summary",
+        lambda: {
+            "status": "unavailable",
+            "path": "/srv/akasha/ingestion/bhoonidhi_ledger.db",
+            "lastError": "sqlite failed at C:\\Users\\operator\\ledger.db",
+            "bySource": [],
+        },
+    )
+    monkeypatch.setattr(
+        source_monitoring,
+        "_storage_usage",
+        lambda: {"status": "ok", "byPrefix": []},
+    )
+
+    response = client.get("/api/monitoring/imagery-sources")
+
+    assert response.status_code == 200
+    text = json.dumps(response.json())
+    assert "/srv/akasha" not in text
+    assert "C:\\Users" not in text
+    assert "[REDACTED_PATH]" in text
 
 
 def test_imagery_source_monitoring_reports_latest_usable_metrics(monkeypatch):

@@ -1,0 +1,22 @@
+[Unit]
+Description=Akasha multi-source ingestion scheduler (orchestrator timer)
+Documentation=docs/impl-plan/architecture-satellite-ingestion-scheduler-1.md
+# Phase 8 — one orchestrator timer replaces per-source timer growth.
+# INSTALL DISABLED by default. Enable only after canary validation passes:
+#   sudo systemctl enable akasha-ingestion-scheduler.timer
+#   sudo systemctl start  akasha-ingestion-scheduler.timer
+# ROLLBACK: stop this timer and re-enable any source-specific timers that
+# were disabled during cutover (see ingestion-scheduler.env.example ownership matrix).
+
+[Timer]
+# Run every 4 hours. The orchestrator decides which sources are actually due
+# based on per-source cadence, last successful run, and source state fields.
+# 4 h is shorter than the fastest source cadence (LISS-3 daily) so the scheduler
+# has enough resolution, but conservative enough not to hammer the staging VM.
+OnCalendar=*-*-* 00/4:00:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=akasha-ingestion-scheduler.service
+
+[Install]
+WantedBy=timers.target

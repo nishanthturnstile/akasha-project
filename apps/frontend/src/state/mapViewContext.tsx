@@ -48,7 +48,8 @@ type MapViewAction =
     | { type: 'SET_HEADER_VISIBLE'; visible: boolean }
     | { type: 'SET_BOTTOM_BAR_VISIBLE'; visible: boolean }
     | { type: 'SET_PENDING_ACTION'; action: 'create-field' | null }
-    | { type: 'SET_FOCUS_NONCE'; nonce: number };
+    | { type: 'SET_FOCUS_NONCE'; nonce: number }
+    | { type: 'SET_BEST_MODE'; on: boolean };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -124,6 +125,9 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_FOCUS_NONCE':
             if (action.nonce === state.focusNonce) return state;
             return { ...state, focusNonce: action.nonce };
+        case 'SET_BEST_MODE':
+            if (action.on === state.bestMode) return state;
+            return { ...state, bestMode: action.on };
         default:
             return state;
     }
@@ -206,6 +210,8 @@ export function MapViewProvider({
                 dispatch({ type: 'SET_PENDING_ACTION', action }),
             setFocusNonce: (nonce) =>
                 dispatch({ type: 'SET_FOCUS_NONCE', nonce }),
+            setBestMode: (on) =>
+                dispatch({ type: 'SET_BEST_MODE', on }),
         }),
         [state],
     );

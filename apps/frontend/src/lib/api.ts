@@ -1,6 +1,8 @@
 import type {
   ApiErrorShape,
   AppConfig,
+  BestObservationsParams,
+  BestObservationsResponse,
   DefaultLayer,
   FieldIndexExportOptions,
   FieldReportExportOptions,
@@ -34,6 +36,10 @@ import type {
   AssistantStatus,
   CloudMaskOptions,
   ImagerySourceMonitoringResponse,
+  IngestionScheduleResponse,
+  IngestionJobListResponse,
+  IngestionJobDetail,
+  IngestionJobFilters,
   Plot,
   PlotCreatePayload,
   PlotGeometry,
@@ -265,6 +271,21 @@ export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringRes
 
 export const getDefaultLayer = (): Promise<DefaultLayer> =>
   request<DefaultLayer>('/api/layers/default');
+
+export const getBestObservations = (params: BestObservationsParams = {}): Promise<BestObservationsResponse> => {
+  const p = new URLSearchParams();
+  if (params.targetDate) p.set('targetDate', params.targetDate);
+  if (params.startDate) p.set('startDate', params.startDate);
+  if (params.endDate) p.set('endDate', params.endDate);
+  if (params.lookbackDays != null) p.set('lookbackDays', String(params.lookbackDays));
+  if (params.indexType) p.set('indexType', params.indexType);
+  if (params.useCase) p.set('useCase', params.useCase);
+  if (params.allowCoarse != null) p.set('allowCoarse', String(params.allowCoarse));
+  if (params.windowDays != null) p.set('windowDays', String(params.windowDays));
+  if (params.maxCandidates != null) p.set('maxCandidates', String(params.maxCandidates));
+  const query = p.toString();
+  return request<BestObservationsResponse>(`/api/observations/best${query ? `?${query}` : ''}`);
+};
 
 export const getPlots = (): Promise<Plot[]> => request<Plot[]>('/api/plots');
 
@@ -684,3 +705,26 @@ export function composeTileTemplate(
     acquisitionDate,
   )}/${encodeURIComponent(displayMode)}/{z}/{x}/{y}.png`;
 }
+
+export const getIngestionSchedules = (): Promise<IngestionScheduleResponse> =>
+  request<IngestionScheduleResponse>('/api/monitoring/ingestion-schedules');
+
+export const listIngestionJobs = (filters?: IngestionJobFilters): Promise<IngestionJobListResponse> => {
+  const params = new URLSearchParams();
+  if (filters) {
+    if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+    if (filters.cursor) params.set('cursor', filters.cursor);
+    if (filters.sourceId) params.set('sourceId', filters.sourceId);
+    if (filters.aoiId) params.set('aoiId', filters.aoiId);
+    if (filters.state) params.set('state', filters.state);
+    if (filters.startedAfter) params.set('startedAfter', filters.startedAfter);
+    if (filters.startedBefore) params.set('startedBefore', filters.startedBefore);
+  }
+  const query = params.toString();
+  return request<IngestionJobListResponse>(
+    `/api/monitoring/ingestion-jobs${query ? `?${query}` : ''}`,
+  );
+};
+
+export const getIngestionJob = (jobId: string): Promise<IngestionJobDetail> =>
+  request<IngestionJobDetail>(`/api/monitoring/ingestion-jobs/${encodeURIComponent(jobId)}`);

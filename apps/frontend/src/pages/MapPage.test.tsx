@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import MapPage from '@/pages/MapPage';
 import { MapViewProvider } from '@/state/mapViewContext';
 import type { MapViewState } from '@/state/mapViewState';
-import type { FieldStatisticsResponse, FieldTrendResponse, Plot, SceneDate } from '@/types/api';
+import type { FieldStatisticsResponse, FieldTrendResponse, ObservationCandidate, Plot, SceneDate } from '@/types/api';
 
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: ({
@@ -176,6 +176,7 @@ afterEach(() => {
 
 function stubAkashaFetch({
   resourcesatDates = [makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true })],
+  liss4Dates = [makeDate('2026-01-15', { isLatestUsable: true, metricsProvisional: true })],
   sarDates = [
     makeDate('2026-04-26', {
       usablePixelPercent: null,
@@ -187,12 +188,16 @@ function stubAkashaFetch({
   plots = [],
   fieldStatistics = makeFieldStatistics(),
   fieldTrend = makeFieldTrend(),
+  bestCandidates,
 }: {
   resourcesatDates?: SceneDate[];
+  liss4Dates?: SceneDate[];
   sarDates?: SceneDate[];
   plots?: Plot[];
   fieldStatistics?: FieldStatisticsResponse;
   fieldTrend?: FieldTrendResponse;
+  /** When provided, /api/observations/best returns these candidates (best-mode tests). */
+  bestCandidates?: ObservationCandidate[];
 } = {}) {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   vi.stubEnv('VITE_BASEMAP_PROVIDER', 'osm');
@@ -250,6 +255,19 @@ function stubAkashaFetch({
               mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
               defaultMapDisplayMode: 'NDVI',
               attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
+            },
+            {
+              id: 'resourcesat-2a-liss4-mx70-l2',
+              label: 'ResourceSat-2A LISS-4 MX70 L2',
+              provider: 'ISRO/NRSC Bhoonidhi',
+              kind: 'optical',
+              supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
+              displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
+              defaultDisplayMode: 'FCC',
+              mapDisplayModes: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
+              defaultMapDisplayMode: 'NDVI',
+              attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
+              resolutionMeters: 5.8,
             },
             {
               id: 'eos-04-sar-mrs-l2b',
@@ -320,8 +338,31 @@ function stubAkashaFetch({
         return Promise.resolve(jsonResponse(resourcesatDates));
       }
 
+      if (path.startsWith('/api/sources/resourcesat-2a-liss4-mx70-l2/dates')) {
+        return Promise.resolve(jsonResponse(liss4Dates));
+      }
+
       if (path.startsWith('/api/sources/eos-04-sar-mrs-l2b/dates')) {
         return Promise.resolve(jsonResponse(sarDates));
+      }
+
+      if (path.startsWith('/api/observations/best') && bestCandidates !== undefined) {
+        return Promise.resolve(
+          jsonResponse({
+            candidates: bestCandidates,
+            query: {
+              targetDate: null,
+              startDate: null,
+              endDate: null,
+              lookbackDays: 92,
+              indexType: null,
+              useCase: 'field',
+              allowCoarse: false,
+              windowDays: 30,
+              maxCandidates: 30,
+            },
+          }),
+        );
       }
 
       throw new Error(`Unexpected request: ${path}`);
@@ -516,5 +557,280 @@ describe('MapPage selected-field native analytics', () => {
       expect(manager.getAttribute('data-index-overlay-url')).toBe('blob:akasha-index-overlay');
     });
     expect(screen.getByTestId('layer-display-trigger').textContent).toContain('NDVI');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TASK-072: Best-available mode integration tests (outcomes 4, 5)
+// ---------------------------------------------------------------------------
+
+describe('MapPage best-available mode', () => {
+  it('source-specific timeline is the default — calls source dates, not observations/best', async () => {
+    stubAkashaFetch();
+
+    renderMapPage();
+
+    await screen.findByTestId('map-layer-manager');
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+
+    // Source-specific dates endpoint must be called in the default (source) mode.
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+    ).toBe(true);
+    // Backend best-observation resolver must NOT be queried in source-specific mode.
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/observations/best')),
+    ).toBe(false);
+  });
+
+  it('in best mode calls /api/observations/best and shows backend-resolved provenance labels', async () => {
+    const bestCandidates: ObservationCandidate[] = [
+      {
+        sourceId: 'resourcesat-2a-liss4-mx70-l2',
+        acquisitionDate: '2026-01-14',
+        resolutionMeters: 5.8,
+        analysisLevel: 'field',
+        usablePixelPercent: 88,
+        coveragePercent: 95,
+        cloudMaskedPercent: 5,
+        tileAvailable: true,
+        isLatestUsable: true,
+        score: 92.0,
+        sourcePriority: 100,
+        provenanceNote: null,
+        isCoarse: false,
+        supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
+        label: 'ResourceSat-2A LISS-4 MX70 L2',
+      },
+      {
+        sourceId: 'resourcesat-2a-liss3-boa',
+        acquisitionDate: '2026-01-15',
+        resolutionMeters: 24.0,
+        analysisLevel: 'field',
+        usablePixelPercent: 85,
+        coveragePercent: 92,
+        cloudMaskedPercent: 8,
+        tileAvailable: true,
+        isLatestUsable: false,
+        score: 78.0,
+        sourcePriority: 80,
+        provenanceNote: null,
+        isCoarse: false,
+        supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        label: 'ResourceSat-2A LISS-3 BOA',
+      },
+    ];
+
+    stubAkashaFetch({ bestCandidates });
+
+    renderMapPage({ bestMode: true, displayMode: 'FCC' });
+
+    // The LISS-4 chip must appear with the provenance label derived from the backend sourceId
+    // and resolutionMeters, proving the frontend uses backend-resolved candidates.
+    await waitFor(() => {
+      expect(screen.getByTestId('date-chip-provenance-2026-01-14').textContent).toBe('LISS-4 · 5.8 m');
+    });
+
+    // LISS-3 chip with its own provenance label.
+    await waitFor(() => {
+      expect(screen.getByTestId('date-chip-provenance-2026-01-15').textContent).toBe('LISS-3 · 24 m');
+    });
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+
+    // Backend best-observation endpoint must be called in best mode.
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/observations/best')),
+    ).toBe(true);
+    // Source-specific dates endpoint must NOT be called in best mode.
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+    ).toBe(false);
+  });
+
+  it('in best mode sends the active analytic intent to the backend resolver', async () => {
+    stubAkashaFetch({ bestCandidates: [] });
+
+    renderMapPage({ bestMode: true, displayMode: 'NDMI' });
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      const bestUrl = String(
+        calls.find(([input]) => String(input).startsWith('/api/observations/best'))?.[0] ?? '',
+      );
+      expect(bestUrl).toContain('indexType=NDMI');
+      expect(bestUrl).toContain('useCase=field');
+      expect(bestUrl).toContain('allowCoarse=false');
+    });
+  });
+
+  it('selecting a best-mode date preserves the source-specific source when returning to source mode', async () => {
+    const bestCandidates: ObservationCandidate[] = [
+      {
+        sourceId: 'resourcesat-2a-liss4-mx70-l2',
+        acquisitionDate: '2026-01-15',
+        resolutionMeters: 5.8,
+        analysisLevel: 'field',
+        usablePixelPercent: 88,
+        coveragePercent: 95,
+        cloudMaskedPercent: 5,
+        tileAvailable: true,
+        isLatestUsable: true,
+        score: 92.0,
+        sourcePriority: 100,
+        provenanceNote: null,
+        isCoarse: false,
+        supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
+        label: 'ResourceSat-2A LISS-4 MX70 L2',
+      },
+    ];
+    stubAkashaFetch({ bestCandidates });
+
+    renderMapPage({ bestMode: true, activeSourceId: 'resourcesat-2a-liss3-boa' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('date-chip-2026-01-15')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('date-chip-2026-01-15'));
+    fireEvent.click(screen.getByTestId('timeline-best-mode-toggle'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      expect(
+        calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+      ).toBe(true);
+      expect(
+        calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss4-mx70-l2/dates')),
+      ).toBe(false);
+    });
+  });
+
+  it('in best mode deduplicates same-date candidates and uses the resolved source for overlay requests', async () => {
+    const bestCandidates: ObservationCandidate[] = [
+      {
+        sourceId: 'resourcesat-2a-liss4-mx70-l2',
+        acquisitionDate: '2026-01-15',
+        resolutionMeters: 5.8,
+        analysisLevel: 'field',
+        usablePixelPercent: 88,
+        coveragePercent: 95,
+        cloudMaskedPercent: 5,
+        tileAvailable: true,
+        isLatestUsable: true,
+        score: 92.0,
+        sourcePriority: 100,
+        provenanceNote: null,
+        isCoarse: false,
+        supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
+        label: 'ResourceSat-2A LISS-4 MX70 L2',
+      },
+      {
+        sourceId: 'resourcesat-2a-liss3-boa',
+        acquisitionDate: '2026-01-15',
+        resolutionMeters: 24.0,
+        analysisLevel: 'field',
+        usablePixelPercent: 85,
+        coveragePercent: 92,
+        cloudMaskedPercent: 8,
+        tileAvailable: true,
+        isLatestUsable: false,
+        score: 78.0,
+        sourcePriority: 80,
+        provenanceNote: null,
+        isCoarse: false,
+        supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        label: 'ResourceSat-2A LISS-3 BOA',
+      },
+    ];
+
+    stubAkashaFetch({ bestCandidates, plots: [FIELD_PLOT] });
+
+    renderMapPage({ bestMode: true, selectedPlotId: 'plot-1' });
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('date-chip-2026-01-15')).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('date-chip-provenance-2026-01-15').textContent).toBe('LISS-4 · 5.8 m');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
+      );
+    });
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+    const overlayUrl = String(
+      calls.find(([input]) => String(input).includes('/api/fields/plot-1/overlay/'))?.[0] ?? '',
+    );
+    expect(overlayUrl).toContain('/api/fields/plot-1/overlay/NDVI.png');
+    const overlayParams = new URLSearchParams(overlayUrl.split('?')[1] ?? '');
+    expect(overlayParams.get('sourceId')).toBe('resourcesat-2a-liss4-mx70-l2');
+    expect(overlayParams.get('acquisitionDate')).toBe('2026-01-15');
+  });
+
+  it('in best mode renders compare tiles from the compare date resolved source', async () => {
+    const bestCandidates: ObservationCandidate[] = [
+      {
+        sourceId: 'eos-04-sar-mrs-l2b',
+        acquisitionDate: '2026-01-15',
+        resolutionMeters: 18.0,
+        analysisLevel: 'field',
+        usablePixelPercent: 92,
+        coveragePercent: 98,
+        cloudMaskedPercent: 0,
+        tileAvailable: true,
+        isLatestUsable: true,
+        score: 90.0,
+        sourcePriority: 70,
+        provenanceNote: null,
+        isCoarse: false,
+        supportedIndices: [],
+        label: 'EOS-04 SAR MRS L2B',
+      },
+      {
+        sourceId: 'eos-04-sar-mrs-l2b',
+        acquisitionDate: '2026-01-14',
+        resolutionMeters: 18.0,
+        analysisLevel: 'field',
+        usablePixelPercent: 89,
+        coveragePercent: 96,
+        cloudMaskedPercent: 0,
+        tileAvailable: true,
+        isLatestUsable: false,
+        score: 84.0,
+        sourcePriority: 70,
+        provenanceNote: null,
+        isCoarse: false,
+        supportedIndices: [],
+        label: 'EOS-04 SAR MRS L2B',
+      },
+    ];
+
+    stubAkashaFetch({ bestCandidates });
+
+    renderMapPage({
+      activeSourceId: 'eos-04-sar-mrs-l2b',
+      bestMode: true,
+      compareEnabled: true,
+      compareDate: '2026-01-14',
+      displayMode: 'VV_GRAYSCALE',
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-compare-tile-template')).toContain(
+        '/api/tiles/eos-04-sar-mrs-l2b/2026-01-14/VV_GRAYSCALE/{z}/{x}/{y}.png',
+      );
+    });
   });
 });

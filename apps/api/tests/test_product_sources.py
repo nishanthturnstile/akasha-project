@@ -52,3 +52,14 @@ def test_awifs_source_payload_stays_gated_with_regional_limitations() -> None:
         ),
         "Not a replacement for LISS-3/LISS-4 field-level monitoring.",
     ]
+
+
+def test_hidden_unvalidated_sar_sources_are_not_bff_active() -> None:
+    """BFF availability must not bypass scheduler source-state gating."""
+    eos04 = catalog.source_payload("eos-04-sar-mrs-l2b")
+    nisar = catalog.source_payload("nisar-ssar-beta-gcov")
+
+    assert eos04["availabilityStatus"] == "gated"
+    assert eos04["gatedReason"]
+    assert nisar["availabilityStatus"] == "gated"
+    assert nisar["gatedReason"]

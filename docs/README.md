@@ -7,6 +7,7 @@ source-of-truth boundary map for Akasha.
 
 - [`architecture-tech-stack.md`](./architecture-tech-stack.md) — services, BFF API contracts, frontend architecture, and deployment topology.
 - [`data-ingestion-and-satellite-rules.md`](./data-ingestion-and-satellite-rules.md) — imagery sources, COG/STAC metadata, masks, index math, and source onboarding rules.
+- [`satellite-ingestion-orchestration-and-scheduler.md`](./satellite-ingestion-orchestration-and-scheduler.md) — how the provider-agnostic ingestion scheduler works, how to trigger/control it, and the checklist for adding a new satellite.
 - [`engineering-dos-donts.md`](./engineering-dos-donts.md) — implementation guardrails and anti-pattern checklist.
 - [`auth-team-admin-plan.md`](./auth-team-admin-plan.md) — hand-rolled auth, teams, RBAC, and account-management design.
 - [`india-specific-productization-plan.md`](./india-specific-productization-plan.md) — India-specific product modules and validation priorities.

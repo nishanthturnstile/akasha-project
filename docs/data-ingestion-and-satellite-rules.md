@@ -47,6 +47,10 @@ Every new satellite source must stay gated until it has all of the following:
 
 The provider-agnostic ingestion scheduler is the architecture layer for scaling beyond
 ResourceSat. It must be implemented before onboarding new provider families in bulk.
+The Phase 0 contract is [satellite-ingestion-scheduler-contracts.md](reference/satellite-ingestion-scheduler-contracts.md).
+The operational guide — how the scheduler works, how to trigger/control it, and the step-by-step
+checklist for adding a new satellite — is
+[satellite-ingestion-orchestration-and-scheduler.md](satellite-ingestion-orchestration-and-scheduler.md).
 
 - Every scheduler source row must trace to a `docs/reference/satellite-catalog.md` slug through
   `catalogSlug`; one catalogue platform may map to multiple source rows only through explicit
@@ -68,6 +72,19 @@ ResourceSat. It must be implemented before onboarding new provider families in b
 - Best-observation selection and mixed-source timelines are post-scheduler work. Existing
   source-specific timelines stay authoritative until scheduler state and validation history are
   reliable enough for backend-owned ranking.
+- Ingestion owns raw scheduler artifacts and the scheduler SQLite ledger under `/srv/akasha`.
+  The BFF may read only redacted scheduler snapshots/job summaries through explicit read-only
+  configuration; it must not expose raw provider archives, raw server paths, signed URLs,
+  credentials, internal hostnames, or full logs.
+- Scheduler jobs must calculate `nextDueAt` from scheduler job history and cadence, not from the
+  legacy product ledger alone.
+- Bhoonidhi non-dry-run scheduler work must pass approved-runtime preflights and run only through
+  the staging-safe wrappers or an explicitly approved runtime. Dry-run/local-test modes may not
+  download, prepare, upload, or register STAC.
+- ResourceSat LISS-3 invariants are release-blocking for scheduler work: four BOA bands in
+  `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`, FCC `NIR,RED,GREEN`, Akasha threshold mask
+  v1 with `{1,4}` valid by default, reflectance scale `0.0001` and offset `0.0`, separate
+  analytic/mask COGs, deterministic keys, STAC metadata preservation, and upsert behavior.
 
 ## AOI Rules
 

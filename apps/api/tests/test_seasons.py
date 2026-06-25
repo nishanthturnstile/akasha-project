@@ -134,7 +134,9 @@ def test_create_season_accepts_field_ids_alias(store):
     assert body["name"] == "Kharif 2026"
     assert body["startDate"] == "2026-06-01"
     assert body["endDate"] == "2026-10-15"
-    assert body["fieldIds"] == [{"id": field_id, "name": "Field 1", "canRemove": True, "isMapped": True}]
+    assert body["fieldIds"] == [
+        {"id": field_id, "name": "Field 1", "canRemove": True, "isMapped": True}
+    ]
 
 
 def test_update_season_accepts_field_ids_alias(store):

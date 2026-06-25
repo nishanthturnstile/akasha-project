@@ -8,7 +8,20 @@ import shlex
 import sys
 
 wrapper = "/opt/akasha/bin/akasha-ingestion-job.sh"
-allowed = {"start", "status", "logs", "list", "retry", "validate", "doctor", "prune"}
+allowed = {
+    "start",
+    "status",
+    "logs",
+    "list",
+    "retry",
+    "validate",
+    "doctor",
+    "prune",
+    "job-inspect",
+    "job-artifact",
+    "schedule-plan",
+    "schedule-next",
+}
 job_id = re.compile(r"^[A-Za-z0-9._-]+$")
 safe_path = re.compile(r"^[A-Za-z0-9._=:/,@+-]+$")
 safe_id = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -106,6 +119,40 @@ def validate_args(argv: list[str]) -> None:
     if subcommand in {"doctor", "prune"}:
         if rest:
             fail(f"{subcommand} takes no arguments")
+        return
+    if subcommand == "job-inspect":
+        if len(rest) not in {1, 2}:
+            fail("job-inspect requires one job id and optional --json")
+        require_job(rest[0])
+        if len(rest) == 2 and rest[1] != "--json":
+            fail("invalid job-inspect argument")
+        return
+    if subcommand == "job-artifact":
+        if len(rest) not in {2, 3}:
+            fail("job-artifact requires <job_id> <artifact> and optional --operator")
+        require_job(rest[0])
+        if rest[1] not in {"request", "status", "coverage", "download", "result", "log"}:
+            fail("invalid artifact")
+        if len(rest) == 3 and rest[2] != "--operator":
+            fail("invalid job-artifact argument")
+        return
+    if subcommand in {"schedule-plan", "schedule-next"}:
+        i = 0
+        seen = set()
+        while i < len(rest):
+            if rest[i] not in {"--source", "--aoi", "--json"}:
+                fail(f"invalid {subcommand} argument: {rest[i]!r}")
+            if rest[i] == "--json":
+                seen.add(rest[i])
+                i += 1
+                continue
+            if i + 1 >= len(rest):
+                fail(f"{rest[i]} requires a value")
+            require_id(rest[i + 1], rest[i])
+            seen.add(rest[i])
+            i += 2
+        if "--source" not in seen or "--aoi" not in seen:
+            fail(f"{subcommand} requires --source and --aoi")
         return
     fail("command not allowed")
 

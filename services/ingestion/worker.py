@@ -21,7 +21,13 @@ Usage:
     python worker.py verify-cogs               # legacy Sentinel sample COG check
     python worker.py verify-manifest-cogs [--manifest-glob ...]
     python worker.py verify-composite [--manifest ...]  # ResourceSat launch acceptance
+    python worker.py verify-raster-product --source <sourceId> --manifest <path>
     python worker.py healthcheck               # required env vars present
+    python worker.py schedule-plan [--source ...] [--aoi ...] [--json]
+    python worker.py schedule-due-sources [--source ...] [--aoi ...]
+        [--max-concurrent-source N] [--dry-run]
+    python worker.py schedule-source --source <sourceId> --aoi <aoiId>
+        [--dry-run] [--approved-runtime]
 """
 
 from __future__ import annotations
@@ -246,6 +252,8 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
     from pathlib import Path
 
     from akasha_ingest import bhoonidhi, config
+    from akasha_ingest.manifests import REDACTION_VERSION
+    from akasha_ingest.manifests import redact_value as _redact
 
     manifest_path = Path(args.manifest)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -283,7 +291,16 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
             except Exception as exc:  # noqa: BLE001
                 candidate["download_status"] = "failed"
                 candidate["download_error"] = str(exc)
-                failed.append({"item_id": item_id, **candidate})
+                failed.append(
+                    {
+                        "item_id": item_id,
+                        **candidate,
+                        # canonical fields alongside legacy
+                        "itemId": item_id,
+                        "errorKind": "unknown",
+                        "redactedError": _redact(str(exc)),
+                    }
+                )
                 raise
             candidate["download_status"] = result["status"]
             candidate["downloaded_path"] = result["path"]
@@ -295,6 +312,10 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
                     **result,
                     "downloaded_path": result["path"],
                     "downloaded_bytes": result["bytes"],
+                    # canonical fields alongside legacy
+                    "itemId": item_id,
+                    "localPath": result["path"],
+                    "downloadedBytes": result["bytes"],
                 }
             )
     finally:
@@ -302,6 +323,13 @@ def cmd_bhoonidhi_download(args: argparse.Namespace) -> int:
         output["candidates"] = candidates
         output["downloaded"] = downloaded
         output["failed"] = failed
+        # Canonical download manifest top-level keys (alongside legacy shape)
+        output.setdefault("manifestType", "download")
+        output.setdefault("jobId", None)
+        output.setdefault("sourceId", source_id)
+        output.setdefault("provider", "bhoonidhi")
+        output.setdefault("adapter", "bhoonidhi")
+        output.setdefault("redactionVersion", REDACTION_VERSION)
         bhoonidhi.write_manifest(output, output_path)
     print(f"downloaded {len(downloaded)} product(s)")
     if failed:
@@ -400,6 +428,117 @@ def cmd_verify_manifest_cogs(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_verify_raster_product(args: argparse.Namespace) -> int:
+    """Validate a prepare_manifest.json against its source/profile constraints.
+
+    TASK-037: source-aware non-composite validation. Validates manifest metadata
+    and declared assets against the ValidationProfileSpec — no live provider calls,
+    no rasterio required for metadata checks.  If rasterio is available and the
+    declared COG files exist on disk, raster-level checks are also run.
+    """
+    import json
+
+    from akasha_ingest.validation_profiles import (
+        ManifestValidationResult,
+        get_validation_profile,
+        validate_manifest_metadata,
+    )
+
+    source_id: str | None = getattr(args, "source", None) or None
+    profile_key: str | None = getattr(args, "profile", None) or None
+
+    if not source_id and not profile_key:
+        print(
+            "ERROR: at least one of --source or --profile is required.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Source-specific override takes precedence; profile used as fallback.
+    lookup_key = source_id or profile_key
+    try:
+        spec = get_validation_profile(lookup_key)  # type: ignore[arg-type]
+    except (ValueError, KeyError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    manifest_path = Path(args.manifest)
+    if not manifest_path.is_file():
+        print(f"[FAIL] manifest not found: {manifest_path}", file=sys.stderr)
+        return 1
+
+    try:
+        manifest_data: dict = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[FAIL] cannot read manifest: {exc}", file=sys.stderr)
+        return 1
+
+    result: ManifestValidationResult = validate_manifest_metadata(
+        spec,
+        manifest_data,
+        source_id=source_id,
+    )
+
+    for check in result.checks:
+        print(f"[PASS] {check}")
+    for problem in result.problems:
+        print(f"[FAIL] {problem}")
+    print(result.detail)
+
+    if result.ok and not getattr(args, "metadata_only", False):
+        # Optional rasterio-based COG validation when files exist locally
+        _try_raster_checks(spec, manifest_path, manifest_data)
+
+    return 0 if result.ok else 1
+
+
+def _try_raster_checks(
+    spec,
+    manifest_path: Path,
+    manifest_data: dict,
+) -> None:
+    """Run optional rasterio band/CRS/overview checks when deps are available.
+
+    Silently skipped if rasterio is not installed or COG files are not on disk.
+    Does NOT raise — failures are printed but do not affect the exit code of
+    cmd_verify_raster_product (the metadata check result is authoritative).
+    """
+    try:
+        import rasterio  # noqa: PLC0415
+    except ImportError:
+        return
+
+    outputs = manifest_data.get("outputs") or {}
+    if not isinstance(outputs, dict):
+        return
+
+    for asset_key, asset_data in outputs.items():
+        if not isinstance(asset_data, dict):
+            continue
+        rel_path = asset_data.get("path") or asset_data.get("href") or ""
+        if not rel_path:
+            continue
+        cog_path = manifest_path.parent / rel_path
+        if not cog_path.is_file():
+            continue
+        try:
+            with rasterio.open(cog_path) as ds:
+                print(
+                    f"[RASTER] {asset_key}: bands={ds.count} "
+                    f"crs={ds.crs} dtype={ds.dtypes[0] if ds.dtypes else 'unknown'}"
+                )
+                if spec.band_count is not None and "analytic" in asset_key.lower():
+                    if ds.count == spec.band_count:
+                        print(f"[PASS] raster band count {spec.band_count} matches spec")
+                    else:
+                        print(
+                            f"[WARN] raster band count {ds.count} != spec {spec.band_count}",
+                            file=sys.stderr,
+                        )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] rasterio check skipped for {cog_path.name}: {exc}", file=sys.stderr)
+
+
 def _latest_composite_manifest(source: str, aoi: str):
     from akasha_ingest import config
 
@@ -412,6 +551,22 @@ def _latest_composite_manifest(source: str, aoi: str):
 
 def cmd_verify_composite(args: argparse.Namespace) -> int:
     from akasha_ingest import composite, config
+    from akasha_ingest.validation_profiles import profile_for_source
+
+    # TASK-038: verify-composite is a specialisation of optical_composite validation.
+    # Reject non-optical-composite sources with an actionable error.
+    try:
+        spec = profile_for_source(args.source)
+    except (KeyError, ValueError):
+        spec = None
+    if spec is not None and spec.profile_id != "optical_composite":
+        print(
+            f"ERROR: verify-composite only supports optical_composite sources. "
+            f"Source {args.source!r} has profile {spec.profile_id!r}. "
+            f"Use 'verify-raster-product --source {args.source} --manifest <path>' instead.",
+            file=sys.stderr,
+        )
+        return 1
 
     aoi = _load_requested_aoi(args) if _should_load_aoi_for_verify(args) else None
     expected_crs = args.expected_crs or _aoi_composite_crs(aoi)
@@ -541,6 +696,7 @@ def _resolve_sync_window(args: argparse.Namespace, *, aoi_id: str, ledger_path: 
 
 def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
     from akasha_ingest import bhoonidhi, catalog, composite, config, storage, sync
+    from akasha_ingest.manifests import REDACTION_VERSION
 
     if args.source not in config.RESOURCESAT_BOA_COLLECTION_IDS:
         raise SystemExit("bhoonidhi-sync currently supports ResourceSat-2A BOA sources only")
@@ -671,6 +827,10 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                         **result,
                         "downloaded_path": result["path"],
                         "downloaded_bytes": result["bytes"],
+                        # canonical fields alongside legacy
+                        "itemId": product_id,
+                        "localPath": result["path"],
+                        "downloadedBytes": result["bytes"],
                     }
                 )
                 sync.record_product(
@@ -692,6 +852,14 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
                 raise
         download_manifest = dict(selection.manifest)
         download_manifest["downloaded"] = downloaded
+        # Canonical download manifest top-level keys (alongside legacy shape).
+        # manifestType is always overridden to "download" (the search manifest has "search").
+        download_manifest["manifestType"] = "download"
+        download_manifest.setdefault("jobId", None)
+        download_manifest.setdefault("sourceId", args.source)
+        download_manifest.setdefault("provider", "bhoonidhi")
+        download_manifest.setdefault("adapter", "bhoonidhi")
+        download_manifest.setdefault("redactionVersion", REDACTION_VERSION)
         bhoonidhi.write_manifest(download_manifest, download_manifest_path)
         print(f"download manifest: {download_manifest_path}")
 
@@ -852,6 +1020,150 @@ def cmd_bhoonidhi_sync(args: argparse.Namespace) -> int:
     finally:
         if lock is not None:
             sync.release_lock(lock)
+
+
+def cmd_schedule_plan(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from akasha_ingest.jobs import DEFAULT_JOB_BASE_DIR
+    from akasha_ingest.orchestrator import plan_due_sources
+
+    source_ids = [args.source] if getattr(args, "source", None) else None
+    aoi_ids = [args.aoi] if getattr(args, "aoi", None) else None
+    base_dir = getattr(args, "base_dir", None) or DEFAULT_JOB_BASE_DIR
+    lookback_days = int(getattr(args, "window_days", None) or 12)
+
+    decisions = plan_due_sources(
+        source_ids=source_ids,
+        aoi_ids=aoi_ids,
+        base_dir=base_dir,
+        lookback_days=lookback_days,
+    )
+
+    if getattr(args, "json", False):
+        print(_json.dumps([d.to_dict() for d in decisions], indent=2))
+        return 0
+
+    due = [d for d in decisions if d.is_due]
+    skipped = [d for d in decisions if not d.is_due]
+    print(f"schedule-plan: {len(decisions)} source/AOI pair(s) evaluated.")
+    print(f"  due:     {len(due)}")
+    print(f"  skipped: {len(skipped)}")
+    for d in due:
+        print(f"  [DUE]  {d.source_id}/{d.aoi_id}  window={d.window_start}..{d.window_end}")
+    for d in skipped:
+        print(f"  [SKIP] {d.source_id}/{d.aoi_id}  reason={d.skip_reason}")
+    return 0
+
+
+def cmd_schedule_due_sources(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from akasha_ingest.job_ledger import DEFAULT_LEDGER_DB
+    from akasha_ingest.jobs import DEFAULT_JOB_BASE_DIR
+    from akasha_ingest.orchestrator import DEFAULT_LOCK_DIR, plan_due_sources, run_due_sources
+
+    source_ids = [args.source] if getattr(args, "source", None) else None
+    aoi_ids = [args.aoi] if getattr(args, "aoi", None) else None
+    base_dir = getattr(args, "base_dir", None) or DEFAULT_JOB_BASE_DIR
+    lock_dir = getattr(args, "lock_dir", None) or DEFAULT_LOCK_DIR
+    ledger_db_path = getattr(args, "ledger_db_path", None) or DEFAULT_LEDGER_DB
+    lookback_days = int(getattr(args, "window_days", None) or 12)
+    max_sources = int(getattr(args, "max_concurrent_source", None) or 5)
+    dry_run = bool(getattr(args, "dry_run", False))
+    local_test = bool(getattr(args, "local_test", False))
+    approved_runtime = bool(getattr(args, "approved_runtime", False))
+
+    decisions = plan_due_sources(
+        source_ids=source_ids,
+        aoi_ids=aoi_ids,
+        base_dir=base_dir,
+        lookback_days=lookback_days,
+    )
+
+    results = run_due_sources(
+        decisions,
+        dry_run=dry_run,
+        local_test=local_test,
+        approved_runtime=approved_runtime,
+        max_sources=max_sources,
+        base_dir=base_dir,
+        lock_dir=lock_dir,
+        lookback_days=lookback_days,
+        use_global_lock=True,
+        ledger_db_path=ledger_db_path,
+    )
+
+    if getattr(args, "json", False):
+        print(_json.dumps([r.to_dict() for r in results], indent=2))
+    else:
+        due_count = sum(1 for d in decisions if d.is_due)
+        print(
+            f"schedule-due-sources: {due_count} due / {len(decisions)} evaluated; "
+            f"{len(results)} job(s) attempted."
+        )
+        for r in results:
+            info = f"  [{r.status.upper()}] {r.source_id}/{r.aoi_id}"
+            if r.failure_kind:
+                info += f"  failureKind={r.failure_kind}"
+            print(info)
+
+    failed = [r for r in results if r.status in ("failed", "validation_failed")]
+    return 1 if failed else 0
+
+
+def cmd_schedule_source(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from akasha_ingest.job_ledger import DEFAULT_LEDGER_DB
+    from akasha_ingest.jobs import DEFAULT_JOB_BASE_DIR
+    from akasha_ingest.orchestrator import DEFAULT_LOCK_DIR, run_source_job
+
+    source_id = args.source
+    aoi_id = args.aoi
+    base_dir = getattr(args, "base_dir", None) or DEFAULT_JOB_BASE_DIR
+    lock_dir = getattr(args, "lock_dir", None) or DEFAULT_LOCK_DIR
+    ledger_db_path = getattr(args, "ledger_db_path", None) or DEFAULT_LEDGER_DB
+    lookback_days = int(getattr(args, "window_days", None) or 12)
+    dry_run = bool(getattr(args, "dry_run", False))
+    local_test = bool(getattr(args, "local_test", False))
+    approved_runtime = bool(getattr(args, "approved_runtime", False))
+    trigger = "manual" if getattr(args, "manual", False) else "scheduler"
+
+    try:
+        result = run_source_job(
+            source_id,
+            aoi_id,
+            dry_run=dry_run,
+            local_test=local_test,
+            approved_runtime=approved_runtime,
+            trigger=trigger,
+            base_dir=base_dir,
+            lock_dir=lock_dir,
+            lookback_days=lookback_days,
+            ledger_db_path=ledger_db_path,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    if getattr(args, "json", False):
+        print(_json.dumps(result.to_dict(), indent=2))
+    else:
+        print(f"schedule-source: {source_id}/{aoi_id}")
+        print(f"  job_id: {result.job_id}")
+        print(f"  status: {result.status}")
+        if result.failure_kind:
+            print(f"  failureKind: {result.failure_kind}")
+        if result.failure_message:
+            print(f"  failureMessage: {result.failure_message}")
+
+    # Fail closed: non-dry-run staging-only execution without approval → exit 1
+    if result.failure_kind == "approved_runtime_required":
+        print(f"ERROR: {result.failure_message}", file=sys.stderr)
+        return 1
+
+    return 0 if result.status not in ("failed", "validation_failed") else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1079,6 +1391,44 @@ def build_parser() -> argparse.ArgumentParser:
         help="Source-scoped manifest collection id.",
     )
     p_verify_manifest.set_defaults(func=cmd_verify_manifest_cogs)
+    p_verify_raster = sub.add_parser(
+        "verify-raster-product",
+        help=(
+            "Validate a prepare_manifest.json against source/profile constraints "
+            "(TASK-037). No live provider calls; rasterio optional."
+        ),
+    )
+    p_verify_raster.add_argument(
+        "--source",
+        default=None,
+        help=(
+            "Akasha source id (e.g. resourcesat-2a-liss3-boa, eos-04-sar-mrs-l2b). "
+            "Uses source-specific profile override when available. "
+            "At least one of --source or --profile is required."
+        ),
+    )
+    p_verify_raster.add_argument(
+        "--profile",
+        default=None,
+        help=(
+            "Validation profile id or plan-doc alias "
+            "(optical_composite, optical_scene, sar_backscatter, "
+            "precomputed_context, archive_only, visual_only, "
+            "context_raster, archive_optical, vhr_visual). "
+            "Used as fallback when --source is not given."
+        ),
+    )
+    p_verify_raster.add_argument(
+        "--manifest",
+        required=True,
+        help="Path to prepare_manifest.json to validate.",
+    )
+    p_verify_raster.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="Skip optional rasterio COG checks even when rasterio is available.",
+    )
+    p_verify_raster.set_defaults(func=cmd_verify_raster_product)
     p_verify_composite = sub.add_parser(
         "verify-composite",
         help="Verify a ResourceSat full-AOI composite manifest and COGs.",
@@ -1126,6 +1476,166 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_verify_composite.add_argument("--stac-api-url", default=None)
     p_verify_composite.set_defaults(func=cmd_verify_composite)
+
+    # ── Scheduler / orchestrator commands (TASK-023, TASK-024, TASK-025) ─────
+    p_sched_plan = sub.add_parser(
+        "schedule-plan",
+        help="Print due-source decisions without making any provider calls.",
+    )
+    p_sched_plan.add_argument(
+        "--source",
+        default=None,
+        help="Restrict plan to this source ID (default: all sources).",
+    )
+    p_sched_plan.add_argument(
+        "--aoi",
+        default=None,
+        help="Restrict plan to this AOI ID (default: each source's default AOIs).",
+    )
+    p_sched_plan.add_argument(
+        "--window-days",
+        type=int,
+        default=12,
+        help="Lookback window width in days for the proposed search window (default: 12).",
+    )
+    p_sched_plan.add_argument(
+        "--base-dir",
+        default=None,
+        help="Root directory for job artifacts and the scheduler ledger.",
+    )
+    p_sched_plan.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit decisions as a JSON array (deterministic for tests).",
+    )
+    p_sched_plan.set_defaults(func=cmd_schedule_plan)
+
+    p_sched_due = sub.add_parser(
+        "schedule-due-sources",
+        help="Execute all due sources from the registry with concurrency and budget limits.",
+    )
+    p_sched_due.add_argument(
+        "--source",
+        default=None,
+        help="Restrict execution to this source ID (default: all due sources).",
+    )
+    p_sched_due.add_argument(
+        "--aoi",
+        default=None,
+        help="Restrict execution to this AOI ID.",
+    )
+    p_sched_due.add_argument(
+        "--window-days",
+        type=int,
+        default=12,
+        help="Lookback window width in days (default: 12).",
+    )
+    p_sched_due.add_argument(
+        "--base-dir",
+        default=None,
+        help="Root directory for job artifacts and the scheduler ledger.",
+    )
+    p_sched_due.add_argument(
+        "--lock-dir",
+        default=None,
+        help="Directory for scheduler and worker lock files.",
+    )
+    p_sched_due.add_argument(
+        "--ledger-db-path",
+        default=None,
+        help="SQLite job ledger path used by BFF monitoring.",
+    )
+    p_sched_due.add_argument(
+        "--max-concurrent-source",
+        type=int,
+        default=5,
+        dest="max_concurrent_source",
+        help="Maximum due sources to run in one scheduler pass (default: 5).",
+    )
+    p_sched_due.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan only — create job artifacts but make no provider calls.",
+    )
+    p_sched_due.add_argument(
+        "--approved-runtime",
+        action="store_true",
+        help="Explicitly approve non-dry-run execution for staging-only providers.",
+    )
+    p_sched_due.add_argument(
+        "--local-test",
+        action="store_true",
+        help="Alias for --dry-run; intended for test harnesses.",
+    )
+    p_sched_due.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit job results as a JSON array.",
+    )
+    p_sched_due.set_defaults(func=cmd_schedule_due_sources)
+
+    p_sched_src = sub.add_parser(
+        "schedule-source",
+        help="Run a single source/AOI through the orchestrator.",
+    )
+    p_sched_src.add_argument(
+        "--source",
+        required=True,
+        help="Source ID from the source registry (e.g. resourcesat-2a-liss3-boa).",
+    )
+    p_sched_src.add_argument(
+        "--aoi",
+        required=True,
+        help="AOI ID (e.g. bangalore-60km).",
+    )
+    p_sched_src.add_argument(
+        "--window-days",
+        type=int,
+        default=12,
+        help="Lookback window width in days (default: 12).",
+    )
+    p_sched_src.add_argument(
+        "--base-dir",
+        default=None,
+        help="Root directory for job artifacts and the scheduler ledger.",
+    )
+    p_sched_src.add_argument(
+        "--lock-dir",
+        default=None,
+        help="Directory for scheduler and worker lock files.",
+    )
+    p_sched_src.add_argument(
+        "--ledger-db-path",
+        default=None,
+        help="SQLite job ledger path used by BFF monitoring.",
+    )
+    p_sched_src.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan only — create job artifacts but make no provider calls.",
+    )
+    p_sched_src.add_argument(
+        "--manual",
+        action="store_true",
+        help="Record trigger as 'manual' (vs 'scheduler') in job artifacts.",
+    )
+    p_sched_src.add_argument(
+        "--approved-runtime",
+        action="store_true",
+        help="Explicitly approve non-dry-run execution for staging-only providers.",
+    )
+    p_sched_src.add_argument(
+        "--local-test",
+        action="store_true",
+        help="Alias for --dry-run; intended for test harnesses.",
+    )
+    p_sched_src.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit job result as a JSON object.",
+    )
+    p_sched_src.set_defaults(func=cmd_schedule_source)
+
     return parser
 
 

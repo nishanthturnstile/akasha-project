@@ -8,6 +8,8 @@ import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
 const FieldAnalyticsPage = lazy(() => import('@/pages/monitoring/FieldAnalyticsPage'));
 const FieldCreatePage = lazy(() => import('@/pages/monitoring/FieldCreatePage'));
 const MonitoringGlobalView = lazy(() => import('@/pages/monitoring/MonitoringGlobalView'));
+const IngestionJobsList = lazy(() => import('@/pages/monitoring/IngestionJobsList'));
+const IngestionJobDetail = lazy(() => import('@/pages/monitoring/IngestionJobDetail'));
 
 function lazyPlaceholderPage(name: keyof typeof import('@/pages/product/ProductPlaceholderPages')) {
   return lazy(async () => {
@@ -86,6 +88,8 @@ export function ProductRoutes() {
           element={ withSuspense(FieldAnalyticsPage) }
         />
         <Route path="monitoring/global" element={ withSuspense(MonitoringGlobalView) } />
+        <Route path="monitoring/ingestion-jobs" element={ withSuspense(IngestionJobsList) } />
+        <Route path="monitoring/ingestion-jobs/:jobId" element={ withSuspense(IngestionJobDetail) } />
         <Route path="monitoring/field-leaderboard" element={ withSuspense(FieldLeaderboardPage) } />
         <Route path="monitoring/reporting" element={ withSuspense(ReportingPage) } />
         <Route path="monitoring/diseases-pests" element={ withSuspense(DiseasesPestsPage) } />

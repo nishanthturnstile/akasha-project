@@ -27,6 +27,7 @@ function renderChip(props: Partial<React.ComponentProps<typeof DateChip>> = {}) 
                 selected={ props.selected ?? false }
                 sourceKind={ props.sourceKind ?? 'optical' }
                 sensorBadge={ props.sensorBadge }
+                provenanceLabel={ props.provenanceLabel }
                 onSelect={ props.onSelect ?? vi.fn() }
             />
         </TooltipProvider>,
@@ -94,5 +95,33 @@ describe('DateChip — timeline chip behavior', () => {
         );
         expect(getByTestId('date-chip-unavailable-2026-05-11')).toBeTruthy();
         expect(queryByTestId('date-chip-cloud-2026-05-11')).toBeNull();
+    });
+
+    // --- TASK-072: Provenance label rendering (outcome 6) ---
+
+    it('renders a LISS-4 provenance label (LISS-4 · 5.8 m) from the provenanceLabel prop', () => {
+        const { getByTestId, queryByTestId } = renderChip({ provenanceLabel: 'LISS-4 · 5.8 m' });
+        expect(getByTestId('date-chip-provenance-2026-05-11').textContent).toBe('LISS-4 · 5.8 m');
+        // Provenance preempts sensor badge.
+        expect(queryByTestId('date-chip-sensor-2026-05-11')).toBeNull();
+    });
+
+    it('renders a LISS-3 provenance label (LISS-3 · 24 m)', () => {
+        const { getByTestId } = renderChip({ provenanceLabel: 'LISS-3 · 24 m' });
+        expect(getByTestId('date-chip-provenance-2026-05-11').textContent).toBe('LISS-3 · 24 m');
+    });
+
+    it('renders an AWiFS coarse provenance label (AWiFS · 56 m · coarse)', () => {
+        const { getByTestId } = renderChip({ provenanceLabel: 'AWiFS · 56 m · coarse' });
+        expect(getByTestId('date-chip-provenance-2026-05-11').textContent).toBe('AWiFS · 56 m · coarse');
+    });
+
+    it('shows provenance label instead of sensor badge when both are provided', () => {
+        const { getByTestId, queryByTestId } = renderChip({
+            provenanceLabel: 'LISS-4 · 5.8 m',
+            sensorBadge: 'L4',
+        });
+        expect(getByTestId('date-chip-provenance-2026-05-11').textContent).toBe('LISS-4 · 5.8 m');
+        expect(queryByTestId('date-chip-sensor-2026-05-11')).toBeNull();
     });
 });

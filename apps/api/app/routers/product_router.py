@@ -14,10 +14,10 @@ Minimal product surface needed to verify the raster proof path end-to-end:
 from __future__ import annotations
 
 import asyncio
-from functools import partial
 import os
 import time
 from datetime import date, timedelta
+from functools import partial
 from typing import Any
 
 import anyio

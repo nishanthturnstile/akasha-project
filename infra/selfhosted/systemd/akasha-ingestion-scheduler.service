@@ -1,0 +1,29 @@
+[Unit]
+Description=Akasha multi-source ingestion scheduler run
+Documentation=docs/impl-plan/architecture-satellite-ingestion-scheduler-1.md
+After=docker.service network-online.target
+Wants=network-online.target
+# Do not start if Docker is not running.
+AssertPathExists=/var/run/docker.sock
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/akasha/ingestion-scheduler.env
+WorkingDirectory=/srv/akasha
+# Create required staging directories before the scheduler runs.
+ExecStartPre=/usr/bin/mkdir -p /srv/akasha/ingestion /srv/akasha/ingestion/scheduler/jobs \
+  /srv/akasha/data/raw/bhoonidhi /srv/akasha/data/work/bhoonidhi
+# Acquire the global scheduler lock before invoking the wrapper.
+# -n: fail immediately if already running; prevents overlapping orchestrator runs.
+ExecStart=/usr/bin/flock -n \
+  /srv/akasha/ingestion/scheduler.global.lock \
+  /bin/bash /opt/akasha/bin/akasha-ingestion-scheduler.sh
+# Generous timeout: the scheduler may iterate several due sources sequentially.
+# Individual source jobs are bounded by AKASHA_SCHEDULER_SOURCE_TIMEOUT_SEC.
+TimeoutStartSec=8h
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -35,7 +35,7 @@ SEEDING_TYPES = [
 
 
 def _load_json(filename: str) -> Any:
-    with open(DATA_DIR / filename, "r", encoding="utf-8") as f:
+    with open(DATA_DIR / filename, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -78,7 +78,13 @@ def generate_seeding_types(session: Session) -> int:
 def generate_crops(session: Session) -> int:
     data = _load_json("crops.json")
     seeding_map = {st.name: st.id for st in session.query(SeedingType).all()}
-    SEEDING_INT_TO_NAME = {0: "direct_seed", 1: "transplant", 2: "planting_cutting", 3: "vine", 4: "perennial_tree"}
+    SEEDING_INT_TO_NAME = {
+        0: "direct_seed",
+        1: "transplant",
+        2: "planting_cutting",
+        3: "vine",
+        4: "perennial_tree",
+    }
     count = 0
     for item in data:
         if session.query(Crop).filter_by(name=item["name_en"]).first():

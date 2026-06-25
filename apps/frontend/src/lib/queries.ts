@@ -40,8 +40,12 @@ import {
   updateFieldActivity,
   updateScoutTask,
   updateReportTemplate,
+  getIngestionSchedules,
+  listIngestionJobs,
+  getIngestionJob,
   getConfig,
   getDates,
+  getBestObservations,
   getDefaultLayer,
   getPlots,
   getSources,
@@ -81,6 +85,8 @@ import type {
   FieldCreatePayload,
   FieldUpdatePayload,
   SignupPayload,
+  IngestionJobFilters,
+  BestObservationsParams,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -147,10 +153,16 @@ export const queryKeys = {
   notificationUnreadCount: ['notifications', 'unread-count'] as const,
   assistantStatus: ['assistant', 'status'] as const,
   imagerySourceMonitoring: ['monitoring', 'imagery-sources'] as const,
+  ingestionSchedules: ['monitoring', 'ingestion-schedules'] as const,
+  ingestionJobs: (filters?: IngestionJobFilters) =>
+    ['monitoring', 'ingestion-jobs', filters ?? {}] as const,
+  ingestionJob: (jobId: string) => ['monitoring', 'ingestion-jobs', jobId] as const,
   seasons: ['seasons'] as const,
   season: (seasonId: string) => ['seasons', seasonId] as const,
   fields: ['fields'] as const,
   field: (fieldId: string) => ['fields', fieldId] as const,
+  bestObservations: (params: BestObservationsParams) =>
+    ['observations', 'best', params] as const,
 };
 
 interface LoginVariables {
@@ -217,16 +229,32 @@ export function useSources() {
   return useQuery({ queryKey: queryKeys.sources, queryFn: getSources });
 }
 
-export function useDates(sourceId: string | undefined) {
+export function useDates(sourceId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: sourceId ? queryKeys.dates(sourceId) : (['dates', 'none'] as const),
     queryFn: () => getDates(sourceId as string),
-    enabled: Boolean(sourceId),
+    enabled: Boolean(sourceId) && options?.enabled !== false,
   });
 }
 
 export function useDefaultLayer() {
   return useQuery({ queryKey: queryKeys.defaultLayer, queryFn: getDefaultLayer });
+}
+
+/**
+ * Best-available observations across active sources (Phase 11 / TASK-070).
+ * Disabled by default — enable explicitly via `options.enabled = true`.
+ */
+export function useBestObservations(
+  params: BestObservationsParams = {},
+  options?: { enabled?: boolean },
+) {
+  return useQuery({
+    queryKey: queryKeys.bestObservations(params),
+    queryFn: () => getBestObservations(params),
+    enabled: options?.enabled === true,
+    staleTime: 60 * 1000,
+  });
 }
 
 export function useImagerySourceMonitoring() {
@@ -719,5 +747,30 @@ export function useDeleteField() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
     },
+  });
+}
+
+// --------------------------------------------------------------------------
+// Ingestion scheduler monitoring hooks
+// --------------------------------------------------------------------------
+export function useIngestionSchedules() {
+  return useQuery({
+    queryKey: queryKeys.ingestionSchedules,
+    queryFn: getIngestionSchedules,
+  });
+}
+
+export function useIngestionJobs(filters?: IngestionJobFilters) {
+  return useQuery({
+    queryKey: queryKeys.ingestionJobs(filters),
+    queryFn: () => listIngestionJobs(filters),
+  });
+}
+
+export function useIngestionJob(jobId: string) {
+  return useQuery({
+    queryKey: queryKeys.ingestionJob(jobId),
+    queryFn: () => getIngestionJob(jobId),
+    enabled: Boolean(jobId),
   });
 }

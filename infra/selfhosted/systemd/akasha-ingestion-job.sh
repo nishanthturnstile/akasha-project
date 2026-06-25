@@ -26,6 +26,10 @@ Subcommands:
   list [--limit N]             Print newest jobs as NDJSON.
   retry <job_id> [--overwrite] [--force-upload] [--notes TEXT]
   validate (<job_id>|--source SOURCE --aoi AOI --date latest|YYYY-MM-DD)
+  job-inspect <job_id> [--json]
+  job-artifact <job_id> <request|status|coverage|download|result|log> [--operator]
+  schedule-plan --source SOURCE --aoi AOI [--json]
+  schedule-next --source SOURCE --aoi AOI
   doctor                       Check staging-side prerequisites.
   prune                        Delete old terminal job directories.
 EOF
@@ -198,6 +202,145 @@ PY
   fi
 }
 
+redact_json_file() {
+  local file_path="$1"
+  python - "${file_path}" <<'PY'
+import json
+import re
+import sys
+
+path = sys.argv[1]
+secret_fragments = ("password", "secret", "token", "api_key", "access_key", "credential", "authorization")
+raw_path_re = re.compile(r"((?:/srv/akasha|/data/coolify|/var/lib/docker|/tmp|/var/tmp)/[^\s\"']+)")
+
+def redact(value):
+    if isinstance(value, dict):
+        return {
+            k: ("[REDACTED]" if any(f in k.lower() for f in secret_fragments) else redact(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    if isinstance(value, str):
+        return raw_path_re.sub("[REDACTED_PATH]", value)
+    return value
+
+with open(path, encoding="utf-8") as fh:
+    payload = json.load(fh)
+print(json.dumps(redact(payload), sort_keys=True))
+PY
+}
+
+redact_text_file() {
+  local file_path="$1"
+  python - "${file_path}" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path, encoding="utf-8", errors="replace").read()
+text = re.sub(r"((?:/srv/akasha|/data/coolify|/var/lib/docker|/tmp|/var/tmp)/[^\s\"']+)", "[REDACTED_PATH]", text)
+text = re.sub(r"(?i)(Bearer|Basic|Token)\s+[A-Za-z0-9+/=._-]{8,}", r"\1 [REDACTED]", text)
+text = re.sub(r"(?i)(password|secret|token|api[_-]?key|access[_-]?key|credential)(=|:)\s*[^,\s]+", r"\1\2[REDACTED]", text)
+print(text, end="" if text.endswith("\n") else "\n")
+PY
+}
+
+artifact_path_for() {
+  local job_dir="$1"
+  local artifact="$2"
+  case "${artifact}" in
+    request) printf '%s/request.json' "${job_dir}" ;;
+    status) printf '%s/status.json' "${job_dir}" ;;
+    result) printf '%s/result.json' "${job_dir}" ;;
+    log) printf '%s/job.log' "${job_dir}" ;;
+    coverage) find "${job_dir}" -name 'coverage_manifest*.json' -print -quit 2>/dev/null ;;
+    download) find "${job_dir}" -name 'download_manifest*.json' -print -quit 2>/dev/null ;;
+    *) return 1 ;;
+  esac
+}
+
+inspect_job() {
+  [[ $# -ge 1 ]] || die "job-inspect requires <job_id>"
+  local job_id="$1"
+  local job_dir
+  job_dir="$(job_dir_for "${job_id}")"
+  [[ -d "${job_dir}" ]] || die "job not found: ${job_id}"
+  python - "${job_dir}" <<'PY'
+import json
+import os
+import re
+import sys
+
+job_dir = sys.argv[1]
+secret_fragments = ("password", "secret", "token", "api_key", "access_key", "credential", "authorization")
+raw_path_re = re.compile(r"((?:/srv/akasha|/data/coolify|/var/lib/docker|/tmp|/var/tmp)/[^\s\"']+)")
+
+def load(name):
+    path = os.path.join(job_dir, name)
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+def redact(value):
+    if isinstance(value, dict):
+        return {
+            k: ("[REDACTED]" if any(f in k.lower() for f in secret_fragments) else redact(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    if isinstance(value, str):
+        return raw_path_re.sub("[REDACTED_PATH]", value)
+    return value
+
+status = load("status.json")
+request = load("request.json")
+result = load("result.json")
+observability = load("observability.json")
+summary = {
+    **status,
+    "request": request,
+    "result": result,
+    "observability": observability,
+    "artifactHandles": {
+        "request": f"{status.get('job_id') or request.get('job_id')}:request",
+        "status": f"{status.get('job_id') or request.get('job_id')}:status",
+        "result": f"{status.get('job_id') or request.get('job_id')}:result",
+        "log": f"{status.get('job_id') or request.get('job_id')}:log",
+    },
+}
+print(json.dumps(redact(summary), sort_keys=True))
+PY
+}
+
+job_artifact() {
+  [[ $# -ge 2 ]] || die "job-artifact requires <job_id> <artifact>"
+  local job_id="$1"
+  local artifact="$2"
+  shift 2
+  local operator=false
+  if [[ $# -gt 0 ]]; then
+    [[ "$1" == "--operator" && $# -eq 1 ]] || die "invalid job-artifact arguments"
+    operator=true
+  fi
+  local job_dir artifact_path
+  job_dir="$(job_dir_for "${job_id}")"
+  [[ -d "${job_dir}" ]] || die "job not found: ${job_id}"
+  artifact_path="$(artifact_path_for "${job_dir}" "${artifact}")"
+  [[ -n "${artifact_path}" && -f "${artifact_path}" ]] || die "artifact not found: ${artifact}"
+  if [[ "${operator}" == "true" ]]; then
+    cat "${artifact_path}"
+    return 0
+  fi
+  if [[ "${artifact}" == "log" ]]; then
+    redact_text_file "${artifact_path}"
+  else
+    redact_json_file "${artifact_path}"
+  fi
+}
+
 list_jobs() {
   local limit=20
   while [[ $# -gt 0 ]]; do
@@ -325,6 +468,35 @@ for name in os.listdir(job_root):
 PY
 }
 
+schedule_inspect() {
+  local subcommand="$1"
+  shift
+  local compose_file="${AKASHA_COMPOSE_FILE:-}"
+  if [[ -z "${compose_file}" ]]; then
+    if [[ -f /srv/akasha/coolify-compose.yml ]]; then
+      compose_file="/srv/akasha/coolify-compose.yml"
+    else
+      compose_file="$(find /data/coolify/services -mindepth 2 -maxdepth 2 -name docker-compose.yml -print -quit 2>/dev/null || true)"
+    fi
+  fi
+  [[ -n "${compose_file}" && -f "${compose_file}" ]] || die "compose file not found; set AKASHA_COMPOSE_FILE"
+
+  local compose_args=()
+  if [[ -n "${AKASHA_COMPOSE_PROJECT:-}" ]]; then
+    compose_args=(-p "${AKASHA_COMPOSE_PROJECT}")
+  fi
+
+  local worker_cmd=("${subcommand}" "$@")
+  if [[ "${subcommand}" == "schedule-plan" ]]; then
+    worker_cmd+=(--json)
+  fi
+
+  docker compose "${compose_args[@]}" -f "${compose_file}" \
+    run --rm --pull "${AKASHA_SYNC_PULL_POLICY:-never}" \
+    ingestion-worker \
+    python worker.py "${worker_cmd[@]}"
+}
+
 case "${1:-}" in
   start)
     shift
@@ -350,6 +522,19 @@ case "${1:-}" in
   validate)
     shift
     validate_job "$@"
+    ;;
+  job-inspect)
+    shift
+    inspect_job "$@"
+    ;;
+  job-artifact)
+    shift
+    job_artifact "$@"
+    ;;
+  schedule-plan|schedule-next)
+    subcommand="$1"
+    shift
+    schedule_inspect "${subcommand}" "$@"
     ;;
   doctor)
     shift

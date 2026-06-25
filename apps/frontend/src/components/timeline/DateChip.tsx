@@ -13,6 +13,8 @@ interface DateChipProps {
     sourceKind?: SourceKind;
     /** Short sensor badge (e.g. `S2`, `S1`). Falls back to `date.sensor`. */
     sensorBadge?: string | null;
+    /** Per-chip provenance label for best-available mode (e.g. `LISS-4 · 5.8 m`). */
+    provenanceLabel?: string | null;
     onSelect: () => void;
     onPrefetch?: () => void;
 }
@@ -33,7 +35,7 @@ function shortLabel(acquisitionDate: string): { month: string; day: string } {
 
 /** A single date in the bottom filmstrip: label + usability badge, button semantics. */
 export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function DateChip(
-    { date, selected, sourceKind, sensorBadge, onSelect, onPrefetch },
+    { date, selected, sourceKind, sensorBadge, provenanceLabel, onSelect, onPrefetch },
     ref,
 ) {
     const disabled = !date.tileAvailable;
@@ -50,6 +52,7 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                 ? 'Latest archive scene'
                 : 'Latest usable scene';
     const badge = (sensorBadge ?? date.sensor ?? '').trim() || null;
+    const effectiveProvenanceLabel = provenanceLabel ?? date.provenanceLabel ?? null;
     const showCloudIcon =
         sourceKind !== 'sar' &&
         sourceKind !== 'context' &&
@@ -59,7 +62,8 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
         date.cloudMaskedPercent > CLOUDY_THRESHOLD_PERCENT &&
         !unavailableReason;
     const ariaParts = [date.acquisitionDate];
-    if (badge) ariaParts.push(badge);
+    if (effectiveProvenanceLabel) ariaParts.push(effectiveProvenanceLabel);
+    else if (badge) ariaParts.push(badge);
     if (date.isLatestUsable) ariaParts.push(latestLabel);
     if (showCloudIcon) ariaParts.push('cloudy');
     if (unavailableReason) ariaParts.push(unavailableReason);
@@ -123,7 +127,15 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                     { day }
                 </span>
             </span>
-            { badge && sourceKind !== 'sar' && sourceKind !== 'context' && sourceKind !== 'archive' ? (
+            { effectiveProvenanceLabel ? (
+                <span
+                    className="font-mono tnum mt-0.5 inline-flex h-3 max-w-full items-center truncate rounded-pill border border-border/60 bg-card/40 px-1 text-[9px] leading-none tracking-[0.04em] text-muted-foreground"
+                    data-testid={ `date-chip-provenance-${date.acquisitionDate}` }
+                    title={ effectiveProvenanceLabel }
+                >
+                    { effectiveProvenanceLabel }
+                </span>
+            ) : badge && sourceKind !== 'sar' && sourceKind !== 'context' && sourceKind !== 'archive' ? (
                 <span
                     className="font-mono tnum mt-0.5 inline-flex h-3 items-center rounded-pill border border-border/60 bg-card/40 px-1 text-[9px] leading-none tracking-[0.04em] text-muted-foreground"
                     data-testid={ `date-chip-sensor-${date.acquisitionDate}` }

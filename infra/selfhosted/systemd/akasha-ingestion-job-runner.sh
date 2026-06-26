@@ -267,8 +267,8 @@ preflight() {
     update_status blocked_by_lock 75 lock "another queued/running job exists for source/AOI"
     exit 75
   fi
-  worker_lock_path="/srv/akasha/ingestion/bhoonidhi-sync.${aoi_id}.worker.lock"
-  mkdir -p "$(dirname "${worker_lock_path}")"
+  worker_lock_dir="${AKASHA_SCHEDULER_LOCK_DIR:-/srv/akasha/ingestion}"
+  mkdir -p "${worker_lock_dir}"
 }
 
 run_job() {
@@ -290,32 +290,27 @@ run_job() {
   preflight
 
   update_status running "" "" "running"
+  # Migrated to the provider-agnostic scheduler. Operators may still submit
+  # bounded manual windows/caps; the orchestrator owns locks, job artifacts,
+  # scheduler ledger, and the ResourceSat pipeline lifecycle.
   local sync_args=(
-    bhoonidhi-sync
+    schedule-source
     --source "${source_id}"
     --aoi "${aoi_id}"
-    --limit "${limit}"
+    --approved-runtime
+    --manual
     --window-days "${window_days}"
-    --raw-root "${RAW_ROOT}"
-    --out-dir "${TEMP_ROOT}"
-    --ledger-path "${LEDGER_PATH}"
+    --window-start "${window_start}"
+    --window-end "${window_end}"
+    --limit "${limit}"
     --max-downloads "${max_downloads}"
     --min-coverage-percent "${min_coverage_percent}"
-    --lock-path "${worker_lock_path}"
+    --lock-dir "${worker_lock_dir}"
+    --base-dir "${AKASHA_SCHEDULER_JOBS_DIR:-/srv/akasha/ingestion/scheduler/jobs}"
+    --ledger-db-path "${AKASHA_SCHEDULER_LEDGER_DB:-/srv/akasha/ingestion/scheduler/scheduler.sqlite}"
+    --json
   )
-  if [[ "${backfill_days}" != "0" ]]; then
-    sync_args+=(--backfill-days "${backfill_days}")
-    if [[ -n "${backfill_step_days}" ]]; then
-      sync_args+=(--backfill-step-days "${backfill_step_days}")
-    fi
-  else
-    sync_args+=(--window-start "${window_start}" --window-end "${window_end}")
-  fi
   [[ "${dry_run}" == "true" ]] && sync_args+=(--dry-run)
-  [[ "${overwrite}" == "true" ]] && sync_args+=(--overwrite)
-  [[ "${force_upload}" == "true" ]] && sync_args+=(--force)
-  [[ "${retain_raw_downloads}" == "true" ]] && sync_args+=(--retain-raw-downloads)
-  [[ "${keep_intermediate}" == "true" ]] && sync_args+=(--keep-intermediate)
   priority_prefix
 
   {

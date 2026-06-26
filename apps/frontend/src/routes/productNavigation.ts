@@ -3,6 +3,7 @@ import {
   Bell,
   Bot,
   Bug,
+  CalendarClock,
   CloudSun,
   Database,
   FileBarChart,
@@ -12,7 +13,6 @@ import {
   KeyRound,
   Layers3,
   LineChart,
-  Map,
   MapPinned,
   NotebookTabs,
   Rows3,
@@ -29,10 +29,13 @@ export interface ProductNavItem {
   icon: LucideIcon;
   label: string;
   path: string;
+  requiredRoles?: string[];
   status?: 'ready' | 'planned';
+  surface?: 'product' | 'admin';
 }
 
 export interface ProductNavGroup {
+  icon: LucideIcon;
   items: ProductNavItem[];
   label: string;
 }
@@ -42,14 +45,8 @@ export const MAIN_MONITORING_ROUTE = '/monitoring/field-analytics';
 export const productNavigation: ProductNavGroup[] = [
   {
     label: 'Monitoring',
+    icon: Activity,
     items: [
-      {
-        label: 'Global view',
-        path: '/monitoring/global',
-        icon: Map,
-        description: 'All-field map and portfolio overview.',
-        status: 'planned',
-      },
       {
         label: 'Field analytics',
         path: MAIN_MONITORING_ROUTE,
@@ -81,7 +78,41 @@ export const productNavigation: ProductNavGroup[] = [
     ],
   },
   {
+    label: 'Operations Admin',
+    icon: Settings,
+    items: [
+      {
+        label: 'Ingestion overview',
+        path: '/admin/ingestion',
+        icon: Database,
+        description: 'Internal imagery-source and scheduler operations overview.',
+        requiredRoles: ['owner', 'admin'],
+        status: 'ready',
+        surface: 'admin',
+      },
+      {
+        label: 'Ingestion jobs',
+        path: '/admin/ingestion/jobs',
+        icon: Rows3,
+        description: 'Internal ingestion job queue and run history.',
+        requiredRoles: ['owner', 'admin'],
+        status: 'ready',
+        surface: 'admin',
+      },
+      {
+        label: 'Schedules',
+        path: '/admin/ingestion/schedules',
+        icon: CalendarClock,
+        description: 'Internal source and AOI scheduler cadence.',
+        requiredRoles: ['owner', 'admin'],
+        status: 'ready',
+        surface: 'admin',
+      },
+    ],
+  },
+  {
     label: 'Weather',
+    icon: CloudSun,
     items: [
       {
         label: 'Analytics',
@@ -101,6 +132,7 @@ export const productNavigation: ProductNavGroup[] = [
   },
   {
     label: 'Operations',
+    icon: NotebookTabs,
     items: [
       {
         label: 'Field activity log',
@@ -141,6 +173,7 @@ export const productNavigation: ProductNavGroup[] = [
   },
   {
     label: 'VRA maps',
+    icon: Layers3,
     items: [
       {
         label: 'Sowing',
@@ -181,6 +214,7 @@ export const productNavigation: ProductNavGroup[] = [
   },
   {
     label: 'Utility',
+    icon: Settings,
     items: [
       {
         label: 'AI assistant',

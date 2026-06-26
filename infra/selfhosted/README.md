@@ -125,23 +125,23 @@ python scripts/validate_selfhosted_staging_bhoonidhi.py \
   --public-origin https://staging.gis.cidsaglobal.com
 ```
 
-4. Install the timer on the staging VM:
+4. Install the scheduler timer on the staging VM:
 
 ```bash
-infra/selfhosted/systemd/install-akasha-bhoonidhi-sync.sh
+infra/selfhosted/systemd/install-akasha-ingestion-scheduler.sh
 ```
 
-5. Set `AKASHA_SYNC_DRY_RUN=true` in `/etc/akasha/bhoonidhi-sync.env`, run the
-   service once, and inspect the journal:
+5. Keep `AKASHA_SCHEDULER_ACTIVE=false` or `AKASHA_SCHEDULER_DRY_RUN=true` in
+   `/etc/akasha/ingestion-scheduler.env`, run the service once, and inspect the journal:
 
 ```bash
-sudo systemctl start akasha-bhoonidhi-sync.service
-journalctl -u akasha-bhoonidhi-sync.service -n 200 --no-pager
+sudo systemctl start akasha-ingestion-scheduler.service
+journalctl -u akasha-ingestion-scheduler.service -n 200 --no-pager
 ```
 
 6. Re-run the validator without `--skip-timer-check`.
-7. Remove `AKASHA_SYNC_DRY_RUN=true`, enable the timer, then run one live
-   service invocation only after the dry-run logs are clean.
+7. Set `AKASHA_SCHEDULER_ACTIVE=true`, keep `AKASHA_SCHEDULER_DRY_RUN=true` for
+   a canary, then set `AKASHA_SCHEDULER_DRY_RUN=false` only after the dry-run logs are clean.
 
 ## First staging deployment checklist
 
@@ -245,47 +245,42 @@ python worker.py verify
 python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
 ```
 
-## Scheduled Bhoonidhi sync
+## Scheduled Bhoonidhi ingestion
 
-Phase 3 uses a systemd timer on the staging worker VM so Bhoonidhi traffic comes
-from the whitelisted static IP and raw/work/ledger files stay under
-`/srv/akasha`.
+The provider-agnostic scheduler uses a systemd timer on the staging worker VM so
+Bhoonidhi traffic comes from the whitelisted static IP and raw/work/ledger files
+stay under `/srv/akasha`. The old source-specific Bhoonidhi timers were removed;
+ResourceSat LISS-3, LISS-4, and AWiFS are scheduler-owned.
 
-Install the timer artifacts:
+Install the scheduler artifacts:
 
 ```bash
-infra/selfhosted/systemd/install-akasha-bhoonidhi-sync.sh
+infra/selfhosted/systemd/install-akasha-ingestion-scheduler.sh
 ```
 
-Edit `/etc/akasha/bhoonidhi-sync.env` for AOI, window, and per-run download
-cap. `AKASHA_COMPOSE_FILE` and `AKASHA_COMPOSE_PROJECT` can usually stay unset
-on Coolify hosts; the wrapper auto-detects the rendered compose file and uses
-the existing local image with `AKASHA_SYNC_PULL_POLICY=never`. The service uses
-a host-level `flock` at `/srv/akasha/ingestion/bhoonidhi-sync.systemd.lock`;
-the worker also uses its own ledger lock, so overlapping timer/manual runs fail
-fast.
+Edit `/etc/akasha/ingestion-scheduler.env` for scheduler-wide defaults, canary
+filters, `AKASHA_SCHEDULER_ACTIVE`, `AKASHA_SCHEDULER_DRY_RUN`, and
+`AKASHA_SCHEDULER_APPROVED_RUNTIME`. `AKASHA_COMPOSE_FILE` and
+`AKASHA_COMPOSE_PROJECT` can usually stay unset on Coolify hosts; the wrapper
+auto-detects the rendered compose file and uses the existing local image with
+`AKASHA_SYNC_PULL_POLICY=never`. The service uses a host-level `flock` at
+`/srv/akasha/ingestion/scheduler.global.lock`; worker locks are canonical
+`<source>.<aoi>.worker.lock` files in the scheduler lock directory, so overlapping
+automatic/manual runs fail fast.
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now akasha-bhoonidhi-sync.timer
-systemctl list-timers akasha-bhoonidhi-sync.timer
-journalctl -u akasha-bhoonidhi-sync.service -n 200 --no-pager
+sudo systemctl enable --now akasha-ingestion-scheduler.timer
+systemctl list-timers akasha-ingestion-scheduler.timer
+journalctl -u akasha-ingestion-scheduler.service -n 200 --no-pager
 ```
 
-The installer also accepts `--enable`, `--start`, and `--dry-run`. For the
-first staging validation, set `AKASHA_SYNC_DRY_RUN=true` in
-`/etc/akasha/bhoonidhi-sync.env`, then run
-`sudo systemctl start akasha-bhoonidhi-sync.service` and inspect the journal
-before enabling live downloads.
-
-For the launch backfill, set `AKASHA_SYNC_BACKFILL_DAYS=90` and
-`AKASHA_SYNC_BACKFILL_STEP_DAYS=15` in `/etc/akasha/bhoonidhi-sync.env`. Each
-timer run processes one bounded historical window and advances
-`AKASHA_SYNC_BACKFILL_STATE_PATH` (default under `/srv/akasha/ingestion`). Remove
-those settings after the backfill completes so the daily timer returns to the
-rolling current window. For a manual one-off window, set
-`AKASHA_SYNC_WINDOW_START` and `AKASHA_SYNC_WINDOW_END`, then run
-`sudo systemctl start akasha-bhoonidhi-sync.service`.
+The installer also accepts `--enable`, `--start`, and `--dry-run`. For the first
+staging validation, keep `AKASHA_SCHEDULER_DRY_RUN=true`, then run
+`sudo systemctl start akasha-ingestion-scheduler.service` and inspect the journal
+before enabling live downloads. For a manual one-off/backfill window, use
+`python scripts/staging_ingestion_job.py trigger --source ... --window-start ... --window-end ... --max-downloads ...`;
+the staging runner invokes `worker.py schedule-source --approved-runtime --manual`.
 
 For additional AOIs, set `AOI_CONFIG_DIR` to a directory containing one GeoJSON
 file per AOI, using filenames such as `mysore-60km.geojson`, then pass the
@@ -300,6 +295,89 @@ EOS-04 and NISAR SAR sources are registered as gated context layers until a vali
 operator-download/prep workflow is available. The `ingestion-sar` service still contains the legacy
 Sentinel-1 regression path; use `docs/archive/sentinel-1-grd-cog-prep-runbook.md` only for that explicit
 legacy workflow, not for production ISRO SAR onboarding.
+
+## Orchestrator scheduler ownership
+
+`akasha-ingestion-scheduler.timer` is the single orchestrator timer that replaces timer-per-source
+growth with one bounded due-source check. Rollback means pausing the scheduler and using bounded
+manual `schedule-source` jobs through `scripts/staging_ingestion_job.py` while the issue is
+investigated.
+
+Install the scheduler artifacts (Phase 8):
+
+```bash
+infra/selfhosted/systemd/install-akasha-ingestion-scheduler.sh
+```
+
+Edit `/etc/akasha/ingestion-scheduler.env` for scheduler-wide defaults (cadence, max concurrent
+sources, dry-run/canary flags, stale-lock TTL, and source/AOI ownership notes). The scheduler starts
+with `AKASHA_SCHEDULER_ACTIVE=false` and `AKASHA_SCHEDULER_DRY_RUN=true`.
+
+### One-owner rule
+
+Every source/AOI must have exactly one active owner at all times. Do not force an ad hoc manual
+scheduler job while an automatic scheduler job is in-flight for the same source/AOI. Both paths use
+the same worker lock directory.
+
+| Source/AOI | Current scheduler state |
+|---|---|
+| `resourcesat-2a-liss3-boa` / `bangalore-60km` | `scheduler_active` |
+| `resourcesat-2a-liss4-mx70-l2` / `bangalore-60km` | `scheduler_active` |
+| `resourcesat-2a-awifs-boa` / `bangalore-60km` | `scheduler_active` (regional/coarse; 60% minimum usable coverage) |
+
+### Canary flow
+
+1. Install the scheduler timer with the default `AKASHA_SCHEDULER_ACTIVE=false` and
+   `AKASHA_SCHEDULER_DRY_RUN=true`.
+
+   ```bash
+   infra/selfhosted/systemd/install-akasha-ingestion-scheduler.sh
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now akasha-ingestion-scheduler.timer
+   systemctl list-timers akasha-ingestion-scheduler.timer
+   ```
+
+2. Let the scheduler run one dry-run cycle. Inspect the journal and monitoring pages:
+
+   ```bash
+   journalctl -u akasha-ingestion-scheduler.service -n 200 --no-pager
+   ```
+
+3. Validate that the schedule plan shows the correct due decisions, lock paths, and next windows
+   for all registered sources.
+4. Switch the scheduler to live mode for one source/AOI canary
+   (`AKASHA_SCHEDULER_DRY_RUN=false`, `AKASHA_SCHEDULER_MAX_CONCURRENT_SOURCES=1`). Let one capped
+   real job complete and confirm the output (composites, STAC items, ledger entries).
+5. Widen the source list and run budget only after the canary is clean.
+
+### Rollback / pause automatic scheduling
+
+If the scheduler shows unexpected behavior for any source/AOI, pause it immediately:
+
+1. Stop and disable the orchestrator scheduler timer:
+
+   ```bash
+   sudo systemctl stop akasha-ingestion-scheduler.timer akasha-ingestion-scheduler.service
+   sudo systemctl disable akasha-ingestion-scheduler.timer
+   ```
+
+2. Confirm no scheduler job is queued or running for the affected source/AOI:
+
+   ```bash
+   journalctl -u akasha-ingestion-scheduler.service --since "1 hour ago" --no-pager
+   ```
+
+3. Use bounded manual runs only when needed:
+
+   ```bash
+   python scripts/staging_ingestion_job.py trigger --host akasha-staging --source resourcesat-2a-liss3-boa --aoi bangalore-60km --dry-run
+   ```
+
+4. Run monitoring/doctor checks before re-enabling the scheduler timer:
+
+   ```bash
+   python scripts/staging_ingestion_job.py doctor --host akasha-staging
+   ```
 
 ## Centralized ad hoc ingestion jobs
 

@@ -40,11 +40,20 @@ import {
   updateFieldActivity,
   updateScoutTask,
   updateReportTemplate,
+  getIngestionSchedules,
+  listIngestionJobs,
+  getIngestionJob,
+  getIngestionJobEvents,
   getConfig,
+  getCrops,
   getDates,
+  getBestObservations,
   getDefaultLayer,
+  getIrrigationTypes,
   getPlots,
   getSources,
+  getTillageTypes,
+  getVarieties,
   importPlotsGeoJson,
   login,
   signup,
@@ -81,6 +90,8 @@ import type {
   FieldCreatePayload,
   FieldUpdatePayload,
   SignupPayload,
+  IngestionJobFilters,
+  BestObservationsParams,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -88,6 +99,10 @@ export const queryKeys = {
   sources: ['sources'] as const,
   dates: (sourceId: string) => ['dates', sourceId] as const,
   defaultLayer: ['layers', 'default'] as const,
+  crops: ['crops'] as const,
+  irrigationTypes: ['irrigation-types'] as const,
+  tillageTypes: ['tillage-types'] as const,
+  varieties: (cropId: number) => ['varieties', cropId] as const,
   plots: ['plots'] as const,
   fieldStatistics: (
     plotId: string,
@@ -147,10 +162,18 @@ export const queryKeys = {
   notificationUnreadCount: ['notifications', 'unread-count'] as const,
   assistantStatus: ['assistant', 'status'] as const,
   imagerySourceMonitoring: ['monitoring', 'imagery-sources'] as const,
+  ingestionSchedules: ['monitoring', 'ingestion-schedules'] as const,
+  ingestionJobs: (filters?: IngestionJobFilters) =>
+    ['monitoring', 'ingestion-jobs', filters ?? {}] as const,
+  ingestionJob: (jobId: string) => ['monitoring', 'ingestion-jobs', jobId] as const,
+  ingestionJobEvents: (jobId: string) =>
+    ['monitoring', 'ingestion-jobs', jobId, 'events'] as const,
   seasons: ['seasons'] as const,
   season: (seasonId: string) => ['seasons', seasonId] as const,
   fields: ['fields'] as const,
   field: (fieldId: string) => ['fields', fieldId] as const,
+  bestObservations: (params: BestObservationsParams) =>
+    ['observations', 'best', params] as const,
 };
 
 interface LoginVariables {
@@ -217,17 +240,56 @@ export function useSources() {
   return useQuery({ queryKey: queryKeys.sources, queryFn: getSources });
 }
 
-export function useDates(sourceId: string | undefined) {
+export function useDates(sourceId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: sourceId ? queryKeys.dates(sourceId) : (['dates', 'none'] as const),
     queryFn: () => getDates(sourceId as string),
-    enabled: Boolean(sourceId),
+    enabled: Boolean(sourceId) && options?.enabled !== false,
   });
 }
 
 export function useDefaultLayer() {
   return useQuery({ queryKey: queryKeys.defaultLayer, queryFn: getDefaultLayer });
 }
+
+
+export function useCrops() {
+  return useQuery({ queryKey: queryKeys.crops, queryFn: getCrops });
+}
+
+export function useIrrigationTypes() {
+  return useQuery({ queryKey: queryKeys.irrigationTypes, queryFn: getIrrigationTypes });
+}
+
+export function useTillageTypes() {
+  return useQuery({ queryKey: queryKeys.tillageTypes, queryFn: getTillageTypes });
+}
+
+export function useVarieties(cropId: number | undefined) {
+  return useQuery({
+    queryKey: cropId ? queryKeys.varieties(cropId) : (['varieties', 'none'] as const),
+    queryFn: () => getVarieties(cropId as number),
+    enabled: Boolean(cropId),
+  });
+}
+
+
+/**
+ * Best-available observations across active sources (Phase 11 / TASK-070).
+ * Disabled by default — enable explicitly via `options.enabled = true`.
+ */
+export function useBestObservations(
+  params: BestObservationsParams = {},
+  options?: { enabled?: boolean },
+) {
+  return useQuery({
+    queryKey: queryKeys.bestObservations(params),
+    queryFn: () => getBestObservations(params),
+    enabled: options?.enabled === true,
+    staleTime: 60 * 1000,
+  });
+}
+
 
 export function useImagerySourceMonitoring() {
   return useQuery({
@@ -294,13 +356,13 @@ export function useFieldStatistics(
     queryKey:
       plotId && options.sourceId
         ? queryKeys.fieldStatistics(
-            plotId,
-            options.sourceId,
-            options.acquisitionDate,
-            options.indexType,
-            options.cloudMask,
-            options.preferHighRes,
-          )
+          plotId,
+          options.sourceId,
+          options.acquisitionDate,
+          options.indexType,
+          options.cloudMask,
+          options.preferHighRes,
+        )
         : (['fields', 'none', 'statistics'] as const),
     queryFn: () =>
       getFieldStatistics(plotId as string, {
@@ -328,13 +390,13 @@ export function useFieldTrend(
     queryKey:
       plotId && options.sourceId
         ? queryKeys.fieldTrend(
-            plotId,
-            options.sourceId,
-            options.indexType,
-            options.startDate,
-            options.endDate,
-            options.cloudMask,
-          )
+          plotId,
+          options.sourceId,
+          options.indexType,
+          options.startDate,
+          options.endDate,
+          options.cloudMask,
+        )
         : (['fields', 'none', 'trend'] as const),
     queryFn: () =>
       getFieldTrend(plotId as string, {
@@ -719,5 +781,38 @@ export function useDeleteField() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
     },
+  });
+}
+
+// --------------------------------------------------------------------------
+// Ingestion scheduler monitoring hooks
+// --------------------------------------------------------------------------
+export function useIngestionSchedules() {
+  return useQuery({
+    queryKey: queryKeys.ingestionSchedules,
+    queryFn: getIngestionSchedules,
+  });
+}
+
+export function useIngestionJobs(filters?: IngestionJobFilters) {
+  return useQuery({
+    queryKey: queryKeys.ingestionJobs(filters),
+    queryFn: () => listIngestionJobs(filters),
+  });
+}
+
+export function useIngestionJob(jobId: string) {
+  return useQuery({
+    queryKey: queryKeys.ingestionJob(jobId),
+    queryFn: () => getIngestionJob(jobId),
+    enabled: Boolean(jobId),
+  });
+}
+
+export function useIngestionJobEvents(jobId: string) {
+  return useQuery({
+    queryKey: queryKeys.ingestionJobEvents(jobId),
+    queryFn: () => getIngestionJobEvents(jobId),
+    enabled: Boolean(jobId),
   });
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { AlertTriangle, CalendarClock, ChevronsRight, Info, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CalendarClock, ChevronsRight, Info, RefreshCw, Layers } from 'lucide-react';
 import type { SceneDate, SourceKind } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,6 +29,10 @@ interface TimelineBarProps {
     /** Inclusive upper bound (YYYY-MM-DD) for the visible filmstrip. */
     periodTo?: string | null;
     onPeriodChange?: (from: string | null, to: string | null) => void;
+    /** When true, timeline is in best-available mode showing cross-source candidates. */
+    bestMode?: boolean;
+    /** When provided, renders a Best / Source toggle button. */
+    onBestModeChange?: (on: boolean) => void;
 }
 
 function NoteRow({
@@ -76,6 +80,8 @@ export function TimelineBar({
     periodFrom,
     periodTo,
     onPeriodChange,
+    bestMode = false,
+    onBestModeChange,
 }: TimelineBarProps) {
     const trackRef = useRef<HTMLDivElement | null>(null);
     const selectedRef = useRef<HTMLButtonElement | null>(null);
@@ -215,7 +221,8 @@ export function TimelineBar({
                             date={ d }
                             selected={ selected }
                             sourceKind={ sourceKind }
-                            sensorBadge={ sensorBadge ?? undefined }
+                            sensorBadge={ bestMode ? null : (sensorBadge ?? undefined) }
+                            provenanceLabel={ bestMode ? (d.provenanceLabel ?? null) : null }
                             onSelect={ () => onSelect(d.acquisitionDate) }
                             onPrefetch={ onPrefetchDate ? () => onPrefetchDate(d.acquisitionDate) : undefined }
                         />
@@ -256,6 +263,28 @@ export function TimelineBar({
                 ) }
                 <div className="min-w-0 flex-1">{ content }</div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                    { onBestModeChange && (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant={ bestMode ? 'primary' : 'outline' }
+                                    size="sm"
+                                    onClick={ () => onBestModeChange(!bestMode) }
+                                    data-testid="timeline-best-mode-toggle"
+                                    className="h-8 gap-1 px-2"
+                                    aria-pressed={ bestMode }
+                                >
+                                    <Layers className="size-3.5" strokeWidth={ 1.75 } />
+                                    <span className="hidden sm:inline">{ bestMode ? 'Best' : 'Source' }</span>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                { bestMode
+                                    ? 'Best-available mode: showing best source per date. Click to switch to source-specific mode.'
+                                    : 'Switch to best-available mode: auto-selects the best source per date.' }
+                            </TooltipContent>
+                        </Tooltip>
+                    ) }
                     { nextImage && (
                         <Tooltip>
                             <TooltipTrigger asChild>

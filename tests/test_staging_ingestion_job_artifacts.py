@@ -94,10 +94,15 @@ def test_runner_contract_uses_compose_worker_lock_redaction_and_group_only_artif
     assert "AKASHA_INGESTION_NICE:-10" in runner
     assert "AKASHA_INGESTION_IONICE_CLASS:-2" in runner
     assert "AKASHA_INGESTION_IONICE_LEVEL:-7" in runner
-    assert "bhoonidhi-sync" in runner
+    assert "schedule-source" in runner
     assert "--pull \"${pull_policy}\"" in runner
     assert "AKASHA_SYNC_PULL_POLICY:-never" in runner
-    assert "bhoonidhi-sync.${aoi_id}.worker.lock" in runner
+    assert "--lock-dir \"${worker_lock_dir}\"" in runner
+    assert "AKASHA_SCHEDULER_LOCK_DIR:-/srv/akasha/ingestion" in runner
+    assert "--window-start \"${window_start}\"" in runner
+    assert "--window-end \"${window_end}\"" in runner
+    assert "--max-downloads \"${max_downloads}\"" in runner
+    assert "--min-coverage-percent \"${min_coverage_percent}\"" in runner
     assert "command.txt" in runner
     assert "job.log" in runner
     assert "redact_stream" in runner
@@ -124,13 +129,35 @@ def test_installer_and_forced_command_contracts():
     assert "authorized_keys" in installer
     assert "akasha-ingestion-forced-command.sh" in installer
 
-    for subcommand in ("start", "status", "logs", "list", "retry", "validate", "doctor", "prune"):
+    for subcommand in (
+        "start",
+        "status",
+        "logs",
+        "list",
+        "retry",
+        "validate",
+        "doctor",
+        "prune",
+        "job-inspect",
+        "job-artifact",
+        "schedule-plan",
+        "schedule-next",
+    ):
         assert subcommand in forced
     assert "SSH_ORIGINAL_COMMAND" in forced
     assert "YYYY-MM-DD" in forced
     assert "--date" in forced
     assert "akasha-ingestion-job.sh" in forced
     assert "exec" in forced
+
+
+def test_staging_wrapper_implements_schedule_inspection_commands():
+    wrapper = read_artifact("akasha-ingestion-job.sh")
+    assert "schedule_inspect" in wrapper
+    assert "not implemented by the staging wrapper" not in wrapper
+    assert "worker.py" in wrapper
+    assert "schedule-plan" in wrapper
+    assert "schedule-next" in wrapper
 
 
 def test_artifacts_do_not_include_literal_secret_values():

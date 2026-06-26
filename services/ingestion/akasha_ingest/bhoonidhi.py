@@ -605,14 +605,38 @@ def build_search_manifest(
     datetime_range: str,
     items: list[dict[str, Any]],
     created_at: datetime | None = None,
+    job_id: str | None = None,
+    provider_query: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from .manifests import REDACTION_VERSION, redact_value
+
     candidates: list[dict[str, Any]] = []
     for item in items:
         candidate = candidate_from_item(item, aoi.get("bbox"))
         if candidate["overlap_area"] > 0 and _is_online(candidate):
             candidates.append(candidate)
     selected_ids = [candidate["item_id"] for candidate in candidates if candidate["item_id"]]
+
+    # Enhance each candidate with canonical camelCase keys alongside the legacy snake_case ones.
+    enhanced: list[dict[str, Any]] = []
+    for c in candidates:
+        ec = dict(c)
+        provider_properties = redact_value(dict(c.get("properties") or {}))
+        ec.pop("properties", None)
+        ec["providerItemId"] = c.get("item_id", "")
+        ec["itemId"] = c.get("item_id", "")
+        ec["acquisitionDatetime"] = c.get("datetime")
+        ec["intersectsAoi"] = bool(c.get("overlap_area", 0) > 0)
+        ec["overlapArea"] = c.get("overlap_area", 0.0)
+        ec["downloadStatus"] = c.get("download_status", "pending")
+        ec["skipReason"] = None
+        ec["providerProperties"] = provider_properties
+        ec["links"] = []
+        enhanced.append(ec)
+
+    redacted_query = redact_value(dict(provider_query or {}))
     return {
+        # Legacy keys (preserved for backward compat with tests and downstream code)
         "type": "bhoonidhi_search_manifest",
         "version": 1,
         "created": (created_at or utc_now()).isoformat().replace("+00:00", "Z"),
@@ -621,7 +645,16 @@ def build_search_manifest(
         "aoi": {"id": aoi.get("id"), "name": aoi.get("name"), "bbox": aoi.get("bbox")},
         "search": {"datetime": datetime_range, "filter": "Online=Y"},
         "selection": {"selected_product_ids": selected_ids},
-        "candidates": candidates,
+        "candidates": enhanced,
+        # Canonical keys (added alongside legacy)
+        "manifestType": "search",
+        "jobId": job_id,
+        "sourceId": source_id,
+        "provider": "bhoonidhi",
+        "adapter": "bhoonidhi",
+        "datetimeRange": datetime_range,
+        "providerQuery": redacted_query,
+        "redactionVersion": REDACTION_VERSION,
     }
 
 

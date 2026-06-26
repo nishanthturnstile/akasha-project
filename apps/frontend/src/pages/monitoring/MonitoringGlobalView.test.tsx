@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MonitoringGlobalView from '@/pages/monitoring/MonitoringGlobalView';
 
@@ -156,6 +157,19 @@ function renderPage() {
   );
 }
 
+function renderPageWithRouter() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return render(
+    <QueryClientProvider client={ queryClient }>
+      <MemoryRouter>
+        <MonitoringGlobalView />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -242,5 +256,50 @@ describe('MonitoringGlobalView', () => {
     expect(screen.getByText('upstream stale')).toBeTruthy();
     expect(screen.getByText(/UPSTREAM_DATA_STALE/)).toBeTruthy();
     expect(screen.queryByText('stale composite')).toBeNull();
+  });
+
+  it('renders latest job link pill with state and href when latestSchedulerJobId is present', async () => {
+    const payload = {
+      ...monitoringPayload,
+      sources: [
+        {
+          ...monitoringPayload.sources[0],
+          latestSchedulerJobId: 'job-sched-001',
+          latestSchedulerJobState: 'succeeded',
+          latestSchedulerJobUpdatedAt: '2026-06-20T10:00:00Z',
+        },
+        monitoringPayload.sources[1],
+      ],
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      void input;
+      return Promise.resolve(jsonResponse(payload));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPageWithRouter();
+
+    await waitFor(() => expect(screen.getByText('ResourceSat LISS-3')).toBeTruthy());
+
+    // The LatestJobPill should render a link showing the job state
+    const jobLink = screen.getByTitle('Job job-sched-001 · succeeded');
+    expect(jobLink).toBeTruthy();
+    expect((jobLink as HTMLAnchorElement).href).toContain(
+      '/admin/ingestion/jobs/' + encodeURIComponent('job-sched-001'),
+    );
+  });
+
+  it('renders gated source with gated status pill and no latest job link', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      void input;
+      return Promise.resolve(jsonResponse(monitoringPayload));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Cartosat-3 gated')).toBeTruthy());
+    // Gated source has no latestSchedulerJobId → shows dash
+    expect(screen.getByText('gated')).toBeTruthy();
   });
 });

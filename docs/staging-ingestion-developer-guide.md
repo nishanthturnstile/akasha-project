@@ -24,17 +24,119 @@ to your laptop for local testing.
 | You never SSH into staging for an interactive shell | Job-control keys are locked to the job CLI. `sync-local` also needs an ops-approved artifact-sync SSH path because it reads final manifests/COGs with noninteractive `cat`/`tar`; it still must not expose a shell or raw provider archives. |
 | Bhoonidhi only runs on staging | It's the whitelisted IP; running it locally would fail and leak nothing useful. |
 | Only final COGs reach your laptop | No raw provider ZIPs, no credentials, ever. |
-| One running job per AOI worker lock | Prevents you + the scheduled timer + another dev from triple-hitting Bhoonidhi. Different sources on the same AOI serialize today. |
+| One running job per source/AOI worker lock | Prevents you + the scheduled timer + another dev from triple-hitting Bhoonidhi. Automatic and manual scheduler jobs share the same lock directory. |
 
 There are **two ways imagery gets produced** on staging:
 
-1. **Automatic** — scheduled timers (`akasha-bhoonidhi-sync`, plus source-specific timers such as
-   `akasha-bhoonidhi-liss4-sync`) keep staging fresh on their own.
+1. **Automatic** — the provider-agnostic scheduler timer (`akasha-ingestion-scheduler.timer`)
+  evaluates due sources and runs approved ResourceSat/Bhoonidhi jobs.
 2. **On-demand** — you trigger a job with the CLI when you need specific imagery now.
 
-The ad hoc runner shares the standard Bhoonidhi AOI worker lock. Source-specific timers may have
-their own wrapper locks; coordinate LISS-4 ad hoc runs with the timer window until those locks are
-unified.
+The ad hoc runner invokes `worker.py schedule-source --approved-runtime --manual` and shares the
+same canonical worker lock directory as the automatic scheduler, so a manual run and a scheduled
+run cannot overlap for the same source/AOI.
+
+### Scheduler transition note
+
+The provider-agnostic ingestion scheduler (`akasha-ingestion-scheduler.timer`) is documented in
+[architecture-satellite-ingestion-scheduler-1.md](impl-plan/architecture-satellite-ingestion-scheduler-1.md).
+The Phase 0 scheduler contract is
+[satellite-ingestion-scheduler-contracts.md](reference/satellite-ingestion-scheduler-contracts.md).
+How the scheduler works end-to-end, how to trigger/control it, and how to add a new satellite are in
+[satellite-ingestion-orchestration-and-scheduler.md](satellite-ingestion-orchestration-and-scheduler.md).
+The legacy source-specific Bhoonidhi timers were removed during cutover; this CLI and the scheduler
+are now the supported paths.
+
+Each source/AOI must have exactly one active owner:
+
+| Ownership mode | Meaning |
+|---|---|
+| `scheduler_dry_run` | Scheduler may plan/log due decisions but must not run real jobs. |
+| `scheduler_active` | Scheduler owns real jobs. |
+| `manual_only` | Operators trigger jobs manually through this CLI; no timer owns this source/AOI. |
+
+**One-owner rule:** Do not start an ad hoc manual scheduler job while an automatic scheduler job is
+already in-flight for the same source/AOI. Both paths share the lock directory, but coordinate with
+the job list before forcing retries.
+
+Current ResourceSat ownership:
+
+| Source/AOI | Current owner | Notes |
+|---|---|---|
+| `resourcesat-2a-liss3-boa` / `bangalore-60km` | `scheduler_active` | Production field analytics source. |
+| `resourcesat-2a-liss4-mx70-l2` / `bangalore-60km` | `scheduler_active` | High-resolution field analytics source. |
+| `resourcesat-2a-awifs-boa` / `bangalore-60km` | `scheduler_active` | Regional/coarse product-active source; 60% minimum usable coverage. |
+
+#### Canary / dry-run flow
+
+1. Keep `AKASHA_SCHEDULER_ACTIVE=false` or `AKASHA_SCHEDULER_DRY_RUN=true` for a plan-only pass.
+2. Inspect `journalctl -u akasha-ingestion-scheduler.service -n 100 --no-pager` and the BFF
+  monitoring pages for due decisions, windows, and lock behavior.
+3. For one manual canary, use `scripts/staging_ingestion_job.py trigger --source ... --dry-run`.
+4. When the canary looks correct, run one bounded live job with small `--max-downloads` and validate
+  the resulting composite before widening the run budget.
+
+#### Rollback
+
+Rollback is scheduler-first: pause automatic scheduling, then use bounded manual scheduler runs
+while investigating.
+
+1. Stop and disable the scheduler timer:
+   ```bash
+   sudo systemctl stop akasha-ingestion-scheduler.timer akasha-ingestion-scheduler.service
+   sudo systemctl disable akasha-ingestion-scheduler.timer
+   ```
+2. Confirm no scheduler job is queued/running for the source/AOI in `/admin/ingestion/jobs` or the
+   CLI job list.
+3. Trigger a bounded manual run only if needed through `scripts/staging_ingestion_job.py trigger`.
+4. Re-enable the scheduler timer after the issue is understood and the dry-run plan looks correct.
+
+Monitoring APIs may expose only redacted scheduler snapshots and opaque artifact handles. Raw
+provider archives, full logs, internal paths, signed URLs, and credentials remain wrapper/CLI-only
+operator concerns.
+
+### Admin ingestion console (read-only)
+
+Owner/admin operators can also inspect staging ingestion state in the app's internal admin console.
+This console is for operations visibility only; it complements the staging wrapper commands, job
+logs, and validation flow in this guide, but does **not** replace them.
+
+Access steps:
+
+1. Sign in with a team role of `owner` or `admin`. In deployed environments, access is based on the
+   real team role from Akasha auth/RBAC; local `AUTH_MODE=disabled` may appear as a dev owner only
+   for local development.
+2. Open the admin navigation group (`Admin` / `Operations Admin`) and use these canonical routes:
+   - `/admin/ingestion` — ingestion overview and scheduler/source health.
+   - `/admin/ingestion/jobs` — job queue and recent scheduler/manual runs.
+   - `/admin/ingestion/jobs/<job_id>` — job detail, including pipeline/timeline, output,
+     validation status, failure reason, and redacted event/log summaries.
+   - `/admin/ingestion/schedules` — source/AOI cadence, due/overdue state, last run, and exposure
+     status.
+3. If you are a normal product `member` or `viewer`, you should not see ingestion orchestration in
+   product navigation or admin navigation. Direct admin URLs and admin ingestion APIs are blocked;
+   hidden navigation is only a convenience, not the security boundary.
+
+The first admin console release is deliberately **read-only**. Retry, rerun, live provider calls,
+downloads, validation execution, artifact sync, and any other state-changing operations stay
+CLI/wrapper-only unless a separate safety design approves UI actions. Keep using:
+
+```bash
+python scripts/staging_ingestion_job.py list --host akasha-staging
+python scripts/staging_ingestion_job.py status <job_id> --host akasha-staging
+python scripts/staging_ingestion_job.py logs <job_id> --host akasha-staging --follow
+python scripts/staging_ingestion_job.py validate <job_id> --host akasha-staging
+```
+
+Temporary compatibility aliases such as `/monitoring/global`, `/monitoring/ingestion-jobs`, and
+`/monitoring/ingestion-jobs/<job_id>` may redirect owner/admin users to the canonical admin routes
+during migration. Treat those aliases as deprecated development bookmarks and update links to
+`/admin/ingestion/*`.
+
+The console must preserve the staging guardrails: no public service/domain, no direct Docker heavy
+commands from the browser, no raw provider archives, no credentials, no signed URLs, and no raw
+host filesystem paths in UI responses. Bulk raster/raw/work/COG data remains staging-side under
+`/srv/akasha` only and is handled through the approved wrapper paths.
 
 ---
 
@@ -307,8 +409,8 @@ Every job writes durable artifacts you can inspect via the CLI (no SSH needed):
 | `job.log` | Redacted combined stdout/stderr (what `logs` streams) |
 | `result.json` | Final manifest/composite paths, `composite_date`, verification summary |
 
-**Not in this phase:** there is no web dashboard yet — everything is this CLI. A persistent,
-app-backed job view is the deferred follow-up phase.
+The admin ingestion console reads only redacted, operator-safe summaries of this state. Use the CLI
+commands above for authoritative logs, validation, retry/rerun, and local sync workflows.
 
 ---
 

@@ -158,6 +158,33 @@ jobs:
       - name: Run Slice 2 validator
         run: python scripts/validate_slice2.py
 
+  ingestion-tests:
+    name: Ingestion + scheduler tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            services/ingestion/requirements.txt
+            apps/api/requirements-dev.txt
+            apps/api/requirements.txt
+
+      - name: Install ingestion + test dependencies
+        run: |
+          python -m pip install \
+            -r services/ingestion/requirements.txt \
+            -r apps/api/requirements-dev.txt \
+            pyyaml
+
+      - name: Run repo-root tests (ingestion, scheduler, scripts)
+        run: python -m pytest tests/ -q
+
   trivy:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest

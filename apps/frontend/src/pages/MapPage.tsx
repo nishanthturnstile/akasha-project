@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
-import { AlertTriangle, RefreshCw, Satellite, Search } from 'lucide-react';
+import { AlertTriangle, Maximize, Minimize, RefreshCw, Satellite, Search } from 'lucide-react';
 import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
 import {
   useConfig,
   useCreateField,
   useDates,
+  useBestObservations,
   useDefaultLayer,
   useDeleteField,
   useFields,
@@ -49,6 +50,7 @@ import type {
   Field,
   FieldUpdatePayload,
   GeoJsonPosition,
+  ObservationCandidate,
   Plot,
   PlotGeometry,
   Source,
@@ -247,6 +249,25 @@ function sensorBadgeForSource(source: Source | null | undefined): string | null 
   return null;
 }
 
+/** Derive a short sensor name from a source ID for provenance labels. */
+function shortSensorName(sourceId: string): string {
+  const id = sourceId.toLowerCase();
+  if (id.includes('liss-4') || id.includes('liss4')) return 'LISS-4';
+  if (id.includes('liss-3') || id.includes('liss3')) return 'LISS-3';
+  if (id.includes('awifs')) return 'AWiFS';
+  if (id.includes('sentinel-2') || id.includes('sentinel2')) return 'S2';
+  if (id.includes('sentinel-1') || id.includes('sentinel1')) return 'S1';
+  return sourceId;
+}
+
+/** Build a provenance label like `LISS-4 · 5.8 m` or `AWiFS · 56 m · coarse`. */
+function provenanceLabelForCandidate(c: ObservationCandidate): string {
+  const sensor = shortSensorName(c.sourceId);
+  const res = c.resolutionMeters != null ? `${c.resolutionMeters} m` : null;
+  const coarse = c.isCoarse ? 'coarse' : null;
+  return [sensor, res, coarse].filter((x): x is string => x !== null).join(' · ');
+}
+
 function maskOptionsForSource(source: Source | null | undefined): Array<keyof CloudMaskOptions> {
   return source?.availableMaskOptions ?? ['clouds', 'cloudShadows', 'cirrus'];
 }
@@ -313,14 +334,27 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     periodTo,
     overlaysVisible,
     focusNonce,
+    bestMode,
   } = view;
 
   const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
-  const datesQ = useDates(effectiveSourceId);
+  const datesQ = useDates(effectiveSourceId, { enabled: !bestMode });
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
     [sourcesQ.data, effectiveSourceId],
   );
+
+  // Best-available observations query (only active in best mode).
+  const bestObservationIndexType = displayModeOverride ?? configQ.data?.defaultIndex ?? undefined;
+  const bestObsParams = useMemo(() => ({
+    ...(periodFrom ? { startDate: periodFrom } : { lookbackDays: 92 }),
+    ...(periodTo ? { endDate: periodTo } : {}),
+    ...(bestObservationIndexType ? { indexType: bestObservationIndexType } : {}),
+    useCase: 'field' as const,
+    allowCoarse: false,
+    maxCandidates: 30,
+  }), [periodFrom, periodTo, bestObservationIndexType]);
+  const bestObsQ = useBestObservations(bestObsParams, { enabled: bestMode });
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -410,7 +444,29 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const activeTimelineDates = datesQ.data;
+  // Convert best-observation candidates to SceneDate objects with provenance labels.
+  const bestTimelineDates = useMemo<import('@/types/api').SceneDate[] | undefined>(() => {
+    if (!bestObsQ.data) return undefined;
+    const byDate = new Map<string, import('@/types/api').SceneDate>();
+    for (const c of bestObsQ.data.candidates) {
+      if (byDate.has(c.acquisitionDate)) continue;
+      byDate.set(c.acquisitionDate, {
+        acquisitionDate: c.acquisitionDate,
+        datetime: `${c.acquisitionDate}T00:00:00Z`,
+        usablePixelPercent: c.usablePixelPercent,
+        cloudMaskedPercent: c.cloudMaskedPercent,
+        coveragePercent: c.coveragePercent,
+        isLatestUsable: c.isLatestUsable,
+        metricsProvisional: false,
+        tileAvailable: c.tileAvailable,
+        provenanceLabel: provenanceLabelForCandidate(c),
+        resolvedSourceId: c.sourceId,
+      });
+    }
+    return Array.from(byDate.values());
+  }, [bestObsQ.data]);
+
+  const activeTimelineDates = bestMode ? bestTimelineDates : datesQ.data;
   const activeSourceKind = selectedSource?.kind;
   const effectiveCloudMask = useMemo(
     () => sanitizeCloudMaskForSource(cloudMask, selectedSource),
@@ -444,17 +500,25 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     () => activeTimelineDates?.find((d) => d.acquisitionDate === selectedDate) ?? null,
     [activeTimelineDates, selectedDate],
   );
+  const requestSourceId = bestMode && selectedDateMetadata?.resolvedSourceId
+    ? selectedDateMetadata.resolvedSourceId
+    : effectiveSourceId;
+  const requestSource = useMemo(
+    () => sourcesQ.data?.find((s) => s.id === requestSourceId),
+    [sourcesQ.data, requestSourceId],
+  );
+  const displaySource = bestMode ? requestSource : selectedSource;
 
-  const sourceDisplayModes = selectedSource?.displayModes ?? ['FCC'];
-  const sourceMapDisplayModes = mapDisplayModesForSource(selectedSource);
+  const sourceDisplayModes = displaySource?.displayModes ?? ['FCC'];
+  const sourceMapDisplayModes = mapDisplayModesForSource(displaySource);
   const defaultMapDisplayMode = defaultMapDisplayModeForSource(
-    selectedSource,
-    defaultLayerQ.data && defaultLayerQ.data.sourceId === effectiveSourceId
+    displaySource,
+    defaultLayerQ.data && defaultLayerQ.data.sourceId === requestSourceId
       ? defaultLayerQ.data.defaultMapDisplayMode ?? defaultLayerQ.data.displayMode ?? null
       : null,
   );
   const selectedDisplayMode = resolveDisplayMode(
-    displayModeOverride ?? selectedSource?.displayMode ?? null,
+    displayModeOverride ?? displaySource?.displayMode ?? null,
     sourceMapDisplayModes.length > 0 ? sourceMapDisplayModes : sourceDisplayModes,
     defaultMapDisplayMode,
   );
@@ -469,16 +533,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   // EOS-style: when an index layer is selected, hide the full-scene Akasha raster so
   // the basemap satellite imagery shows AROUND the field, and paint the colorized
   // index ONLY inside the field via a clipped overlay image.
-  const isIndexLayer = (selectedSource?.supportedIndices ?? []).includes(selectedDisplayMode);
+  const isIndexLayer = (displaySource?.supportedIndices ?? []).includes(selectedDisplayMode);
 
   const scene = useMemo<SatelliteScene | null>(() => {
-    if (!selectedDate || !effectiveSourceId) return null;
+    if (!selectedDate || !requestSourceId) return null;
     // Index layers render via the field-clipped overlay, not a full-scene raster.
     if (isIndexLayer) return null;
     const dl = defaultLayerQ.data;
     const isDefault =
       dl &&
-      dl.sourceId === effectiveSourceId &&
+      dl.sourceId === requestSourceId &&
       dl.acquisitionDate === selectedDate &&
       (dl.displayMode ?? 'FCC') === selectedDisplayMode;
     const dateBounds = selectedDateMetadata?.bounds;
@@ -488,26 +552,26 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         bounds: dl.bounds ?? dateBounds,
         minzoom: dl.minzoom,
         maxzoom: dl.maxzoom,
-        attribution: selectedSource?.attribution ?? dl.attribution,
+        attribution: displaySource?.attribution ?? dl.attribution,
       };
     }
     return {
-      tileUrlTemplate: composeTileTemplate(effectiveSourceId, selectedDate, selectedDisplayMode),
+      tileUrlTemplate: composeTileTemplate(requestSourceId, selectedDate, selectedDisplayMode),
       bounds: dateBounds,
       minzoom: dl?.minzoom,
       maxzoom: dl?.maxzoom,
       attribution:
-        selectedSource?.attribution ??
-        (dl?.sourceId === effectiveSourceId ? dl.attribution : undefined),
+        displaySource?.attribution ??
+        (dl?.sourceId === requestSourceId ? dl.attribution : undefined),
     };
   }, [
     selectedDate,
-    effectiveSourceId,
+    requestSourceId,
     isIndexLayer,
     defaultLayerQ.data,
     selectedDateMetadata,
     selectedDisplayMode,
-    selectedSource?.attribution,
+    displaySource?.attribution,
   ]);
 
   // Compare ("B") scene: same source + display mode, a different acquisition date.
@@ -515,42 +579,49 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const sceneB = useMemo<SatelliteScene | null>(() => {
     if (!visible || !compareEnabled || !compareDate) return null;
     if (compareDate === selectedDate) return null;
-    if (!effectiveSourceId) return null;
+    if (!requestSourceId) return null;
     if (isIndexLayer) return null;
-    const meta = datesQ.data?.find((d) => d.acquisitionDate === compareDate);
+    const meta = (bestMode ? activeTimelineDates : datesQ.data)?.find(
+      (d) => d.acquisitionDate === compareDate,
+    );
     if (!meta?.tileAvailable) return null;
+    const compareSourceId = bestMode && meta.resolvedSourceId ? meta.resolvedSourceId : requestSourceId;
+    const compareSource = sourcesQ.data?.find((s) => s.id === compareSourceId);
     return {
-      tileUrlTemplate: composeTileTemplate(effectiveSourceId, compareDate, selectedDisplayMode),
+      tileUrlTemplate: composeTileTemplate(compareSourceId, compareDate, selectedDisplayMode),
       bounds: meta?.bounds,
       minzoom: defaultLayerQ.data?.minzoom,
       maxzoom: defaultLayerQ.data?.maxzoom,
-      attribution: selectedSource?.attribution,
+      attribution: compareSource?.attribution ?? displaySource?.attribution,
     };
   }, [
+    bestMode,
+    activeTimelineDates,
     compareEnabled,
     compareDate,
     visible,
-    effectiveSourceId,
+    requestSourceId,
     isIndexLayer,
     selectedDate,
     selectedDisplayMode,
     datesQ.data,
     defaultLayerQ.data,
-    selectedSource?.attribution,
+    sourcesQ.data,
+    displaySource?.attribution,
   ]);
 
   const requestedIndexOverlay = useMemo(() => {
-    if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
+    if (!isIndexLayer || !selectedPlot || !selectedDate || !requestSourceId) return null;
     const corners = geometryBboxCorners(selectedPlot.geometry);
     if (!corners) return null;
     return {
       plotId: selectedPlot.id,
-      sourceId: effectiveSourceId,
+      sourceId: requestSourceId,
       acquisitionDate: selectedDate,
       indexType: selectedDisplayMode,
       fallbackCoordinates: corners,
     };
-  }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode]);
+  }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode]);
 
   const [indexOverlay, setIndexOverlay] = useState<IndexOverlay | null>(null);
 
@@ -594,16 +665,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   }, [requestedIndexOverlay, preferHighRes]);
 
   const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
-    if (!isIndexLayer || !selectedPlot || !selectedDate || !effectiveSourceId) return null;
+    if (!isIndexLayer || !selectedPlot || !selectedDate || !requestSourceId) return null;
     return getFieldIndexPoint(selectedPlot.id, {
-      sourceId: effectiveSourceId,
+      sourceId: requestSourceId,
       acquisitionDate: selectedDate,
       indexType: selectedDisplayMode,
       lng,
       lat,
       preferHighRes,
     });
-  }, [isIndexLayer, selectedPlot, selectedDate, effectiveSourceId, selectedDisplayMode, preferHighRes]);
+  }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode, preferHighRes]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -655,6 +726,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const releaseMapTool = (owner: MapToolOwner) => {
     setActiveMapTool((current) => (current === owner ? null : current));
   };
+
+  // In best mode, the backend-resolved source lives on the selected date metadata.
+  // Do not mutate activeSourceId: it is the user's source-specific timeline choice.
+  const handleBestDateSelect = useCallback((acquisitionDate: string) => {
+    const candidate = bestObsQ.data?.candidates.find(
+      (c) => c.acquisitionDate === acquisitionDate,
+    );
+    if (!candidate) return;
+    view.setDate(candidate.acquisitionDate);
+  }, [bestObsQ.data, view]);
 
   const importGeoJsonFile = async (file: File) => {
     const text = await file.text();
@@ -750,11 +831,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         : basemapResolution.basemapConfig.provider === 'esri'
           ? 'ArcGIS basemap'
           : sourceAttribution ?? 'Satellite imagery');
-  const sourceSupportedIndices = selectedSource?.supportedIndices ?? config.supportedIndices;
+  const sourceSupportedIndices = displaySource?.supportedIndices ?? config.supportedIndices;
   const analyticsSupportedIndices = sourceSupportedIndices;
-  const sourceAnalysisLevel = selectedSource?.analysisLevel ?? 'field';
+  const sourceAnalysisLevel = displaySource?.analysisLevel ?? 'field';
   const analyticsEnabled =
-    selectedSource?.kind !== 'sar' &&
+    displaySource?.kind !== 'sar' &&
     sourceAnalysisLevel === 'field' &&
     sourceSupportedIndices.length > 0;
   const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
@@ -894,7 +975,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         <div className="absolute left-4 top-4 z-toolbar">
           <CoordinateReadout
             map={ map }
-            indexLookup={ isIndexLayer && selectedPlot && selectedDate && effectiveSourceId ? indexLookup : undefined }
+            indexLookup={ isIndexLayer && selectedPlot && selectedDate && requestSourceId ? indexLookup : undefined }
           />
         </div>
       ) }
@@ -921,7 +1002,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           onBlendChange={ view.setOpacity }
           selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
-          exportSourceId={ effectiveSourceId }
+          exportSourceId={ requestSourceId }
           exportIndexType={ exportIndexType }
           exportCloudMask={ effectiveCloudMask }
           analyticsEnabled={ analyticsEnabled }
@@ -962,26 +1043,49 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         { attribution }
       </div>
 
-      {/* Bottom: temporal filmstrip */ }
-      <div id="timeline-bar" className="absolute inset-x-0 bottom-0 z-panel px-2 pb-2">
-        <TimelineBar
+      {/* Bottom: temporal filmstrip + fullscreen card */ }
+      <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
+        <div id="timeline-bar" className="min-w-0 flex-1">
+          <TimelineBar
           dates={ activeTimelineDates }
           selectedDate={ selectedDate }
-          onSelect={ view.setDate }
-          sourceKind={ activeSourceKind }
-          sensorBadge={ sensorBadgeForSource(selectedSource) }
-          loading={ datesQ.isLoading }
+          onSelect={ bestMode ? handleBestDateSelect : view.setDate }
+          sourceKind={ bestMode ? undefined : activeSourceKind }
+          sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
+          loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
           error={
-            datesQ.isError ? messageFor(datesQ.error) : null
+            bestMode
+              ? (bestObsQ.isError ? messageFor(bestObsQ.error) : null)
+              : (datesQ.isError ? messageFor(datesQ.error) : null)
           }
-          onRetry={ () => void datesQ.refetch() }
-          marginalNote={ marginalNote }
-          nearestPassNote={ nearestPassNote }
+          onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
+          marginalNote={ bestMode ? null : marginalNote }
+          nearestPassNote={ bestMode ? null : nearestPassNote }
           onPrefetchDate={ undefined }
           periodFrom={ periodFrom }
           periodTo={ periodTo }
-            onPeriodChange={ view.setPeriod }
+          onPeriodChange={ view.setPeriod }
+          bestMode={ bestMode }
+          onBestModeChange={ view.setBestMode }
           />
+        </div>
+
+        {/* Fullscreen card — same height as timeline bar */}
+        <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
+          <button
+            type="button"
+            aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }
+            data-testid="map-fullscreen-btn"
+            onClick={ () => view.setMapFullscreen(!view.mapFullscreen) }
+            className="flex items-center justify-center text-foreground/80 transition-colors duration-fast hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring size-full"
+          >
+            { view.mapFullscreen ? (
+              <Minimize className="size-4" strokeWidth={ 1.75 } />
+            ) : (
+              <Maximize className="size-4" strokeWidth={ 1.75 } />
+            ) }
+          </button>
+        </div>
       </div>
 
       <AlertDialogRoot

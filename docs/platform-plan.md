@@ -25,6 +25,7 @@ Do not include every document in every Emergent prompt; use the prompt-slice tab
 | Services, architecture, stack, API shape | `architecture-tech-stack.md` |
 | Imagery sources, COGs, STAC metadata, index math | `data-ingestion-and-satellite-rules.md` |
 | ResourceSat LISS-3 BOA ingestion and COG prep | `impl-plan/isro-bhoonidhi-ingestion-phase-plan.md` |
+| Catalogue-wide ingestion scheduler, provider adapters, job observability, source-state taxonomy | `impl-plan/architecture-satellite-ingestion-scheduler-1.md` |
 | Deployment service setup and runtime operations | `infra/selfhosted/README.md` |
 | Implementation order | active plans in `impl-plan/`; completed/superseded plans in `impl-plan/archive/` |
 | Engineering rules and anti-patterns | `engineering-dos-donts.md` |

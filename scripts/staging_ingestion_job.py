@@ -11,6 +11,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -36,6 +37,25 @@ TERMINAL_STATES = {
     "validation_failed",
     "cancelled",
 }
+
+ARTIFACT_TYPES = ("request", "status", "coverage", "download", "result", "log")
+
+# Keys whose values are always redacted in local output.
+_REDACT_KEY_FRAGMENTS = (
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_key",
+    "credential",
+    "authorization",
+)
+
+_RAW_PATH_RE = re.compile(
+    r"(?P<path>(?:/srv/akasha|/data/coolify|/var/lib/docker|/tmp|/var/tmp)"
+    r"/[^\s\"']+|[A-Za-z]:\\[^\s\"']+)"
+)
 
 
 def default_host() -> str:
@@ -447,6 +467,151 @@ def command_doctor(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _should_redact_key(key: str) -> bool:
+    lower = key.lower()
+    return any(frag in lower for frag in _REDACT_KEY_FRAGMENTS)
+
+
+def _redact(obj: Any) -> Any:
+    """Recursively redact sensitive keys from a decoded JSON structure."""
+    if isinstance(obj, dict):
+        return {
+            k: "[REDACTED]" if _should_redact_key(k) else _redact(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_redact(item) for item in obj]
+    if isinstance(obj, str):
+        return _RAW_PATH_RE.sub("[REDACTED_PATH]", obj)
+    return obj
+
+
+def _format_inspect_summary(data: dict[str, Any]) -> str:
+    fields = (
+        "job_id",
+        "state",
+        "source_id",
+        "aoi_id",
+        "window_start",
+        "window_end",
+        "exit_code",
+        "failure_kind",
+        "message",
+        "composite_date",
+        "updated_at",
+    )
+    lines = [f"{k}: {data[k]}" for k in fields if k in data and data[k] is not None]
+    return "\n".join(lines)
+
+
+def command_job_inspect(args: argparse.Namespace) -> int:
+    result = run_ssh(args.host, ["job-inspect", args.job_id])
+    if result.returncode != 0:
+        _print_completed_error(result)
+        return result.returncode
+    try:
+        data = _json_loads(result.stdout)
+    except json.JSONDecodeError:
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        return result.returncode
+    redacted = _redact(data)
+    if args.json:
+        print(json.dumps(redacted, indent=2, sort_keys=True))
+    else:
+        print(_format_inspect_summary(redacted))
+    return 0
+
+
+def command_job_artifact(args: argparse.Namespace) -> int:
+    remote_args = ["job-artifact", args.job_id, args.artifact]
+    if args.operator:
+        remote_args.append("--operator")
+    result = run_ssh(args.host, remote_args)
+    if result.returncode != 0:
+        _print_completed_error(result)
+        return result.returncode
+    if not result.stdout:
+        return 0
+    # Operator mode emits raw output; non-operator output is locally redacted
+    # even when the remote wrapper returns path-bearing plain text logs.
+    if args.operator:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        return 0
+    # Non-operator JSON artifacts: redact before printing.
+    try:
+        data = _json_loads(result.stdout)
+        print(json.dumps(_redact(data), indent=2, sort_keys=True))
+    except (json.JSONDecodeError, ValueError):
+        redacted = _redact(result.stdout)
+        print(redacted, end="" if str(redacted).endswith("\n") else "\n")
+    return 0
+
+
+def _format_schedule_plan_summary(data: dict[str, Any]) -> str:
+    fields = (
+        "source_id",
+        "aoi_id",
+        "due",
+        "reason",
+        "next_window_start",
+        "next_window_end",
+        "last_run",
+        "last_state",
+    )
+    lines = [f"{k}: {data[k]}" for k in fields if k in data and data[k] is not None]
+    return "\n".join(lines)
+
+
+def command_schedule_plan(args: argparse.Namespace) -> int:
+    remote_args = ["schedule-plan", "--source", args.source, "--aoi", args.aoi]
+    result = run_ssh(args.host, remote_args)
+    if result.returncode != 0:
+        _print_completed_error(result)
+        return result.returncode
+    try:
+        data = _json_loads(result.stdout)
+    except json.JSONDecodeError:
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        return result.returncode
+    if args.json:
+        print(json.dumps(_redact(data), indent=2, sort_keys=True))
+    else:
+        print(_format_schedule_plan_summary(data))
+    return 0
+
+
+def _format_schedule_next_summary(data: dict[str, Any]) -> str:
+    fields = (
+        "source_id",
+        "aoi_id",
+        "next_due",
+        "window_start",
+        "window_end",
+        "cadence_days",
+        "reason",
+    )
+    lines = [f"{k}: {data[k]}" for k in fields if k in data and data[k] is not None]
+    return "\n".join(lines)
+
+
+def command_schedule_next(args: argparse.Namespace) -> int:
+    remote_args = ["schedule-next", "--source", args.source, "--aoi", args.aoi]
+    result = run_ssh(args.host, remote_args)
+    if result.returncode != 0:
+        _print_completed_error(result)
+        return result.returncode
+    try:
+        data = _json_loads(result.stdout)
+    except json.JSONDecodeError:
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        return result.returncode
+    print(_format_schedule_next_summary(data))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -527,6 +692,52 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--azure-resource-group")
     doctor.add_argument("--azure-vm")
     doctor.set_defaults(func=command_doctor)
+
+    job_inspect = subparsers.add_parser(
+        "job-inspect",
+        help="Fetch a combined redacted job summary from staging artifacts.",
+    )
+    _add_host(job_inspect)
+    job_inspect.add_argument("job_id")
+    job_inspect.add_argument("--json", action="store_true", help="Output raw redacted JSON.")
+    job_inspect.set_defaults(func=command_job_inspect)
+
+    job_artifact = subparsers.add_parser(
+        "job-artifact",
+        help="Fetch a specific job artifact (redacted by default).",
+    )
+    _add_host(job_artifact)
+    job_artifact.add_argument("job_id")
+    job_artifact.add_argument(
+        "artifact",
+        choices=ARTIFACT_TYPES,
+        help="Artifact type to fetch.",
+    )
+    job_artifact.add_argument(
+        "--operator",
+        action="store_true",
+        help="Operator mode: emit raw paths/logs without local redaction.",
+    )
+    job_artifact.set_defaults(func=command_job_artifact)
+
+    schedule_plan = subparsers.add_parser(
+        "schedule-plan",
+        help="Inspect why a source is or is not due for ingestion.",
+    )
+    _add_host(schedule_plan)
+    schedule_plan.add_argument("--source", default=DEFAULT_SOURCE)
+    schedule_plan.add_argument("--aoi", default=DEFAULT_AOI)
+    schedule_plan.add_argument("--json", action="store_true", help="Output redacted JSON.")
+    schedule_plan.set_defaults(func=command_schedule_plan)
+
+    schedule_next = subparsers.add_parser(
+        "schedule-next",
+        help="Show the next due run/window from scheduler state.",
+    )
+    _add_host(schedule_next)
+    schedule_next.add_argument("--source", default=DEFAULT_SOURCE)
+    schedule_next.add_argument("--aoi", default=DEFAULT_AOI)
+    schedule_next.set_defaults(func=command_schedule_next)
 
     return parser
 

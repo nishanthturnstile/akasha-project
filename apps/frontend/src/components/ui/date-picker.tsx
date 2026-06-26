@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -54,13 +55,21 @@ export function DatePicker({
     return { year: now.getFullYear(), month: now.getMonth() };
   });
   const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const calendarRef = React.useRef<HTMLDivElement>(null);
 
   // Close on outside click / Escape
   React.useEffect(() => {
     if (!open) return undefined;
     const onPointer = (event: PointerEvent) => {
       const node = wrapperRef.current;
-      if (node && event.target instanceof Node && !node.contains(event.target)) {
+      const cal = calendarRef.current;
+      if (
+        node &&
+        event.target instanceof Node &&
+        !node.contains(event.target) &&
+        (!cal || !cal.contains(event.target))
+      ) {
         setOpen(false);
       }
     };
@@ -73,6 +82,20 @@ export function DatePicker({
       window.removeEventListener('pointerdown', onPointer);
       window.removeEventListener('keydown', onKey);
     };
+  }, [open]);
+
+  // Recalculate fixed position when opened
+  const [fixedStyle, setFixedStyle] = React.useState<React.CSSProperties>({});
+  React.useEffect(() => {
+    if (!open) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setFixedStyle({
+        top: rect.bottom + 4,
+        left: rect.left,
+        minWidth: Math.max(rect.width, 280),
+      });
+    }
   }, [open]);
 
   // Sync view date when value changes from outside
@@ -128,6 +151,7 @@ export function DatePicker({
   return (
     <div ref={wrapperRef} className={cn('relative', className)}>
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
@@ -142,11 +166,13 @@ export function DatePicker({
         <CalendarIcon className="size-4 text-muted-foreground" />
       </button>
 
-      {open && (
+      {open ? (createPortal(
         <div
+          ref={calendarRef}
           role="dialog"
           aria-label="Pick a date"
-          className="absolute top-full left-0 z-50 mt-1 w-70 rounded-md border border-border bg-popover p-3 shadow-e2"
+          className="fixed z-[999] rounded-md border border-border bg-popover p-3 shadow-e2 pointer-events-auto"
+          style={fixedStyle}
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-3">
@@ -248,7 +274,7 @@ export function DatePicker({
             )}
           </div>
         </div>
-      )}
+      , document.body) as React.ReactNode) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MapViewProvider } from '@/state/mapViewContext';
 import { ProductRoutes } from '@/routes/ProductRoutes';
@@ -9,31 +9,67 @@ vi.mock('@/pages/monitoring/FieldAnalyticsPage', () => ({
   default: () => <div data-testid="map-page">Map workspace</div>,
 }));
 
+vi.mock('@/pages/monitoring/AdminIngestionOverview', () => ({
+  default: () => <div data-testid="admin-ingestion-overview-page">Admin ingestion overview</div>,
+}));
+
+vi.mock('@/pages/monitoring/IngestionJobsList', () => ({
+  default: () => <div data-testid="ingestion-jobs-list-page">Ingestion jobs</div>,
+}));
+
+vi.mock('@/pages/monitoring/IngestionJobDetail', () => ({
+  default: () => <div data-testid="ingestion-job-detail-page">Ingestion job detail</div>,
+}));
+
+vi.mock('@/pages/monitoring/IngestionSchedules', () => ({
+  default: () => <div data-testid="ingestion-schedules-page">Ingestion schedules</div>,
+}));
+
 // Stub the map renderer so tests don't load the real maplibre-gl/Esri WebGL
 // stack (unsupported in jsdom; named-imports from the CJS maplibre-gl module).
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: () => null,
 }));
 
-function renderRoutes(path: string) {
+function accountMeResponse(role: 'owner' | 'admin' | 'member' | 'viewer' = 'owner') {
+  return {
+    user: {
+      id: 'u1',
+      username: 'dev',
+      email: 'dev@example.test',
+      displayName: 'Dev',
+      onboardingCompleted: true,
+    },
+    currentTeam: { id: 't1', name: 'Team', role },
+    memberships: [{ teamId: 't1', teamName: 'Team', role }],
+    authMode: 'enabled',
+  };
+}
+
+function renderRoutes(path: string, role: 'owner' | 'admin' | 'member' | 'viewer' = 'owner') {
   if (!vi.isMockFunction(globalThis.fetch)) {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          user: {
-            id: 'u1',
-            username: 'dev',
-            email: 'dev@example.test',
-            displayName: 'Dev',
-            onboardingCompleted: true,
-          },
-          currentTeam: { id: 't1', name: 'Team', role: 'owner' },
-          memberships: [{ teamId: 't1', teamName: 'Team', role: 'owner' }],
-          authMode: 'enabled',
-        }),
+      vi.fn((input: RequestInfo | URL) => {
+        const requestPath = String(input);
+        if (requestPath === '/api/account/me') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => accountMeResponse(role),
+          });
+        }
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({
+            error: {
+              code: 'UNEXPECTED_TEST_REQUEST',
+              message: `Unexpected route test fetch: ${requestPath}`,
+              details: {},
+            },
+          }),
+        });
       }),
     );
   }
@@ -45,10 +81,16 @@ function renderRoutes(path: string) {
       <MemoryRouter initialEntries={ [path] }>
         <MapViewProvider>
           <ProductRoutes />
+          <LocationProbe />
         </MapViewProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe" data-pathname={ location.pathname } />;
 }
 
 afterEach(() => {
@@ -144,6 +186,185 @@ describe('ProductRoutes', () => {
 
     await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), { timeout: 8000 });
   });
+
+  it.each(['owner', 'admin'] as const)(
+    'renders canonical admin ingestion overview for %s users',
+    async (role) => {
+      renderRoutes('/admin/ingestion', role);
+
+      await waitFor(
+        () => expect(screen.getByTestId('admin-ingestion-overview-page')).toBeTruthy(),
+        { timeout: 8000 },
+      );
+      expect(screen.queryByTestId('map-page')).toBeNull();
+    },
+  );
+
+  it.each(['owner', 'admin'] as const)(
+    'renders canonical admin ingestion jobs for %s users',
+    async (role) => {
+      renderRoutes('/admin/ingestion/jobs', role);
+
+      await waitFor(
+        () => expect(screen.getByTestId('ingestion-jobs-list-page')).toBeTruthy(),
+        { timeout: 8000 },
+      );
+      expect(screen.queryByTestId('map-page')).toBeNull();
+    },
+  );
+
+  it.each(['owner', 'admin'] as const)(
+    'renders canonical admin ingestion schedules for %s users',
+    async (role) => {
+      renderRoutes('/admin/ingestion/schedules', role);
+
+      await waitFor(
+        () => expect(screen.getByTestId('ingestion-schedules-page')).toBeTruthy(),
+        { timeout: 8000 },
+      );
+      expect(screen.queryByTestId('map-page')).toBeNull();
+    },
+  );
+
+  it.each(['member', 'viewer'] as const)(
+    'does not render canonical admin ingestion overview for %s users',
+    async (role) => {
+      renderRoutes('/admin/ingestion', role);
+
+      await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), {
+        timeout: 8000,
+      });
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/monitoring/field-analytics',
+      );
+      expect(screen.queryByTestId('admin-ingestion-overview-page')).toBeNull();
+    },
+  );
+
+  it.each(['member', 'viewer'] as const)(
+    'does not render canonical admin ingestion jobs for %s users',
+    async (role) => {
+      renderRoutes('/admin/ingestion/jobs', role);
+
+      await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), {
+        timeout: 8000,
+      });
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/monitoring/field-analytics',
+      );
+      expect(screen.queryByTestId('ingestion-jobs-list-page')).toBeNull();
+    },
+  );
+
+  it.each(['member', 'viewer'] as const)(
+    'does not render canonical admin ingestion schedules for %s users',
+    async (role) => {
+      renderRoutes('/admin/ingestion/schedules', role);
+
+      await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), {
+        timeout: 8000,
+      });
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/monitoring/field-analytics',
+      );
+      expect(screen.queryByTestId('ingestion-schedules-page')).toBeNull();
+    },
+  );
+
+  // Deprecated compatibility aliases: temporary owner/admin-gated redirects only.
+  // They must not reintroduce ingestion orchestration content under the product monitoring namespace.
+  it.each(['owner', 'admin'] as const)(
+    'redirects the deprecated global operator alias to the canonical admin overview for %s users',
+    async (role) => {
+      renderRoutes('/monitoring/global', role);
+
+      await waitFor(
+        () => expect(screen.getByTestId('admin-ingestion-overview-page')).toBeTruthy(),
+        { timeout: 8000 },
+      );
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/admin/ingestion',
+      );
+      expect(screen.queryByTestId('map-page')).toBeNull();
+    },
+  );
+
+  it.each(['member', 'viewer'] as const)(
+    'keeps the deprecated global operator alias owner/admin-gated for %s users',
+    async (role) => {
+      renderRoutes('/monitoring/global', role);
+
+      await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), {
+        timeout: 8000,
+      });
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/monitoring/field-analytics',
+      );
+      expect(screen.queryByTestId('admin-ingestion-overview-page')).toBeNull();
+    },
+  );
+
+  it.each(['owner', 'admin'] as const)(
+    'redirects the deprecated ingestion jobs list alias to the canonical admin route for %s users',
+    async (role) => {
+      renderRoutes('/monitoring/ingestion-jobs', role);
+
+      await waitFor(
+        () => expect(screen.getByTestId('ingestion-jobs-list-page')).toBeTruthy(),
+        { timeout: 8000 },
+      );
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/admin/ingestion/jobs',
+      );
+      expect(screen.queryByTestId('map-page')).toBeNull();
+    },
+  );
+
+  it.each(['member', 'viewer'] as const)(
+    'keeps the deprecated ingestion jobs list alias owner/admin-gated for %s users',
+    async (role) => {
+      renderRoutes('/monitoring/ingestion-jobs', role);
+
+      await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), {
+        timeout: 8000,
+      });
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/monitoring/field-analytics',
+      );
+      expect(screen.queryByTestId('ingestion-jobs-list-page')).toBeNull();
+    },
+  );
+
+  it.each(['owner', 'admin'] as const)(
+    'redirects the deprecated ingestion job detail alias to the canonical admin route for %s users',
+    async (role) => {
+      renderRoutes('/monitoring/ingestion-jobs/job-abc%20123', role);
+
+      await waitFor(
+        () => expect(screen.getByTestId('ingestion-job-detail-page')).toBeTruthy(),
+        { timeout: 8000 },
+      );
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/admin/ingestion/jobs/job-abc%20123',
+      );
+      expect(screen.queryByTestId('map-page')).toBeNull();
+    },
+  );
+
+  it.each(['member', 'viewer'] as const)(
+    'keeps the deprecated ingestion job detail alias owner/admin-gated for %s users',
+    async (role) => {
+      renderRoutes('/monitoring/ingestion-jobs/job-abc%20123', role);
+
+      await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), {
+        timeout: 8000,
+      });
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/monitoring/field-analytics',
+      );
+      expect(screen.queryByTestId('ingestion-job-detail-page')).toBeNull();
+    },
+  );
 
   it('renders planned module placeholders without loading the map workspace', async () => {
     renderRoutes('/vra/sowing');

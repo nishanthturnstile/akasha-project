@@ -1,0 +1,1420 @@
+"""Ingestion scheduler monitoring endpoints for the Akasha BFF.
+
+Implements TASK-054, TASK-056, TASK-057, TASK-058 from
+docs/impl-plan/architecture-satellite-ingestion-scheduler-1.md.
+
+Routes (all under /api/monitoring, owner/admin-gated via require_role):
+    GET /api/monitoring/ingestion-schedules
+        Per-source schedule state: last run, last success, last failure,
+        next due window, cadence, typed source-state fields.
+
+    GET /api/monitoring/ingestion-jobs
+        Paginated, filtered list of scheduler job summaries.
+        Filters: limit, cursor, sourceId, aoiId, state, startedAfter,
+        startedBefore.
+
+    GET /api/monitoring/ingestion-jobs/{jobId}
+        Redacted job detail with request summary, provider input/response
+        summaries, manifest handles, verification problems, rejection reasons,
+        and ledger rows.  Raw server paths are never included.
+
+Data access contract (REQ-016 / SEC-006):
+    The BFF reads only from two explicitly configured read-only paths:
+        settings.scheduler_jobs_dir       — per-job artifact subdirectories
+        settings.scheduler_job_ledger_path — SQLite job ledger (job_ledger.py)
+
+    Neither path is exposed to the browser; opaque artifact handles of the
+    form ``"<jobId>:<artifactType>"`` are returned instead of file paths.
+
+    If neither path is configured or the files are absent, endpoints return
+    status "unconfigured" or "unavailable" with empty result sets.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+from collections import deque
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import ConfigDict, Field
+
+from .api_models import ApiModel
+from .auth import require_role
+from .config import settings
+
+router = APIRouter(
+    prefix="/api/monitoring",
+    tags=["monitoring"],
+    dependencies=[Depends(require_role("owner", "admin"))],
+)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+#: Map cadence-class string → approximate days between scheduled runs.
+#: Zero means the cadence is not routine (archive/reference).
+_CADENCE_DAYS: dict[str, float] = {
+    "multiple_per_day": 0.5,
+    "daily": 1.0,
+    "2_to_5_days": 3.0,
+    "5_to_10_days": 7.0,
+    "10_to_20_days": 14.0,
+    "gt_20_days": 24.0,
+    "archive_on_demand": 0.0,
+    "reference": 0.0,
+}
+
+#: Schedule states that count as "scheduling enabled" for the front-end flag.
+_SCHEDULE_ENABLED_STATES: frozenset[str] = frozenset({"routine", "background_only", "dry_run"})
+
+#: Scheduler next-due grace period before a due source is considered overdue.
+_SCHEDULER_OVERDUE_GRACE_HOURS: int = 24
+
+#: Scheduler ledger JSON filename (matches LEDGER_FILENAME in orchestrator.py).
+_SCHEDULER_LEDGER_FILENAME = "scheduler_ledger.json"
+
+#: SQLite WAL busy timeout in milliseconds (read-only queries).
+_SQLITE_BUSY_TIMEOUT_MS = 5_000
+
+#: Default cursor sentinel (no cursor = start from newest).
+_CURSOR_NONE = ""
+
+#: Maximum rows scanned in file-based fallback to avoid scanning huge directories.
+_MAX_DIR_SCAN = 2_000
+
+#: Maximum event records returned to the browser for one job timeline request.
+_EVENT_LIMIT = 200
+
+_REDACTED = "[REDACTED]"
+_REDACTED_PATH = "[REDACTED_PATH]"
+_REDACTED_HOST = "[REDACTED_HOST]"
+_REDACTED_QUERY = "[REDACTED_QUERY]"
+
+_TERMINAL_JOB_STATUSES: frozenset[str] = frozenset(
+    {
+        "succeeded",
+        "failed",
+        "validation_failed",
+        "blocked_by_lock",
+        "cancelled",
+        "skipped_not_due",
+        "skipped_gated",
+    }
+)
+_ACTIVE_JOB_STATUSES: frozenset[str] = frozenset({"planned", "queued", "running"})
+_SAFE_JOB_STATUSES: frozenset[str] = _TERMINAL_JOB_STATUSES | _ACTIVE_JOB_STATUSES
+
+_INTERNAL_HOSTNAMES: frozenset[str] = frozenset(
+    {
+        "localhost",
+        "host.docker.internal",
+        "docker.for.win.localhost",
+        "minio",
+        "postgis",
+        "postgres",
+        "stac-api",
+        "titiler",
+        "ingestion-worker",
+        "redis",
+        "caddy",
+        "web",
+    }
+)
+
+_SIGNED_URL_QUERY_KEYS: frozenset[str] = frozenset(
+    {
+        "xamzalgorithm",
+        "xamzcredential",
+        "xamzdate",
+        "xamzexpires",
+        "xamzsecuritytoken",
+        "xamzsignature",
+        "xamzsignedheaders",
+        "awsaccesskeyid",
+        "signature",
+        "expires",
+        "googleaccessid",
+        "xgoogalgorithm",
+        "xgoogcredential",
+        "xgoogdate",
+        "xgoogexpires",
+        "xgoogsignature",
+        "xgoogsignedheaders",
+        "sig",
+        "se",
+        "sp",
+        "sr",
+        "sv",
+        "st",
+        "token",
+        "accesskeyid",
+        "credential",
+    }
+)
+
+
+# ---------------------------------------------------------------------------
+# Response models
+# ---------------------------------------------------------------------------
+
+
+class _JobsApiModel(ApiModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class IngestionScheduleItem(_JobsApiModel):
+    """One entry in the ingestion-schedules list (per source + AOI)."""
+
+    source_id: str
+    provider: str | None = None
+    adapter: str | None = None
+    aoi_id: str | None = None
+    # typed source-state fields (populated from scheduler observability artifacts)
+    lifecycle_state: str | None = None
+    schedule_state: str | None = None
+    capabilities: list[str] = Field(default_factory=list)
+    commercial_state: str | None = None
+    aoi_scope: str | None = None
+    validation_state: str | None = None
+    # schedule control
+    schedule_enabled: bool = False
+    product_exposure: str | None = None
+    # timing
+    last_run_at: str | None = None
+    last_success_at: str | None = None
+    last_failure_at: str | None = None
+    next_due_at: str | None = None
+    is_due: bool = False
+    is_overdue: bool = False
+    next_window_start: str | None = None
+    next_window_end: str | None = None
+    # cadence
+    cadence_days: float | None = None
+    # reason
+    due_reason: str | None = None
+
+
+class IngestionScheduleResponse(_JobsApiModel):
+    status: str
+    generated_at: str
+    schedules: list[IngestionScheduleItem] = Field(default_factory=list)
+    last_error: str | None = None
+
+
+class IngestionJobSummary(_JobsApiModel):
+    """One row in the job list — minimal fields for a list view."""
+
+    job_id: str
+    source_id: str
+    provider: str | None = None
+    aoi_id: str | None = None
+    state: str
+    window_start: str | None = None
+    window_end: str | None = None
+    found_count: int | None = None
+    selected_count: int | None = None
+    downloaded_count: int | None = None
+    rejected_count: int | None = None
+    failure_kind: str | None = None
+    message: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    updated_at: str | None = None
+
+
+class IngestionJobListResponse(_JobsApiModel):
+    status: str
+    generated_at: str
+    jobs: list[IngestionJobSummary] = Field(default_factory=list)
+    next_cursor: str | None = None
+    last_error: str | None = None
+
+
+class IngestionJobDetail(_JobsApiModel):
+    """Full redacted job detail for the /ingestion-jobs/{jobId} endpoint."""
+
+    job_id: str
+    source_id: str
+    provider: str | None = None
+    aoi_id: str | None = None
+    state: str
+    # redacted request parameters (already redacted at scheduler write time)
+    request: dict[str, Any] = Field(default_factory=dict)
+    # from observability.json — all secrets removed at scheduler write time
+    provider_input_summary: dict[str, Any] = Field(default_factory=dict)
+    provider_response_summary: dict[str, Any] = Field(default_factory=dict)
+    search_manifest_handle: str | None = None
+    download_manifest_handle: str | None = None
+    prepare_manifest_handles: list[str] = Field(default_factory=list)
+    verification_summary: dict[str, Any] = Field(default_factory=dict)
+    schedule_decision: str | None = None
+    next_due_at: str | None = None
+    # counts and timing
+    window_start: str | None = None
+    window_end: str | None = None
+    found_count: int | None = None
+    selected_count: int | None = None
+    downloaded_count: int | None = None
+    rejected_count: int | None = None
+    failure_kind: str | None = None
+    message: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    updated_at: str | None = None
+    # derived from verification/response summaries (problem strings only, no paths)
+    validation_problems: list[str] = Field(default_factory=list)
+    rejection_reasons: list[str] = Field(default_factory=list)
+    # opaque artifact handles — frontend consumers use these, never raw paths
+    artifact_handles: dict[str, str] = Field(default_factory=dict)
+    # recent ledger rows for this job (from SQLite, if configured)
+    ledger_rows: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class IngestionJobEvent(_JobsApiModel):
+    """One sanitized scheduler event for an ingestion job timeline."""
+
+    timestamp: str
+    event_type: str
+    stage: str
+    status: str
+    message: str
+    payload: dict[str, Any]
+
+
+class IngestionJobEventsResponse(_JobsApiModel):
+    """Bounded, redacted event stream for one ingestion job."""
+
+    status: str
+    generated_at: str
+    job_id: str
+    events: list[IngestionJobEvent] = Field(default_factory=list)
+    truncated: bool
+    scanned_count: int
+    total_events_scanned: int
+    total_valid_events: int
+    malformed_events_skipped: int = 0
+    returned_count: int = 0
+    event_limit: int = _EVENT_LIMIT
+    last_error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _schedule_due_flags(next_due_at: Any, *, now: datetime) -> tuple[bool, bool]:
+    next_due_at_dt = _parse_datetime(next_due_at)
+    is_due = next_due_at_dt is not None and next_due_at_dt <= now
+    is_overdue = False
+
+    if is_due:
+        elapsed_hours = (now - next_due_at_dt).total_seconds() / 3600
+        is_overdue = elapsed_hours > _SCHEDULER_OVERDUE_GRACE_HOURS
+
+    return is_due, is_overdue
+
+
+def _redact_error(value: Any) -> str | None:
+    """Redact credential-shaped substrings from error messages."""
+    if value is None:
+        return None
+    text = str(value)
+    text = _redact_urls(text)
+    for pattern, repl in [
+        (
+            r"(?i)\b(?:Authorization|Proxy-Authorization)\s*:\s*Bearer\s+" r"[A-Za-z0-9._~+/\-]+=*",
+            rf"auth_header={_REDACTED}",
+        ),
+        (
+            r"(?i)\b(?:X-Api-Key|X-Amz-Security-Token)\s*:\s*[^ \t\r\n,;]+",
+            rf"auth_header={_REDACTED}",
+        ),
+        (
+            r"(?i)([\"'])([^\"']*(?:PASSWORD|PASSWD|TOKEN|SECRET|ACCESS[_\-]?KEY|"
+            r"SECRET[_\-]?KEY|SESSION[_\-]?TOKEN|CREDENTIAL)[^\"']*)(\1\s*:\s*)"
+            r"([\"'])([^\"']*)(\4)",
+            rf"\1\2\3\4{_REDACTED}\6",
+        ),
+        (
+            r"(?i)\b([A-Z0-9_\-]*(?:PASSWORD|PASSWD|TOKEN|SECRET|ACCESS[_\-]?KEY|"
+            r"SECRET[_\-]?KEY|SESSION[_\-]?TOKEN|CREDENTIAL)[A-Z0-9_\-]*)(\s*[=:]\s*)\S+",
+            rf"\1\2{_REDACTED}",
+        ),
+        (r"(?i)(Bearer)\s+[A-Za-z0-9._~+/\-]+=*", rf"\1 {_REDACTED}"),
+        (
+            r"(?i)(?:\b[A-Z]:\\[^ \t\r\n,;\"'()\[\]<>]+|"
+            r"\\\\[^ \t\r\n,;\"'()\[\]<>]+|"
+            r"(?<!\w)/(?:srv/akasha|tmp|var/tmp)(?:/[^ \t\r\n,;\"'()\[\]<>]+)?)",
+            _REDACTED_PATH,
+        ),
+    ]:
+        text = re.sub(pattern, repl, text)
+    text = _redact_internal_hosts(text)
+    return text[:300]
+
+
+def _redact_string_list(values: list[str]) -> list[str]:
+    redacted: list[str] = []
+    for value in values:
+        safe = _redact_error(value)
+        if safe is not None:
+            redacted.append(safe)
+    return redacted
+
+
+def _is_raw_path_key(key: str) -> bool:
+    """Return True for nested monitoring keys that commonly carry host paths."""
+    compact = key.replace("_", "").replace("-", "").lower()
+    return compact.endswith("path") or compact in {
+        "artifactsummarypath",
+        "basedir",
+        "downloadpath",
+        "localpath",
+        "localfile",
+        "localuri",
+        "rawroot",
+        "rootdir",
+        "outdir",
+        "outputdir",
+        "outputpath",
+        "scratchdir",
+        "workdir",
+        "tempdir",
+        "ledgerpath",
+        "downloadedpath",
+    }
+
+
+def _compact_key(key: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", key.lower())
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """Return True when a payload key is likely to contain credentials."""
+    compact = _compact_key(key)
+    if compact in {
+        "authorization",
+        "proxyauthorization",
+        "cookie",
+        "setcookie",
+        "xapikey",
+        "apikey",
+        "password",
+        "passwd",
+        "token",
+        "secret",
+        "awsaccesskeyid",
+        "awssecretaccesskey",
+        "awssessiontoken",
+        "minioaccesskey",
+        "miniosecretkey",
+        "s3accesskey",
+        "s3secretkey",
+        "bhoonidhiusername",
+        "bhoonidhipassword",
+    }:
+        return True
+    return any(
+        marker in compact
+        for marker in (
+            "password",
+            "passwd",
+            "secret",
+            "accesstoken",
+            "refreshtoken",
+            "bearertoken",
+            "sessiontoken",
+            "apikey",
+            "accesskey",
+            "secretkey",
+            "credential",
+            "authorization",
+        )
+    )
+
+
+def _is_sensitive_query_key(key: str) -> bool:
+    compact = _compact_key(key)
+    return compact in _SIGNED_URL_QUERY_KEYS or _is_sensitive_key(key)
+
+
+def _is_internal_hostname(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    host = hostname.strip("[]").lower().rstrip(".")
+    if host in _INTERNAL_HOSTNAMES:
+        return True
+    if host.endswith((".internal", ".local", ".svc", ".svc.cluster.local")):
+        return True
+    return bool(re.match(r"^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)", host))
+
+
+def _redact_urls(text: str) -> str:
+    """Redact internal URL hosts and signed/credential query strings."""
+
+    def replace_url(match: re.Match[str]) -> str:
+        url = match.group(0)
+        trailing = ""
+        while url and url[-1] in ".,;)]}":
+            trailing = url[-1] + trailing
+            url = url[:-1]
+        try:
+            parts = urlsplit(url)
+        except ValueError:
+            return _REDACTED + trailing
+
+        netloc = _REDACTED_HOST if _is_internal_hostname(parts.hostname) else parts.netloc
+        query = parts.query
+        if query:
+            query_keys = [key for key, _ in parse_qsl(query, keep_blank_values=True)]
+            if any(_is_sensitive_query_key(key) for key in query_keys):
+                query = _REDACTED_QUERY
+        return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment)) + trailing
+
+    return re.sub(r"\bhttps?://[^\s\"'<>]+", replace_url, text)
+
+
+def _redact_internal_hosts(text: str) -> str:
+    """Redact bare internal hostnames and RFC1918 loopback/private IPs."""
+    host_pattern = (
+        r"(?i)\b(?:localhost|host\.docker\.internal|docker\.for\.win\.localhost|"
+        r"minio|postgis|postgres|stac-api|titiler|ingestion-worker|redis|caddy|web)"
+        r"(?::\d+)?\b"
+    )
+    private_ip_pattern = (
+        r"\b(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"192\.168\.\d{1,3}\.\d{1,3}|"
+        r"172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d+)?\b"
+    )
+    text = re.sub(host_pattern, _REDACTED_HOST, text)
+    return re.sub(private_ip_pattern, _REDACTED_HOST, text)
+
+
+def _sanitize_monitoring_value(value: Any) -> Any:
+    """Recursively remove host paths/secrets from scheduler artifacts.
+
+    Scheduler writers redact known secrets, but the BFF is the final browser
+    boundary. Be defensive here: drop path-shaped keys and redact path-shaped
+    substrings from arbitrary strings before returning monitoring payloads.
+    """
+    if isinstance(value, dict):
+        safe: dict[str, Any] = {}
+        for key, nested in value.items():
+            key_text = str(key)
+            if _is_raw_path_key(key_text):
+                continue
+            if _is_sensitive_key(key_text):
+                continue
+            safe[key_text] = _sanitize_monitoring_value(nested)
+        return safe
+    if isinstance(value, list):
+        return [_sanitize_monitoring_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_error(value)
+    return value
+
+
+def _validate_job_id_or_raise(job_id: str) -> None:
+    """Validate a scheduler job ID path segment before using it in paths."""
+    if not job_id or "/" in job_id or "\\" in job_id or ".." in job_id:
+        raise HTTPException(status_code=400, detail="Invalid jobId")
+
+
+def _safe_status(value: Any) -> str | None:
+    if value is None:
+        return None
+    status = str(_sanitize_monitoring_value(value)).lower()
+    return status if status in _SAFE_JOB_STATUSES else None
+
+
+def _safe_event_text(value: Any) -> str | None:
+    safe = _sanitize_monitoring_value(value)
+    if safe is None:
+        return None
+    return str(safe)
+
+
+def _event_payload(raw_payload: Any) -> dict[str, Any]:
+    safe_payload = _sanitize_monitoring_value(raw_payload)
+    if isinstance(safe_payload, dict):
+        return safe_payload
+    if safe_payload is None:
+        return {}
+    return {"value": safe_payload}
+
+
+def _event_status(event_type: str, raw: dict[str, Any], payload: dict[str, Any]) -> str:
+    """Return a safe normalized event status."""
+    if event_type in {"job_created", "dry_run_plan"}:
+        return "planned"
+    if event_type != "status_change":
+        return "unknown"
+
+    for candidate in (payload.get("to"), payload.get("status"), raw.get("status")):
+        status = _safe_status(candidate)
+        if status is not None:
+            return status
+    return "unknown"
+
+
+def _event_stage(event_type: str, status: str) -> str:
+    """Map current emitted scheduler event types to timeline stages."""
+    if event_type in {"job_created", "dry_run_plan"}:
+        return "planned"
+    if event_type == "status_change":
+        if status in _TERMINAL_JOB_STATUSES:
+            return "terminal"
+        if status in _ACTIVE_JOB_STATUSES:
+            return "running"
+    return "unknown"
+
+
+def _event_message(
+    event_type: str, status: str, raw: dict[str, Any], payload: dict[str, Any]
+) -> str:
+    message = (
+        payload.get("message")
+        or payload.get("failureMessage")
+        or raw.get("message")
+        or raw.get("failureMessage")
+    )
+    safe_message = _safe_event_text(message)
+    if safe_message:
+        return safe_message
+    if event_type == "job_created":
+        return "Job created"
+    if event_type == "dry_run_plan":
+        return "Dry-run plan recorded"
+    if event_type == "status_change":
+        return f"Status changed to {status}"
+    return "Scheduler event"
+
+
+def _normalize_event(raw: dict[str, Any]) -> IngestionJobEvent:
+    """Convert one raw events.jsonl object into a sanitized response event."""
+    event_type = _safe_event_text(raw.get("eventType") or raw.get("event_type")) or "unknown"
+    payload = _event_payload(raw.get("payload") or {})
+    status = _event_status(event_type, raw, payload)
+    return IngestionJobEvent(
+        timestamp=_safe_event_text(raw.get("timestamp")) or "",
+        event_type=event_type,
+        stage=_event_stage(event_type, status),
+        status=status,
+        message=_event_message(event_type, status, raw, payload),
+        payload=payload,
+    )
+
+
+def _read_job_events(path: Path) -> tuple[list[IngestionJobEvent], int, int, int]:
+    """Read latest safe events from events.jsonl in chronological order."""
+    latest: deque[IngestionJobEvent] = deque(maxlen=_EVENT_LIMIT)
+    total_events_scanned = 0
+    total_valid_events = 0
+    malformed_events_skipped = 0
+
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            total_events_scanned += 1
+            try:
+                raw = json.loads(stripped)
+                if not isinstance(raw, dict):
+                    malformed_events_skipped += 1
+                    continue
+                event = _normalize_event(raw)
+            except Exception:  # noqa: BLE001 — malformed event lines must not crash API
+                malformed_events_skipped += 1
+                continue
+            total_valid_events += 1
+            latest.append(event)
+
+    return list(latest), total_events_scanned, total_valid_events, malformed_events_skipped
+
+
+def _encode_ledger_cursor(scheduled_at: str, job_id: str) -> str:
+    return f"{scheduled_at}|{job_id}"
+
+
+def _decode_ledger_cursor(cursor: str) -> tuple[str, str]:
+    if "|" not in cursor:
+        return cursor, ""
+    scheduled_at, job_id = cursor.split("|", 1)
+    return scheduled_at, job_id
+
+
+def _safe_read_json(path: Path) -> dict[str, Any]:
+    """Read JSON from *path*; return empty dict on any I/O or parse error."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — monitoring must remain fail-soft
+        return {}
+
+
+def _resolve_jobs_dir() -> Path | None:
+    """Return the configured scheduler jobs directory, or None if absent."""
+    raw = getattr(settings, "scheduler_jobs_dir", "")
+    if not raw or not raw.strip():
+        return None
+    p = Path(raw.strip())
+    if not p.is_dir():
+        return None
+    return p
+
+
+def _resolve_ledger_db() -> Path | None:
+    """Return the configured SQLite job ledger path, or None if absent."""
+    raw = getattr(settings, "scheduler_job_ledger_path", "")
+    if not raw or not raw.strip():
+        return None
+    p = Path(raw.strip())
+    if not p.is_file():
+        return None
+    return p
+
+
+def _read_scheduler_ledger(jobs_dir: Path) -> dict[str, Any]:
+    """Read scheduler_ledger.json from *jobs_dir*; return {} on any error."""
+    path = jobs_dir / _SCHEDULER_LEDGER_FILENAME
+    if not path.is_file():
+        return {}
+    return _safe_read_json(path)
+
+
+def _list_job_dirs_sorted(jobs_dir: Path) -> list[Path]:
+    """Return job subdirectories sorted newest-first.
+
+    Job IDs are formatted ``job_YYYYMMDDTHHMMSSZ_<uid>`` so reverse
+    lexicographic sort yields newest-first ordering without parsing timestamps.
+    Silently returns [] on any OS error.
+    """
+    try:
+        candidates = [p for p in jobs_dir.iterdir() if p.is_dir() and p.name.startswith("job_")]
+    except OSError:
+        return []
+    return sorted(candidates, key=lambda p: p.name, reverse=True)
+
+
+def _status_json_to_summary(data: dict[str, Any]) -> IngestionJobSummary | None:
+    """Convert a status.json dict to a job summary; return None if malformed."""
+    job_id = data.get("jobId")
+    source_id = data.get("sourceId")
+    state = data.get("status")
+    if not job_id or not source_id or not state:
+        return None
+    updated_at = data.get("updatedAt") or data.get("finishedAt") or data.get("startedAt")
+    return IngestionJobSummary(
+        job_id=str(job_id),
+        source_id=str(source_id),
+        provider=data.get("provider"),
+        aoi_id=data.get("aoiId"),
+        state=str(state),
+        window_start=data.get("windowStart"),
+        window_end=data.get("windowEnd"),
+        found_count=data.get("foundCount"),
+        selected_count=data.get("selectedCount"),
+        downloaded_count=data.get("downloadedCount"),
+        rejected_count=data.get("rejectedCount"),
+        failure_kind=data.get("failureKind"),
+        message=_redact_error(data.get("failureMessage")),
+        started_at=data.get("startedAt"),
+        finished_at=data.get("finishedAt"),
+        updated_at=updated_at,
+    )
+
+
+def _ledger_row_to_summary(row: dict[str, Any]) -> IngestionJobSummary:
+    """Convert a scheduler_jobs SQLite row to a job summary."""
+    updated_at = row.get("finished_at") or row.get("started_at") or row.get("scheduled_at")
+    return IngestionJobSummary(
+        job_id=str(row["job_id"]),
+        source_id=str(row["source_id"]),
+        provider=row.get("provider"),
+        aoi_id=row.get("aoi_id"),
+        state=str(row["state"]),
+        window_start=row.get("window_start"),
+        window_end=row.get("window_end"),
+        found_count=row.get("found_count"),
+        selected_count=row.get("selected_count"),
+        downloaded_count=row.get("downloaded_count"),
+        rejected_count=row.get("rejected_count"),
+        failure_kind=row.get("failure_kind"),
+        message=None,
+        started_at=row.get("started_at"),
+        finished_at=row.get("finished_at"),
+        updated_at=updated_at,
+    )
+
+
+def _open_ledger_ro(db: Path) -> sqlite3.Connection:
+    """Open the SQLite ledger in read-only WAL mode."""
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS};")
+    return conn
+
+
+def _query_ledger_jobs(
+    db: Path,
+    *,
+    limit: int,
+    cursor: str | None,
+    source_id_filter: str | None,
+    aoi_id_filter: str | None,
+    state_filter: str | None,
+    started_after: str | None,
+    started_before: str | None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Query the SQLite ledger with filters; return (rows, next_cursor)."""
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    if cursor:
+        cursor_scheduled_at, cursor_job_id = _decode_ledger_cursor(cursor)
+        if cursor_job_id:
+            conditions.append(
+                "(coalesce(scheduled_at, '') < ? OR "
+                "(coalesce(scheduled_at, '') = ? AND job_id < ?))"
+            )
+            params.extend([cursor_scheduled_at, cursor_scheduled_at, cursor_job_id])
+        else:
+            conditions.append("coalesce(scheduled_at, '') < ?")
+            params.append(cursor_scheduled_at)
+    if source_id_filter:
+        conditions.append("source_id = ?")
+        params.append(source_id_filter)
+    if aoi_id_filter:
+        conditions.append("aoi_id = ?")
+        params.append(aoi_id_filter)
+    if state_filter:
+        conditions.append("state = ?")
+        params.append(state_filter)
+    if started_after:
+        conditions.append("started_at > ?")
+        params.append(started_after)
+    if started_before:
+        conditions.append("started_at < ?")
+        params.append(started_before)
+
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    # Fetch limit+1 to detect whether there is a next page.
+    fetch_limit = limit + 1
+    params.append(fetch_limit)
+    sql = (
+        f"SELECT job_id, source_id, provider, aoi_id, state, "
+        f"scheduled_at, started_at, finished_at, window_start, window_end, "
+        f"found_count, selected_count, downloaded_count, rejected_count, "
+        f"failed_count, failure_kind, schedule_decision, next_due_at "
+        f"FROM scheduler_jobs {where} "
+        f"ORDER BY coalesce(scheduled_at, '') DESC, job_id DESC LIMIT ?"
+    )
+    conn = _open_ledger_ro(db)
+    try:
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+    next_cursor: str | None = None
+    if len(rows) > limit:
+        rows = rows[:limit]
+        # Cursor is the last returned row key; includes job_id to avoid ties dropping rows.
+        last_scheduled_at = rows[-1].get("scheduled_at") or ""
+        last_job_id = rows[-1].get("job_id") or ""
+        next_cursor = (
+            _encode_ledger_cursor(str(last_scheduled_at), str(last_job_id))
+            if last_scheduled_at and last_job_id
+            else None
+        )
+
+    return rows, next_cursor
+
+
+def _list_jobs_from_dirs(
+    jobs_dir: Path,
+    *,
+    limit: int,
+    cursor: str | None,
+    source_id_filter: str | None,
+    aoi_id_filter: str | None,
+    state_filter: str | None,
+    started_after: str | None,
+    started_before: str | None,
+) -> tuple[list[IngestionJobSummary], str | None]:
+    """Scan job artifact directories and return filtered, paginated summaries."""
+    all_dirs = _list_job_dirs_sorted(jobs_dir)
+
+    results: list[IngestionJobSummary] = []
+    past_cursor = cursor is None  # if no cursor, start immediately
+    next_cursor: str | None = None
+    scanned = 0
+
+    for job_dir in all_dirs:
+        if scanned >= _MAX_DIR_SCAN:
+            break
+        scanned += 1
+
+        # Cursor skip: pass directories until we reach the cursor job, then start.
+        if not past_cursor:
+            if job_dir.name == cursor:
+                past_cursor = True
+            continue
+
+        status_path = job_dir / "status.json"
+        if not status_path.is_file():
+            continue
+        data = _safe_read_json(status_path)
+        if not data:
+            continue
+
+        # Apply filters.
+        if source_id_filter and data.get("sourceId") != source_id_filter:
+            continue
+        if aoi_id_filter and data.get("aoiId") != aoi_id_filter:
+            continue
+        if state_filter and data.get("status") != state_filter:
+            continue
+        if started_after and (data.get("startedAt") or "") <= started_after:
+            continue
+        if started_before and (data.get("startedAt") or "") >= started_before:
+            continue
+
+        # Also need windowStart/windowEnd from request.json for file-based path.
+        req_path = job_dir / "request.json"
+        req = _safe_read_json(req_path) if req_path.is_file() else {}
+        if req:
+            data.setdefault("windowStart", req.get("windowStart"))
+            data.setdefault("windowEnd", req.get("windowEnd"))
+
+        summary = _status_json_to_summary(data)
+        if summary is None:
+            continue
+
+        results.append(summary)
+        if len(results) == limit:
+            # Cursor is the last returned job; the next page starts after it.
+            next_cursor = job_dir.name
+            break
+
+    return results, next_cursor
+
+
+def _build_artifact_handles(job_id: str, obs: dict[str, Any]) -> dict[str, str]:
+    """Return opaque artifact handles — never raw filesystem paths."""
+    handles: dict[str, str] = {
+        artifact_type: f"{job_id}:{artifact_type}"
+        for artifact_type in ("request", "status", "result", "events", "observability")
+    }
+    if obs.get("searchManifestHandle"):
+        handles["search_manifest"] = str(obs["searchManifestHandle"])
+    if obs.get("downloadManifestHandle"):
+        handles["download_manifest"] = str(obs["downloadManifestHandle"])
+    for i, h in enumerate(obs.get("prepareManifestHandles") or []):
+        handles[f"prepare_manifest_{i}"] = str(h)
+    return handles
+
+
+def _extract_validation_problems(verification_summary: dict[str, Any]) -> list[str]:
+    """Extract problem/failure strings from a verification summary dict."""
+    problems: list[str] = []
+    for key in ("problems", "checks", "errors", "failures"):
+        items = verification_summary.get(key)
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, str):
+                    problems.append(item)
+                elif isinstance(item, dict):
+                    msg = item.get("message") or item.get("check") or item.get("problem")
+                    if msg:
+                        problems.append(str(msg))
+    verdict = verification_summary.get("verdict") or verification_summary.get("result")
+    if verdict and str(verdict).lower() not in {"pass", "passed", "ok"}:
+        problems.append(f"verdict={verdict}")
+    gate_reason = verification_summary.get("gateReason")
+    if gate_reason:
+        problems.append(str(gate_reason))
+    return list(dict.fromkeys(_redact_string_list(problems)))  # deduplicate, preserve order
+
+
+def _extract_rejection_reasons(response_summary: dict[str, Any]) -> list[str]:
+    """Extract candidate rejection reason strings from a provider response summary."""
+    reasons: list[str] = []
+    for key in ("rejectionReasons", "skipReasons", "rejectedReasons", "filterReasons"):
+        items = response_summary.get(key)
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, str):
+                    reasons.append(item)
+                elif isinstance(item, dict):
+                    msg = item.get("reason") or item.get("message") or item.get("skipReason")
+                    if msg:
+                        reasons.append(str(msg))
+    return list(dict.fromkeys(_redact_string_list(reasons)))
+
+
+def _ledger_rows_for_job(db: Path, job_id: str) -> list[dict[str, Any]]:
+    """Return sanitised ledger rows for *job_id* (no raw artifact paths)."""
+    try:
+        conn = _open_ledger_ro(db)
+        try:
+            rows = conn.execute(
+                "SELECT job_id, source_id, provider, aoi_id, state, "
+                "scheduled_at, started_at, finished_at, window_start, window_end, "
+                "found_count, selected_count, downloaded_count, rejected_count, "
+                "failed_count, failure_kind, schedule_decision, next_due_at "
+                "FROM scheduler_jobs WHERE job_id = ? LIMIT 1",
+                (job_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        # artifact_summary_path is intentionally excluded (raw path — SEC-006)
+        return [dict(r) for r in rows]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Schedules endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/ingestion-schedules", response_model=IngestionScheduleResponse)
+def get_ingestion_schedules() -> IngestionScheduleResponse:
+    """Return per-source/AOI schedule state.
+
+    Reads from the scheduler JSON ledger (``scheduler_ledger.json``) plus the
+    latest job's ``observability.json`` for each source/AOI pair.  Also reads
+    the SQLite job ledger to populate last-failure timestamps if available.
+    """
+    generated_at = _now_iso()
+    now = _parse_datetime(generated_at) or datetime.now(UTC)
+    jobs_dir = _resolve_jobs_dir()
+
+    if jobs_dir is None:
+        return IngestionScheduleResponse(
+            status="unconfigured",
+            generated_at=generated_at,
+            schedules=[],
+        )
+
+    try:
+        scheduler_ledger = _read_scheduler_ledger(jobs_dir)
+    except Exception as exc:  # noqa: BLE001
+        return IngestionScheduleResponse(
+            status="unavailable",
+            generated_at=generated_at,
+            last_error=_redact_error(str(exc)),
+        )
+
+    entries: dict[str, Any] = scheduler_ledger.get("entries") or {}
+
+    # Enrich with last-run and last-failure timestamps from SQLite if configured.
+    last_failure_by_schedule: dict[tuple[str, str | None], str] = {}
+    last_run_by_schedule: dict[tuple[str, str | None], str] = {}
+    db = _resolve_ledger_db()
+    if db is not None:
+        try:
+            conn = _open_ledger_ro(db)
+            try:
+                for row in conn.execute(
+                    "SELECT source_id, aoi_id, "
+                    "MAX(coalesce(finished_at, scheduled_at)) AS latest_at "
+                    "FROM scheduler_jobs "
+                    "WHERE state IN ('failed', 'validation_failed') "
+                    "GROUP BY source_id, aoi_id"
+                ).fetchall():
+                    source_key = str(row["source_id"])
+                    aoi_key = row["aoi_id"] if row["aoi_id"] is None else str(row["aoi_id"])
+                    last_failure_by_schedule[(source_key, aoi_key)] = str(row["latest_at"] or "")
+                for row in conn.execute(
+                    "SELECT source_id, aoi_id, MAX(coalesce(scheduled_at, '')) AS latest_at "
+                    "FROM scheduler_jobs GROUP BY source_id, aoi_id"
+                ).fetchall():
+                    source_key = str(row["source_id"])
+                    aoi_key = row["aoi_id"] if row["aoi_id"] is None else str(row["aoi_id"])
+                    last_run_by_schedule[(source_key, aoi_key)] = str(row["latest_at"] or "")
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001 — monitoring must remain fail-soft
+            pass
+
+    schedules: list[IngestionScheduleItem] = []
+    for key, entry in entries.items():
+        # Ledger key format: "{source_id}::{aoi_id}"
+        parts = key.split("::", 1)
+        source_id = parts[0] if parts else key
+        aoi_id = parts[1] if len(parts) > 1 else None
+
+        last_success_at: str | None = entry.get("lastSucceededAt")
+        last_job_id: str | None = entry.get("lastJobId")
+        last_window_end: str | None = entry.get("lastWindowEnd")
+
+        # Read the latest job's observability + request artifacts for state fields.
+        obs: dict[str, Any] = {}
+        req: dict[str, Any] = {}
+        if last_job_id:
+            obs_path = jobs_dir / last_job_id / "observability.json"
+            req_path = jobs_dir / last_job_id / "request.json"
+            if obs_path.is_file():
+                obs = _safe_read_json(obs_path)
+            if req_path.is_file():
+                req = _safe_read_json(req_path)
+
+        prov_input: dict[str, Any] = obs.get("providerInputSummary") or {}
+        schedule_state: str | None = prov_input.get("scheduleState")
+        provider: str | None = req.get("provider") or prov_input.get("provider")
+
+        # Cadence info may appear in prov_input or verification summary.
+        verification: dict[str, Any] = obs.get("verificationSummary") or {}
+        cadence_str: str | None = prov_input.get("cadenceClass") or verification.get("cadenceClass")
+        cadence_days: float | None = _CADENCE_DAYS.get(cadence_str) if cadence_str else None
+
+        schedule_key = (source_id, aoi_id)
+        fallback_source_key = (source_id, None)
+        failure_at = (
+            last_failure_by_schedule.get(schedule_key)
+            or (last_failure_by_schedule.get(fallback_source_key) if aoi_id is None else None)
+            or None
+        )
+        run_at = (
+            last_run_by_schedule.get(schedule_key)
+            or (last_run_by_schedule.get(fallback_source_key) if aoi_id is None else None)
+            or None
+        )
+        next_due_at = obs.get("nextDueAt")
+        is_due, is_overdue = _schedule_due_flags(next_due_at, now=now)
+
+        schedules.append(
+            IngestionScheduleItem(
+                source_id=source_id,
+                provider=provider,
+                adapter=provider,
+                aoi_id=aoi_id,
+                lifecycle_state=prov_input.get("lifecycleState"),
+                schedule_state=schedule_state,
+                capabilities=list(prov_input.get("capabilities") or []),
+                commercial_state=prov_input.get("commercialState"),
+                aoi_scope=prov_input.get("aoiScope"),
+                validation_state=prov_input.get("validationState"),
+                schedule_enabled=(
+                    schedule_state in _SCHEDULE_ENABLED_STATES if schedule_state else False
+                ),
+                product_exposure=prov_input.get("productExposure"),
+                last_run_at=run_at,
+                last_success_at=last_success_at,
+                last_failure_at=failure_at,
+                next_due_at=next_due_at,
+                is_due=is_due,
+                is_overdue=is_overdue,
+                next_window_start=last_window_end,
+                next_window_end=None,
+                cadence_days=cadence_days,
+                due_reason=obs.get("scheduleDecision"),
+            )
+        )
+
+    return IngestionScheduleResponse(
+        status="ok",
+        generated_at=generated_at,
+        schedules=schedules,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Job list endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/ingestion-jobs", response_model=IngestionJobListResponse)
+def list_ingestion_jobs(
+    limit: int = Query(50, ge=1, le=200, description="Maximum jobs to return"),
+    cursor: str | None = Query(None, description="Pagination cursor from previous response"),
+    source_id: str | None = Query(
+        None,
+        alias="sourceId",
+        description="Filter by sourceId (exact match)",
+    ),
+    aoi_id: str | None = Query(
+        None,
+        alias="aoiId",
+        description="Filter by aoiId (exact match)",
+    ),
+    state: str | None = Query(None, description="Filter by job state (exact match)"),
+    started_after: str | None = Query(
+        None,
+        alias="startedAfter",
+        description="ISO-8601: include jobs started after this timestamp",
+    ),
+    started_before: str | None = Query(
+        None,
+        alias="startedBefore",
+        description="ISO-8601: include jobs started before this timestamp",
+    ),
+) -> IngestionJobListResponse:
+    """Return a paginated, filtered list of ingestion job summaries.
+
+    Primary source is the SQLite job ledger (``scheduler_job_ledger_path``).
+    Falls back to scanning job artifact directories (``scheduler_jobs_dir``) if
+    the ledger is not available.  Returns status "unconfigured" when neither
+    path is set or exists.
+    """
+    generated_at = _now_iso()
+    db = _resolve_ledger_db()
+    jobs_dir = _resolve_jobs_dir()
+
+    if db is None and jobs_dir is None:
+        return IngestionJobListResponse(
+            status="unconfigured",
+            generated_at=generated_at,
+        )
+
+    jobs: list[IngestionJobSummary] = []
+    next_cursor: str | None = None
+    last_error: str | None = None
+
+    if db is not None:
+        try:
+            rows, next_cursor = _query_ledger_jobs(
+                db,
+                limit=limit,
+                cursor=cursor,
+                source_id_filter=source_id,
+                aoi_id_filter=aoi_id,
+                state_filter=state,
+                started_after=started_after,
+                started_before=started_before,
+            )
+            jobs = [_ledger_row_to_summary(row) for row in rows]
+        except Exception as exc:  # noqa: BLE001
+            last_error = _redact_error(str(exc))
+    elif jobs_dir is not None:
+        try:
+            jobs, next_cursor = _list_jobs_from_dirs(
+                jobs_dir,
+                limit=limit,
+                cursor=cursor,
+                source_id_filter=source_id,
+                aoi_id_filter=aoi_id,
+                state_filter=state,
+                started_after=started_after,
+                started_before=started_before,
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_error = _redact_error(str(exc))
+
+    return IngestionJobListResponse(
+        status="ok" if last_error is None else "unavailable",
+        generated_at=generated_at,
+        jobs=jobs,
+        next_cursor=next_cursor,
+        last_error=last_error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Job events endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/ingestion-jobs/{job_id}/events", response_model=IngestionJobEventsResponse)
+def get_ingestion_job_events(job_id: str) -> IngestionJobEventsResponse:
+    """Return the latest bounded, sanitized timeline events for one job."""
+    generated_at = _now_iso()
+    jobs_dir = _resolve_jobs_dir()
+    if jobs_dir is None:
+        raise HTTPException(status_code=404, detail="Scheduler jobs directory not configured")
+
+    _validate_job_id_or_raise(job_id)
+
+    jdir = jobs_dir / job_id
+    if not jdir.is_dir():
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    status_path = jdir / "status.json"
+    status_data = _safe_read_json(status_path) if status_path.is_file() else {}
+    if not status_data.get("jobId"):
+        raise HTTPException(status_code=404, detail="Job status not found")
+
+    events_path = jdir / "events.jsonl"
+    if not events_path.is_file():
+        return IngestionJobEventsResponse(
+            status="ok",
+            generated_at=generated_at,
+            job_id=job_id,
+            events=[],
+            truncated=False,
+            scanned_count=0,
+            total_events_scanned=0,
+            total_valid_events=0,
+            malformed_events_skipped=0,
+            returned_count=0,
+        )
+
+    try:
+        events, total_scanned, total_valid, malformed_skipped = _read_job_events(events_path)
+    except OSError as exc:
+        return IngestionJobEventsResponse(
+            status="unavailable",
+            generated_at=generated_at,
+            job_id=job_id,
+            events=[],
+            truncated=False,
+            scanned_count=0,
+            total_events_scanned=0,
+            total_valid_events=0,
+            malformed_events_skipped=0,
+            returned_count=0,
+            last_error=_redact_error(str(exc)),
+        )
+
+    return IngestionJobEventsResponse(
+        status="ok",
+        generated_at=generated_at,
+        job_id=job_id,
+        events=events,
+        truncated=total_valid > _EVENT_LIMIT,
+        scanned_count=total_scanned,
+        total_events_scanned=total_scanned,
+        total_valid_events=total_valid,
+        malformed_events_skipped=malformed_skipped,
+        returned_count=len(events),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Job detail endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/ingestion-jobs/{job_id}", response_model=IngestionJobDetail)
+def get_ingestion_job(job_id: str) -> IngestionJobDetail:
+    """Return a redacted detail view for one ingestion job.
+
+    Reads ``status.json``, ``request.json``, ``result.json``, and
+    ``observability.json`` from the configured job artifact directory.  Raw
+    filesystem paths and full provider logs are never included in the response
+    (SEC-006).  Opaque artifact handles of the form ``"<jobId>:<type>"`` are
+    returned so callers can request specific artifacts via operator CLI.
+    """
+    jobs_dir = _resolve_jobs_dir()
+    if jobs_dir is None:
+        raise HTTPException(status_code=404, detail="Scheduler jobs directory not configured")
+
+    # Sanitise job_id: only allow the expected format to prevent path traversal.
+    _validate_job_id_or_raise(job_id)
+
+    jdir = jobs_dir / job_id
+    if not jdir.is_dir():
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    status_data = _safe_read_json(jdir / "status.json")
+    if not status_data.get("jobId"):
+        raise HTTPException(status_code=404, detail="Job status not found")
+
+    req_data = _safe_read_json(jdir / "request.json")
+    result_data = _safe_read_json(jdir / "result.json")
+    obs_data = _safe_read_json(jdir / "observability.json")
+
+    source_id = str(status_data.get("sourceId") or req_data.get("sourceId") or "")
+    provider = str(status_data.get("provider") or req_data.get("provider") or "")
+    aoi_id = str(status_data.get("aoiId") or req_data.get("aoiId") or "") or None
+    state = str(status_data.get("status") or "unknown")
+
+    window_start = req_data.get("windowStart") or status_data.get("windowStart")
+    window_end = req_data.get("windowEnd") or status_data.get("windowEnd")
+
+    prov_input: dict[str, Any] = _sanitize_monitoring_value(
+        obs_data.get("providerInputSummary") or {}
+    )
+    prov_response: dict[str, Any] = _sanitize_monitoring_value(
+        obs_data.get("providerResponseSummary") or {}
+    )
+    verification: dict[str, Any] = _sanitize_monitoring_value(
+        obs_data.get("verificationSummary") or {}
+    )
+
+    # Strip artifact_summary_path from any result data (raw server path — SEC-006).
+    safe_result: dict[str, Any] = _sanitize_monitoring_value(
+        {k: v for k, v in result_data.items() if k != "artifactSummaryPath"}
+    )
+
+    # Build safe request payload (already redacted at scheduler write time).
+    safe_request: dict[str, Any] = _sanitize_monitoring_value(
+        {k: v for k, v in req_data.items() if k not in {"artifactVersion", "redactionVersion"}}
+    )
+
+    updated_at = (
+        status_data.get("updatedAt")
+        or status_data.get("finishedAt")
+        or status_data.get("startedAt")
+    )
+
+    # Opaque handles — expose jobId:type tokens, never raw paths.
+    artifact_handles = _build_artifact_handles(job_id, obs_data)
+
+    # Validation problems and rejection reasons (string-only, no paths).
+    validation_problems = _extract_validation_problems(verification)
+    rejection_reasons = _extract_rejection_reasons(prov_response)
+
+    # Ledger rows from SQLite if configured (no artifact_summary_path column).
+    db = _resolve_ledger_db()
+    ledger_rows: list[dict[str, Any]] = _ledger_rows_for_job(db, job_id) if db else []
+
+    return IngestionJobDetail(
+        job_id=job_id,
+        source_id=source_id,
+        provider=provider or None,
+        aoi_id=aoi_id,
+        state=state,
+        request=safe_request,
+        provider_input_summary=prov_input,
+        provider_response_summary=prov_response,
+        search_manifest_handle=obs_data.get("searchManifestHandle"),
+        download_manifest_handle=obs_data.get("downloadManifestHandle"),
+        prepare_manifest_handles=list(obs_data.get("prepareManifestHandles") or []),
+        verification_summary=verification,
+        schedule_decision=obs_data.get("scheduleDecision"),
+        next_due_at=obs_data.get("nextDueAt") or status_data.get("nextDueAt"),
+        window_start=window_start,
+        window_end=window_end,
+        found_count=status_data.get("foundCount"),
+        selected_count=status_data.get("selectedCount"),
+        downloaded_count=status_data.get("downloadedCount"),
+        rejected_count=status_data.get("rejectedCount"),
+        failure_kind=status_data.get("failureKind"),
+        message=_redact_error(
+            status_data.get("failureMessage") or safe_result.get("failureMessage")
+        ),
+        started_at=status_data.get("startedAt"),
+        finished_at=status_data.get("finishedAt"),
+        updated_at=updated_at,
+        validation_problems=validation_problems,
+        rejection_reasons=rejection_reasons,
+        artifact_handles=artifact_handles,
+        ledger_rows=ledger_rows,
+    )

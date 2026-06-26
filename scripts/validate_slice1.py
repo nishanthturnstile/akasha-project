@@ -171,9 +171,11 @@ if awifs_coll:
     check(awifs_coll.get("id") == AWIFS_SOURCE_ID, f"AWiFS collection id == {AWIFS_SOURCE_ID}")
     check(awifs_coll.get("akasha:source_kind") == "optical", "AWiFS source kind == optical")
     check(awifs_coll.get("akasha:analysis_level") == "regional", "AWiFS analysis level == regional")
-    check(awifs_coll.get("akasha:availability_status") == "gated", "AWiFS remains gated before validation")
+    check(awifs_coll.get("akasha:availability_status") == "active", "AWiFS is product-active for regional use")
+    check(awifs_coll.get("akasha:gated_reason") is None, "AWiFS has no gated reason after scheduler cutover")
     check(awifs_coll.get("akasha:supported_indices") == SUPPORTED_INDICES, "AWiFS supported indices mirror ResourceSat-safe optical indices")
-    check(awifs_coll.get("akasha:display_modes") == ["FCC"], "AWiFS display mode == FCC")
+    check("FCC" in awifs_coll.get("akasha:display_modes", []), "AWiFS display modes include FCC")
+    check(awifs_coll.get("akasha:default_display_mode") == "FCC", "AWiFS default display mode == FCC")
     check("AWiFS" in str(awifs_coll.get("akasha:mask_method", "")), "AWiFS mask method is source-specific")
     check(
         "LISS-3 BOA sample" not in str(awifs_coll.get("akasha:mask_method", "")),
@@ -338,36 +340,43 @@ storage_py = (REPO / "services/ingestion/akasha_ingest/storage.py").read_text()
 check("missing expected key" in storage_py, "MinIO verify fails if deterministic keys are missing")
 
 systemd_dir = REPO / "infra/selfhosted/systemd"
-sync_service = systemd_dir / "akasha-bhoonidhi-sync.service"
-sync_timer = systemd_dir / "akasha-bhoonidhi-sync.timer"
-sync_script = systemd_dir / "akasha-bhoonidhi-sync.sh"
-sync_env = systemd_dir / "akasha-bhoonidhi-sync.env.example"
-sync_installer = systemd_dir / "install-akasha-bhoonidhi-sync.sh"
+scheduler_service = systemd_dir / "akasha-ingestion-scheduler.service"
+scheduler_timer = systemd_dir / "akasha-ingestion-scheduler.timer"
+scheduler_script = systemd_dir / "akasha-ingestion-scheduler.sh"
+scheduler_env = systemd_dir / "ingestion-scheduler.env.example"
+scheduler_installer = systemd_dir / "install-akasha-ingestion-scheduler.sh"
+job_runner = systemd_dir / "akasha-ingestion-job-runner.sh"
 staging_validator = REPO / "scripts/validate_selfhosted_staging_bhoonidhi.py"
-check(sync_service.is_file(), "self-hosted systemd Bhoonidhi sync service exists")
-check(sync_timer.is_file(), "self-hosted systemd Bhoonidhi sync timer exists")
-check(sync_script.is_file(), "self-hosted Bhoonidhi sync wrapper exists")
-check(sync_env.is_file(), "self-hosted Bhoonidhi sync env template exists")
-check(sync_installer.is_file(), "self-hosted Bhoonidhi sync installer exists")
+check(scheduler_service.is_file(), "self-hosted scheduler service exists")
+check(scheduler_timer.is_file(), "self-hosted scheduler timer exists")
+check(scheduler_script.is_file(), "self-hosted scheduler wrapper exists")
+check(scheduler_env.is_file(), "self-hosted scheduler env template exists")
+check(scheduler_installer.is_file(), "self-hosted scheduler installer exists")
+check(job_runner.is_file(), "self-hosted ad hoc ingestion job runner exists")
+check(not (systemd_dir / "akasha-bhoonidhi-sync.timer").exists(), "legacy LISS-3 Bhoonidhi timer removed")
+check(not (systemd_dir / "akasha-bhoonidhi-liss4-sync.timer").exists(), "legacy LISS-4 Bhoonidhi timer removed")
 check(staging_validator.is_file(), "self-hosted staging Bhoonidhi validator exists")
-if sync_service.is_file():
-    service_raw = sync_service.read_text()
-    check("flock -n /srv/akasha/ingestion/bhoonidhi-sync.systemd.lock" in service_raw, "systemd sync uses host non-overlap lock")
-    check("/srv/akasha/data/raw/bhoonidhi" in service_raw and "/srv/akasha/data/work/bhoonidhi" in service_raw, "systemd sync prepares /srv/akasha raw/work paths")
-if sync_timer.is_file():
-    timer_raw = sync_timer.read_text()
-    check("OnCalendar=" in timer_raw and "Persistent=true" in timer_raw, "systemd timer is scheduled and persistent")
-if sync_script.is_file():
-    script_raw = sync_script.read_text()
-    check("bhoonidhi-sync" in script_raw and "--window-days" in script_raw, "sync wrapper runs rolling-window bhoonidhi-sync")
-    check("--backfill-days" in script_raw and "AKASHA_SYNC_BACKFILL_DAYS" in script_raw, "sync wrapper supports spread-out launch backfill")
-    check("--raw-root" in script_raw and "--ledger-path" in script_raw, "sync wrapper passes /srv raw and ledger paths")
-    check("--pull" in script_raw and "AKASHA_SYNC_PULL_POLICY" in script_raw, "sync wrapper avoids private registry pulls by default")
-if sync_installer.is_file():
-    installer_raw = sync_installer.read_text()
-    check("install_with_mode 0755" in installer_raw and "akasha-bhoonidhi-sync.sh" in installer_raw, "sync installer installs wrapper")
-    check("systemctl daemon-reload" in installer_raw, "sync installer reloads systemd")
-    check("AKASHA_SYNC_DRY_RUN=true" in installer_raw, "sync installer documents dry-run first run")
+if scheduler_service.is_file():
+    service_raw = scheduler_service.read_text()
+    check("flock" in service_raw and "scheduler.global.lock" in service_raw, "scheduler service uses host non-overlap lock")
+    check("/srv/akasha/data/raw/bhoonidhi" in service_raw and "/srv/akasha/data/work/bhoonidhi" in service_raw, "scheduler service prepares /srv/akasha raw/work paths")
+if scheduler_timer.is_file():
+    timer_raw = scheduler_timer.read_text()
+    check("OnCalendar=" in timer_raw and "Persistent=true" in timer_raw, "scheduler timer is scheduled and persistent")
+if scheduler_script.is_file():
+    script_raw = scheduler_script.read_text()
+    check("schedule-due-sources" in script_raw and "--approved-runtime" in script_raw, "scheduler wrapper runs approved schedule-due-sources")
+    check("AKASHA_SCHEDULER_LOCK_DIR" in script_raw and "/srv/akasha/ingestion" in script_raw, "scheduler wrapper uses canonical lock directory")
+    check("ionice" in script_raw and "nice" in script_raw, "scheduler wrapper applies staging I/O priority")
+if scheduler_installer.is_file():
+    installer_raw = scheduler_installer.read_text()
+    check("install_with_mode 0755" in installer_raw and "akasha-ingestion-scheduler.sh" in installer_raw, "scheduler installer installs wrapper")
+    check("systemctl daemon-reload" in installer_raw, "scheduler installer reloads systemd")
+    check("AKASHA_SCHEDULER_ACTIVE=false" in installer_raw or "plan-only" in installer_raw, "scheduler installer documents safe first run")
+if job_runner.is_file():
+    runner_raw = job_runner.read_text()
+    check("schedule-source" in runner_raw and "--approved-runtime" in runner_raw, "ad hoc runner uses scheduler schedule-source")
+    check("--window-start" in runner_raw and "--max-downloads" in runner_raw, "ad hoc runner passes manual bounds to scheduler")
 if staging_validator.is_file():
     validator_raw = staging_validator.read_text()
     check("docker compose" in validator_raw and "worker.py verify-cogs" in validator_raw, "staging validator runs worker COG checks")

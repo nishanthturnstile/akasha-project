@@ -39,6 +39,8 @@ function renderBar(props: Partial<React.ComponentProps<typeof TimelineBar>> = {}
                 periodFrom={ props.periodFrom ?? null }
                 periodTo={ props.periodTo ?? null }
                 onPeriodChange={ props.onPeriodChange }
+                bestMode={ props.bestMode ?? false }
+                onBestModeChange={ props.onBestModeChange }
             />
         </TooltipProvider>,
     );
@@ -116,5 +118,63 @@ describe('TimelineBar — date navigation behavior', () => {
         });
         fireEvent.click(screen.getByTestId('timeline-period-apply'));
         expect(onPeriodChange).toHaveBeenCalledWith('2026-04-01', '2026-04-30');
+    });
+
+    // --- TASK-072: Best-mode and provenance label behavior (outcomes 4, 5, 6) ---
+
+    it('renders the best mode toggle button when onBestModeChange is provided', () => {
+        renderBar({ onBestModeChange: vi.fn() });
+        expect(screen.getByTestId('timeline-best-mode-toggle')).toBeTruthy();
+    });
+
+    it('labels the best mode toggle with the current timeline mode', () => {
+        const { rerender } = renderBar({ onBestModeChange: vi.fn(), bestMode: false });
+        expect(screen.getByTestId('timeline-best-mode-toggle').textContent).toContain('Source');
+
+        rerender(
+            <TooltipProvider>
+                <TimelineBar
+                    dates={ dates }
+                    selectedDate="2026-05-11"
+                    onSelect={ vi.fn() }
+                    sourceKind="optical"
+                    sensorBadge={ null }
+                    loading={ false }
+                    error={ null }
+                    onRetry={ vi.fn() }
+                    bestMode
+                    onBestModeChange={ vi.fn() }
+                />
+            </TooltipProvider>,
+        );
+        expect(screen.getByTestId('timeline-best-mode-toggle').textContent).toContain('Best');
+    });
+
+    it('does not render the best mode toggle when onBestModeChange is not provided', () => {
+        renderBar();
+        expect(screen.queryByTestId('timeline-best-mode-toggle')).toBeNull();
+    });
+
+    it('in best mode passes per-chip provenance labels from date.provenanceLabel and suppresses sensorBadge', () => {
+        const datesWithProv: SceneDate[] = [
+            makeDate('2026-05-11', { isLatestUsable: true, provenanceLabel: 'LISS-4 · 5.8 m' }),
+        ];
+        renderBar({
+            dates: datesWithProv,
+            bestMode: true,
+            sensorBadge: 'L3',
+            selectedDate: '2026-05-11',
+        });
+        // Provenance label must render.
+        expect(screen.getByTestId('date-chip-provenance-2026-05-11').textContent).toBe('LISS-4 · 5.8 m');
+        // Global sensorBadge must be suppressed in best mode.
+        expect(screen.queryByTestId('date-chip-sensor-2026-05-11')).toBeNull();
+    });
+
+    it('in source-specific mode (default) shows the global sensorBadge and no provenance labels', () => {
+        // Default: bestMode=false, no provenanceLabel on date objects.
+        renderBar({ sensorBadge: 'L3', selectedDate: '2026-05-11' });
+        expect(screen.getByTestId('date-chip-sensor-2026-05-11').textContent).toBe('L3');
+        expect(screen.queryByTestId('date-chip-provenance-2026-05-11')).toBeNull();
     });
 });

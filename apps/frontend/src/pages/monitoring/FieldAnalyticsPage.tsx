@@ -1,12 +1,14 @@
 import { Map as MapIcon, Pencil } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
+import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
 import FieldAnalyticsPanel from '@/components/analytics/FieldAnalyticsPanel';
-import { useConfig, useFields } from '@/lib/queries';
+import { useConfig, useFields, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
+import { useSeasonContext } from '@/state/seasonContext';
 import { cn } from '@/lib/utils';
 import type { CloudMaskOptions } from '@/types/api';
 
@@ -16,14 +18,23 @@ function formatAreaHa(value: number | null | undefined): string {
 }
 
 export default function FieldAnalyticsPage() {
-  const { selectedPlotId, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, overlaysVisible } = useMapView();
+  const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, overlaysVisible, mapFullscreen } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
+  const updateField = useUpdateField();
+  const { seasonId } = useSeasonContext();
+  const [editFieldOpen, setEditFieldOpen] = useState(false);
+  const [savingField, setSavingField] = useState(false);
 
   const selectedField = useMemo(() => {
     if (!selectedPlotId || !fieldsQ.data) return null;
     return fieldsQ.data.find((f) => f.id === selectedPlotId) ?? null;
   }, [fieldsQ.data, selectedPlotId]);
+
+  const seasonFields = useMemo(() => {
+    if (!seasonId) return fieldsQ.data ?? [];
+    return (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(seasonId));
+  }, [fieldsQ.data, seasonId]);
 
   const effectiveSourceId = activeSourceId ?? undefined;
   const supportedIndices = configQ.data?.supportedIndices ?? ['NDVI'];
@@ -73,6 +84,7 @@ export default function FieldAnalyticsPage() {
             variant="ghost"
             size="sm"
             disabled={ !selectedField }
+            onClick={ () => setEditFieldOpen(true) }
             className="h-8 gap-1.5 text-[12px]"
           >
             <Pencil className="size-3.5" strokeWidth={ 1.75 } />
@@ -80,18 +92,23 @@ export default function FieldAnalyticsPage() {
           </Button>
         </div>
         <div className="flex items-center gap-2 px-4 py-3">
-          <AddFieldDropdown fields={fieldsQ.data ?? []} onNavigate={navigate} />
+          <AddFieldDropdown
+            fields={seasonFields}
+            onNavigate={navigate}
+            onSelectField={ (fieldId) => { setSelectedPlotId(fieldId); setFocusNonce(Date.now()); } }
+            defaultSeasonId={ seasonId }
+          />
         </div>
       </div>
       )}
 
-      {/* Map card — flex-1 when global view (full height), flex-[13] when analytics visible */}
-      <div className={cn('min-h-0 rounded-md border border-border overflow-hidden', overlaysVisible ? 'flex-[13]' : 'flex-1')}>
+      {/* Map card — flex-1 when fullscreen/global, flex-[13] when analytics visible */}
+      <div className={cn('min-h-0 rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'flex-[13]' : 'flex-1')}>
         <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords />
       </div>
 
-      {/* Analytics panel card — only when field selected and not in global view */}
-      {selectedField && overlaysVisible && (
+      {/* Analytics panel card — hidden when mapFullscreen is active */}
+      {selectedField && overlaysVisible && !mapFullscreen && (
         <div className="min-h-0 flex-[7] rounded-md border border-border bg-background">
           <FieldAnalyticsPanel
             field={selectedField}
@@ -102,6 +119,22 @@ export default function FieldAnalyticsPage() {
             periodTo={periodTo}
           />
         </div>
+      )}
+
+      {selectedField && (
+        <EditFieldDialog
+          field={selectedField}
+          open={editFieldOpen}
+          onOpenChange={setEditFieldOpen}
+          onSave={(fieldId, name, geometry, vegetationData, groupId) => {
+            setSavingField(true);
+            updateField.mutate(
+              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}) } },
+              { onSuccess: () => { setSavingField(false); setEditFieldOpen(false); }, onError: () => setSavingField(false) },
+            );
+          }}
+          saving={savingField}
+        />
       )}
     </div>
   );

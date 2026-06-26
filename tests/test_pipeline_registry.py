@@ -30,6 +30,20 @@ def test_resourcesat_mvp_sources_have_bhoonidhi_pipeline_metadata():
         assert source.mvp_enabled is True
 
 
+def test_awifs_pipeline_source_declares_regional_production_profile():
+    source = pipeline_registry.get_pipeline_source("resourcesat-2a-awifs-boa")
+
+    assert source.provider == "bhoonidhi"
+    assert source.collection_id == "ResourceSat-2A_AWIFS_BOA"
+    assert source.prepare_script == "prepare_resourcesat_liss3_boa_cogs.py"
+    assert source.supports_search is True
+    assert source.supports_download is True
+    assert source.supports_composite is True
+    assert source.mvp_enabled is True
+    assert source.default_min_coverage_percent == 95.0
+    assert source.output_profile == "resourcesat-awifs-boa"
+
+
 def test_sar_sources_keep_source_specific_prepare_scripts():
     assert (
         pipeline_registry.prepare_script_name("sentinel-1-grd")

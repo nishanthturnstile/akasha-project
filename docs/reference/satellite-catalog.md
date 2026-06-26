@@ -200,6 +200,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Backbone of CIDSA crop-health workflows for wheat, rice and cotton across Punjab, Haryana, Maharashtra and Andhra Pradesh — its 5-day revisit captures every phenological phase of a kharif or rabi season.
 
+**Ingestion state.** Provider adapter: `cdse`; cadence class: `2_to_5_days`; schedule state: `disabled` (CDSE OAuth2/Keycloak adapter not yet validated); product exposure: `hidden`. Source ID: `sentinel-2-l2a`.
+
 ---
 
 ### Sentinel-1
@@ -221,6 +223,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** A C-band Synthetic Aperture Radar (SAR) constellation. Cuts through clouds and works at night, making it the workhorse for monsoon-season monitoring where optical sensors fall behind.
 
 **Indian agri context.** Critical for monsoon paddy mapping in West Bengal, Odisha and Tamil Nadu — Sentinel-1 holds the cadence even under unbroken cloud cover, enabling near-real-time flood-extent mapping during cyclones.
+
+**Ingestion state.** Provider adapter: `cdse`; cadence class: `5_to_10_days`; schedule state: `disabled` (SAR backscatter validation profile not yet implemented; no optical indices per GEO-002); product exposure: `hidden`. Source ID: `sentinel-1-grd`.
 
 ---
 
@@ -244,6 +248,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Used to build decadal cropping-pattern baselines for the Indo-Gangetic Plain (IGP) region and for surface-temperature maps that flag heat-stress events in rabi wheat.
 
+**Ingestion state.** Provider adapter: `usgs`; cadence class: `10_to_20_days`; schedule state: `disabled` (USGS STAC+COG adapter not yet implemented; cloud-native COG path preferred); product exposure: `hidden`. Source ID: `landsat-8-c2-l2`.
+
 ---
 
 ### Landsat 9
@@ -265,6 +271,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** Landsat-9 is in orbit 8 days offset from Landsat-8. Together they halve the effective revisit time and continue the Landsat data continuum into the 2030s with improved 14-bit OLI-2 radiometric depth.
 
 **Indian agri context.** Pairs with Landsat-8 to give an effective **8-day revisit** over Indian agricultural districts — useful for tracking sugarcane and orchard crops where 16 days is too coarse.
+
+**Ingestion state.** Provider adapter: `usgs`; cadence class: `10_to_20_days`; schedule state: `disabled` (USGS STAC+COG adapter not yet implemented; multi-source 8-day merge not yet designed); product exposure: `hidden`. Source ID: `landsat-9-c2-l2`.
 
 ---
 
@@ -288,6 +296,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Drives **state-level kharif / rabi yield forecasts** and **stubble-burn mapping** across Punjab and Haryana every winter.
 
+**Ingestion state.** Provider adapter: `earthdata`; cadence class: `daily` (16-day composites MOD13Q1); schedule state: `disabled` (Earthdata token adapter not yet implemented; context raster profile required per GEO-003); product exposure: `hidden`. Source ID: `modis-13q1-061`.
+
 ---
 
 ### ResourceSat-2A
@@ -309,6 +319,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** ISRO Cartosat-class multispectral mission carrying LISS-3 + LISS-4 + AWiFS instruments — optimised for Indian agricultural landscapes.
 
 **Indian agri context.** ISRO's mainstay for the Department of Agriculture's **national crop-area assessment programme (FASAL)**. Extensively used for sugarcane and horticulture mapping in Maharashtra and Karnataka.
+
+**Ingestion state.** Provider adapter: `bhoonidhi`; cadence class: `5_to_10_days`; three active source rows — **LISS-3** (`resourcesat-2a-liss3-boa`): schedule state `routine`, product exposure `product_active` (MVP baseline; optical composite, 95% coverage threshold); **LISS-4** (`resourcesat-2a-liss4-mx70-l2`): schedule state `routine`, product exposure `product_active` (field enhancement; narrow-swath); **AWiFS** (`resourcesat-2a-awifs-boa`): schedule state `routine`, product exposure `product_active` for regional/coarse analytics with a 60% minimum usable-coverage threshold. All rows: staging_bhoonidhi host pool.
 
 ---
 
@@ -332,6 +344,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Powers **field-boundary digitisation for high-value horticulture** (mango, grape, pomegranate) at sub-metre accuracy across Maharashtra and Andhra Pradesh.
 
+**Ingestion state.** Provider adapter: `vendor` (manual); cadence class: `5_to_10_days`; schedule state: `manual_only` (no programmatic Bhoonidhi catalogue path confirmed; GE entities via Bhoonidhi declaration, NGE via NSIL licence; VHR visual validation profile required); product exposure: `hidden`. Source ID: `cartosat-3-gated`.
+
 ---
 
 ### EOS-04 (RISAT)
@@ -353,6 +367,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** C-band SAR replacement for RISAT-1. Operates day-and-night, all-weather, with multiple acquisition modes (Stripmap, FRS, MRS, CRS).
 
 **Indian agri context.** ISRO's primary tool for **monsoon paddy acreage estimation** and rapid flood-damage assessment under MHA / NDMA disaster-response protocols.
+
+**Ingestion state.** Provider adapter: `bhoonidhi`; cadence class: `10_to_20_days`; schedule state: `disabled` (SAR backscatter validation profile not yet implemented; MRS/CRS modes only; GEO-002 — no optical indices); product exposure: `hidden`. Source ID: `eos-04-sar-mrs-l2b`.
 
 ---
 
@@ -376,6 +392,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Coastal-agriculture intelligence for **Tamil Nadu, Andhra Pradesh and Gujarat** — chlorophyll concentrations support fisheries forecasting alongside coastal-paddy monitoring.
 
+**Ingestion state.** Provider adapter: `bhoonidhi`; cadence class: `2_to_5_days`; schedule state: `disabled` (precomputed NDVI context only per GEO-003; context raster validation profile required; not field-level statistics); product exposure: `hidden`. Source ID: `eos-06-ocm-lac-ndvi-8day-360m`.
+
 ---
 
 ### ALOS-2 (PALSAR-2)
@@ -397,6 +415,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** L-band SAR — penetrates vegetation canopy better than C-band, making it the **best open option for forest biomass** and rice paddy phenology.
 
 **Indian agri context.** Used for forest-biomass and rice paddy phenology in the **Eastern Ghats and Western Ghats** biospheres.
+
+**Ingestion state.** Provider adapter: `jaxa`; two source rows — commercial scenes (`alos2-palsar2`): schedule state `disabled`, commercial state `commercial_blocked` (paid scenes require JAXA/reseller subscription; SRC-005); free annual mosaic (`alos2-mosaic-25m`): cadence class `archive_on_demand`, schedule state `disabled` (fetch adapter not yet implemented; regional SAR context only). Both rows: product exposure `hidden`; SAR backscatter validation profile; GEO-002 applies.
 
 ---
 
@@ -420,6 +440,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Suited to high-value crops (**vineyards, polyhouses**) where sub-metre detail and daily revisit justify the commercial cost.
 
+**Ingestion state.** Provider adapter: `vendor`; cadence class: `multiple_per_day`; schedule state: `disabled`; commercial state: `commercial_blocked` (no vendor contract or quota; paid tasking disabled by default per SRC-005/SEC-007); product exposure: `hidden`. Source ID: `superview-neo-1`.
+
 ---
 
 ### PlanetScope
@@ -441,6 +463,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** Planet's **Dove constellation** — the largest commercial Earth-imaging fleet ever launched, with daily revisit at 3 m resolution.
 
 **Indian agri context.** Daily NDVI time-series across Indian agri-export plots — **strawberry, table-grape and pomegranate** orchards rely on this cadence for stress detection.
+
+**Ingestion state.** Provider adapter: `planet`; cadence class: `daily`; schedule state: `disabled`; commercial state: `commercial_blocked` (no Planet API subscription; search-only until contract/quota/readiness signed off per SRC-005/SEC-007); product exposure: `hidden`. Source ID: `planetscope`.
 
 ---
 
@@ -464,6 +488,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Used for scouting and verifying field-level claims in **commodity-trading workflows (sugar, palm-oil)** when ResourceSat resolution isn't enough.
 
+**Ingestion state.** Provider adapter: `planet`; cadence class: `multiple_per_day`; schedule state: `disabled`; commercial state: `commercial_blocked` (no Planet API subscription; paid task/order disabled by default per SRC-005/SEC-007); product exposure: `hidden`. Source ID: `skysat`.
+
 ---
 
 ### BlackSky Gen 3
@@ -485,6 +511,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** Highest revisit cadence in the catalogue — up to 15 visits per day per AOI for hour-scale operational monitoring.
 
 **Indian agri context.** **Hour-scale damage assessment** after cyclones (Tauktae, Biparjoy class) and time-critical sugarcane mill scheduling.
+
+**Ingestion state.** Provider adapter: `vendor`; cadence class: `multiple_per_day`; schedule state: `disabled`; commercial state: `commercial_blocked` (no BlackSky vendor contract; paid task/order disabled by default per SRC-005/SEC-007); product exposure: `hidden`. Source ID: `blacksky-gen-3`.
 
 ---
 
@@ -508,6 +536,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Mid-wave infrared from KOMPSAT-3A is uniquely suited to **thermal-stress detection in greenhouse and protected-cultivation systems**.
 
+**Ingestion state.** Provider adapter: `vendor`; cadence class: `2_to_5_days`; schedule state: `disabled`; commercial state: `commercial_blocked` (no KARI/SIIS vendor contract; paid task/order disabled by default per SRC-005/SEC-007; MWIR payload may require additional export licensing); product exposure: `hidden`. Source ID: `kompsat-3a`.
+
 ---
 
 ### Landsat 7
@@ -529,6 +559,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** ETM+ instrument, decommissioned in 2024. Notable **SLC-off line gaps after 2003** — most modern pipelines auto-fill them.
 
 **Indian agri context.** Bridges the gap between Landsat-5 and Landsat-8 archives — essential for any **1999 – 2013 baseline** of India's cropping intensity.
+
+**Ingestion state.** Provider adapter: `usgs`; cadence class: `archive_on_demand`; schedule state: `archive_only` (decommissioned 2024; not a routine current-monitoring source per SRC-007; USGS STAC+COG adapter not yet implemented; SLC-off scan-line gaps post-2003); product exposure: `hidden`. Source ID: `landsat-7-c2-l2`.
 
 ---
 
@@ -552,6 +584,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** Backbone of every long-term cropping-intensity and land-use-change study in the **IGP and Deccan plateau**.
 
+**Ingestion state.** Provider adapter: `usgs`; cadence class: `archive_on_demand`; schedule state: `archive_only` (decommissioned 2013; not a routine current-monitoring source per SRC-007; USGS STAC+COG adapter not yet implemented); product exposure: `hidden`. Source ID: `landsat-5-c2-l2`.
+
 ---
 
 ### IRS-1C
@@ -573,6 +607,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** ISRO's first true sub-10 m mission — ran from 1995 to 2007 and put India squarely on the high-resolution Earth-observation map.
 
 **Indian agri context.** Reference baseline for any **1995 – 2007 study** on Indian cropping patterns, urban encroachment of farmland, and groundwater-irrigation expansion.
+
+**Ingestion state.** Provider adapter: `bhoonidhi`; cadence class: `archive_on_demand`; schedule state: `archive_only` (decommissioned 2007; not a routine current-monitoring source per SRC-007; archive optical validation profile required before any product exposure); product exposure: `hidden`. Source ID: `irs-1c-liss3-archive`.
 
 ---
 
@@ -596,6 +632,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 
 **Indian agri context.** **Reference dataset for ground-truth field-boundary work** in CIDSA labs — Indian projects use the NAIP methodology even though NAIP coverage itself is U.S.-only.
 
+**Ingestion state.** Provider adapter: `usda`; cadence class: `reference`; schedule state: `disabled`; AOI scope: `reference_only` (out-of-AOI for `bangalore-60km` and all India deployments per SRC-006; no executable ingestion pipeline for India); product exposure: `reference_only`. Source ID: `naip-reference-only`.
+
 ---
 
 ### NISAR
@@ -617,6 +655,8 @@ Sort mentally by whichever column matters for your task. All numbers are nominal
 **About.** Joint NASA–ISRO mission carrying both L-band and S-band SAR — designed for ecosystem disturbance, biomass and ice-sheet dynamics at 3 – 10 m resolution.
 
 **Indian agri context.** The mission **launched 30 July 2025** and is in CAL/VAL; first analysis-ready products are expected from 2026 onward. NISAR is now positioned as the **global standard for soil-moisture and above-ground biomass measurement** and a flagship dataset for India's carbon-credit and climate-resilient-agriculture work — promoted to **primary L-band recommendation** for soil and biomass workflows once ARD ships, with ALOS-2 retained as the production fallback in the interim.
+
+**Ingestion state.** Provider adapter: `bhoonidhi` (primary) / `asf` (alternate); cadence class: `10_to_20_days`; schedule state: `disabled` (data-gated: calibrated ARD/GCOV products not yet validated; SAR backscatter profile required; GEO-002 — no optical indices; dual-provider adapter selection pending); product exposure: `hidden`. Source ID: `nisar-ssar-beta-gcov`.
 
 ---
 
@@ -793,6 +833,37 @@ In addition to **Search archive**, every detail drawer exposes two further CTAs:
 
 - **Request data access** → `https://cidsaglobal.com/contact` (single contact form, no per-satellite parameter).
 - **Download spec sheet** → triggers a client-side PDF/CSV export of the open drawer's data (no public URL).
+
+### Scheduler source-state mapping
+
+The provider-agnostic ingestion scheduler uses the catalogue slug as the stable business key, but
+one catalogue platform may map to multiple Akasha source rows when instruments/products have
+different cadence, resolution, validation profiles, or product exposure. Every scheduler source row
+must include `catalogSlug`, `catalogPlatform`, `sourceId`, `providerAdapter`, `productFamily`,
+`instrumentMode`, `productVariant`, `analysisLevel`, `validationProfile`, and `productExposure`.
+
+| Catalogue slug | Initial Akasha source row(s) | Provider adapter | Initial scheduler/product state |
+|---|---|---|---|
+| `sentinel-2` | `sentinel-2-l2a` | `cdse` | Gated/operator-validation; product exposure disabled until CDSE validation. |
+| `sentinel-1` | `sentinel-1-grd` | `cdse` | Gated SAR; no optical indices; SAR validation profile required. |
+| `landsat-8` | `landsat-8-c2-l2` | `usgs` | Gated/operator-validation; cloud STAC+COG preferred. |
+| `landsat-9` | `landsat-9-c2-l2` | `usgs` | Gated/operator-validation; cloud STAC+COG preferred. |
+| `modis` | `modis-13q1-061` | `earthdata` | Regional context only; not field analytics. |
+| `resourcesat-2a` | `resourcesat-2a-liss3-boa`, `resourcesat-2a-liss4-mx70-l2`, `resourcesat-2a-awifs-boa` | `bhoonidhi` | LISS-3 active baseline; LISS-4 active field enhancement; AWiFS active regional/coarse product with 60% minimum usable coverage. |
+| `cartosat-3` | `cartosat-3-gated` | `vendor` / manual | Manual/VHR context placeholder; no programmatic Bhoonidhi catalog path yet. |
+| `eos-04-risat` | `eos-04-sar-mrs-l2b` | `bhoonidhi` | Gated SAR; MRS/CRS only; SAR validation profile required. |
+| `eos-06-oceansat-3` | `eos-06-ocm-lac-ndvi-8day-360m` | `bhoonidhi` | Regional precomputed NDVI context; not field analytics. |
+| `alos-2-palsar-2` | `alos2-palsar2` / `alos2-mosaic-25m` | `jaxa` | Commercial scenes blocked; free mosaic may be regional SAR/context after validation. |
+| `superview-neo-1` | `superview-neo-1` | `vendor` | Commercial blocked; paid task/order disabled by default. |
+| `planetscope` | `planetscope` | `planet` | Commercial blocked; search-only until contract/quota/readiness. |
+| `skysat` | `skysat` | `planet` | Commercial blocked; paid task/order disabled by default. |
+| `blacksky-gen-3` | `blacksky-gen-3` | `vendor` | Commercial blocked; paid task/order disabled by default. |
+| `kompsat-3a` | `kompsat-3a` | `vendor` | Commercial blocked; paid task/order disabled by default. |
+| `landsat-7` | `landsat-7-c2-l2` | `usgs` | Archive-only/on-demand; not routine scheduled. |
+| `landsat-5` | `landsat-5-c2-l2` | `usgs` | Archive-only/on-demand; not routine scheduled. |
+| `irs-1c` | `irs-1c-liss3-archive` | `bhoonidhi` | Archive-only/on-demand; validation profile required. |
+| `naip` | none for India AOIs | `usda`/cloud | Reference-only/out-of-AOI for `bangalore-60km`. |
+| `nisar` | `nisar-ssar-beta-gcov` | `bhoonidhi` / `asf` | Data-gated until calibrated ARD/GCOV products are validated. |
 
 ---
 

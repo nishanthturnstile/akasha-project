@@ -38,6 +38,45 @@ export interface AppConfig {
   defaultIndex: string;
 }
 
+export interface IrrigationType {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface TillageType {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface Crop {
+  id: number;
+  name: string;
+  seedingTypeId: number | null;
+  color: string | null;
+  maturityOptions: string[] | null;
+  hasWeatherRisk: boolean;
+  hasVariety: boolean;
+  bbchMode: string | null;
+  characteristic: string | null;
+}
+
+export interface CropVariety {
+  id: number;
+  cropId: number;
+  name: string;
+  maturityOptions: string[] | null;
+}
+
+export interface PaginatedVarieties {
+  items: CropVariety[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pages: number;
+}
+
 export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
 export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
 export type SourceAvailabilityStatus = 'active' | 'gated';
@@ -183,6 +222,10 @@ export interface ImagerySourceMonitoringSource {
   ingestionFailureCountsByKind: Record<string, number>;
   lastIngestionFailure?: MonitoringFailure | null;
   hasUnresolvedIngestionFailure: boolean;
+  /** Latest scheduler job ID for this source (Phase 9 scheduler fields). */
+  latestSchedulerJobId?: string | null;
+  latestSchedulerJobState?: string | null;
+  latestSchedulerJobUpdatedAt?: string | null;
 }
 
 export interface ImagerySourceMonitoringResponse {
@@ -195,6 +238,166 @@ export interface ImagerySourceMonitoringResponse {
   sources: ImagerySourceMonitoringSource[];
   storage: StorageUsage;
   ingestionLedger: IngestionLedgerSummary;
+}
+
+// ---------------------------------------------------------------------------
+// Ingestion scheduler monitoring — Phase 9 BFF endpoints
+// ---------------------------------------------------------------------------
+
+export interface IngestionScheduleItem {
+  sourceId: string;
+  provider?: string | null;
+  adapter?: string | null;
+  aoiId?: string | null;
+  lifecycleState?: string | null;
+  scheduleState?: string | null;
+  capabilities: string[];
+  commercialState?: string | null;
+  aoiScope?: string | null;
+  validationState?: string | null;
+  scheduleEnabled: boolean;
+  productExposure?: string | null;
+  lastRunAt?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  nextDueAt?: string | null;
+  nextWindowStart?: string | null;
+  nextWindowEnd?: string | null;
+  cadenceDays?: number | null;
+  dueReason?: string | null;
+  isDue?: boolean;
+  isOverdue?: boolean;
+}
+
+export interface IngestionScheduleResponse {
+  status: string;
+  generatedAt: string;
+  schedules: IngestionScheduleItem[];
+  lastError?: string | null;
+}
+
+export interface IngestionJobSummary {
+  jobId: string;
+  sourceId: string;
+  provider?: string | null;
+  aoiId?: string | null;
+  state: string;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  foundCount?: number | null;
+  selectedCount?: number | null;
+  downloadedCount?: number | null;
+  rejectedCount?: number | null;
+  failureKind?: string | null;
+  message?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface IngestionJobListResponse {
+  status: string;
+  generatedAt: string;
+  jobs: IngestionJobSummary[];
+  nextCursor?: string | null;
+  lastError?: string | null;
+}
+
+export interface IngestionJobDetail {
+  jobId: string;
+  sourceId: string;
+  provider?: string | null;
+  aoiId?: string | null;
+  state: string;
+  request: Record<string, unknown>;
+  providerInputSummary: Record<string, unknown>;
+  providerResponseSummary: Record<string, unknown>;
+  searchManifestHandle?: string | null;
+  downloadManifestHandle?: string | null;
+  prepareManifestHandles: string[];
+  verificationSummary: Record<string, unknown>;
+  scheduleDecision?: string | null;
+  nextDueAt?: string | null;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  foundCount?: number | null;
+  selectedCount?: number | null;
+  downloadedCount?: number | null;
+  rejectedCount?: number | null;
+  failureKind?: string | null;
+  message?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  updatedAt?: string | null;
+  validationProblems: string[];
+  rejectionReasons: string[];
+  artifactHandles: Record<string, string>;
+  ledgerRows: Record<string, unknown>[];
+}
+
+export type PipelineStageId =
+  | 'planned'
+  | 'approved_runtime'
+  | 'lock'
+  | 'search'
+  | 'select'
+  | 'download'
+  | 'prepare'
+  | 'composite'
+  | 'verify'
+  | 'upload'
+  | 'stac'
+  | 'ledger';
+
+export type PipelineStageState =
+  | 'not_reached'
+  | 'inferred'
+  | 'unavailable'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'validation_failed';
+
+export interface IngestionJobEvent {
+  timestamp: string;
+  eventType: string;
+  stage: PipelineStageId | 'running' | 'terminal' | 'unknown';
+  status:
+    | PipelineStageState
+    | 'planned'
+    | 'queued'
+    | 'blocked_by_lock'
+    | 'cancelled'
+    | 'skipped_not_due'
+    | 'skipped_gated'
+    | 'unknown';
+  message: string;
+  payload: Record<string, unknown>;
+}
+
+export interface IngestionJobEventsResponse {
+  status: string;
+  generatedAt: string;
+  jobId: string;
+  events: IngestionJobEvent[];
+  truncated: boolean;
+  scannedCount: number;
+  totalEventsScanned: number;
+  totalValidEvents: number;
+  malformedEventsSkipped?: number;
+  returnedCount?: number;
+  eventLimit?: number;
+  lastError?: string | null;
+}
+
+export interface IngestionJobFilters {
+  limit?: number;
+  cursor?: string;
+  sourceId?: string;
+  aoiId?: string;
+  state?: string;
+  startedAfter?: string;
+  startedBefore?: string;
 }
 
 export interface SceneDate {
@@ -213,6 +416,64 @@ export interface SceneDate {
   bounds?: [number, number, number, number];
   /** Short sensor badge for the chip (e.g. `S2`, `S1`). */
   sensor?: string | null;
+  /** Best-mode provenance label for the chip (e.g. `LISS-4 · 5.8 m`). */
+  provenanceLabel?: string | null;
+  /** Best-mode resolved source ID (which source this candidate came from). */
+  resolvedSourceId?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Best-observation resolver (Phase 11 / TASK-066–071)
+// ---------------------------------------------------------------------------
+
+/** A ranked cross-source observation candidate from GET /api/observations/best. */
+export interface ObservationCandidate {
+  sourceId: string;
+  /** YYYY-MM-DD */
+  acquisitionDate: string;
+  resolutionMeters: number | null;
+  analysisLevel: string | null;
+  usablePixelPercent: number | null;
+  coveragePercent: number | null;
+  cloudMaskedPercent: number | null;
+  tileAvailable: boolean;
+  isLatestUsable: boolean;
+  /** Weighted [0, 100] score; higher is better. */
+  score: number;
+  sourcePriority: number;
+  provenanceNote: string | null;
+  /** True when the source is regional/coarse (e.g. AWiFS 56 m). */
+  isCoarse: boolean;
+  supportedIndices: string[];
+  /** Human-readable source label from the source registry. */
+  label: string;
+}
+
+export interface BestObservationsResponse {
+  candidates: ObservationCandidate[];
+  query: {
+    targetDate: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    lookbackDays: number | null;
+    indexType: string | null;
+    useCase: string;
+    allowCoarse: boolean;
+    windowDays: number;
+    maxCandidates: number;
+  };
+}
+
+export interface BestObservationsParams {
+  targetDate?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  lookbackDays?: number | null;
+  indexType?: string | null;
+  useCase?: 'field' | 'regional';
+  allowCoarse?: boolean;
+  windowDays?: number;
+  maxCandidates?: number;
 }
 
 export interface DefaultLayer {
@@ -817,6 +1078,53 @@ export interface AssistantStatus {
   limitations: string[];
 }
 
+export interface VegetationCycleCreate {
+  seasonId: string;
+  year: number;
+  cropType: number;
+  cropVariety?: number | null;
+  sowingDate?: string | null;
+  harvestingDate?: string | null;
+  targetYield?: number | null;
+  actualYield?: number | null;
+  irrigationType?: number | null;
+  tillageType?: number | null;
+  maturity?: string | null;
+  fertilizer?: string | null;
+  hybrid?: string | null;
+  ndviList?: string | null;
+  notes?: string | null;
+  isCutOff?: boolean | null;
+}
+
+export interface VegetationCycleResponse {
+  id: string;
+  fieldId: string;
+  seasonId: string;
+  seasonName?: string | null;
+  year: number;
+  cropType: number;
+  cropName?: string | null;
+  cropVariety?: number | null;
+  varietyName?: string | null;
+  sowingDate?: string | null;
+  harvestingDate?: string | null;
+  targetYield?: number | null;
+  actualYield?: number | null;
+  irrigationType?: number | null;
+  irrigationTypeName?: string | null;
+  tillageType?: number | null;
+  tillageTypeName?: string | null;
+  maturity?: string | null;
+  fertilizer?: string | null;
+  hybrid?: string | null;
+  ndviList?: string | null;
+  notes?: string | null;
+  isCutOff?: boolean | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface FieldIdEntry {
   id: string;
   name: string;
@@ -859,6 +1167,7 @@ export interface Field {
   geometry: PlotGeometry;
   groupId: string | null;
   seasonIds: string[];
+  vegetationData: VegetationCycleResponse[];
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -869,6 +1178,7 @@ export interface FieldCreatePayload {
   areaHa?: number | null;
   groupId?: string | null;
   seasonIds?: string[];
+  vegetationData?: VegetationCycleCreate[];
 }
 
 export interface FieldUpdatePayload {
@@ -877,6 +1187,7 @@ export interface FieldUpdatePayload {
   areaHa?: number | null;
   groupId?: string | null;
   seasonIds?: string[] | null;
+  vegetationData?: VegetationCycleCreate[] | null;
 }
 
 /** Standard BFF error envelope: { error: { code, message, details } }. */

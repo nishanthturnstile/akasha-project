@@ -50,6 +50,7 @@ class FakeSeasonStore:
         area_ha: float | None = None,
         group_id: str | None = None,
         season_ids: list[str] | None = None,
+        vegetation_data: list | None = None,
     ) -> dict:
         self._seq += 1
         fid = str(uuid.uuid4())
@@ -74,6 +75,7 @@ class FakeSeasonStore:
                 }
                 for sid, v in season_data.items()
             ],
+            "vegetationData": [],
             "createdAt": self._now(),
             "updatedAt": self._now(),
             "_seq": self._seq,
@@ -119,6 +121,8 @@ class FakeSeasonStore:
                 }
                 for sid, v in season_data.items()
             ]
+        if "vegetationData" in kwargs:
+            row["vegetationData"] = kwargs["vegetationData"] or []
         row["updatedAt"] = self._now()
         return {k: v for k, v in row.items() if not k.startswith("_")}
 
@@ -129,6 +133,9 @@ class FakeSeasonStore:
         del self.rows[field_id]
         return True
 
+    def list_vegetation_cycles(self, field_id: str, user_id: str, season_id: str) -> list:
+        return []
+
 
 @pytest.fixture
 def store(monkeypatch):
@@ -138,6 +145,7 @@ def store(monkeypatch):
     monkeypatch.setattr(fields_repo, "get_field", s.get_field)
     monkeypatch.setattr(fields_repo, "update_field", s.update_field)
     monkeypatch.setattr(fields_repo, "delete_field", s.delete_field)
+    monkeypatch.setattr(fields_repo, "list_vegetation_cycles", s.list_vegetation_cycles)
     return s
 
 

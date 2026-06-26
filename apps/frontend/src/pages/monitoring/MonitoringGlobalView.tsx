@@ -8,6 +8,7 @@ import {
   Satellite,
   XCircle,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useImagerySourceMonitoring } from '@/lib/queries';
 import type {
   ImagerySourceMonitoringSource,
@@ -70,6 +71,29 @@ function StatusPill({ source }: { source: ImagerySourceMonitoringSource }) {
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
       { label }
     </span>
+  );
+}
+
+function LatestJobPill({ source }: { source: ImagerySourceMonitoringSource }) {
+  const jobId = source.latestSchedulerJobId;
+  if (!jobId) return <span className="text-xs text-muted-foreground">—</span>;
+  const state = source.latestSchedulerJobState ?? 'unknown';
+  const isRunning = state === 'running' || state === 'queued';
+  const isFailed = state === 'failed' || state === 'validation_failed' || state === 'cancelled';
+  const pillClass = isFailed
+    ? 'border-red-500/50 bg-red-500/10 text-red-200 hover:bg-red-500/20'
+    : isRunning
+      ? 'border-amber-500/50 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+      : 'border-border/60 bg-card/80 text-muted-foreground hover:bg-card';
+  return (
+    <Link
+      to={ `/admin/ingestion/jobs/${encodeURIComponent(jobId)}` }
+      className={ `inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors ${pillClass}` }
+      title={ `Job ${jobId} · ${state}` }
+    >
+      <Clock3 className="h-3 w-3" aria-hidden="true" />
+      { state }
+    </Link>
   );
 }
 
@@ -155,6 +179,7 @@ function SourceRow({ source }: { source: ImagerySourceMonitoringSource }) {
         <div>{ source.tileAvailableDateCount } / { source.dateCount }</div>
         <div className="text-xs text-muted-foreground">{ source.refreshPolicy ?? 'manual' }</div>
       </td>
+      <td className="py-3 pr-4"><LatestJobPill source={ source } /></td>
       <td className="py-3 text-sm text-muted-foreground">
         { reasons.length ? reasons.slice(0, 3).join(' | ') : 'No active warning' }
       </td>
@@ -273,7 +298,7 @@ export default function MonitoringGlobalView() {
               <h2 className="text-lg font-semibold">Source refresh status</h2>
               <p className="text-sm text-muted-foreground">{ sources.length } registered source(s)</p>
             </div>
-            <table className="mt-3 min-w-[980px] w-full text-left text-sm">
+            <table className="mt-3 min-w-280 w-full text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-4">Source</th>
@@ -283,6 +308,7 @@ export default function MonitoringGlobalView() {
                   <th className="py-2 pr-4">Search heartbeat</th>
                   <th className="py-2 pr-4">Coverage</th>
                   <th className="py-2 pr-4">Tiles</th>
+                  <th className="py-2 pr-4">Latest job</th>
                   <th className="py-2">Reason</th>
                 </tr>
               </thead>
@@ -300,7 +326,7 @@ export default function MonitoringGlobalView() {
                   { formatNumber(zeroByteCount) } zero-byte object(s)
                 </p>
               </div>
-              <table className="mt-3 min-w-[520px] w-full text-left text-sm">
+              <table className="mt-3 min-w-130 w-full text-left text-sm">
                 <thead className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                   <tr>
                     <th className="py-2 pr-4">Prefix</th>

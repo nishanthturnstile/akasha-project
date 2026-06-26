@@ -1,7 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Plus, Sprout, Scissors, Timer, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -12,22 +13,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogRoot,
+  AlertDialogTitle,
+  AlertDialogFooter,
+} from '@/components/ui/alert-dialog';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
-import { useConfig, useSeasons } from '@/lib/queries';
-import { useVegetationCycles } from '@/hooks/useVegetationCycles';
+import { useConfig, useCrops, useFieldGroups, useFields, useIrrigationTypes, useSeasons, useTillageTypes, useVarieties, queryKeys } from '@/lib/queries';
+import { useVegetationCycles, type VegetationCycleForm } from '@/hooks/useVegetationCycles';
 import { resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
 import type maplibregl from 'maplibre-gl';
 import type { TerraDraw } from 'terra-draw';
-import type { Field, PlotGeometry } from '@/types/api';
+import type { Crop, Field, IrrigationType, PlotGeometry, TillageType, VegetationCycleCreate } from '@/types/api';
 
 interface Props {
   field: Field;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry) => void;
+  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null) => void;
   onDelete?: (fieldId: string) => void;
+  saving?: boolean;
 }
 
 function polygonBounds(geometry: Field['geometry']): [[number, number], [number, number]] | null {
@@ -72,39 +83,128 @@ function isPolygonGeometry(geometry: PlotGeometry | undefined): geometry is Plot
   return geometry?.type === 'Polygon';
 }
 
-const CROP_OPTIONS = [
-  'Wheat', 'Rice', 'Corn', 'Soybean', 'Barley', 'Cotton', 'Sugarcane',
-  'Potato', 'Tomato', 'Sunflower', 'Mustard', 'Groundnut', 'Pulses', 'Other',
-];
-
-const IRRIGATION_OPTIONS = [
-  'Drip', 'Sprinkler', 'Flood', 'Furrow', 'Center pivot', 'Rainfed', 'Other',
-];
-
-const TILLAGE_OPTIONS = [
-  'Conventional', 'Reduced', 'No-till', 'Strip-till', 'Conservation', 'Other',
-];
-
 export default function EditFieldDialog({
   field,
   open,
   onOpenChange,
   onSave,
   onDelete,
+  saving = false,
 }: Props) {
   const [name, setName] = useState(field.name);
+  const [groupId, setGroupId] = useState(field.groupId ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
 
   const drawRef = useRef<TerraDraw | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const initialVegCyclesRef = useRef<string>('');
 
   const seasonsQ = useSeasons();
+  const cropsQ = useCrops();
+  const fieldGroupsQ = useFieldGroups();
+  const irrigationTypesQ = useIrrigationTypes();
+  const tillageTypesQ = useTillageTypes();
   const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set());
-  const { cycles: vegetationCycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } = useVegetationCycles(field.id);
+  const { cycles: vegetationCycles, setFieldCycles, addCycle, removeCycle, updateCycle, clearSeasonCycles } = useVegetationCycles(field.id);
 
+  const queryClient = useQueryClient();
   const configQ = useConfig();
+  const fieldsQ = useFields();
+
+  // Seed store from field.vegetationData when dialog opens
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!open) { seededRef.current = false; return; }
+    const data = field.vegetationData;
+    if (!data || data.length === 0) return;
+    // Wait for all reference data to load so names resolve properly
+    if (!cropsQ.data || !irrigationTypesQ.data || !tillageTypesQ.data) return;
+    if (seededRef.current) return;
+    seededRef.current = true;
+    const bySeason: Record<string, VegetationCycleForm[]> = {};
+    for (const vc of data) {
+      const sid = vc.seasonId;
+      if (!bySeason[sid]) bySeason[sid] = [];
+      const crop = cropsQ.data.find((c) => c.id === vc.cropType);
+      const varietyName = vc.varietyName ?? '';
+      const irr = irrigationTypesQ.data?.find((t) => t.id === vc.irrigationType);
+      const till = tillageTypesQ.data?.find((t) => t.id === vc.tillageType);
+      bySeason[sid].push({
+        id: vc.id,
+        cropName: crop?.name ?? String(vc.cropType),
+        variety: varietyName,
+        maturity: vc.maturity ?? '',
+        year: vc.year ?? null,
+        plantingDate: vc.sowingDate ?? `${new Date().getFullYear()}-01-01`,
+        irrigationType: irr?.name ?? '',
+        targetYield: vc.targetYield ?? null,
+        harvestingDate: vc.harvestingDate ?? '',
+        tillageType: till?.name ?? '',
+        actualYield: vc.actualYield ?? null,
+        isCutOff: vc.isCutOff ?? false,
+        notes: vc.notes ?? '',
+      });
+    }
+    setFieldCycles(bySeason);
+  }, [open, field.vegetationData, cropsQ.data, irrigationTypesQ.data, tillageTypesQ.data, setFieldCycles]);
+
+  // Snapshot initial veg cycles for dirty checking
+  const vegPayload = useMemo(() => {
+    const payload: VegetationCycleCreate[] = [];
+    for (const [seasonId, cycles] of Object.entries(vegetationCycles)) {
+      for (const cycle of cycles) {
+        const crop = cropsQ.data?.find((c) => c.name === cycle.cropName);
+        let varietyId: number | null = null;
+        if (cycle.variety && crop) {
+          const cached = queryClient.getQueryData<{ items: Array<{ id: number; name: string }> }>(queryKeys.varieties(crop.id));
+          if (cached) {
+            const v = cached.items.find((vi) => vi.name === cycle.variety);
+            if (v) varietyId = v.id;
+          }
+        }
+        const irr = irrigationTypesQ.data?.find((t) => t.name === cycle.irrigationType);
+        const till = tillageTypesQ.data?.find((t) => t.name === cycle.tillageType);
+        payload.push({
+          seasonId,
+          year: cycle.year ?? new Date().getFullYear(),
+          cropType: crop?.id ?? 0,
+          cropVariety: varietyId,
+          sowingDate: cycle.plantingDate || null,
+          harvestingDate: cycle.harvestingDate || null,
+          targetYield: cycle.targetYield,
+          actualYield: cycle.actualYield,
+          irrigationType: irr?.id ?? null,
+          tillageType: till?.id ?? null,
+          maturity: cycle.maturity || null,
+          notes: cycle.notes || null,
+          isCutOff: cycle.isCutOff || null,
+        });
+      }
+    }
+    return payload;
+  }, [vegetationCycles, cropsQ.data, irrigationTypesQ.data, tillageTypesQ.data, queryClient]);
+
+  // Save first payload as the "clean" snapshot for dirty detection
+  useEffect(() => {
+    if (open && seededRef.current && !initialVegCyclesRef.current) {
+      initialVegCyclesRef.current = JSON.stringify(vegPayload);
+    }
+    if (!open) {
+      initialVegCyclesRef.current = '';
+    }
+  }, [open, vegPayload, seededRef]);
+
+  const dirty = useMemo(() => {
+    if (!open) return false;
+    const nameChanged = name !== field.name;
+    const groupChanged = (groupId || null) !== (field.groupId || null);
+    const geomChanged = editedGeometry !== null;
+    const vegChanged = initialVegCyclesRef.current && JSON.stringify(vegPayload) !== initialVegCyclesRef.current;
+    return nameChanged || groupChanged || geomChanged || (vegChanged ?? false);
+  }, [open, name, field.name, groupId, field.groupId, editedGeometry, vegPayload]);
 
   const basemapResolution = useMemo(() => {
     if (!configQ.data) return null;
@@ -263,22 +363,37 @@ export default function EditFieldDialog({
       setError('Field name is required');
       return;
     }
+    const trimmedName = name.trim();
+    const duplicateName = (fieldsQ.data ?? []).find(
+      (f) => f.name.toLowerCase() === trimmedName.toLowerCase() && f.id !== field.id,
+    );
+    if (duplicateName) {
+      setError(`A field named "${trimmedName}" already exists.`);
+      return;
+    }
     setError(null);
+
     onSave?.(
       field.id,
-      name.trim(),
+      trimmedName,
       geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
+      vegPayload.length > 0 ? vegPayload : undefined,
+      groupId || null,
     );
-    if (!geometryChanged && !editedGeometry) {
-      // Name-only save - just close
-    }
-    onOpenChange(false);
   };
 
   const handleDelete = () => {
     onDelete?.(field.id);
     onOpenChange(false);
   };
+
+  const handleCancel = useCallback(() => {
+    if (dirty) {
+      setConfirmClose(true);
+    } else {
+      onOpenChange(false);
+    }
+  }, [dirty, onOpenChange]);
 
   return (
     <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
@@ -288,28 +403,26 @@ export default function EditFieldDialog({
           aria-label="Edit field"
           onInteractOutside={ (e) => e.preventDefault() }
           onEscapeKeyDown={ (e) => e.preventDefault() }
-          className="glass fixed left-1/2 top-[8vh] z-popover w-[min(56rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
+          className="glass fixed left-1/2 top-[8vh] z-popover w-[min(72rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
         >
           <VisuallyHidden>
             <Dialog.Title>Edit field</Dialog.Title>
             <Dialog.Description>Edit field name and adjust its boundary on the map.</Dialog.Description>
           </VisuallyHidden>
 
-          <div className="flex items-center justify-between border-b border-border/60 px-6 py-4">
+          <div className="flex items-center justify-between border-b-2 border-border/60 px-6 py-4">
             <h3 className="text-lg font-display font-semibold">Edit field</h3>
-            <Dialog.Close asChild>
-              <button aria-label="Close" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/40">
-                <X className="size-5" />
-              </button>
-            </Dialog.Close>
+            <button aria-label="Close" onClick={handleCancel} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/40">
+              <X className="size-5" />
+            </button>
           </div>
 
           <div className="p-6 space-y-6">
             <div className="grid grid-cols-2 gap-6">
               {/* Left column: mini-map with polygon edit */ }
-              <div>
+              <div className="min-h-[200px]">
                 { basemapResolution ? (
-                  <div className="relative h-80 w-full rounded-xl overflow-hidden border border-border">
+                  <div className="relative h-full min-h-[200px] w-full rounded-xl overflow-hidden border-2 border-border/60">
                     <MapLayerManager
                       basemap={ basemapResolution }
                       center={ center }
@@ -336,7 +449,7 @@ export default function EditFieldDialog({
                     ) }
                   </div>
                 ) : (
-                  <div className="flex h-80 items-center justify-center rounded-xl border border-border bg-muted/30 text-sm text-muted-foreground">
+                  <div className="flex min-h-[200px] items-center justify-center rounded-xl border-2 border-border/60 bg-muted/30 text-sm text-muted-foreground">
                     Loading map…
                   </div>
                 ) }
@@ -344,16 +457,35 @@ export default function EditFieldDialog({
 
               {/* Right column: field details */ }
               <div className="space-y-5">
-                <div className="grid grid-cols-1 gap-2">
-                  <label className="text-sm font-medium text-foreground">Field name</label>
-                  <input
-                    className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={ name }
-                    onChange={ (e) => setName(e.target.value) }
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">Field name</label>
+                    <input
+                      className="w-full rounded-lg border-2 border-border/60 bg-background px-4 py-2 text-sm h-9 focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={ name }
+                      onChange={ (e) => setName(e.target.value) }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">Group name</label>
+                    <Select
+                      value={ groupId }
+                      onValueChange={ (v) => setGroupId(v === '__none__' ? '' : v) }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select group" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">No group</SelectItem>
+                        { (fieldGroupsQ.data ?? []).map((g) => (
+                          <SelectItem key={ g.id } value={ g.id }>{ g.name }</SelectItem>
+                        )) }
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                <div className="rounded-lg border border-border/60 bg-muted/10 px-4 py-3">
+                <div className="rounded-lg border-2 border-border/60 bg-muted/10 px-4 py-3">
                   <span className="text-sm text-muted-foreground">Area: </span>
                   <span className="text-sm font-semibold text-foreground">
                     { currentArea != null ? `${currentArea.toFixed(2)} ha` : '—' }
@@ -361,8 +493,8 @@ export default function EditFieldDialog({
                 </div>
 
                 { seasonsQ.data && (
-                  <div className="border border-border rounded-xl">
-                    <div className="px-4 py-3 border-b border-border/60">
+                  <div className="border-2 border-border/60 rounded-xl">
+                    <div className="px-4 py-3 border-b-2 border-border/60">
                       <h4 className="text-sm font-semibold text-foreground">Vegetation cycles</h4>
                     </div>
                     <div className="max-h-75 overflow-y-auto p-4 space-y-3">
@@ -373,10 +505,12 @@ export default function EditFieldDialog({
                           const isExpanded = expandedSeasons.has(season.id);
                           const cycles = vegetationCycles[season.id] ?? [];
                           return (
-                            <div key={ season.id } className="border border-border/60 rounded-lg overflow-hidden">
+                            <div key={ season.id } className="border-2 border-border/60 rounded-lg overflow-hidden">
                               <div className={ cn(
-                                'flex w-full items-center justify-between px-4 py-3 text-sm font-medium bg-gray-200/70 text-gray-800',
-                                isExpanded ? 'bg-gray-300/70 text-gray-900' : 'hover:bg-gray-100',
+                                'flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-gray-800',
+                                isExpanded
+                                  ? 'bg-gray-300/70 text-gray-900 border-l-2 border-primary'
+                                  : 'bg-gray-200/70 hover:bg-gray-100',
                               ) }>
                                 <button
                                   type="button"
@@ -398,126 +532,26 @@ export default function EditFieldDialog({
                                 </button>
                               </div>
                               { isExpanded && (
-                                <div className="border-t border-border/60 p-4 space-y-4">
+                                <div className="border-t-2 border-border/60 p-4 space-y-4">
                                   { cycles.length === 0 && (
                                     <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
                                   ) }
                                   { cycles.map((cycle) => (
-                                    <div key={ cycle.id } className="relative border border-border/50 rounded-lg p-4 space-y-4">
-                                      <button
-                                        type="button"
-                                        onClick={ () => removeCycle(season.id, cycle.id) }
-                                        className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                      >
-                                        <Trash2 className="size-4" />
-                                      </button>
-                                      <div>
-                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Crop name</label>
-                                        <Select
-                                          value={ cycle.cropName }
-                                          onValueChange={ (v) => updateCycle(season.id, cycle.id, 'cropName', v) }
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="Select crop" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            { CROP_OPTIONS.map((crop) => (
-                                              <SelectItem key={ crop } value={ crop }>{ crop }</SelectItem>
-                                            )) }
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-
-                                      <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-4">
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Planting date</label>
-                                            <DatePicker
-                                              value={ cycle.plantingDate }
-                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'plantingDate', v) }
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Irrigation type</label>
-                                            <Select
-                                              value={ cycle.irrigationType }
-                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'irrigationType', v) }
-                                            >
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                { IRRIGATION_OPTIONS.map((opt) => (
-                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
-                                                )) }
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target yield (t/ha)</label>
-                                            <input
-                                              type="number"
-                                              min={ 0 }
-                                              step={ 0.01 }
-                                              value={ cycle.targetYield ?? '' }
-                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null) }
-                                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Harvesting date</label>
-                                            <DatePicker
-                                              value={ cycle.harvestingDate }
-                                              onChange={ (v) => updateCycle(season.id, cycle.id, 'harvestingDate', v) }
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Tillage type</label>
-                                            <Select
-                                              value={ cycle.tillageType }
-                                              onValueChange={ (v) => updateCycle(season.id, cycle.id, 'tillageType', v) }
-                                            >
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                { TILLAGE_OPTIONS.map((opt) => (
-                                                  <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
-                                                )) }
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <div>
-                                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Actual yield (t/ha)</label>
-                                            <input
-                                              type="number"
-                                              min={ 0 }
-                                              step={ 0.01 }
-                                              value={ cycle.actualYield ?? '' }
-                                              onChange={ (e) => updateCycle(season.id, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null) }
-                                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                                            />
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <div>
-                                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Notes</label>
-                                        <input
-                                          value={ cycle.notes }
-                                          onChange={ (e) => updateCycle(season.id, cycle.id, 'notes', e.target.value) }
-                                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-                                        />
-                                      </div>
-                                    </div>
+                                    <CycleCard
+                                      key={ `${cycle.id}-${cycle.cropName}` }
+                                      cycle={ cycle }
+                                      seasonId={ season.id }
+                                      cropsData={ cropsQ.data }
+                                      irrigationTypesData={ irrigationTypesQ.data }
+                                      tillageTypesData={ tillageTypesQ.data }
+                                      onUpdateCycle={ updateCycle }
+                                      onRemoveCycle={ removeCycle }
+                                    />
                                   )) }
                                   <button
                                     type="button"
                                     onClick={ () => addCycle(season.id) }
-                                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                                   >
                                     <Plus className="size-4" strokeWidth={ 1.75 } />
                                     Add vegetation cycle
@@ -535,31 +569,373 @@ export default function EditFieldDialog({
 
             { error && <p className="text-sm text-destructive">{ error }</p> }
 
-            <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
-              <div>
+            <div className="rounded-lg border-2 border-border/60 bg-muted/10 p-4">
+              <div className="flex items-center justify-between">
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="lg"
                   onClick={ handleDelete }
                   className="text-destructive border-destructive/40 hover:bg-destructive/10"
                 >
+                  <Trash2 className="size-4 mr-1.5" />
                   Delete field
                 </Button>
-              </div>
-              <div className="flex items-center gap-3">
-                <Dialog.Close asChild>
-                  <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="lg" className="min-w-[120px]" onClick={handleCancel}>
                     Cancel
-                  </button>
-                </Dialog.Close>
-                <Button variant="primary" size="md" onClick={ handleSave }>
-                  Save
-                </Button>
+                  </Button>
+                  <Button variant="primary" size="lg" onClick={ handleSave } disabled={saving} className="min-w-[120px]">
+                    { saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null }
+                    { saving ? 'Saving…' : 'Save' }
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+
+      <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+          <AlertDialogDescription>
+            You have unsaved changes. Are you sure you want to discard them?
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmClose(false)}>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </Dialog.Root>
+  );
+}
+
+function sowingDateLabel(seedingTypeId: number | null | undefined, isCutOff: boolean): string {
+  switch (seedingTypeId) {
+    case 1: return 'Sowing date';
+    case 2: return 'Planting date';
+    case 3: return isCutOff ? 'Cut-off (start) date' : 'Planting date';
+    case 4: return 'Bud swelling start date';
+    case 5: return 'Bud sprouting start date';
+    default: return 'Sowing date';
+  }
+}
+
+function CycleCard({
+  cycle,
+  seasonId,
+  cropsData,
+  irrigationTypesData,
+  tillageTypesData,
+  onUpdateCycle,
+  onRemoveCycle,
+}: {
+  cycle: VegetationCycleForm;
+  seasonId: string;
+  cropsData: Crop[] | undefined;
+  irrigationTypesData: IrrigationType[] | undefined;
+  tillageTypesData: TillageType[] | undefined;
+  onUpdateCycle: (seasonId: string, cycleId: string, key: keyof VegetationCycleForm, value: string | number | boolean | null) => void;
+  onRemoveCycle: (seasonId: string, cycleId: string) => void;
+}) {
+  const selectedCrop = cropsData?.find((c) => c.name === cycle.cropName) ?? null;
+  const varietiesQ = useVarieties(selectedCrop?.id);
+  const allVarieties = useMemo(() => varietiesQ.data?.items ?? [], [varietiesQ.data?.items]);
+  const PAGE_SIZE = 20;
+  const [varietyCount, setVarietyCount] = useState(PAGE_SIZE);
+  const [varietyOpen, setVarietyOpen] = useState(false);
+  const [varietySearch, setVarietySearch] = useState('');
+  const varietyRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const filteredVarieties = varietySearch
+    ? allVarieties.filter((v) => v.name.toLowerCase().includes(varietySearch.toLowerCase()))
+    : allVarieties;
+  const visibleVarieties = filteredVarieties.slice(0, varietyCount);
+  const hasMore = filteredVarieties.length > varietyCount;
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (!hasMore) return;
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) {
+        setVarietyCount((v) => Math.min(v + PAGE_SIZE, filteredVarieties.length));
+      }
+    };
+    el.addEventListener('scroll', onScroll);
+    // Also check on mount (in case content fits without scrolling)
+    requestAnimationFrame(() => {
+      if (el.scrollHeight <= el.clientHeight && hasMore) {
+        setVarietyCount(filteredVarieties.length);
+      }
+    });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [hasMore, filteredVarieties.length, varietySearch, varietyOpen]);
+
+  useEffect(() => {
+    if (varietyOpen) searchRef.current?.focus();
+  }, [varietyOpen]);
+
+  useEffect(() => {
+    if (!varietyOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (varietyRef.current && !varietyRef.current.contains(e.target as Node)) {
+        setVarietyOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [varietyOpen]);
+
+  const varietyDisabled = !selectedCrop || !selectedCrop.hasVariety;
+
+  const maturityOpts = useMemo(() => {
+    const opts: string[] = [];
+    if (cycle.variety && selectedCrop) {
+      const v = allVarieties.find((v) => v.name === cycle.variety);
+      if (v?.maturityOptions) opts.push(...v.maturityOptions);
+    }
+    if (opts.length === 0 && selectedCrop?.maturityOptions) {
+      opts.push(...selectedCrop.maturityOptions);
+    }
+    return opts;
+  }, [cycle.variety, selectedCrop, allVarieties]);
+  const maturityDisabled = maturityOpts.length === 0;
+  const maturitySingle = maturityOpts.length === 1;
+  const dateLabel = sowingDateLabel(selectedCrop?.seedingTypeId, cycle.isCutOff);
+  const isPlantingCutting = selectedCrop?.seedingTypeId === 3;
+
+  useEffect(() => {
+    if (maturitySingle && cycle.maturity !== maturityOpts[0]) {
+      onUpdateCycle(seasonId, cycle.id, 'maturity', maturityOpts[0]);
+    }
+  }, [maturitySingle, maturityOpts, cycle.maturity, seasonId, cycle.id, onUpdateCycle]);
+
+  return (
+    <div className="relative border-2 border-border/60 rounded-lg p-4 space-y-4">
+      <button
+        type="button"
+        onClick={ () => onRemoveCycle(seasonId, cycle.id) }
+        className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+      >
+        <Trash2 className="size-4" />
+      </button>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Crop name</label>
+        <Select
+          value={ cycle.cropName }
+          onValueChange={ (v) => {
+            onUpdateCycle(seasonId, cycle.id, 'cropName', v);
+            onUpdateCycle(seasonId, cycle.id, 'variety', '');
+            onUpdateCycle(seasonId, cycle.id, 'maturity', '');
+          } }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select crop" />
+            { (() => {
+              if (!cycle.cropName || !cropsData) return null;
+              const sel = cropsData.find((c) => c.name === cycle.cropName);
+              if (!sel) return null;
+              const badges: React.ReactNode[] = [];
+              if (sel.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
+              if (sel.maturityOptions && sel.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
+              if (sel.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
+              return badges.length > 0 ? (
+                <span className="ml-auto flex items-center gap-1">
+                  { badges }
+                </span>
+              ) : null;
+            })() }
+          </SelectTrigger>
+          <SelectContent>
+            { (cropsData ?? []).map((crop) => {
+              const badges: React.ReactNode[] = [];
+              if (crop.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
+              if (crop.maturityOptions && crop.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
+              if (crop.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
+              return (
+                <SelectItem key={ crop.id } value={ crop.name }>
+                  <span className="flex items-center gap-2">
+                    <span>{ crop.name }</span>
+                    { badges.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        { badges }
+                      </span>
+                    ) }
+                  </span>
+                </SelectItem>
+              );
+            }) }
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <div ref={ varietyRef } className="relative">
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Variety</label>
+          <button
+            type="button"
+            disabled={ varietyDisabled }
+            onClick={ () => { setVarietyOpen(!varietyOpen); setVarietySearch(''); setVarietyCount(PAGE_SIZE); } }
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-left focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            { cycle.variety || <span className="text-muted-foreground">{ varietyDisabled ? 'Not available' : 'Search variety…' }</span> }
+          </button>
+          { varietyOpen && !varietyDisabled && (
+            <div className="absolute z-[999] mt-1 w-full rounded-md border border-border bg-popover text-popover-foreground shadow-e2">
+              <div className="p-1">
+                <input
+                  ref={ searchRef }
+                  type="text"
+                  value={ varietySearch }
+                  onChange={ (e) => { setVarietySearch(e.target.value); setVarietyCount(PAGE_SIZE); } }
+                  placeholder="Type to search…"
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div ref={ scrollRef } className="max-h-48 overflow-y-auto p-1">
+                { visibleVarieties.length === 0 && (
+                  <div className="px-2 py-3 text-xs text-muted-foreground text-center">No varieties found</div>
+                ) }
+                { visibleVarieties.map((v) => (
+                  <div
+                    key={ v.id }
+                    role="option"
+                    aria-selected={ cycle.variety === v.name }
+                    onClick={ () => { onUpdateCycle(seasonId, cycle.id, 'variety', v.name); setVarietyOpen(false); } }
+                    className={ cn(
+                      'flex cursor-default items-center rounded-sm px-2 py-1.5 text-sm',
+                      cycle.variety === v.name ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
+                    ) }
+                  >
+                    { v.name }
+                  </div>
+                )) }
+              </div>
+            </div>
+          ) }
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Maturity</label>
+          <Select
+            value={ cycle.maturity }
+            onValueChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'maturity', v) }
+            disabled={ maturityDisabled || maturitySingle }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={ maturityDisabled ? 'Not available' : 'Select maturity' } />
+            </SelectTrigger>
+            <SelectContent>
+              { maturityOpts.map((opt) => (
+                <SelectItem key={ opt } value={ opt }>{ opt }</SelectItem>
+              )) }
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{ dateLabel }</label>
+          <DatePicker
+            value={ cycle.plantingDate }
+            onChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'plantingDate', v) }
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Harvesting date</label>
+          <DatePicker
+            value={ cycle.harvestingDate }
+            onChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'harvestingDate', v) }
+          />
+        </div>
+
+        { isPlantingCutting ? (
+          <div className="col-span-2 -mt-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={ cycle.isCutOff }
+                onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'isCutOff', e.target.checked) }
+                className="size-4 rounded border-border accent-primary"
+              />
+              <span className="text-xs text-muted-foreground">Cut-off (start) date</span>
+            </label>
+          </div>
+        ) : (
+          <div className="col-span-2 h-5" />
+        ) }
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Irrigation type</label>
+          <Select
+            value={ cycle.irrigationType }
+            onValueChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'irrigationType', v) }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              { (irrigationTypesData ?? []).map((opt) => (
+                <SelectItem key={ opt.id } value={ opt.name }>{ opt.name }</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Tillage type</label>
+          <Select
+            value={ cycle.tillageType }
+            onValueChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'tillageType', v) }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              { (tillageTypesData ?? []).map((opt) => (
+                <SelectItem key={ opt.id } value={ opt.name }>{ opt.name }</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target yield (t/ha)</label>
+          <input
+            type="number"
+            min={ 0 }
+            step={ 0.01 }
+            value={ cycle.targetYield ?? '' }
+            onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'targetYield', e.target.value ? Number(e.target.value) : null) }
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Actual yield (t/ha)</label>
+          <input
+            type="number"
+            min={ 0 }
+            step={ 0.01 }
+            value={ cycle.actualYield ?? '' }
+            onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'actualYield', e.target.value ? Number(e.target.value) : null) }
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Notes</label>
+        <input
+          value={ cycle.notes }
+          onChange={ (e) => onUpdateCycle(seasonId, cycle.id, 'notes', e.target.value) }
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+    </div>
   );
 }

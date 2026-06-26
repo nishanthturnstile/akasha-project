@@ -4,8 +4,9 @@ import {
   CalendarRange,
   ChevronDown,
   ChevronsLeft,
-  ChevronsRight,
+  Clock,
   LogOut,
+  Menu,
   Plus,
   Satellite,
   UserCircle2,
@@ -33,11 +34,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
 import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
+import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
 import { queryClient } from '@/lib/queryClient';
 import { useAccountMe, useLogout, useSeasons, useDeleteSeason, useUpdateSeason, useFields } from '@/lib/queries';
-import { MAIN_MONITORING_ROUTE, productNavigation } from '@/routes/productNavigation';
+import {
+  MAIN_MONITORING_ROUTE,
+  productNavigation,
+  type ProductNavGroup,
+  type ProductNavItem,
+} from '@/routes/productNavigation';
 
 function formatDate(isoDate: string): string {
   if (!isoDate) return '—';
@@ -58,8 +65,26 @@ function slugFor(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function groupLabelForPath(pathname: string): string | null {
-  for (const group of productNavigation) {
+function shouldMatchNavItemExactly(path: string): boolean {
+  return path === '/admin/ingestion';
+}
+
+function isNavItemVisibleForRole(item: ProductNavItem, role?: string): boolean {
+  if (!item.requiredRoles || item.requiredRoles.length === 0) return true;
+  return Boolean(role && item.requiredRoles.includes(role));
+}
+
+function filterNavigationForRole(groups: ProductNavGroup[], role?: string): ProductNavGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => isNavItemVisibleForRole(item, role)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+function groupLabelForPath(pathname: string, groups: ProductNavGroup[]): string | null {
+  for (const group of groups) {
     const matches = group.items.some(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`),
     );
@@ -85,12 +110,18 @@ function loadRailCollapsed(): boolean {
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isAdminIngestionRoute = location.pathname.startsWith('/admin/ingestion');
   const view = useMapView();
   const account = useAccountMe();
   const logout = useLogout();
+  const currentRole = account.data?.currentTeam?.role;
+  const visibleNavigation = useMemo(
+    () => filterNavigationForRole(productNavigation, currentRole),
+    [currentRole],
+  );
   const activeGroupLabel = useMemo(
-    () => groupLabelForPath(location.pathname),
-    [location.pathname],
+    () => groupLabelForPath(location.pathname, visibleNavigation),
+    [location.pathname, visibleNavigation],
   );
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(activeGroupLabel ? [activeGroupLabel] : []),
@@ -100,8 +131,11 @@ export function AppShell() {
   const [seasonSheetOpen, setSeasonSheetOpen] = useState(false);
   const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
-  const [globalViewOpen, setGlobalViewOpen] = useState(!location.pathname.includes('/field/'));
+  const [globalViewOpen, setGlobalViewOpen] = useState(
+    !isAdminIngestionRoute && !location.pathname.includes('/field/'),
+  );
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
+  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
   const seasonsQ = useSeasons();
   const deleteSeason = useDeleteSeason();
@@ -127,9 +161,60 @@ export function AppShell() {
     );
   }, [seasonsQ.data]);
 
+  const activeCount = useMemo(
+    () => sortedSeasons.filter((s) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const start = s.startDate ? new Date(`${s.startDate}T00:00:00`) : null;
+      const end = s.endDate ? new Date(`${s.endDate}T00:00:00`) : null;
+      if (!start && !end) return true;
+      if (start && start <= today && (!end || end >= today)) return true;
+      if (!start && end && end >= today) return true;
+      return false;
+    }).length,
+    [sortedSeasons],
+  );
+  const plannedCount = useMemo(
+    () => sortedSeasons.filter((s) => {
+      if (!s.startDate) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return new Date(`${s.startDate}T00:00:00`) > today;
+    }).length,
+    [sortedSeasons],
+  );
+  const endedCount = useMemo(
+    () => sortedSeasons.filter((s) => {
+      if (!s.endDate) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return new Date(`${s.endDate}T00:00:00`) < today;
+    }).length,
+    [sortedSeasons],
+  );
+
   const filteredSeasons = useMemo(() => {
-    if (seasonTab === 'active') return sortedSeasons;
-    return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return sortedSeasons.filter((s) => {
+      const start = s.startDate ? new Date(`${s.startDate}T00:00:00`) : null;
+      const end = s.endDate ? new Date(`${s.endDate}T00:00:00`) : null;
+      if (seasonTab === 'active') {
+        if (!start && !end) return true;
+        if (start && start <= today && (!end || end >= today)) return true;
+        if (!start && end && end >= today) return true;
+        return false;
+      }
+      if (seasonTab === 'planned') {
+        if (!start) return false;
+        return start > today;
+      }
+      if (seasonTab === 'ended') {
+        if (!end) return false;
+        return end < today;
+      }
+      return false;
+    });
   }, [sortedSeasons, seasonTab]);
 
   const editSeasonTarget = useMemo(
@@ -145,6 +230,7 @@ export function AppShell() {
   const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
+  const showGlobalViewPanel = !isAdminIngestionRoute && globalViewOpen;
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
@@ -187,12 +273,12 @@ export function AppShell() {
   }, [railCollapsed]);
 
   const primaryGroups = useMemo(
-    () => productNavigation.filter((group) => group.label !== UTILITY_LABEL),
-    [],
+    () => visibleNavigation.filter((group) => group.label !== UTILITY_LABEL),
+    [visibleNavigation],
   );
   const utilityGroup = useMemo(
-    () => productNavigation.find((group) => group.label === UTILITY_LABEL),
-    [],
+    () => visibleNavigation.find((group) => group.label === UTILITY_LABEL),
+    [visibleNavigation],
   );
 
   // Adjust state during render (React-recommended) so the group containing the
@@ -219,7 +305,7 @@ export function AppShell() {
     });
   };
 
-  const railWidth = railCollapsed ? '3.5rem' : '19rem';
+  const railWidth = railCollapsed ? '3.5rem' : '12rem';
 
   return (
     <TooltipProvider delayDuration={ 200 }>
@@ -237,7 +323,7 @@ export function AppShell() {
         className={ cn(
           'grid h-screen w-screen overflow-hidden bg-background text-foreground lg:grid-rows-1',
           'grid-cols-1 grid-rows-[auto_minmax(0,1fr)]',
-          globalViewOpen
+          showGlobalViewPanel
             ? 'lg:grid-cols-[minmax(0,1fr)_20rem_var(--rail-w)]'
             : 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]',
         ) }
@@ -258,13 +344,14 @@ export function AppShell() {
           </div>
           <nav aria-label="Product modules" className="-mx-1 overflow-x-auto px-1">
             <div className="flex min-w-max gap-1 pb-1">
-              { productNavigation.flatMap((group) =>
+              { visibleNavigation.flatMap((group) =>
                 group.items.map((item) => {
                   const Icon = item.icon;
                   return (
                     <NavLink
                       key={ item.path }
                       to={ item.path }
+                      end={ shouldMatchNavItemExactly(item.path) }
                       data-testid={ `mobile-${testIdFor(item.label)}` }
                       className={ ({ isActive }) =>
                         cn(
@@ -284,10 +371,12 @@ export function AppShell() {
         </header>
 
         <section className="relative min-h-0 min-w-0 overflow-hidden" data-testid="shell-content">
-          <Outlet />
+          <SeasonProvider seasonId={ effectiveSeasonId }>
+            <Outlet />
+          </SeasonProvider>
         </section>
 
-        { globalViewOpen && (
+        { showGlobalViewPanel && (
           <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
         ) }
 
@@ -302,14 +391,16 @@ export function AppShell() {
               railCollapsed && 'justify-center px-2',
             ) }
           >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
-              <Satellite className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
-            </div>
             { !railCollapsed && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-display text-base font-semibold leading-5">Akasha</p>
-                <p className="truncate text-[11px] text-muted-foreground">Crop intelligence</p>
-              </div>
+              <>
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+                  <Satellite className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-base font-semibold leading-5">Akasha</p>
+                  <p className="truncate text-[11px] text-muted-foreground">Crop intelligence</p>
+                </div>
+              </>
             ) }
             <Tooltip>
               <TooltipTrigger asChild>
@@ -322,7 +413,7 @@ export function AppShell() {
                   className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   { railCollapsed ? (
-                    <ChevronsRight className="size-4" strokeWidth={ 1.75 } />
+                    <Menu className="size-4" strokeWidth={ 1.75 } />
                   ) : (
                     <ChevronsLeft className="size-4" strokeWidth={ 1.75 } />
                   ) }
@@ -349,7 +440,7 @@ export function AppShell() {
             >
               <CalendarRange className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
               { !railCollapsed && (
-                <span className="min-w-0 flex-1 truncate font-bold text-base">
+                <span className="min-w-0 flex-1 truncate font-bold text-sm">
                   { currentSeason ? currentSeason.name : 'Season' }
                 </span>
               ) }
@@ -365,21 +456,25 @@ export function AppShell() {
 
               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60">
                 <div className="flex items-center gap-2">
-                  { (['active', 'planned', 'ended'] as const).map((tab) => (
-                    <button
-                      key={ tab }
-                      type="button"
-                      onClick={ () => setSeasonTab(tab) }
-                      className={ cn(
-                        'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast',
-                        seasonTab === tab
-                          ? 'bg-primary text-primary-foreground'
-                          : 'border border-border bg-card text-foreground hover:bg-accent/40',
-                      ) }
-                    >
-                      { tab === 'active' ? 'Active' : tab === 'planned' ? 'Planned' : 'Ended' }
-                    </button>
-                  )) }
+                  { (['active', 'planned', 'ended'] as const).map((tab) => {
+                    const count = tab === 'active' ? activeCount : tab === 'planned' ? plannedCount : endedCount;
+                    return (
+                      <button
+                        key={ tab }
+                        type="button"
+                        onClick={ () => setSeasonTab(tab) }
+                        className={ cn(
+                          'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast',
+                          seasonTab === tab
+                            ? 'bg-primary text-primary-foreground'
+                            : 'border border-border bg-card text-foreground hover:bg-accent/40',
+                        ) }
+                      >
+                        { tab === 'active' ? 'Active' : tab === 'planned' ? 'Planned' : 'Ended' }
+                        { count > 0 && <span className="ml-1.5 opacity-80">({count})</span> }
+                      </button>
+                    );
+                  }) }
                 </div>
                 <Button variant="primary" size="sm" className="gap-2 shrink-0" onClick={ () => { setSeasonSheetOpen(false); setCreateSeasonOpen(true); } }>
                   <Plus className="size-3" aria-hidden="true" />
@@ -534,76 +629,86 @@ export function AppShell() {
                 const isExpanded = expandedGroups.has(group.label);
                 const panelId = `nav-group-panel-${slug}`;
                   if (railCollapsed) {
-                  // Collapsed rail: render every item as an icon-only NavLink (no group headers).
+                  const GroupIcon = group.icon;
+                  const isHovered = hoveredGroup === group.label;
+                  const panelFlyoutId = `nav-flyout-${slug}`;
                   return (
                     <section
                       key={ group.label }
                       aria-labelledby={ `nav-group-${slug}` }
-                      className="flex flex-col gap-1 border-b border-border/40 pb-2 last:border-b-0"
+                      className="relative border-b border-border/40 pb-2 last:border-b-0"
                     >
                       <h2 id={ `nav-group-${slug}` } className="sr-only">
                         { group.label }
                       </h2>
-                      { group.items.map((item) => {
-                        const Icon = item.icon;
-                        if (item.label === 'Global view') {
-                          return (
-                            <Tooltip key={ item.path }>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  onClick={ () => setGlobalViewOpen(true) }
-                                  data-testid={ testIdFor(item.label) }
-                                  data-active={ globalViewOpen || undefined }
-                                  aria-label={ item.label }
-                                  className={ cn(
-                                    'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                    globalViewOpen && 'bg-primary/15 text-foreground',
-                                  ) }
-                                >
-                                  <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                { item.label }
-                              </TooltipContent>
-                            </Tooltip>
-                          );
-                        }
-                        return (
-                          <Tooltip key={ item.path }>
-                            <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={ group.label }
+                        aria-expanded={ isHovered }
+                        aria-controls={ panelFlyoutId }
+                        data-testid={ `nav-group-btn-${slug}` }
+                        onMouseEnter={ () => setHoveredGroup(group.label) }
+                        onMouseLeave={ () => setHoveredGroup(null) }
+                        className={ cn(
+                          'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                          activeGroupLabel === group.label && 'text-primary',
+                        ) }
+                      >
+                        { GroupIcon && (
+                          <GroupIcon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                        ) }
+                      </button>
+                      { isHovered && (
+                        <div
+                          id={ panelFlyoutId }
+                          role="menu"
+                          onMouseEnter={ () => setHoveredGroup(group.label) }
+                          onMouseLeave={ () => setHoveredGroup(null) }
+                          className="absolute right-full top-0 z-50 ml-3 w-56 rounded-lg border border-border/60 bg-popover p-2 shadow-elevation-high"
+                        >
+                          <p className="mb-1 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            { group.label }
+                          </p>
+                          { group.items.map((item) => {
+                            const ItemIcon = item.icon;
+                            return (
                               <NavLink
+                                key={ item.path }
                                 to={ item.path }
+                                end={ shouldMatchNavItemExactly(item.path) }
+                                role="menuitem"
                                 data-testid={ testIdFor(item.label) }
-                                aria-label={ item.label }
-                                onClick={ () => setGlobalViewOpen(false) }
+                                onClick={ () => {
+                                  setHoveredGroup(null);
+                                  setGlobalViewOpen(false);
+                                } }
                                 className={ ({ isActive }) =>
-                                  cn(
-                                    'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                    isActive && !globalViewOpen && 'bg-primary/15 text-foreground shadow-e1',
+                                 cn(
+                                   'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                   isActive && !globalViewOpen && 'text-primary font-semibold',
                                   )
                                 }
                               >
-                                <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                                { ItemIcon && (
+                                  <ItemIcon className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+                                ) }
+                                <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                                { item.status === 'planned' && (
+                                  <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
+                                ) }
                               </NavLink>
-                            </TooltipTrigger>
-                            <TooltipContent side="left">
-                              { item.label }
-                              { item.status === 'planned' && (
-                                <span className="ml-1 text-[10px] uppercase text-muted-foreground">
-                                  · planned
-                                </span>
-                              ) }
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      }) }
+                            );
+                          }) }
+                        </div>
+                      ) }
                     </section>
                   );
                 }
                 return (
-                  <section key={ group.label } aria-labelledby={ `nav-group-${slug}` }>
+                  <section
+                    key={ group.label }
+                    aria-labelledby={ `nav-group-${slug}` }
+                  >
                     <h2 id={ `nav-group-${slug}` } className="sr-only">
                       { group.label }
                     </h2>
@@ -613,9 +718,15 @@ export function AppShell() {
                       data-testid={ `nav-group-toggle-${slug}` }
                       aria-expanded={ isExpanded }
                       aria-controls={ panelId }
-                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground"
+                      className={ cn(
+                        'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                        (isExpanded || activeGroupLabel === group.label) && 'bg-primary/10 text-primary',
+                      ) }
                     >
-                      <span className="truncate">{ group.label }</span>
+                      <span className="flex items-center gap-2 truncate">
+                        { group.icon && <group.icon className="size-3.5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" /> }
+                        <span>{ group.label }</span>
+                      </span>
                       <ChevronDown
                         className={ cn(
                           'size-4 shrink-0 text-muted-foreground transition-transform duration-fast',
@@ -627,59 +738,26 @@ export function AppShell() {
                     </button>
                     { isExpanded && (
                       <div id={ panelId } className="mt-1 flex flex-col gap-1">
-                        { group.items.map((item) => {
-                          const Icon = item.icon;
-                          if (item.label === 'Global view') {
-                            return (
-                              <button
-                                key={ item.path }
-                                type="button"
-                                onClick={ () => setGlobalViewOpen(true) }
-                                data-testid={ testIdFor(item.label) }
-                                data-active={ globalViewOpen || undefined }
-                                className={ cn(
-                                  'group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-left transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                  globalViewOpen
-                                    ? 'bg-primary/15 text-foreground'
-                                    : 'text-muted-foreground',
-                                ) }
-                              >
-                                <Icon
-                                  className="size-4 shrink-0"
-                                  strokeWidth={ 1.75 }
-                                  aria-hidden="true"
-                                />
-                                <span className="min-w-0 flex-1 truncate">{ item.label }</span>
-                              </button>
-                            );
-                          }
-                          return (
-                            <NavLink
-                              key={ item.path }
-                              to={ item.path }
-                              data-testid={ testIdFor(item.label) }
-                              onClick={ () => setGlobalViewOpen(false) }
-                              className={ ({ isActive }) =>
-                                cn(
-                                  'group flex items-center gap-3 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                  isActive && !globalViewOpen && 'bg-primary/15 text-foreground shadow-e1',
-                                )
-                              }
-                            >
-                              <Icon
-                                className="size-4 shrink-0 text-muted-foreground group-hover:text-accent-foreground"
-                                strokeWidth={ 1.75 }
-                                aria-hidden="true"
-                              />
-                              <span className="min-w-0 flex-1 truncate">{ item.label }</span>
-                              { item.status === 'planned' && (
-                                <span className="rounded-sm bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                                  Planned
-                                </span>
-                              ) }
-                            </NavLink>
-                          );
-                        }) }
+                        { group.items.map((item) => (
+                          <NavLink
+                            key={ item.path }
+                            to={ item.path }
+                            end={ shouldMatchNavItemExactly(item.path) }
+                            data-testid={ testIdFor(item.label) }
+                            onClick={ () => setGlobalViewOpen(false) }
+                            className={ ({ isActive }) =>
+                              cn(
+                                'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                isActive && !globalViewOpen && 'text-primary font-semibold',
+                              )
+                            }
+                          >
+                            <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                            { item.status === 'planned' && (
+                              <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
+                            ) }
+                          </NavLink>
+                        )) }
                       </div>
                     ) }
                   </section>
@@ -708,6 +786,7 @@ export function AppShell() {
                         <TooltipTrigger asChild>
                           <NavLink
                             to={ item.path }
+                            end={ shouldMatchNavItemExactly(item.path) }
                             data-testid={ testIdFor(item.label) }
                             aria-label={ item.label }
                             className={ ({ isActive }) =>
@@ -728,10 +807,11 @@ export function AppShell() {
                     <NavLink
                       key={ item.path }
                       to={ item.path }
+                      end={ shouldMatchNavItemExactly(item.path) }
                       data-testid={ testIdFor(item.label) }
                       className={ ({ isActive }) =>
                         cn(
-                          'group flex items-center gap-3 rounded-md px-2.5 py-2 text-[12px] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                          'group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                           isActive && 'bg-primary/15 text-foreground shadow-e1',
                         )
                       }
@@ -767,7 +847,7 @@ export function AppShell() {
                       data-testid="account-popover-trigger"
                       aria-label="Sign out"
                       className={ cn(
-                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-[12px] text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70',
+                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70',
                         railCollapsed ? 'size-9 justify-center px-0 py-0' : 'w-full',
                       ) }
                       disabled={ logout.isPending }
@@ -783,10 +863,10 @@ export function AppShell() {
                       ) }
                       { !railCollapsed && (
                         <span className="min-w-0 flex-1 truncate text-left">
-                          <span className="block truncate text-[12px] text-foreground/90">
-                            { account.data?.user?.displayName ?? 'Akasha user' }
-                          </span>
-                          <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span className="block truncate text-sm text-foreground/90">
+                          { account.data?.user?.displayName ?? 'Akasha user' }
+                        </span>
+                        <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
                             { account.data?.currentTeam?.name ?? 'Workspace' }
                           </span>
                         </span>

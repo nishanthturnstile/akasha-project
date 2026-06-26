@@ -118,6 +118,15 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 
 - Do treat Bhoonidhi/API/licensing and redistribution constraints as source-specific release gates.
 - Do add new satellite sources as STAC collections.
+- Do put provider-specific auth/search/download/order behavior behind provider adapters; the scheduler owns due decisions, jobs, locks, redacted artifacts, and dispatch only.
+- Do keep commercial sources `commercial_blocked` until contract/quota/readiness is signed off and an operator passes an explicit paid-order flag.
+- Do maintain a source/AOI ownership matrix during scheduler cutover so legacy timers and the scheduler never run the same source/AOI concurrently.
+
+### Don't
+
+- Don't place provider HTTP/auth logic directly in scheduler due-decision code.
+- Don't enable paid order/task/subscription calls just because credentials exist.
+- Don't let AWiFS low-coverage validation promote it to active; keep it background/gated until the accepted coverage threshold passes.
 - Do keep source-specific quirks behind ingestion/catalog metadata.
 - Do run Bhoonidhi/Bhuvan downloads only from the approved Aakasha Staging egress IP. That egress IP must be a reserved static Azure public IP unless NRSC/Bhoonidhi whitelisting rules change.
 

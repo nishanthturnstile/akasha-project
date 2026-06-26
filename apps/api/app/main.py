@@ -37,6 +37,7 @@ from starlette.types import ExceptionHandler
 
 from . import skeleton
 from .config import settings
+from .ingestion_jobs import router as ingestion_jobs_router
 from .raster.errors import (
     AkashaError,
     akasha_error_handler,
@@ -51,6 +52,7 @@ from .routers.data_manager_router import router as data_manager_router
 from .routers.field_exports_router import router as field_exports_router
 from .routers.field_group_router import router as field_groups_router
 from .routers.field_router import router as fields_router
+from .routers.observations_router import router as observations_router
 from .routers.operation_router import router as operations_router
 from .routers.plot_router import router as plots_router
 from .routers.product_router import router as product_router
@@ -273,6 +275,7 @@ app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
 app.include_router(fields_router)
+app.include_router(ingestion_jobs_router)
 app.include_router(source_monitoring_router)
 
 # --- Temporary staging diagnostics ----------------------------------------
@@ -283,6 +286,9 @@ app.include_router(seasons_router)
 
 # --- Product API (Slice 2: config/sources/dates/layers/tiles/statistics) ---
 app.include_router(product_router)
+
+# --- Observations API (Phase 11: best-observation resolver) ----------------
+app.include_router(observations_router)
 
 # --- Plot API (Slice 3: plot CRUD + GeoJSON import/export) -----------------
 app.include_router(plots_router)

@@ -23,4 +23,23 @@ describe('SourceMetadata', () => {
             'Context gated',
         );
     });
+
+    it('labels gated regional optical sources distinctly from field analytics sources', () => {
+        const source: Source = {
+            id: 'resourcesat-2a-awifs-boa',
+            label: 'ResourceSat-2A AWiFS BOA',
+            provider: 'ISRO/NRSC Bhoonidhi',
+            kind: 'optical',
+            analysisLevel: 'regional',
+            availabilityStatus: 'gated',
+            supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        };
+
+        const { getByTestId } = render(<SourceMetadata source={ source } />);
+
+        expect(getByTestId('source-meta-resourcesat-2a-awifs-boa').textContent).toContain(
+            'Regional gated',
+        );
+    });
 });

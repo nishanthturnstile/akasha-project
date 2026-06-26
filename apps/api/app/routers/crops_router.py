@@ -11,7 +11,6 @@ from ..schemas.crops import (
     PaginatedVarietiesResponse,
     SeedingTypeResponse,
     TillageTypeResponse,
-    VarietyResponse,
 )
 
 router = APIRouter(prefix="/api", tags=["reference"])

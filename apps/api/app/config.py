@@ -168,6 +168,31 @@ class Settings:
     auth_signup_rate_limit_per_hour: int = field(
         default_factory=lambda: _get_int("AUTH_SIGNUP_RATE_LIMIT_PER_HOUR", 20)
     )
+
+    # Phase 9 scheduler observability — read-only paths for BFF monitoring APIs.
+    # Defaults point at canonical staging paths; endpoints degrade gracefully when
+    # the configured directory or SQLite DB is absent.
+    # REQ-016: BFF may only read redacted scheduler snapshots/summaries through
+    # explicit config, never raw provider archives or unrestricted job directories.
+    scheduler_jobs_dir: str = field(
+        default_factory=lambda: _get(
+            "SCHEDULER_JOBS_DIR", "/srv/akasha/ingestion/scheduler/jobs"
+        )
+    )
+    """Read-only mount path for per-job scheduler artifact directories.
+    Set SCHEDULER_JOBS_DIR to override. Endpoints remain unavailable if the
+    directory does not exist at runtime."""
+
+    scheduler_job_ledger_path: str = field(
+        default_factory=lambda: _get(
+            "SCHEDULER_JOB_LEDGER_PATH",
+            "/srv/akasha/ingestion/scheduler/job_ledger.db",
+        )
+    )
+    """Read-only path to the scheduler SQLite job ledger (job_ledger.py schema).
+    Set SCHEDULER_JOB_LEDGER_PATH to override. Endpoints degrade gracefully if
+    the file does not exist."""
+
     @property
     def cors_allowed_origins(self) -> list[str]:
         """Comma-separated origins. Supports CORS_ALLOWED_ORIGINS (doc name)

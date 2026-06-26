@@ -228,13 +228,13 @@ docker compose -f "${compose_file}" run --rm --pull never ingestion-worker \
             required=not args.skip_historical_dry_run,
         ),
         Check(
-            "systemd timer installed",
+            "scheduler systemd timer installed",
             _remote_script(
                 "echo skipped"
                 if args.skip_timer_check
                 else (
-                    "systemctl list-unit-files akasha-bhoonidhi-sync.timer --no-pager "
-                    "| grep -q akasha-bhoonidhi-sync.timer"
+                    "systemctl list-unit-files akasha-ingestion-scheduler.timer --no-pager "
+                    "| grep -q akasha-ingestion-scheduler.timer"
                 ),
             ),
             timeout_seconds=30,

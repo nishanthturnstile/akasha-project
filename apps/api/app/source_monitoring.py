@@ -13,14 +13,14 @@ from fastapi import APIRouter, Depends
 from pydantic import ConfigDict, Field
 
 from .api_models import ApiModel
-from .auth import get_current_team
+from .auth import require_role
 from .config import settings
 from .raster import catalog_resolver as catalog
 
 router = APIRouter(
     prefix="/api/monitoring",
     tags=["monitoring"],
-    dependencies=[Depends(get_current_team)],
+    dependencies=[Depends(require_role("owner", "admin"))],
 )
 
 
@@ -128,6 +128,15 @@ class ImagerySourceMonitoringSource(MonitoringApiModel):
     ingestion_failure_counts_by_kind: dict[str, int] = Field(default_factory=dict)
     last_ingestion_failure: MonitoringFailure | None = None
     has_unresolved_ingestion_failure: bool = False
+    # Scheduler job linkage (Phase 9 — TASK-059). All fields are optional so
+    # that existing callers remain unaffected when the ledger is not configured.
+    latest_scheduler_job_id: str | None = None
+    latest_scheduler_job_state: str | None = None
+    latest_scheduler_job_updated_at: str | None = None
+    scheduler_next_due_at: str | None = None
+    scheduler_is_due: bool = False
+    scheduler_is_overdue: bool = False
+    scheduler_due_reason: str | None = None
 
 
 class ImagerySourceMonitoringResponse(MonitoringApiModel):
@@ -189,10 +198,34 @@ def _redact_error(value: Any) -> str | None:
     replacements = [
         (r"(?i)(password|token|secret|access[_-]?key)(=|:)\s*[^,\s]+", r"\1\2[REDACTED]"),
         (r"(?i)(Bearer)\s+[A-Za-z0-9._~+/-]+", r"\1 [REDACTED]"),
+        (
+            r"(?i)(?:[A-Z]:\\[^ \t\r\n,;]+|/srv/akasha/[^ \t\r\n,;]+|"
+            r"/tmp/[^ \t\r\n,;]+|/var/tmp/[^ \t\r\n,;]+)",
+            "[REDACTED_PATH]",
+        ),
     ]
     for pattern, repl in replacements:
         text = re.sub(pattern, repl, text)
     return text[:300]
+
+
+def _sanitize_monitoring_payload(value: Any) -> Any:
+    """Remove frontend-unsafe paths from nested monitoring payloads."""
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "path":
+                sanitized[key] = None
+            elif isinstance(item, str):
+                sanitized[key] = _redact_error(item)
+            else:
+                sanitized[key] = _sanitize_monitoring_payload(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_monitoring_payload(item) for item in value]
+    if isinstance(value, str):
+        return _redact_error(value)
+    return value
 
 
 def _failure_kind(status: str | None, error: str | None) -> str:
@@ -283,7 +316,7 @@ def _ingestion_ledger_summary() -> dict[str, Any]:
     if not settings.bhoonidhi_ledger_path.strip():
         return {"status": "unconfigured", "path": None}
     if not path.is_file():
-        return {"status": "missing", "path": path.as_posix()}
+        return {"status": "missing", "path": None}
 
     try:
         conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
@@ -331,8 +364,8 @@ def _ingestion_ledger_summary() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - monitoring must remain fail-soft.
         return {
             "status": "unavailable",
-            "path": path.as_posix(),
-            "lastError": f"{exc.__class__.__name__}: {str(exc)[:200]}",
+            "path": None,
+            "lastError": _redact_error(f"{exc.__class__.__name__}: {str(exc)[:200]}"),
         }
 
     status_counts = {str(row["status"]): int(row["count"]) for row in rows}
@@ -451,7 +484,7 @@ def _ingestion_ledger_summary() -> dict[str, Any]:
 
     return {
         "status": "ok",
-        "path": path.as_posix(),
+        "path": None,
         "rowCount": total_rows,
         "statusCounts": status_counts,
         "bytes": total_bytes,
@@ -459,6 +492,114 @@ def _ingestion_ledger_summary() -> dict[str, Any]:
         "failureCountsByKind": dict(failure_counts),
         "lastFailures": failures_payload,
         "bySource": list(by_source.values()),
+    }
+
+
+
+# ---------------------------------------------------------------------------
+# Scheduler job ledger helpers (Phase 9 — TASK-059)
+# ---------------------------------------------------------------------------
+
+#: Grace period in hours after ``next_due_at`` before a job is considered overdue.
+_SCHEDULER_OVERDUE_GRACE_HOURS: int = 24
+
+
+def _scheduler_jobs_by_source() -> dict[str, dict[str, Any]]:
+    """Return the latest scheduler job summary keyed by ``source_id``.
+
+    Reads the Phase 5 SQLite job ledger in *read-only* mode.  Returns an empty
+    dict if the ledger is not configured, file is missing, or any read error
+    occurs — callers must handle absent scheduler data gracefully.
+
+    Only safe, non-secret fields are returned: ``job_id``, ``state``,
+    ``updatedAt`` (resolved from finished/started/scheduled timestamps),
+    ``nextDueAt``, and ``scheduleDecision``.  Raw paths (``artifact_summary_path``)
+    and provider-specific fields are never included.
+    """
+    path_str = getattr(settings, "scheduler_job_ledger_path", "")
+    if not path_str or not path_str.strip():
+        return {}
+    path = Path(path_str)
+    if not path.is_file():
+        return {}
+    try:
+        conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute("""
+                SELECT job_id, source_id, state,
+                       scheduled_at, started_at, finished_at,
+                       next_due_at, schedule_decision
+                FROM scheduler_jobs
+                ORDER BY coalesce(scheduled_at, '1970-01-01T00:00:00') DESC
+            """).fetchall()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - monitoring must remain fail-soft.
+        return {}
+
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        source_id = str(row["source_id"])
+        if source_id in result:
+            continue  # keep only the latest (first in DESC order)
+        updated_at = row["finished_at"] or row["started_at"] or row["scheduled_at"]
+        result[source_id] = {
+            "jobId": row["job_id"],
+            "state": row["state"],
+            "updatedAt": updated_at,
+            "nextDueAt": row["next_due_at"],
+            "scheduleDecision": row["schedule_decision"],
+        }
+    return result
+
+
+def _scheduler_due_fields(
+    scheduler_job: dict[str, Any] | None, *, now: datetime
+) -> dict[str, Any]:
+    """Derive schedule due/overdue state from the latest scheduler job row.
+
+    Returns the seven scheduler-linkage fields that are injected into each
+    ``ImagerySourceMonitoringSource`` payload.
+    """
+    if not scheduler_job:
+        return {
+            "latestSchedulerJobId": None,
+            "latestSchedulerJobState": None,
+            "latestSchedulerJobUpdatedAt": None,
+            "schedulerNextDueAt": None,
+            "schedulerIsDue": False,
+            "schedulerIsOverdue": False,
+            "schedulerDueReason": None,
+        }
+
+    job_id = scheduler_job.get("jobId")
+    state = scheduler_job.get("state")
+    updated_at = scheduler_job.get("updatedAt")
+    next_due_at_raw = scheduler_job.get("nextDueAt")
+    schedule_decision = scheduler_job.get("scheduleDecision")
+
+    next_due_at_dt = _parse_datetime(next_due_at_raw)
+    is_due = next_due_at_dt is not None and next_due_at_dt <= now
+    is_overdue = False
+    due_reason: str | None = None
+
+    if is_due:
+        elapsed_hours = (now - next_due_at_dt).total_seconds() / 3600
+        is_overdue = elapsed_hours > _SCHEDULER_OVERDUE_GRACE_HOURS
+        if schedule_decision:
+            due_reason = str(schedule_decision)
+        else:
+            due_reason = "cadence_elapsed"
+
+    return {
+        "latestSchedulerJobId": job_id,
+        "latestSchedulerJobState": state,
+        "latestSchedulerJobUpdatedAt": updated_at,
+        "schedulerNextDueAt": next_due_at_raw,
+        "schedulerIsDue": is_due,
+        "schedulerIsOverdue": is_overdue,
+        "schedulerDueReason": due_reason,
     }
 
 
@@ -685,12 +826,18 @@ def _source_status(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _summarize_source(
-    source: dict[str, Any], *, today: date, ledger_source: dict[str, Any] | None = None
+    source: dict[str, Any],
+    *,
+    today: date,
+    ledger_source: dict[str, Any] | None = None,
+    scheduler_job: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    now = _now()
     source_id = source["id"]
     availability = source.get("availabilityStatus") or "active"
     warnings: list[str] = []
     ledger_fields = _ledger_source_fields(ledger_source)
+    scheduler_fields = _scheduler_due_fields(scheduler_job, now=now)
     is_field_optical = source.get("kind") == "optical" and source.get("analysisLevel") == "field"
     composite_freshness = _successful_composite_freshness(
         ledger_fields,
@@ -749,6 +896,7 @@ def _summarize_source(
             "isSuccessfulSearchStale": search_freshness["isSuccessfulSearchStale"],
             "isUpstreamDataStale": False,
             "hasUnresolvedIngestionFailure": has_unresolved_ingestion_failure,
+            **scheduler_fields,
         })
 
     tile_available_dates = [entry for entry in dates if bool(entry.get("tileAvailable", True))]
@@ -851,6 +999,7 @@ def _summarize_source(
         "isSuccessfulSearchStale": search_freshness["isSuccessfulSearchStale"],
         "isUpstreamDataStale": is_upstream_data_stale,
         "hasUnresolvedIngestionFailure": has_unresolved_ingestion_failure,
+        **scheduler_fields,
     })
 
 
@@ -909,17 +1058,19 @@ async def get_imagery_source_monitoring() -> ImagerySourceMonitoringResponse:
     """Freshness and coverage status for operator refresh triage."""
     generated_at = _now()
     today = generated_at.date()
-    ingestion_ledger = _ingestion_ledger_summary()
+    ingestion_ledger = _sanitize_monitoring_payload(_ingestion_ledger_summary())
     ledger_sources = {
         str(source.get("sourceId")): source
         for source in ingestion_ledger.get("bySource", [])
         if isinstance(source, dict) and source.get("sourceId")
     }
+    scheduler_jobs = _scheduler_jobs_by_source()
     sources = [
         _summarize_source(
             source,
             today=today,
             ledger_source=ledger_sources.get(str(source.get("id"))),
+            scheduler_job=scheduler_jobs.get(str(source.get("id"))),
         )
         for source in catalog.list_sources()
     ]

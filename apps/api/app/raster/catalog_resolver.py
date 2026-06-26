@@ -13,7 +13,8 @@ import json
 import os
 import urllib.request
 from dataclasses import dataclass
-from datetime import date as _date, timedelta
+from datetime import date as _date
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -156,17 +157,39 @@ _SOURCE_REGISTRY.update(
             "bandRoleMapping": {"GREEN": "BAND2", "RED": "BAND3", "NIR": "BAND4", "SWIR1": "BAND5"},
             "maskAsset": "mask",
             "nodataPolicy": "mask_only",
-            "displayModes": ["FCC"],
+            "displayModes": ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
             "defaultDisplayMode": "FCC",
-            "description": "Gated regional ResourceSat-2A AWiFS BOA context source.",
+            "mapDisplayModes": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+            "defaultMapDisplayMode": "NDVI",
+            "layerGroups": [
+                {"label": "Imagery", "modes": ["FCC"]},
+                {"label": "Vegetation Indices", "modes": ["NDVI", "MSAVI"]},
+                {"label": "Moisture Indices", "modes": ["NDMI"]},
+                {"label": "Water Index", "modes": ["NDWI_GREEN_NIR"]},
+            ],
+            "description": "Active regional ResourceSat-2A AWiFS BOA context source.",
             "attribution": "ISRO-IRS, ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "optical",
             "defaultRescale": "0,3000",
             "tileRouteMode": "fcc",
             "resolutionMeters": 56,
             "analysisLevel": "regional",
-            "refreshPolicy": "Gated until AWiFS BOA download and COG prep are validated.",
-            "limitations": ["Registered for roadmap visibility; no composites are loaded yet."],
+            "refreshPolicy": (
+                "Scheduler-active Bhoonidhi ingestion; regional composites use a 60% "
+                "minimum usable-coverage threshold."
+            ),
+            "limitations": [
+                "Coarse 56 m pixels; use for regional context and large-field analytics.",
+                (
+                    "Mask is Akasha threshold-derived and provisional until a native "
+                    "quality layer exists."
+                ),
+                (
+                    "AWiFS-specific EO wavelengths are pending NRSC validation; STAC "
+                    "currently uses the shared ResourceSat broad-band metadata aliases."
+                ),
+                "Not a replacement for LISS-3/LISS-4 field-level monitoring.",
+            ],
             "maskMethod": (
                 "Akasha threshold mask v1 for ResourceSat-2A AWiFS BOA "
                 "(pending AWiFS-specific native quality-layer validation; provisional)."
@@ -174,8 +197,8 @@ _SOURCE_REGISTRY.update(
             "excludedMaskClasses": [0, 2, 3],
             "availableMaskOptions": ["clouds", "cloudShadows"],
             "metricsProvisional": True,
-            "availabilityStatus": "gated",
-            "gatedReason": "No validated AWiFS BOA composite has been ingested.",
+            "availabilityStatus": "active",
+            "gatedReason": None,
         },
         "resourcesat-2a-liss4-mx70-l2": {
             "id": "resourcesat-2a-liss4-mx70-l2",
@@ -215,7 +238,10 @@ _SOURCE_REGISTRY.update(
             "limitations": [
                 "False-colour composite only; LISS-4 MX70 has no blue band.",
                 "NDMI/NDRE/RECI unsupported because LISS-4 MX70 has no SWIR or red-edge band.",
-                "Mask is Akasha threshold-derived and provisional until a native quality layer exists.",
+                (
+                    "Mask is Akasha threshold-derived and provisional until a native "
+                    "quality layer exists."
+                ),
             ],
             "maskMethod": "Akasha threshold mask v1 (LISS-4, no SWIR; provisional)",
             "availableMaskOptions": ["clouds", "cloudShadows"],
@@ -272,11 +298,8 @@ _SOURCE_REGISTRY.update(
             "limitations": ["Not an optical vegetation-index source."],
             "maskMethod": None,
             "metricsProvisional": True,
-            # Display-only activation (Phase 1). Dates/tiles appear once a real
-            # EOS-04 backscatter COG is ingested via bhoonidhi-download ->
-            # prepare_eos04_sar_mrs_l2b_cogs.py -> ingest-manifest.
-            "availabilityStatus": "active",
-            "gatedReason": None,
+            "availabilityStatus": "gated",
+            "gatedReason": "EOS-04 SAR backscatter is not validated for product exposure.",
         },
         "nisar-ssar-beta-gcov": {
             "id": "nisar-ssar-beta-gcov",
@@ -301,11 +324,10 @@ _SOURCE_REGISTRY.update(
             "limitations": ["Not an optical vegetation-index source."],
             "maskMethod": None,
             "metricsProvisional": True,
-            # Display-only activation (Phase 1). Dates/tiles appear once a real
-            # NISAR GCOV backscatter COG is ingested via bhoonidhi-download ->
-            # prepare_nisar_ssar_beta_gcov_cogs.py -> ingest-manifest.
-            "availabilityStatus": "active",
-            "gatedReason": None,
+            "availabilityStatus": "gated",
+            "gatedReason": (
+                "NISAR GCOV remains data-gated until calibrated ARD products are validated."
+            ),
         },
         "cartosat-3-gated": {
             "id": "cartosat-3-gated",
@@ -1078,13 +1100,14 @@ def _bbox_intersects(
 ) -> bool:
     """Return True if ``bbox`` (list/tuple of 4 floats) intersects ``geometry_bounds``."""
     if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-        # Unknown bbox → assume intersection to avoid false negatives.
-        return True
+        return False
     try:
         minx, miny, maxx, maxy = (float(v) for v in bbox)
         gminx, gminy, gmaxx, gmaxy = geometry_bounds
     except (TypeError, ValueError):
-        return True
+        return False
+    if minx > maxx or miny > maxy:
+        return False
     return not (maxx < gminx or gmaxx < minx or maxy < gminy or gmaxy < miny)
 
 
@@ -1198,3 +1221,274 @@ def resolve_best_resolution_source(
         )
     except Exception:  # noqa: BLE001 - any catalog error → silent fallback
         return _primary()
+
+
+# ---------------------------------------------------------------------------
+# Best-observation resolver (Phase 11 / TASK-066–069)
+# ---------------------------------------------------------------------------
+
+# Priority for cross-source ranking (higher = preferred).
+# Sources absent from this map get _DEFAULT_SOURCE_PRIORITY.
+_SOURCE_PRIORITY_MAP: dict[str, int] = {
+    RESOURCESAT_LISS4_SOURCE_ID: 100,  # 5.8 m high-res field enhancement
+    RESOURCESAT_LISS3_SOURCE_ID: 80,   # 24 m field-level production baseline
+    RESOURCESAT_AWIFS_SOURCE_ID: 20,   # 56 m regional (coarse)
+}
+_DEFAULT_SOURCE_PRIORITY: int = 10
+
+# Analysis levels considered coarse for field-level use cases.
+_COARSE_ANALYSIS_LEVELS: frozenset[str] = frozenset({"regional", "context", "archive"})
+
+# Sources considered coarse regardless of analysis_level metadata.
+_COARSE_SOURCES: frozenset[str] = frozenset({RESOURCESAT_AWIFS_SOURCE_ID})
+
+
+@dataclass
+class ObservationCandidate:
+    """A ranked candidate observation from the best-observation resolver.
+
+    Attributes
+    ----------
+    score
+        Weighted [0, 100] ranking score (higher is better).  Derived from
+        source priority, date proximity, usable-pixel percent, and coverage.
+    is_coarse
+        True when the source is regional/coarse (e.g. AWiFS 56 m).  Coarse
+        candidates are excluded from field-level queries unless ``allow_coarse``
+        is True.
+    """
+
+    source_id: str
+    acquisition_date: str
+    resolution_meters: float | None
+    analysis_level: str | None
+    usable_pixel_percent: float | None
+    coverage_percent: float | None
+    cloud_masked_percent: float | None
+    tile_available: bool
+    is_latest_usable: bool
+    score: float
+    source_priority: int
+    provenance_note: str | None
+    is_coarse: bool
+    supported_indices: list[str]
+    label: str
+
+
+def _observation_score(
+    *,
+    source_priority: int,
+    days_diff: int,
+    usable_pixel_percent: float | None,
+    coverage_percent: float | None,
+    window_days: int,
+) -> float:
+    """Return a weighted [0, 100] score for a candidate observation.
+
+    Weights: source_priority=40%, date_proximity=35%, usable_pixels=15%, coverage=10%.
+    Unknown quality metrics default to 50 (neutral/unknown).
+    """
+    priority_score = float(min(100, max(0, source_priority)))
+    proximity = max(0.0, 100.0 - abs(days_diff) * (100.0 / max(1, window_days)))
+    usable = float(usable_pixel_percent) if usable_pixel_percent is not None else 50.0
+    coverage = float(coverage_percent) if coverage_percent is not None else 50.0
+    return 0.40 * priority_score + 0.35 * proximity + 0.15 * usable + 0.10 * coverage
+
+
+def resolve_best_observation(
+    *,
+    target_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    lookback_days: int | None = None,
+    index_type: str | None = None,
+    use_case: str = "field",
+    allow_coarse: bool = False,
+    field_geometry: dict[str, Any] | None = None,
+    max_candidates: int = 10,
+    window_days: int = 30,
+) -> list[ObservationCandidate]:
+    """Rank validated active observations across sources for best-observation selection.
+
+    Ranking considers: source state (active/gated), index support, date proximity,
+    coverage, usable-pixel percent, field intersection (bbox proxy), analysis level,
+    resolution, and source priority.
+
+    Parameters
+    ----------
+    target_date:
+        YYYY-MM-DD centre date for proximity scoring.  Falls back to ``end_date``
+        when not provided; no proximity weighting when neither is given.
+    start_date / end_date / lookback_days:
+        Date window for candidate filtering.  ``lookback_days`` is applied backward
+        from ``target_date`` (or ``end_date``) when ``start_date`` is omitted.
+        When no window parameters are given, ``window_days`` is applied
+        symmetrically around ``target_date``.
+    index_type:
+        If set, only sources that support this index are considered (e.g. "NDVI").
+        Non-optical sources are also excluded when an index is requested.
+    use_case:
+        ``"field"`` (default) excludes coarse/regional sources unless
+        ``allow_coarse=True``; ``"regional"`` allows them unconditionally.
+    allow_coarse:
+        When True, coarse/regional sources (e.g. AWiFS 56 m) are eligible even
+        for field queries.  AWiFS still requires ``availabilityStatus == "active"``.
+    field_geometry:
+        Optional GeoJSON Polygon/MultiPolygon.  When supplied, candidates whose
+        date-level bounds bbox does not intersect are filtered out.  This is a
+        cheap metadata-only proxy; no raster reads are performed.
+    max_candidates:
+        Upper bound on returned candidates (capped to 50).
+    window_days:
+        Symmetric window (days) around ``target_date`` when no explicit start/end
+        dates are given.
+
+    Returns
+    -------
+    list[ObservationCandidate]
+        Up to ``max_candidates`` candidates ordered by descending score (best first).
+        Only sources with ``availabilityStatus == "active"`` are included.
+        AWiFS and other coarse sources are excluded from field-level decisions
+        unless ``allow_coarse`` is True or ``use_case == "regional"``.
+    """
+    # Resolve target date for proximity scoring and lookback anchoring.
+    target: _date | None = None
+    today = _date.today()
+    try:
+        if target_date:
+            target = _date.fromisoformat(target_date)
+        elif end_date:
+            target = _date.fromisoformat(end_date)
+    except ValueError:
+        target = None
+
+    # Resolve search window.
+    w_start: _date | None = None
+    w_end: _date | None = None
+    try:
+        if start_date:
+            w_start = _date.fromisoformat(start_date)
+        if end_date:
+            w_end = _date.fromisoformat(end_date)
+    except ValueError:
+        pass
+
+    lookback_anchor = target or today
+    if w_start is None and lookback_days is not None:
+        w_start = lookback_anchor - timedelta(days=lookback_days - 1)
+        if w_end is None:
+            w_end = lookback_anchor
+    if w_start is None and target is not None:
+        w_start = target - timedelta(days=window_days)
+    if w_end is None and target is not None:
+        w_end = target + timedelta(days=window_days)
+    if w_start is not None and w_end is None:
+        w_end = today
+
+    # Precompute field bbox for intersection checks (metadata-only; no raster reads).
+    field_bbox: tuple[float, float, float, float] | None = None
+    if field_geometry:
+        field_bbox = _bbox_from_geometry(field_geometry)
+        if field_bbox is None:
+            return []
+
+    candidates: list[ObservationCandidate] = []
+
+    for source_id in selectable_source_ids():
+        try:
+            source = get_source(source_id)
+        except Exception:  # noqa: BLE001
+            continue
+
+        # Only include sources with active availability.
+        if source.get("availabilityStatus", "active") != "active":
+            continue
+
+        source_kind = source.get("kind", "optical")
+
+        # For optical-index queries, skip non-optical sources.
+        if index_type and source_kind != "optical":
+            continue
+
+        # Check index support.
+        if index_type and index_type not in source.get("supportedIndices", []):
+            continue
+
+        # Coarse-source exclusion for field-level queries.
+        is_coarse = (
+            source_id in _COARSE_SOURCES
+            or source.get("analysisLevel", "field") in _COARSE_ANALYSIS_LEVELS
+        )
+        if is_coarse and use_case == "field" and not allow_coarse:
+            continue
+
+        source_priority = _SOURCE_PRIORITY_MAP.get(source_id, _DEFAULT_SOURCE_PRIORITY)
+        resolution = source.get("resolutionMeters")
+        analysis_level = source.get("analysisLevel")
+        label = str(source.get("label", source_id))
+        src_indices_list: list[str] = list(source.get("supportedIndices", []))
+
+        try:
+            dates = list_dates(source_id)
+        except Exception:  # noqa: BLE001
+            continue
+
+        for date_entry in dates:
+            acq_raw = date_entry.get("acquisitionDate")
+            if not acq_raw or not isinstance(acq_raw, str):
+                continue
+            try:
+                acq = _date.fromisoformat(acq_raw)
+            except ValueError:
+                continue
+
+            # Apply date window filter.
+            if w_start and acq < w_start:
+                continue
+            if w_end and acq > w_end:
+                continue
+
+            tile_available = bool(date_entry.get("tileAvailable", False))
+            if not tile_available:
+                continue
+
+            # Field intersection check (bbox proxy; no raster reads).
+            bounds = date_entry.get("bounds")
+            if field_bbox is not None and not _bbox_intersects(bounds, field_bbox):
+                continue
+
+            days_diff = abs((acq - target).days) if target is not None else 0
+            usable = date_entry.get("usablePixelPercent")
+            coverage = date_entry.get("coveragePercent")
+            cloud = date_entry.get("cloudMaskedPercent")
+
+            score = _observation_score(
+                source_priority=source_priority,
+                days_diff=days_diff,
+                usable_pixel_percent=usable,
+                coverage_percent=coverage,
+                window_days=window_days,
+            )
+
+            candidates.append(
+                ObservationCandidate(
+                    source_id=source_id,
+                    acquisition_date=acq_raw,
+                    resolution_meters=resolution,
+                    analysis_level=analysis_level,
+                    usable_pixel_percent=usable,
+                    coverage_percent=coverage,
+                    cloud_masked_percent=cloud,
+                    tile_available=tile_available,
+                    is_latest_usable=bool(date_entry.get("isLatestUsable", False)),
+                    score=round(score, 4),
+                    source_priority=source_priority,
+                    provenance_note=None,
+                    is_coarse=is_coarse,
+                    supported_indices=src_indices_list,
+                    label=label,
+                )
+            )
+
+    candidates.sort(key=lambda c: c.score, reverse=True)
+    return candidates[: max(1, min(max_candidates, 50))]

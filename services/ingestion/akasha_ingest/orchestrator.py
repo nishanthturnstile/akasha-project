@@ -128,6 +128,9 @@ DEFAULT_LOCK_DIR: str = "/srv/akasha/ingestion/"
 #: Filename for the lightweight scheduler ledger under the base_dir.
 LEDGER_FILENAME = "scheduler_ledger.json"
 
+#: Redacted schedule snapshot consumed by the BFF admin ingestion schedules API.
+SCHEDULE_STATE_FILENAME = "schedule_state.json"
+
 #: Environment variable that approves non-dry-run execution for staging-only sources.
 APPROVED_RUNTIME_ENV_VAR = "AKASHA_APPROVED_RUNTIME"
 
@@ -242,9 +245,13 @@ class DueDecision:
     """``True`` if a manual override forced this source to be due."""
 
     host_pool: str = ""
+    lifecycle_state: str = ""
+    aoi_scope: str = ""
     product_exposure: str = ""
     commercial_state: str = ""
     validation_state: str = ""
+    cadence_class: str = ""
+    cadence_days: float | None = None
     capabilities: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
@@ -263,9 +270,13 @@ class DueDecision:
             "windowEnd": self.window_end,
             "manualOverride": self.manual_override,
             "hostPool": self.host_pool,
+            "lifecycleState": self.lifecycle_state,
+            "aoiScope": self.aoi_scope,
             "productExposure": self.product_exposure,
             "commercialState": self.commercial_state,
             "validationState": self.validation_state,
+            "cadenceClass": self.cadence_class,
+            "cadenceDays": self.cadence_days,
             "capabilities": list(self.capabilities),
         }
 
@@ -397,6 +408,83 @@ def _now_utc() -> datetime:
 def _now_iso(now: datetime | None = None) -> str:
     ts = now if now is not None else _now_utc()
     return ts.isoformat().replace("+00:00", "Z")
+
+
+def _decision_due_reason(decision: DueDecision) -> str | None:
+    if not decision.is_due:
+        return decision.skip_reason
+    if decision.manual_override:
+        return "manual_override"
+    if decision.last_succeeded_at is None:
+        return "first_run"
+    return "cadence_elapsed"
+
+
+def _decision_is_overdue(decision: DueDecision, *, now: datetime) -> bool:
+    next_due_at = decision.next_due_at
+    if not decision.is_due or not next_due_at:
+        return False
+    try:
+        due_at = datetime.fromisoformat(next_due_at.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+    return (now - due_at).total_seconds() > 24 * 3600
+
+
+def write_schedule_snapshot(
+    decisions: list[DueDecision],
+    *,
+    base_dir: str | Path = DEFAULT_JOB_BASE_DIR,
+    generated_at: str | None = None,
+    now: datetime | None = None,
+) -> Path:
+    """Write a redacted scheduler schedule snapshot for BFF monitoring.
+
+    ``schedule-plan`` is allowed to produce operational visibility artifacts:
+    it does not call providers, download, prepare, upload, or mutate the
+    cadence ledger.  The snapshot lets the admin UI show source/AOI cadence and
+    due state before the first successful scheduler run has created
+    ``scheduler_ledger.json`` entries.
+    """
+    snapshot_now = now or _now_utc()
+    payload = {
+        "snapshotVersion": 1,
+        "generatedAt": generated_at or _now_iso(snapshot_now),
+        "schedules": [
+            {
+                "sourceId": decision.source_id,
+                "provider": decision.provider,
+                "adapter": decision.provider,
+                "aoiId": decision.aoi_id or None,
+                "lifecycleState": decision.lifecycle_state or None,
+                "scheduleState": decision.schedule_state or None,
+                "capabilities": list(decision.capabilities),
+                "commercialState": decision.commercial_state or None,
+                "aoiScope": decision.aoi_scope or None,
+                "validationState": decision.validation_state or None,
+                "scheduleEnabled": decision.schedule_state in _AUTO_DUE_SCHEDULE_STATES,
+                "productExposure": decision.product_exposure or None,
+                "lastRunAt": decision.last_succeeded_at,
+                "lastSuccessAt": decision.last_succeeded_at,
+                "lastFailureAt": None,
+                "nextDueAt": decision.next_due_at,
+                "isDue": decision.is_due,
+                "isOverdue": _decision_is_overdue(decision, now=snapshot_now),
+                "nextWindowStart": decision.window_start,
+                "nextWindowEnd": decision.window_end,
+                "cadenceDays": decision.cadence_days,
+                "dueReason": _decision_due_reason(decision),
+            }
+            for decision in decisions
+        ],
+    }
+
+    path = Path(base_dir) / SCHEDULE_STATE_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+    return path
 
 
 def _cadence_interval_days(cadence: CadenceClass) -> float | None:
@@ -745,9 +833,13 @@ def plan_due_sources(
                     window_start=window_start,
                     window_end=window_end,
                     host_pool=row.host_pool.value,
+                    lifecycle_state=row.lifecycle_state.value,
+                    aoi_scope=row.aoi_scope.value,
                     product_exposure=row.product_exposure.value,
                     commercial_state=row.commercial_state.value,
                     validation_state=row.validation_state.value,
+                    cadence_class=row.cadence.value,
+                    cadence_days=_cadence_interval_days(row.cadence),
                     capabilities=tuple(str(c) for c in row.capabilities),
                 )
             )
@@ -800,9 +892,13 @@ def plan_due_sources(
                         window_end=window_end,
                         manual_override=False,
                         host_pool=row.host_pool.value,
+                        lifecycle_state=row.lifecycle_state.value,
+                        aoi_scope=row.aoi_scope.value,
                         product_exposure=row.product_exposure.value,
                         commercial_state=row.commercial_state.value,
                         validation_state=row.validation_state.value,
+                        cadence_class=row.cadence.value,
+                        cadence_days=interval_days,
                         capabilities=tuple(str(c) for c in row.capabilities),
                     )
                 )
@@ -857,9 +953,13 @@ def plan_due_sources(
                     window_end=window_end,
                     manual_override=is_manual,
                     host_pool=row.host_pool.value,
+                    lifecycle_state=row.lifecycle_state.value,
+                    aoi_scope=row.aoi_scope.value,
                     product_exposure=row.product_exposure.value,
                     commercial_state=row.commercial_state.value,
                     validation_state=row.validation_state.value,
+                    cadence_class=row.cadence.value,
+                    cadence_days=interval_days,
                     capabilities=tuple(str(c) for c in row.capabilities),
                 )
             )

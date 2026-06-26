@@ -765,7 +765,7 @@ def cmd_schedule_plan(args: argparse.Namespace) -> int:
     import json as _json
 
     from akasha_ingest.jobs import DEFAULT_JOB_BASE_DIR
-    from akasha_ingest.orchestrator import plan_due_sources
+    from akasha_ingest.orchestrator import plan_due_sources, write_schedule_snapshot
 
     source_ids = [args.source] if getattr(args, "source", None) else None
     aoi_ids = [args.aoi] if getattr(args, "aoi", None) else None
@@ -778,6 +778,7 @@ def cmd_schedule_plan(args: argparse.Namespace) -> int:
         base_dir=base_dir,
         lookback_days=lookback_days,
     )
+    write_schedule_snapshot(decisions, base_dir=base_dir)
 
     if getattr(args, "json", False):
         print(_json.dumps([d.to_dict() for d in decisions], indent=2))

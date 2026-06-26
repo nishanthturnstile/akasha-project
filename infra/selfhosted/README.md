@@ -222,6 +222,73 @@ The payload should include `sources`, `storage`, and `ingestionLedger`. If
 for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<staging-public-ip>/$p" && echo "$p open" || echo "$p closed_or_filtered"; done
 ```
 
+## Private database GUI access with DBeaver
+
+Use DBeaver from your workstation and connect through an SSH tunnel. Do **not**
+assign a Coolify domain to PostGIS, do **not** add a public `ports:` mapping for
+Postgres, and do **not** publish pgAdmin/Adminer for staging or production.
+
+The tunnel targets the private PostGIS container from the SSH host and exposes it
+only on your laptop's loopback interface. Local port `15433` intentionally avoids
+conflicting with the local-dev DBeaver port `15432`.
+
+1. SSH to the target VM with an approved admin shell account:
+
+   ```bash
+   ssh akasha-staging
+   ```
+
+2. On the VM, identify the running PostGIS container and its private Docker IP:
+
+   ```bash
+   POSTGIS_CONTAINER="$(docker ps --format '{{.Names}}' | grep -E '(^|-)postgis(-|$)' | head -n 1)"
+   docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$POSTGIS_CONTAINER"
+   ```
+
+3. From your workstation, open the SSH tunnel. Replace `<postgis-container-ip>`
+   with the private IP printed in the previous step:
+
+   ```bash
+   ssh -N -L 127.0.0.1:15433:<postgis-container-ip>:5432 akasha-staging
+   ```
+
+   Keep this terminal open while using DBeaver. Close it to remove the tunnel.
+   If SSH reports `bind [127.0.0.1]:15433: Permission denied` or cannot listen
+   on `15433`, another local process is already using that port. On Windows,
+   check whether an existing tunnel is already running:
+
+   ```powershell
+   Get-NetTCPConnection -LocalPort 15433 -ErrorAction SilentlyContinue
+   ```
+
+   If the listener is an existing `ssh -N -L ... akasha-staging` process, keep it
+   open and use DBeaver normally. Otherwise, stop the stale listener or choose a
+   different local port such as `25433` and use that same port in DBeaver.
+
+4. Create a DBeaver connection:
+
+   | Field | Value |
+   |---|---|
+   | Connection name | `Akasha Coolify PostGIS` |
+   | Host | `localhost` |
+   | Port | `15433` |
+   | Database | `POSTGRES_DB` from the Coolify service environment |
+   | Username | `POSTGRES_USER` from the Coolify service environment |
+   | Password | `POSTGRES_PASSWORD` from the Coolify service environment |
+
+5. Prefer read-only browsing and run only safe inspection queries unless you are
+   intentionally performing an operator task:
+
+   ```sql
+   SELECT current_database(), current_user;
+   SELECT postgis_full_version();
+   ```
+
+If the container IP changes after a redeploy, rerun the `docker inspect` step and
+restart the SSH tunnel. For team-wide access, prefer a dedicated read-only
+Postgres role and a restricted SSH tunnel account over sharing broad admin
+credentials.
+
 ## One-shot jobs
 
 Run one-shot jobs from the Coolify terminal or container shell. Do not expose these services publicly.

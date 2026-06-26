@@ -144,6 +144,15 @@ def _make_scheduler_ledger(jobs_dir: Path, entries: dict) -> None:
     (jobs_dir / "scheduler_ledger.json").write_text(json.dumps(ledger), encoding="utf-8")
 
 
+def _make_schedule_snapshot(jobs_dir: Path, schedules: list[dict]) -> None:
+    snapshot = {
+        "snapshotVersion": 1,
+        "generatedAt": "2026-06-25T12:00:00Z",
+        "schedules": schedules,
+    }
+    (jobs_dir / "schedule_state.json").write_text(json.dumps(snapshot), encoding="utf-8")
+
+
 def _schedule_for_next_due(monkeypatch, tmp_path, next_due_at: str) -> dict:
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()
@@ -1439,6 +1448,51 @@ def test_schedules_handles_missing_scheduler_ledger_json_gracefully(monkeypatch,
     body = resp.json()
     assert body["status"] == "ok"
     assert body["schedules"] == []
+
+
+def test_schedules_reads_redacted_schedule_snapshot_before_success_ledger(monkeypatch, tmp_path):
+    """schedule_state.json gives operators source cadence before the first successful run."""
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    _make_schedule_snapshot(
+        jobs_dir,
+        [
+            {
+                "sourceId": "resourcesat-2a-liss3-boa",
+                "provider": "bhoonidhi",
+                "aoiId": "bangalore-60km",
+                "lifecycleState": "validate_enabled",
+                "scheduleState": "routine",
+                "capabilities": ["search_enabled", "download_enabled"],
+                "commercialState": "approved",
+                "aoiScope": "in_aoi",
+                "validationState": "validation_passed",
+                "scheduleEnabled": True,
+                "productExposure": "product_active",
+                "lastSuccessAt": None,
+                "nextDueAt": None,
+                "nextWindowStart": "2026-06-13",
+                "nextWindowEnd": "2026-06-25",
+                "cadenceDays": 20,
+                "dueReason": "first_run",
+                "isDue": True,
+                "isOverdue": False,
+            }
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-schedules")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["generatedAt"] == "2026-06-25T12:00:00Z"
+    assert body["schedules"][0]["sourceId"] == "resourcesat-2a-liss3-boa"
+    assert body["schedules"][0]["scheduleState"] == "routine"
+    assert body["schedules"][0]["productExposure"] == "product_active"
+    assert body["schedules"][0]["isDue"] is True
 
 
 # ---------------------------------------------------------------------------

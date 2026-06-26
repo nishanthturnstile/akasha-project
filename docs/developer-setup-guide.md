@@ -130,6 +130,53 @@ If either configured port is busy, the script updates that entry in
 `infra/docker/.env` to the next free port and prints the actual URLs. Treat the
 printed URLs as the source of truth.
 
+### Inspect the local PostGIS database with DBeaver
+
+The local dev overlay publishes PostGIS on the loopback interface only:
+
+```text
+127.0.0.1:15432 -> postgis:5432
+```
+
+This is for local GUI inspection only. Do not add a Postgres `ports:` mapping to
+`infra/docker/docker-compose.yml`, because the base compose file stays
+production-like and private.
+
+Start the backend stack first:
+
+```bash
+make backend
+```
+
+If `make` is unavailable, use the equivalent script:
+
+```bash
+bash scripts/dev-local.sh --backend-only
+```
+
+Then create a DBeaver connection:
+
+| Field | Value |
+|---|---|
+| Connection name | `Akasha Local PostGIS` |
+| Host | `localhost` |
+| Port | `15432` |
+| Database | `POSTGRES_DB` from `infra/docker/.env` — default `akasha` |
+| Username | `POSTGRES_USER` from `infra/docker/.env` — default `akasha_local` |
+| Password | `POSTGRES_PASSWORD` from `infra/docker/.env` |
+
+Useful schemas to browse:
+
+- `akasha` — app-owned auth, team, plot, field, season, operation, and reporting tables.
+- `pgstac` — catalog tables used by the STAC API.
+
+Recommended read-only checks from DBeaver's SQL editor:
+
+```sql
+SELECT current_database(), current_user;
+SELECT postgis_full_version();
+```
+
 ### First user
 
 There is **no bootstrap admin user**. Create the first local account through:

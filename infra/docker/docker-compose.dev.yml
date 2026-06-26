@@ -7,6 +7,13 @@ name: akasha
 # intentionally not referenced by self-hosted/Coolify production deployment.
 
 services:
+  postgis:
+    # Local GUI access only. The base compose keeps PostGIS private; this dev
+    # overlay binds the database to localhost so DBeaver/SQLTools can inspect it
+    # without exposing port 5432 on the LAN.
+    ports:
+      - "127.0.0.1:15432:5432"
+
   api:
     environment:
       # Docker Desktop on Windows/WSL can miss inotify events from bind mounts.

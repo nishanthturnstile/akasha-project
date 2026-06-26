@@ -80,6 +80,9 @@ _SCHEDULER_OVERDUE_GRACE_HOURS: int = 24
 #: Scheduler ledger JSON filename (matches LEDGER_FILENAME in orchestrator.py).
 _SCHEDULER_LEDGER_FILENAME = "scheduler_ledger.json"
 
+#: Redacted schedule snapshot filename written by schedule-plan.
+_SCHEDULE_STATE_FILENAME = "schedule_state.json"
+
 #: SQLite WAL busy timeout in milliseconds (read-only queries).
 _SQLITE_BUSY_TIMEOUT_MS = 5_000
 
@@ -707,6 +710,99 @@ def _read_scheduler_ledger(jobs_dir: Path) -> dict[str, Any]:
     return _safe_read_json(path)
 
 
+def _read_schedule_snapshot(jobs_dir: Path) -> dict[str, Any]:
+    """Read schedule_state.json from *jobs_dir*; return {} on any error."""
+    path = jobs_dir / _SCHEDULE_STATE_FILENAME
+    if not path.is_file():
+        return {}
+    return _safe_read_json(path)
+
+
+def _bool_from_snapshot(value: Any, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _float_from_snapshot(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _str_from_snapshot(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(_sanitize_monitoring_value(value)).strip()
+    return text or None
+
+
+def _capabilities_from_snapshot(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    safe: list[str] = []
+    for item in value:
+        text = _str_from_snapshot(item)
+        if text:
+            safe.append(text)
+    return safe
+
+
+def _snapshot_schedule_to_item(
+    raw: dict[str, Any], *, now: datetime
+) -> IngestionScheduleItem | None:
+    source_id = _str_from_snapshot(raw.get("sourceId"))
+    if not source_id:
+        return None
+    next_due_at = _str_from_snapshot(raw.get("nextDueAt"))
+    fallback_due, fallback_overdue = _schedule_due_flags(next_due_at, now=now)
+    return IngestionScheduleItem(
+        source_id=source_id,
+        provider=_str_from_snapshot(raw.get("provider")),
+        adapter=_str_from_snapshot(raw.get("adapter") or raw.get("provider")),
+        aoi_id=_str_from_snapshot(raw.get("aoiId")),
+        lifecycle_state=_str_from_snapshot(raw.get("lifecycleState")),
+        schedule_state=_str_from_snapshot(raw.get("scheduleState")),
+        capabilities=_capabilities_from_snapshot(raw.get("capabilities")),
+        commercial_state=_str_from_snapshot(raw.get("commercialState")),
+        aoi_scope=_str_from_snapshot(raw.get("aoiScope")),
+        validation_state=_str_from_snapshot(raw.get("validationState")),
+        schedule_enabled=_bool_from_snapshot(raw.get("scheduleEnabled")),
+        product_exposure=_str_from_snapshot(raw.get("productExposure")),
+        last_run_at=_str_from_snapshot(raw.get("lastRunAt")),
+        last_success_at=_str_from_snapshot(raw.get("lastSuccessAt")),
+        last_failure_at=_str_from_snapshot(raw.get("lastFailureAt")),
+        next_due_at=next_due_at,
+        is_due=_bool_from_snapshot(raw.get("isDue"), default=fallback_due),
+        is_overdue=_bool_from_snapshot(raw.get("isOverdue"), default=fallback_overdue),
+        next_window_start=_str_from_snapshot(raw.get("nextWindowStart")),
+        next_window_end=_str_from_snapshot(raw.get("nextWindowEnd")),
+        cadence_days=_float_from_snapshot(raw.get("cadenceDays")),
+        due_reason=_str_from_snapshot(raw.get("dueReason")),
+    )
+
+
+def _snapshot_schedule_items(
+    snapshot: dict[str, Any], *, now: datetime
+) -> list[IngestionScheduleItem]:
+    raw_schedules = snapshot.get("schedules")
+    if not isinstance(raw_schedules, list):
+        return []
+    schedules: list[IngestionScheduleItem] = []
+    for raw in raw_schedules:
+        if not isinstance(raw, dict):
+            continue
+        item = _snapshot_schedule_to_item(raw, now=now)
+        if item is not None:
+            schedules.append(item)
+    return schedules
+
+
 def _list_job_dirs_sorted(jobs_dir: Path) -> list[Path]:
     """Return job subdirectories sorted newest-first.
 
@@ -1029,6 +1125,15 @@ def get_ingestion_schedules() -> IngestionScheduleResponse:
             status="unavailable",
             generated_at=generated_at,
             last_error=_redact_error(str(exc)),
+        )
+
+    schedule_snapshot = _read_schedule_snapshot(jobs_dir)
+    snapshot_schedules = _snapshot_schedule_items(schedule_snapshot, now=now)
+    if snapshot_schedules:
+        return IngestionScheduleResponse(
+            status="ok",
+            generated_at=_str_from_snapshot(schedule_snapshot.get("generatedAt")) or generated_at,
+            schedules=snapshot_schedules,
         )
 
     entries: dict[str, Any] = scheduler_ledger.get("entries") or {}

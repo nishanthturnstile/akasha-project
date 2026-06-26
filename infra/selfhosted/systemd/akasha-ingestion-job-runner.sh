@@ -307,7 +307,7 @@ run_job() {
     --min-coverage-percent "${min_coverage_percent}"
     --lock-dir "${worker_lock_dir}"
     --base-dir "${AKASHA_SCHEDULER_JOBS_DIR:-/srv/akasha/ingestion/scheduler/jobs}"
-    --ledger-db-path "${AKASHA_SCHEDULER_LEDGER_DB:-/srv/akasha/ingestion/scheduler/scheduler.sqlite}"
+    --ledger-db-path "${AKASHA_SCHEDULER_LEDGER_DB_PATH:-${AKASHA_SCHEDULER_LEDGER_DB:-/srv/akasha/ingestion/scheduler/job_ledger.db}}"
     --json
   )
   [[ "${dry_run}" == "true" ]] && sync_args+=(--dry-run)

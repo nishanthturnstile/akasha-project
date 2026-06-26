@@ -1234,6 +1234,15 @@ class TestWorkerCLIParser:
             assert "sourceId" in item
             assert "isDue" in item
 
+        snapshot_path = tmp_path / "schedule_state.json"
+        assert snapshot_path.is_file()
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        assert snapshot["snapshotVersion"] == 1
+        assert snapshot["schedules"][0]["sourceId"] == _LISS3_SOURCE
+        assert snapshot["schedules"][0]["scheduleState"] == "routine"
+        assert snapshot["schedules"][0]["productExposure"] == "product_active"
+        assert snapshot["schedules"][0]["isDue"] is True
+
     def test_schedule_source_dry_run_via_cmd_fn(self, tmp_path, monkeypatch):
         """schedule-source --dry-run must not raise and must return 0."""
         import importlib.util

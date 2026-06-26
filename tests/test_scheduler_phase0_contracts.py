@@ -62,8 +62,8 @@ def test_phase0_contract_defines_job_monitoring_ledger_and_runtime_boundaries() 
     contract = _read(CONTRACT_PATH)
 
     for required in (
-        "/srv/akasha/ingestion/scheduler/scheduler.sqlite",
-        "/srv/akasha/ingestion/scheduler/schedule_state.json",
+        "/srv/akasha/ingestion/scheduler/job_ledger.db",
+        "/srv/akasha/ingestion/scheduler/jobs/schedule_state.json",
         "GET /api/monitoring/ingestion-schedules",
         "GET /api/monitoring/ingestion-jobs",
         "GET /api/monitoring/ingestion-jobs/{jobId}",

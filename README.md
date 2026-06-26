@@ -137,19 +137,19 @@ make backend-rebuild
 Open:
 
 ```text
-http://localhost:5173/   # default; use the URL printed by the script if 5173 is busy
+http://localhost:5173/   # default FRONTEND_PORT; use the printed URL if the script moved it
 ```
 
 Create your first local account through sign-up, then use those credentials to log in:
 
 ```text
-URL:      http://localhost:5173/signup  # default; use the printed frontend port if changed
+URL:      http://localhost:5173/signup  # default FRONTEND_PORT; use the printed URL if changed
 ```
 
 Local login after sign-up:
 
 ```text
-URL:      http://localhost:5173/login   # default; use the printed frontend port if changed
+URL:      http://localhost:5173/login   # default FRONTEND_PORT; use the printed URL if changed
 ```
 
 ### Esri basemap key
@@ -185,17 +185,15 @@ or:
 bash scripts/dev-local.sh --backend-only
 ```
 
-The gateway URL is based on `WEB_PORT` in `infra/docker/.env`. The default is
-`http://localhost:8080`. If that port is already occupied by the Akasha gateway,
-the script reuses it. If another process owns the port, the script updates
-`WEB_PORT` to the next free port and prints the actual backend URL. Vite reads
-that value automatically, so you do not need to manually set
-`AKASHA_DEV_PROXY_TARGET` for normal local development.
+Local development ports are configured in `infra/docker/.env`:
 
-The frontend prefers `FRONTEND_PORT=5173`. If that port is already in use, the
-script starts Vite on the next free port and prints the actual frontend/login
-URL. Set `FRONTEND_PORT` only when you intentionally want a different preferred
-port.
+- `WEB_PORT` for the Docker gateway (`8080` by default)
+- `FRONTEND_PORT` for the Vite dev server (`5173` by default)
+
+If either configured port is already occupied by another process, the launcher
+updates that entry in `infra/docker/.env` to the next free port and prints the
+actual URLs. Vite reads the same file automatically, so normal local
+development does not need a manual `AKASHA_DEV_PROXY_TARGET`.
 
 ### Frontend only
 
@@ -263,7 +261,8 @@ Common causes:
   `make dev`.
 - `curl http://localhost:5173/api/health` fails: Vite is not running, or the
   Docker gateway is unhealthy. If the script selected a different frontend
-  port, use that printed port instead of `5173`.
+  port, use `FRONTEND_PORT` from `infra/docker/.env` or the printed URL instead
+  of `5173`.
 - `http://localhost:8080` fails but containers are healthy: check the printed
   backend URL or `WEB_PORT` in `infra/docker/.env`; this workspace may use
   `18080` or another free port.

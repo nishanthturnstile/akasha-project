@@ -6,7 +6,7 @@ import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
 import FieldAnalyticsPanel from '@/components/analytics/FieldAnalyticsPanel';
-import { useConfig, useFields, useUpdateField } from '@/lib/queries';
+import { useConfig, useDeleteField, useFields, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
 import { useSeasonContext } from '@/state/seasonContext';
 import { cn } from '@/lib/utils';
@@ -22,6 +22,7 @@ export default function FieldAnalyticsPage() {
   const fieldsQ = useFields();
   const configQ = useConfig();
   const updateField = useUpdateField();
+  const deleteField = useDeleteField();
   const { seasonId } = useSeasonContext();
   const [editFieldOpen, setEditFieldOpen] = useState(false);
   const [savingField, setSavingField] = useState(false);
@@ -123,6 +124,7 @@ export default function FieldAnalyticsPage() {
 
       {selectedField && (
         <EditFieldDialog
+          key={selectedField.id}
           field={selectedField}
           open={editFieldOpen}
           onOpenChange={setEditFieldOpen}
@@ -134,6 +136,7 @@ export default function FieldAnalyticsPage() {
             );
           }}
           saving={savingField}
+          onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
         />
       )}
     </div>

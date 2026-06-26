@@ -596,6 +596,21 @@ def test_cors_wildcard_is_not_used_with_credentials(monkeypatch):
         _ = settings.cors_allowed_origins
 
 
+def test_dev_cors_defaults_follow_local_port_configuration(monkeypatch):
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    monkeypatch.setenv("FRONTEND_PORT", "15173")
+    monkeypatch.setenv("WEB_PORT", "18080")
+    monkeypatch.setattr(settings, "app_env", "development")
+
+    assert settings.cors_allowed_origins == [
+        "http://localhost:15173",
+        "http://localhost:18080",
+        "http://127.0.0.1:15173",
+        "http://127.0.0.1:18080",
+    ]
+
+
 def test_dev_seed_alembic_baseline_uses_deterministic_auth_ids():
     baseline = (
         Path(__file__).resolve().parents[1]

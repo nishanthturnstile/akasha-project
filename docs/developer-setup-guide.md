@@ -119,7 +119,16 @@ Login:    http://localhost:5173/login
 Backend:  http://localhost:8080
 ```
 
-If ports are busy, or if `infra/docker/.env` already has a different `WEB_PORT`, the script picks/reuses the working port and prints the actual URL. Treat the printed URLs as the source of truth.
+Local development ports live in `infra/docker/.env`:
+
+```env
+WEB_PORT=8080
+FRONTEND_PORT=5173
+```
+
+If either configured port is busy, the script updates that entry in
+`infra/docker/.env` to the next free port and prints the actual URLs. Treat the
+printed URLs as the source of truth.
 
 ### First user
 
@@ -486,7 +495,8 @@ make frontend
 
 ### Port 8080 or 5173 is busy
 
-The script chooses the next free port and prints the actual URL. Use the printed URL.
+The script updates `WEB_PORT` or `FRONTEND_PORT` in `infra/docker/.env` to the
+next free port and prints the actual URL. Use the printed URL.
 
 Check current Docker services:
 

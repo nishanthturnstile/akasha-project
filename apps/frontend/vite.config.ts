@@ -8,24 +8,32 @@ import path from 'node:path';
 // BFF gateway so the app uses the same same-origin contract it will use behind Caddy.
 // The gateway host port comes from infra/docker/.env (WEB_PORT), with 8080 as
 // the compose default. AKASHA_DEV_PROXY_TARGET remains an explicit override.
-function dockerGatewayTarget(): string {
+function readDockerEnvValue(key: string): string | undefined {
   const dockerEnvPath = path.resolve(__dirname, '../../infra/docker/.env');
-  const fallbackPort = '8080';
 
   try {
     const envText = fs.readFileSync(dockerEnvPath, 'utf8');
-    const webPort = envText
+    return envText
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .find((line) => line.startsWith('WEB_PORT='))
+      .find((line) => line.startsWith(`${key}=`))
       ?.split('=')
       .slice(1)
       .join('=')
       .trim();
-    return `http://localhost:${webPort || fallbackPort}`;
   } catch {
-    return `http://localhost:${fallbackPort}`;
+    return undefined;
   }
+}
+
+function dockerGatewayTarget(): string {
+  return `http://localhost:${readDockerEnvValue('WEB_PORT') || '8080'}`;
+}
+
+function frontendPort(): number {
+  const rawPort = readDockerEnvValue('FRONTEND_PORT') || '5173';
+  const parsedPort = Number(rawPort);
+  return Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 5173;
 }
 
 const devProxyTarget = process.env.AKASHA_DEV_PROXY_TARGET ?? dockerGatewayTarget();
@@ -39,7 +47,7 @@ export default defineConfig({
   },
   server: {
     host: true,
-    port: 5173,
+    port: frontendPort(),
     proxy: {
       '/api': { target: devProxyTarget, changeOrigin: true },
       '/tiles': { target: devProxyTarget, changeOrigin: true },

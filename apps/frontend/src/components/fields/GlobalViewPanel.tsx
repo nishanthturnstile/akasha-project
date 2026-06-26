@@ -413,6 +413,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
 
       {editingField && (
         <EditFieldDialog
+          key={editingField.id}
           field={editingField}
           open={!!editingField}
           onOpenChange={(open) => { if (!open) setEditingField(null); }}

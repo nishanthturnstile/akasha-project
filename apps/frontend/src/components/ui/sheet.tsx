@@ -17,7 +17,7 @@ const SheetOverlay = forwardRef<
   <Dialog.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-overlay bg-background/60 backdrop-blur-sm data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-in',
+      'fixed inset-0 z-popover bg-background/60 backdrop-blur-sm data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-in',
       className,
     )}
     {...props}

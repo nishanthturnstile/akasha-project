@@ -10,7 +10,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
-import { useCompleteOnboarding, useSeasons } from '@/lib/queries';
+import { useCompleteOnboarding, useCrops, useSeasons, useUpdateField } from '@/lib/queries';
+import type { VegetationCycleCreate } from '@/types/api';
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
@@ -35,9 +36,12 @@ const CROP_OPTIONS = [
 export default function OnboardingStep3() {
   const navigate = useNavigate();
   const seasonsQ = useSeasons();
+  const cropsQ = useCrops();
   const completeOnboarding = useCompleteOnboarding();
+  const updateField = useUpdateField();
   const [cropName, setCropName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
 
@@ -59,6 +63,7 @@ export default function OnboardingStep3() {
       return;
     }
     setError(null);
+    setSaving(true);
     try {
       await completeOnboarding.mutateAsync();
       // Clear onboarding session keys
@@ -72,8 +77,27 @@ export default function OnboardingStep3() {
       })();
       const lastFieldId = storedIds[storedIds.length - 1];
       sessionStorage.removeItem(ONBOARDING_FIELDS_KEY);
+
+      // Save the selected crop as a vegetation cycle for the last field
+      if (lastFieldId && seasonId && cropName) {
+        const crop = cropsQ.data?.find((c) => c.name === cropName);
+        if (crop) {
+          const vegPayload: VegetationCycleCreate[] = [{
+            seasonId,
+            year: new Date().getFullYear(),
+            cropType: crop.id,
+            sowingDate: seasonStartDate ?? undefined,
+          }];
+          await updateField.mutateAsync({
+            fieldId: lastFieldId,
+            payload: { vegetationData: vegPayload },
+          });
+        }
+      }
+
       navigate(lastFieldId ? `/monitoring/field-analytics/field/${lastFieldId}` : '/');
     } catch (err) {
+      setSaving(false);
       setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
     }
   };
@@ -133,9 +157,9 @@ export default function OnboardingStep3() {
             <Button
               variant="primary"
               onClick={ handleFinish }
-              disabled={ !cropName || completeOnboarding.isPending }
+              disabled={ !cropName || saving || completeOnboarding.isPending }
             >
-              { completeOnboarding.isPending ? 'Finishing…' : 'Finish' }
+              { saving || completeOnboarding.isPending ? 'Finishing…' : 'Finish' }
             </Button>
           </div>
         </CardContent>

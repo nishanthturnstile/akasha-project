@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { useCreateSeason, useFields } from '@/lib/queries';
+import { useCreateSeason, useFields, useSeasons } from '@/lib/queries';
+import type { Season } from '@/types/api';
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -20,16 +21,17 @@ import {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated?: (seasonId: string) => void;
+  onCreated?: (season: Season) => void;
 }
 
-function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
+export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const [deselectedFieldIds, setDeselectedFieldIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const filledRef = useRef(false);
 
@@ -42,6 +44,23 @@ function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
 
   const createSeason = useCreateSeason();
   const fieldsQ = useFields();
+  const seasonsQuery = useSeasons();
+
+  const existingSeasonNames = useMemo(() => {
+    if (!Array.isArray(seasonsQuery.data)) return new Set<string>();
+    return new Set(seasonsQuery.data.map((s) => s.name.toLowerCase().trim()));
+  }, [seasonsQuery.data]);
+
+  useEffect(() => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const timer = setTimeout(() => {
+      if (existingSeasonNames.has(trimmed.toLowerCase())) {
+        setNameError('Season name already exists.');
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [name, existingSeasonNames]);
 
   const allFields = useMemo(() => (Array.isArray(fieldsQ.data) ? fieldsQ.data : []), [fieldsQ.data]);
 
@@ -81,7 +100,7 @@ function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
     return removed.filter((f) => f.name.toLocaleLowerCase().includes(q));
   }, [allFields, deselectedFieldIds, removedSearch]);
 
-  const canCreate = name.trim() !== '' && startDate !== '' && endDate !== '';
+  const canCreate = name.trim() !== '' && startDate !== '' && endDate !== '' && !nameError;
 
   const handleCancel = useCallback(() => {
     if (filledRef.current) {
@@ -101,7 +120,7 @@ function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
         endDate: endDate || null,
         fieldIds: selectedFieldIds,
       });
-      onCreated?.(created.id);
+      onCreated?.(created);
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create season';
@@ -142,8 +161,9 @@ function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
               <input
                 className="rounded-md border border-border bg-background px-3 py-2"
                 value={ name }
-                onChange={ (e) => setName(e.target.value) }
+                onChange={ (e) => { setName(e.target.value); setNameError(null); } }
               />
+              { nameError && <p className="text-sm text-destructive">{ nameError }</p> }
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -323,7 +343,7 @@ function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmClose(false)}>Keep editing</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
+            <AlertDialogAction onClick={() => onOpenChange(false)}>
               Discard
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -333,10 +353,4 @@ function CreateSeasonDialogInner({ open, onOpenChange, onCreated }: Props) {
   );
 }
 
-/**
- * Wrapper that resets form state whenever the dialog is opened.
- */
-export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Props) {
-  // Use a key to force remount and reset all internal state when dialog opens
-  return <CreateSeasonDialogInner key={ open ? 'open' : 'closed' } open={ open } onOpenChange={ onOpenChange } onCreated={ onCreated } />;
-}
+

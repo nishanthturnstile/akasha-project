@@ -118,10 +118,10 @@ registry before those sources can be scheduled. Commercial and out-of-AOI rows m
 
 Ingestion owns scheduler raw state:
 
-- SQLite job ledger under `/srv/akasha/ingestion/scheduler/scheduler.sqlite`.
+- SQLite job ledger under `/srv/akasha/ingestion/scheduler/job_ledger.db`.
 - Raw provider request/response archives under `/srv/akasha/ingestion/scheduler/artifacts/raw`.
 - Redacted job artifacts under `/srv/akasha/ingestion/scheduler/artifacts/redacted`.
-- Redacted scheduler snapshot at `/srv/akasha/ingestion/scheduler/schedule_state.json`.
+- Redacted scheduler snapshot at `/srv/akasha/ingestion/scheduler/jobs/schedule_state.json`.
 - Redacted per-job summary snapshots under `/srv/akasha/ingestion/scheduler/jobs/<jobId>/summary.json`.
 
 The BFF reads only redacted snapshots through explicit read-only configuration. It must not read
@@ -138,6 +138,11 @@ Artifacts must answer these questions without exposing secrets:
 - Why did validation pass or fail?
 - What lock/runtime/cutover owner was used?
 - When is the next run due?
+
+`schedule-plan` must write `schedule_state.json` even before any successful run has advanced the
+cadence ledger. This lets `/admin/ingestion/schedules` show the current source/AOI cadence, exposure,
+validation, due, and gated/skip reasons immediately after scheduler installation or during canary
+plan-only operation.
 
 ## 4. Scheduler job ledger contract
 

@@ -16,6 +16,7 @@ EXPECTED_FILES = {
     "timer": "akasha-ingestion-scheduler.timer",
     "service": "akasha-ingestion-scheduler.service",
     "wrapper": "akasha-ingestion-scheduler.sh",
+    "manual_runner": "akasha-ingestion-job-runner.sh",
     "env_example": "ingestion-scheduler.env.example",
     "installer": "install-akasha-ingestion-scheduler.sh",
 }
@@ -227,6 +228,13 @@ def test_wrapper_rejects_scheduler_paths_outside_srv_akasha():
     assert 'ensure_under_srv_akasha "${AKASHA_SCHEDULER_LOCK_DIR}"' in wrapper
     assert 'ensure_under_srv_akasha "${AKASHA_SCHEDULER_LEDGER_DB_PATH}"' in wrapper
     assert "--ledger-db-path" in wrapper
+
+
+def test_manual_runner_uses_canonical_scheduler_job_ledger_path():
+    """Manual scheduler jobs must write the same SQLite ledger that the BFF reads."""
+    manual_runner = read_artifact("manual_runner")
+    assert "/srv/akasha/ingestion/scheduler/job_ledger.db" in manual_runner
+    assert "/srv/akasha/ingestion/scheduler/scheduler.sqlite" not in manual_runner
 
 
 def test_service_and_installer_use_canonical_scheduler_jobs_dir():

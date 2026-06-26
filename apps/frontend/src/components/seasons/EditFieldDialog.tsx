@@ -384,9 +384,13 @@ export default function EditFieldDialog({
     );
   };
 
-  const handleDelete = () => {
-    onDelete?.(field.id);
-    onOpenChange(false);
+  const handleDelete = async () => {
+    try {
+      await onDelete?.(field.id);
+      onOpenChange(false);
+    } catch {
+      setError('Failed to delete field');
+    }
   };
 
   const handleCancel = useCallback(() => {

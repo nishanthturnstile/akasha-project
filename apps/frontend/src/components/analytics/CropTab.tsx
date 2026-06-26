@@ -16,7 +16,14 @@ export default function CropTab({ field }: CropTabProps) {
   const [saving, setSaving] = useState(false);
 
   const vegData = field.vegetationData ?? [];
-  const latestCycle = vegData.length > 0 ? vegData[vegData.length - 1] : null;
+  const [userSelectedId, setUserSelectedId] = useState<string>('');
+
+  const resolvedId = userSelectedId && vegData.find((vc) => vc.id === userSelectedId)
+    ? userSelectedId
+    : vegData.length > 0
+      ? vegData[vegData.length - 1].id
+      : '';
+  const selectedCycle = vegData.find((vc) => vc.id === resolvedId) ?? null;
 
   const handleSave = useCallback((
     fieldId: string,
@@ -40,6 +47,7 @@ export default function CropTab({ field }: CropTabProps) {
         onSuccess: () => {
           setSaving(false);
           setEditDialogOpen(false);
+          setUserSelectedId('');
         },
         onError: () => {
           setSaving(false);
@@ -53,8 +61,8 @@ export default function CropTab({ field }: CropTabProps) {
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-3">
           <CropInfoCard
-            testId="crop-info-card-crop-rotation"
-            title="Crop rotation"
+            testId="crop-info-card-veg-cycles"
+            title="Veg cycles"
             icon={<Sprout className="size-3.5 text-primary" strokeWidth={1.75} />}
             action={
               <Button
@@ -69,33 +77,44 @@ export default function CropTab({ field }: CropTabProps) {
               </Button>
             }
           >
-            {latestCycle ? (
-              <div className="space-y-1 text-[13px] leading-5 text-foreground">
-                <p><span className="text-muted-foreground">Crop:</span> {latestCycle.cropName || '—'}</p>
-                <p><span className="text-muted-foreground">Variety:</span> {latestCycle.varietyName || '—'}</p>
-                <p><span className="text-muted-foreground">Planted:</span> {latestCycle.sowingDate || '—'}</p>
-              </div>
-            ) : (
+            {vegData.length === 0 ? (
               <p className="text-[13px] text-muted-foreground">No crop data added yet.</p>
-            )}
-          </CropInfoCard>
-
-          {vegData.length > 0 && (
-            <div className="rounded-md border border-border/70 bg-background/40 p-2.5">
-              <p className="text-[11px] font-medium text-muted-foreground mb-1.5">All cycles</p>
+            ) : (
               <div className="space-y-1.5">
                 {vegData.map((vc) => (
-                  <div key={vc.id} className="flex items-center gap-2 text-[12px] text-foreground">
-                    <Sprout className="size-3 text-emerald-500 shrink-0" />
-                    <span className="truncate">{vc.cropName || '—'}</span>
-                    {vc.seasonName && (
-                      <span className="text-muted-foreground text-[10px]">({vc.seasonName})</span>
+                  <label
+                    key={vc.id}
+                    className={cn(
+                      'flex items-start gap-2 rounded-md border p-2 cursor-pointer transition-colors',
+                      resolvedId === vc.id
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border/70 hover:bg-accent/10',
                     )}
-                  </div>
+                  >
+                    <input
+                      type="radio"
+                      name="veg-cycle"
+                      checked={resolvedId === vc.id}
+                      onChange={() => setUserSelectedId(vc.id)}
+                      className="mt-0.5 size-3.5 accent-primary shrink-0"
+                    />
+                    <div className="space-y-0.5 text-[12px] leading-4 text-foreground min-w-0">
+                      <p className="font-medium truncate">{vc.cropName || '—'}</p>
+                      {vc.varietyName && (
+                        <p className="text-muted-foreground">Variety: {vc.varietyName}</p>
+                      )}
+                      {vc.sowingDate && (
+                        <p className="text-muted-foreground">Sown: {vc.sowingDate}</p>
+                      )}
+                      {vc.seasonName && (
+                        <p className="text-muted-foreground text-[10px]">{vc.seasonName}</p>
+                      )}
+                    </div>
+                  </label>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </CropInfoCard>
 
           <CropInfoCard
             testId="crop-info-card-sown-area"
@@ -135,10 +154,10 @@ export default function CropTab({ field }: CropTabProps) {
               </Button>
             }
           >
-            {latestCycle ? (
+            {selectedCycle ? (
               <div className="space-y-1 text-[13px] leading-5 text-foreground">
-                <p><span className="text-muted-foreground">Target:</span> {latestCycle.targetYield != null ? `${latestCycle.targetYield} t/ha` : '—'}</p>
-                <p><span className="text-muted-foreground">Actual:</span> {latestCycle.actualYield != null ? `${latestCycle.actualYield} t/ha` : '—'}</p>
+                <p><span className="text-muted-foreground">Target:</span> {selectedCycle.targetYield != null ? `${selectedCycle.targetYield} t/ha` : '—'}</p>
+                <p><span className="text-muted-foreground">Actual:</span> {selectedCycle.actualYield != null ? `${selectedCycle.actualYield} t/ha` : '—'}</p>
               </div>
             ) : (
               <p className="text-[13px] text-muted-foreground">No yield data recorded.</p>

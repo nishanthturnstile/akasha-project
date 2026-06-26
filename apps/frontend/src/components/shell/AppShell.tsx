@@ -57,6 +57,17 @@ function formatDate(isoDate: string): string {
   });
 }
 
+function seasonTabFor(season: { startDate: string | null; endDate: string | null }): 'active' | 'planned' | 'ended' {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = season.startDate ? new Date(`${season.startDate}T00:00:00`) : null;
+  const end = season.endDate ? new Date(`${season.endDate}T00:00:00`) : null;
+  if (!start && !end) return 'active';
+  if (start && start > today) return 'planned';
+  if (end && end < today) return 'ended';
+  return 'active';
+}
+
 function testIdFor(label: string): string {
   return `nav-link-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 }
@@ -309,7 +320,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={ 200 }>
-      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (id) => { setCurrentSeasonId(id); setSeasonTab('active'); setGlobalViewOpen(true); } } />
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); setGlobalViewOpen(true); } } />
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
@@ -431,7 +442,7 @@ export function AppShell() {
               type="button"
               data-testid="season-selector"
               aria-label="Season selector"
-              onClick={ () => setSeasonSheetOpen(true) }
+              onClick={ () => { setSeasonSheetOpen(true); if (currentSeason) setSeasonTab(seasonTabFor(currentSeason)); } }
               className={ cn(
                 'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 'border-primary bg-primary/10 text-foreground',
@@ -530,7 +541,12 @@ export function AppShell() {
                               }
                               setCurrentSeasonId(season.id);
                               setSeasonSheetOpen(false);
-                              setGlobalViewOpen(true);
+                              setGlobalViewOpen(false);
+                              if (savedField) {
+                                navigate(`/monitoring/field-analytics/field/${savedField.id}`);
+                              } else {
+                                navigate('/monitoring/field-analytics');
+                              }
                             } }
                           >
                             <CardHeader>
@@ -598,7 +614,8 @@ export function AppShell() {
                                     e.stopPropagation();
                                     setCurrentSeasonId(season.id);
                                     setSeasonSheetOpen(false);
-                                    setGlobalViewOpen(true);
+                                    setGlobalViewOpen(false);
+                                    navigate(`/monitoring/field-create?seasonId=${season.id}`);
                                   } }
                                   className="mt-2 w-full rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
                                 >

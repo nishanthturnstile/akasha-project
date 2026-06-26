@@ -364,12 +364,14 @@ export default function EditFieldDialog({
       return;
     }
     const trimmedName = name.trim();
-    const duplicateName = (fieldsQ.data ?? []).find(
-      (f) => f.name.toLowerCase() === trimmedName.toLowerCase() && f.id !== field.id,
-    );
-    if (duplicateName) {
-      setError(`A field named "${trimmedName}" already exists.`);
-      return;
+    if (trimmedName.toLowerCase() !== field.name.trim().toLowerCase()) {
+      const duplicateName = (fieldsQ.data ?? []).find(
+        (f) => f.name.toLowerCase() === trimmedName.toLowerCase() && f.id !== field.id,
+      );
+      if (duplicateName) {
+        setError(`A field named "${trimmedName}" already exists.`);
+        return;
+      }
     }
     setError(null);
 

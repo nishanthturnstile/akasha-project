@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
-import { useCreateSeason } from '@/lib/queries';
+import { useCreateSeason, useSeasons } from '@/lib/queries';
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 
@@ -15,12 +15,30 @@ const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 export default function OnboardingStep1() {
   const navigate = useNavigate();
   const createSeason = useCreateSeason();
+  const seasonsQuery = useSeasons();
   const [seasonName, setSeasonName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
 
-  const canProceed = !!seasonName && !!startDate && !!endDate;
+  const existingSeasonNames = useMemo(() => {
+    if (!Array.isArray(seasonsQuery.data)) return new Set<string>();
+    return new Set(seasonsQuery.data.map((s) => s.name.toLowerCase().trim()));
+  }, [seasonsQuery.data]);
+
+  useEffect(() => {
+    const trimmed = seasonName.trim();
+    if (!trimmed) return;
+    const timer = setTimeout(() => {
+      if (existingSeasonNames.has(trimmed.toLowerCase())) {
+        setNameError('Season name already exists.');
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [seasonName, existingSeasonNames]);
+
+  const canProceed = !!seasonName && !!startDate && !!endDate && !nameError;
 
   const handleNext = async () => {
     if (!canProceed) return;
@@ -54,9 +72,12 @@ export default function OnboardingStep1() {
           <input
             placeholder="Season name"
             value={seasonName}
-            onChange={(e) => setSeasonName(e.target.value)}
+            onChange={(e) => { setSeasonName(e.target.value); setNameError(null); }}
             className="w-full rounded-md border border-border bg-background px-3 py-2"
           />
+          {nameError && (
+            <p className="text-sm text-destructive">{nameError}</p>
+          )}
           <div className="flex gap-2">
             <DatePicker
               value={startDate}

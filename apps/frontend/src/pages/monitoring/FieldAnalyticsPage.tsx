@@ -123,6 +123,7 @@ export default function FieldAnalyticsPage() {
 
       {selectedField && (
         <EditFieldDialog
+          key={selectedField.id}
           field={selectedField}
           open={editFieldOpen}
           onOpenChange={setEditFieldOpen}

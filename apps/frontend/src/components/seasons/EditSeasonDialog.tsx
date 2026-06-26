@@ -1,11 +1,20 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogRoot,
+  AlertDialogTitle,
+  AlertDialogFooter,
+} from '@/components/ui/alert-dialog';
 import type { Field, Season } from '@/types/api';
 
 interface Props {
@@ -32,6 +41,7 @@ export default function EditSeasonDialog({
   const [startDate, setStartDate] = useState(season.startDate ?? '');
   const [endDate, setEndDate] = useState(season.endDate ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const seasonFieldIds = useMemo(
     () => season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id),
@@ -42,6 +52,37 @@ export default function EditSeasonDialog({
   useEffect(() => {
     setSelectedFieldIds(seasonFieldIds);
   }, [seasonFieldIds]);
+
+  const [initialSnapshot, setInitialSnapshot] = useState<{ name: string; startDate: string; endDate: string; fieldIds: string[] } | null>(null);
+
+  useEffect(() => {
+    if (open && !initialSnapshot) {
+      setInitialSnapshot({
+        name: season.name,
+        startDate: season.startDate ?? '',
+        endDate: season.endDate ?? '',
+        fieldIds: seasonFieldIds,
+      });
+    }
+    if (!open) {
+      setInitialSnapshot(null);
+    }
+  }, [open, season.name, season.startDate, season.endDate, seasonFieldIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dirty = initialSnapshot
+    ? name !== initialSnapshot.name
+      || startDate !== initialSnapshot.startDate
+      || endDate !== initialSnapshot.endDate
+      || JSON.stringify([...selectedFieldIds].sort()) !== JSON.stringify([...initialSnapshot.fieldIds].sort())
+    : false;
+
+  const handleCancel = useCallback(() => {
+    if (dirty) {
+      setConfirmClose(true);
+    } else {
+      onOpenChange(false);
+    }
+  }, [dirty, onOpenChange]);
 
   const [fieldTab, setFieldTab] = useState<'list' | 'added' | 'removed'>('list');
   const [listSearch, setListSearch] = useState('');
@@ -120,11 +161,9 @@ export default function EditSeasonDialog({
                 Update season details or select the fields that belong to it.
               </p>
             </div>
-            <Dialog.Close asChild>
-              <button aria-label="Close" className="rounded-md p-1 text-muted-foreground hover:bg-accent/40">
-                <X className="size-4" />
-              </button>
-            </Dialog.Close>
+            <button aria-label="Close" onClick={handleCancel} className="rounded-md p-1 text-muted-foreground hover:bg-accent/40">
+              <X className="size-4" />
+            </button>
           </div>
 
           <div className="p-4 space-y-4">
@@ -304,18 +343,31 @@ export default function EditSeasonDialog({
             {error && <p className="text-sm text-destructive">{error}</p>}
 
             <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-              <Dialog.Close asChild>
-                <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm">
-                  Cancel
-                </button>
-              </Dialog.Close>
-              <Button variant="primary" size="sm" onClick={handleSave}>
+              <Button variant="outline" size="lg" className="min-w-[120px]" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="lg" className="min-w-[120px]" onClick={handleSave}>
                 Save
               </Button>
             </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+
+      <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+          <AlertDialogDescription>
+            You have unsaved changes. Are you sure you want to discard them?
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmClose(false)}>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </Dialog.Root>
   );
 }

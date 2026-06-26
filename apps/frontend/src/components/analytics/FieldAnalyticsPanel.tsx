@@ -48,7 +48,7 @@ export default function FieldAnalyticsPanel({
 
       {/* Section content */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
-        {activeSection === 'crop' && <CropTab fieldId={field.id} />}
+        {activeSection === 'crop' && <CropTab field={field} />}
         {activeSection === 'chart' && (
           <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
             Coming soon

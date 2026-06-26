@@ -11,7 +11,7 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { MapControls } from '@/components/map/MapControls';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { polygonAreaMeters } from '@/lib/measure';
-import { useConfig, useCreateField, useSeasons, queryKeys } from '@/lib/queries';
+import { useConfig, useCreateField, useFields, useSeasons, queryKeys } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 
 import type maplibregl from 'maplibre-gl';
@@ -29,6 +29,7 @@ export default function FieldCreatePage() {
   const navigate = useNavigate();
   const configQ = useConfig();
   const seasonsQ = useSeasons();
+  const fieldsQ = useFields();
   const createFieldMutation = useCreateField();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -113,6 +114,12 @@ export default function FieldCreatePage() {
       setSaveError('Please select a season');
       return;
     }
+    const effectiveName = fieldName.trim() || 'Field';
+    const duplicateName = (fieldsQ.data ?? []).find((f) => f.name.toLowerCase() === effectiveName.toLowerCase());
+    if (duplicateName) {
+      setSaveError(`A field named "${effectiveName}" already exists.`);
+      return;
+    }
     try {
       const polygon = draftGeometry.type === 'Polygon' ? draftGeometry : null;
       if (!polygon) {
@@ -121,7 +128,7 @@ export default function FieldCreatePage() {
       }
       const areaMeters = polygonAreaMeters(toLngLatRing(polygon.coordinates[0] ?? []));
       const created = await createFieldMutation.mutateAsync({
-        name: fieldName.trim() || 'Field',
+        name: effectiveName,
         geometry: { type: 'Polygon', coordinates: polygon.coordinates },
         areaHa: areaMeters / 10000,
         seasonIds: [selectedSeasonId],
@@ -265,9 +272,11 @@ export default function FieldCreatePage() {
                 autoFocus
               />
               <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={ handleClose }>Cancel</Button>
+                <Button variant="outline" size="lg" className="min-w-[120px]" onClick={ handleClose }>Cancel</Button>
                 <Button
                   variant="primary"
+                  size="lg"
+                  className="min-w-[120px]"
                   onClick={ saveField }
                   disabled={ !draftGeometry || !selectedSeasonId || createFieldMutation.isPending }
                 >

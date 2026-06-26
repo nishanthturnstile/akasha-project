@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
 import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
+import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
 import { queryClient } from '@/lib/queryClient';
@@ -160,9 +161,60 @@ export function AppShell() {
     );
   }, [seasonsQ.data]);
 
+  const activeCount = useMemo(
+    () => sortedSeasons.filter((s) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const start = s.startDate ? new Date(`${s.startDate}T00:00:00`) : null;
+      const end = s.endDate ? new Date(`${s.endDate}T00:00:00`) : null;
+      if (!start && !end) return true;
+      if (start && start <= today && (!end || end >= today)) return true;
+      if (!start && end && end >= today) return true;
+      return false;
+    }).length,
+    [sortedSeasons],
+  );
+  const plannedCount = useMemo(
+    () => sortedSeasons.filter((s) => {
+      if (!s.startDate) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return new Date(`${s.startDate}T00:00:00`) > today;
+    }).length,
+    [sortedSeasons],
+  );
+  const endedCount = useMemo(
+    () => sortedSeasons.filter((s) => {
+      if (!s.endDate) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return new Date(`${s.endDate}T00:00:00`) < today;
+    }).length,
+    [sortedSeasons],
+  );
+
   const filteredSeasons = useMemo(() => {
-    if (seasonTab === 'active') return sortedSeasons;
-    return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return sortedSeasons.filter((s) => {
+      const start = s.startDate ? new Date(`${s.startDate}T00:00:00`) : null;
+      const end = s.endDate ? new Date(`${s.endDate}T00:00:00`) : null;
+      if (seasonTab === 'active') {
+        if (!start && !end) return true;
+        if (start && start <= today && (!end || end >= today)) return true;
+        if (!start && end && end >= today) return true;
+        return false;
+      }
+      if (seasonTab === 'planned') {
+        if (!start) return false;
+        return start > today;
+      }
+      if (seasonTab === 'ended') {
+        if (!end) return false;
+        return end < today;
+      }
+      return false;
+    });
   }, [sortedSeasons, seasonTab]);
 
   const editSeasonTarget = useMemo(
@@ -319,7 +371,9 @@ export function AppShell() {
         </header>
 
         <section className="relative min-h-0 min-w-0 overflow-hidden" data-testid="shell-content">
-          <Outlet />
+          <SeasonProvider seasonId={ effectiveSeasonId }>
+            <Outlet />
+          </SeasonProvider>
         </section>
 
         { showGlobalViewPanel && (
@@ -402,21 +456,25 @@ export function AppShell() {
 
               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60">
                 <div className="flex items-center gap-2">
-                  { (['active', 'planned', 'ended'] as const).map((tab) => (
-                    <button
-                      key={ tab }
-                      type="button"
-                      onClick={ () => setSeasonTab(tab) }
-                      className={ cn(
-                        'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast',
-                        seasonTab === tab
-                          ? 'bg-primary text-primary-foreground'
-                          : 'border border-border bg-card text-foreground hover:bg-accent/40',
-                      ) }
-                    >
-                      { tab === 'active' ? 'Active' : tab === 'planned' ? 'Planned' : 'Ended' }
-                    </button>
-                  )) }
+                  { (['active', 'planned', 'ended'] as const).map((tab) => {
+                    const count = tab === 'active' ? activeCount : tab === 'planned' ? plannedCount : endedCount;
+                    return (
+                      <button
+                        key={ tab }
+                        type="button"
+                        onClick={ () => setSeasonTab(tab) }
+                        className={ cn(
+                          'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast',
+                          seasonTab === tab
+                            ? 'bg-primary text-primary-foreground'
+                            : 'border border-border bg-card text-foreground hover:bg-accent/40',
+                        ) }
+                      >
+                        { tab === 'active' ? 'Active' : tab === 'planned' ? 'Planned' : 'Ended' }
+                        { count > 0 && <span className="ml-1.5 opacity-80">({count})</span> }
+                      </button>
+                    );
+                  }) }
                 </div>
                 <Button variant="primary" size="sm" className="gap-2 shrink-0" onClick={ () => { setSeasonSheetOpen(false); setCreateSeasonOpen(true); } }>
                   <Plus className="size-3" aria-hidden="true" />

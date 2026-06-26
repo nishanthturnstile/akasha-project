@@ -349,7 +349,7 @@ def test_signup_creates_user_team_session_and_returns_onboarding_state(monkeypat
             {
                 "id": "22222222-2222-4222-8222-222222222222",
                 "name": "New User's Team",
-                "role": "owner",
+                "role": "member",
             }
         ],
     )
@@ -378,7 +378,7 @@ def test_signup_creates_user_team_session_and_returns_onboarding_state(monkeypat
     assert payload["currentTeam"] == {
         "id": "22222222-2222-4222-8222-222222222222",
         "name": "New User's Team",
-        "role": "owner",
+        "role": "member",
     }
     assert created_users == [
         {

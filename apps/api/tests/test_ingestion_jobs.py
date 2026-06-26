@@ -1435,6 +1435,33 @@ def test_job_list_handles_sqlite_unavailable_gracefully(monkeypatch, tmp_path):
     assert body["status"] in ("ok", "unconfigured", "unavailable")
 
 
+def test_ledger_ro_connection_uses_immutable_uri(monkeypatch, tmp_path):
+    """Read-only API mounts require immutable SQLite opens; plain mode=ro may create shm."""
+    db = tmp_path / "job_ledger.db"
+    db.write_bytes(b"SQLite format 3\x00")
+    captured: dict[str, object] = {}
+
+    class FakeConnection:
+        row_factory = None
+
+        def execute(self, sql: str):
+            captured["pragma"] = sql
+
+    def fake_connect(database: str, *, uri: bool = False):
+        captured["database"] = database
+        captured["uri_flag"] = uri
+        return FakeConnection()
+
+    monkeypatch.setattr(ingestion_jobs.sqlite3, "connect", fake_connect)
+
+    conn = ingestion_jobs._open_ledger_ro(db)
+
+    assert conn.row_factory is ingestion_jobs.sqlite3.Row
+    assert captured["database"] == f"file:{db.as_posix()}?mode=ro&immutable=1"
+    assert captured["uri_flag"] is True
+    assert captured["pragma"] == "PRAGMA busy_timeout=5000;"
+
+
 def test_schedules_handles_missing_scheduler_ledger_json_gracefully(monkeypatch, tmp_path):
     """scheduler_ledger.json missing → empty schedules, not a crash."""
     jobs_dir = tmp_path / "jobs"

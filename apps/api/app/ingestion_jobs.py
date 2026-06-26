@@ -869,8 +869,15 @@ def _ledger_row_to_summary(row: dict[str, Any]) -> IngestionJobSummary:
 
 
 def _open_ledger_ro(db: Path) -> sqlite3.Connection:
-    """Open the SQLite ledger in read-only WAL mode."""
-    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    """Open the SQLite ledger from the BFF's read-only scheduler mount.
+
+    The API container bind-mounts `/srv/akasha/ingestion` as read-only by
+    design. SQLite's plain `mode=ro` can still try to create lock/shared-memory
+    sidecar files for WAL databases, which fails on that mount. `immutable=1`
+    keeps this endpoint strictly read-only and works for append-only monitoring
+    snapshots where the API can tolerate reading the latest checkpointed state.
+    """
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro&immutable=1", uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS};")
     return conn

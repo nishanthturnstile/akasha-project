@@ -12,13 +12,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-_LOCAL_CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
-
 
 def _get(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
@@ -36,6 +29,19 @@ def _get_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _local_cors_allowed_origins() -> list[str]:
+    ports: list[str] = []
+    for port in (_get("FRONTEND_PORT", "5173"), _get("WEB_PORT", "8080")):
+        if port and port not in ports:
+            ports.append(port)
+
+    return [
+        f"http://{host}:{port}"
+        for host in ("localhost", "127.0.0.1")
+        for port in ports
+    ]
 
 
 @dataclass
@@ -203,12 +209,12 @@ class Settings:
         raw = _get("CORS_ALLOWED_ORIGINS") or _get("CORS_ORIGINS", "")
         if not raw:
             if self.app_env.lower() in {"development", "local", "test"}:
-                return list(_LOCAL_CORS_ALLOWED_ORIGINS)
+                return _local_cors_allowed_origins()
             return []
         origins = [o.strip() for o in raw.split(",") if o.strip()]
         if "*" in origins:
             if self.app_env.lower() in {"development", "local", "test"}:
-                return list(_LOCAL_CORS_ALLOWED_ORIGINS)
+                return _local_cors_allowed_origins()
             raise RuntimeError(
                 "CORS wildcard is not allowed for credentialed auth; "
                 "set CORS_ALLOWED_ORIGINS to exact public origins."

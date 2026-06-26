@@ -24,14 +24,15 @@ If `make` is unavailable:
 bash scripts/dev-local.sh
 ```
 
-Vite serves the frontend at `http://localhost:5173/` by default and proxies
-`/api/*` and `/tiles/*` to the Docker gateway. If `5173` is already in use, the
-launcher chooses the next free frontend port and prints the actual URL.
+Vite serves the frontend on `FRONTEND_PORT` from `infra/docker/.env`
+(`5173` by default) and proxies `/api/*` and `/tiles/*` to the Docker gateway.
+If that port is already in use, the launcher updates `FRONTEND_PORT` to the
+next free port and prints the actual URL.
 
 The gateway port is read from `infra/docker/.env` (`WEB_PORT`, default `8080`).
 If that port is already occupied by another process, the launcher updates
-`WEB_PORT` to the next free port before starting Docker. Custom ports like
-`18080` therefore work without manually setting `AKASHA_DEV_PROXY_TARGET`.
+`WEB_PORT` to the next free port before starting Docker. Custom local port
+pairs therefore work without manually setting `AKASHA_DEV_PROXY_TARGET`.
 
 ## Develop this package only
 
@@ -40,7 +41,7 @@ Use this only after the Docker backend/gateway is already running:
 ```bash
 cd apps/frontend
 npx --yes yarn install --frozen-lockfile
-npx --yes yarn dev      # http://localhost:5173
+npx --yes yarn dev      # http://localhost:<FRONTEND_PORT from infra/docker/.env>
 ```
 
 Set `AKASHA_DEV_PROXY_TARGET` only when you intentionally want to override the

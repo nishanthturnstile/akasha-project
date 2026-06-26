@@ -694,6 +694,7 @@ class TestSafeWrapperApprovedRuntime:
                 "--aoi", _DEFAULT_AOI,
                 "--base-dir", str(tmp_path),
                 "--lock-dir", str(tmp_path / "locks"),
+                "--ledger-db-path", str(tmp_path / "job_ledger.db"),
                 "--dry-run",
             ]
         )
@@ -713,6 +714,7 @@ class TestSafeWrapperApprovedRuntime:
                 "--aoi", _DEFAULT_AOI,
                 "--base-dir", str(tmp_path),
                 "--lock-dir", str(tmp_path / "locks"),
+                "--ledger-db-path", str(tmp_path / "job_ledger.db"),
                 "--dry-run",
             ]
         )

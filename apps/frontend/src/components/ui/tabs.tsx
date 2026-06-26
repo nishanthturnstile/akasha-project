@@ -45,6 +45,10 @@ export const TabsContent = React.forwardRef<
         ref={ ref }
         className={ cn(
             'mt-3 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+            // Radix sets data-state="inactive" on non-active panels even when forceMount
+            // keeps them mounted. Without this, forceMount panels (which are never given
+            // the hidden attribute) would all render stacked and visible at once.
+            'data-[state=inactive]:hidden',
             className,
         ) }
         { ...props }

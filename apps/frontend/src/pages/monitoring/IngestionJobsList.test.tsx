@@ -61,13 +61,13 @@ const jobsPayload = {
   ],
 };
 
-function renderPage() {
+function renderPage(initialEntry = '/admin/ingestion/jobs') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return render(
     <QueryClientProvider client={ queryClient }>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={ [initialEntry] }>
         <IngestionJobsList />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -127,6 +127,60 @@ describe('IngestionJobsList', () => {
 
     // Failure kind for failed job
     expect(screen.getByText('download_error')).toBeTruthy();
+  });
+
+  it('renders zero counts distinctly from unavailable count and message dashes', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...jobsPayload,
+      jobs: [
+        {
+          ...jobsPayload.jobs[0],
+          jobId: 'job-zero-counts',
+          foundCount: 0,
+          selectedCount: null,
+          downloadedCount: 0,
+          rejectedCount: null,
+          message: null,
+        },
+      ],
+    })));
+
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: /View job job-zero-counts/ });
+    const row = link.closest('tr');
+    expect(row).toBeTruthy();
+    const rowScope = within(row as HTMLTableRowElement);
+
+    expect(rowScope.getAllByText('0').length).toBeGreaterThanOrEqual(2);
+    expect(rowScope.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('redacts path-like failure fields in job rows', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...jobsPayload,
+      jobs: [
+        {
+          ...jobsPayload.jobs[1],
+          jobId: 'job-path-leak-guard',
+          failureKind: '/srv/akasha/ingestion/raw/failure-kind.txt',
+          message: 'failed reading C:\\Users\\operator\\secret\\download.zip',
+        },
+      ],
+    })));
+
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: /View job job-path-leak-guard/ });
+    const row = link.closest('tr');
+    expect(row).toBeTruthy();
+    const rowText = row?.textContent ?? '';
+
+    expect(rowText).toContain('Detail redacted by monitoring safeguards.');
+    expect(rowText).not.toContain('/srv/akasha');
+    expect(rowText).not.toContain('C:\\Users');
+    expect(rowText).not.toContain('failure-kind.txt');
+    expect(rowText).not.toContain('download.zip');
   });
 
   it('links each job row to its detail page', async () => {
@@ -190,6 +244,23 @@ describe('IngestionJobsList', () => {
         String(call[0]).includes('/api/monitoring/ingestion-jobs'),
       ),
     ).toBe(true);
+  });
+
+  it('prefilters jobs from the sourceId URL query parameter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(jobsPayload));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPage('/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa');
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          String(call[0]).includes('sourceId=resourcesat-2a-liss3-boa'),
+        ),
+      ).toBe(true),
+    );
+    expect((screen.getByLabelText('Filter by source ID') as HTMLInputElement).value)
+      .toBe('resourcesat-2a-liss3-boa');
   });
 
   it('offers only canonical scheduler states in the state filter', async () => {

@@ -39,6 +39,63 @@ function fmtCount(value: number | null | undefined): string {
   return value.toLocaleString();
 }
 
+function safeOperatorText(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (!text) return null;
+  if (
+    /(?:https?:\/\/|s3:\/\/|file:\/\/)/i.test(text)
+    || /(?:^|\s)\/(?:srv|tmp|var|data|opt)\//i.test(text)
+    || /[A-Za-z]:\\/.test(text)
+  ) {
+    return 'Detail redacted by monitoring safeguards.';
+  }
+  return text.length > 180 ? `${text.slice(0, 177)}…` : text;
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${fmtCount(count)} ${count === 1 ? singular : plural}`;
+}
+
+function operatorVerdict(job: IngestionJobDetail): { title: string; detail: string } {
+  const state = job.state.toLowerCase();
+  const failureKind = job.failureKind?.toLowerCase() ?? '';
+  const safeFailureKind = safeOperatorText(job.failureKind);
+  const safeMessage = safeOperatorText(job.message);
+  const safeValidationProblem = safeOperatorText(job.validationProblems[0]);
+
+  if (failureKind === 'no_new_candidates' || (job.foundCount === 0 && state !== 'running')) {
+    return {
+      title: 'Provider returned no candidates',
+      detail: safeMessage ?? 'No matching provider products were found for this source, AOI, and window.',
+    };
+  }
+  if (state === 'validation_failed' || failureKind.includes('validation')) {
+    return {
+      title: 'Validation failed',
+      detail: safeMessage ?? safeValidationProblem ?? safeFailureKind ?? 'Validation did not pass.',
+    };
+  }
+  if (state === 'failed') {
+    return {
+      title: 'Ingestion failed',
+      detail: safeMessage ?? safeFailureKind ?? 'The job failed before completion.',
+    };
+  }
+  if (job.downloadedCount != null) {
+    return {
+      title: `Downloaded ${pluralize(job.downloadedCount, 'product')}`,
+      detail: state === 'succeeded'
+        ? 'Ingestion completed successfully.'
+        : `Current job state: ${job.state}.`,
+    };
+  }
+  return {
+    title: `Job is ${job.state}`,
+    detail: safeMessage ?? 'No terminal ingestion verdict is available yet.',
+  };
+}
+
 type StateBadgeVariant = 'success' | 'warning' | 'destructive' | 'info' | 'neutral';
 
 function stateVariant(state: string): StateBadgeVariant {
@@ -111,8 +168,8 @@ function RecordDisplay({ data }: { data: Record<string, unknown> }) {
             { val === null || val === undefined
               ? <span className="text-muted-foreground">null</span>
               : typeof val === 'object'
-                ? <code className="text-xs">{ JSON.stringify(val) }</code>
-                : String(val) }
+                ? <code className="text-xs">{ safeOperatorText(JSON.stringify(val)) ?? '—' }</code>
+                : safeOperatorText(String(val)) ?? '—' }
           </dd>
         </div>
       )) }
@@ -122,7 +179,8 @@ function RecordDisplay({ data }: { data: Record<string, unknown> }) {
 
 /** Render an artifact handle as a monospace label — never as a clickable external URL. */
 function ArtifactHandle({ label, handle }: { label: string; handle: string | null | undefined }) {
-  if (!handle) {
+  const safeHandle = safeOperatorText(handle);
+  if (!safeHandle) {
     return (
       <div className="flex items-start gap-3 rounded-md border border-border/50 bg-background/60 px-3 py-2 text-sm">
         <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -138,7 +196,7 @@ function ArtifactHandle({ label, handle }: { label: string; handle: string | nul
       <FileText className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{ label }</p>
-        <code className="block break-all font-mono text-xs text-foreground">{ handle }</code>
+        <code className="block break-all font-mono text-xs text-foreground">{ safeHandle }</code>
       </div>
     </div>
   );
@@ -159,7 +217,7 @@ function ProblemList({ items, label }: { items: string[]; label: string }) {
           key={ idx }
           className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
         >
-          { item }
+          { safeOperatorText(item) ?? '—' }
         </li>
       )) }
     </ul>
@@ -206,6 +264,8 @@ function PipelineTab({
 }
 
 function SummaryTab({ job }: { job: IngestionJobDetail }) {
+  const failureKind = safeOperatorText(job.failureKind);
+  const message = safeOperatorText(job.message);
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <section>
@@ -221,9 +281,9 @@ function SummaryTab({ job }: { job: IngestionJobDetail }) {
               { job.state }
             </Badge>
           } />
-          { job.failureKind && (
+          { failureKind && (
             <KVRow label="Failure kind" value={
-              <span className="text-destructive">{ job.failureKind }</span>
+              <span className="text-destructive">{ failureKind }</span>
             } />
           ) }
           <KVRow label="Schedule decision" value={ job.scheduleDecision } />
@@ -261,11 +321,11 @@ function SummaryTab({ job }: { job: IngestionJobDetail }) {
         </div>
       </section>
 
-      { job.message && (
+      { message && (
         <section>
           <SectionLabel>Message</SectionLabel>
           <p className="rounded-md border border-border/50 bg-background/60 px-3 py-2 text-sm">
-            { job.message }
+            { message }
           </p>
         </section>
       ) }
@@ -396,7 +456,7 @@ function LedgerTab({ job }: { job: IngestionJobDetail }) {
   return (
     <div>
       <SectionLabel>Ledger entries ({ rows.length })</SectionLabel>
-      <ScrollArea className="max-h-[480px]">
+      <ScrollArea className="max-h-120">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-xs">
             <thead className="bg-card/80 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
@@ -416,8 +476,8 @@ function LedgerTab({ job }: { job: IngestionJobDetail }) {
                         { val === null || val === undefined
                           ? <span className="text-muted-foreground">—</span>
                           : typeof val === 'object'
-                            ? <code className="text-[11px]">{ JSON.stringify(val) }</code>
-                            : String(val) }
+                            ? <code className="text-[11px]">{ safeOperatorText(JSON.stringify(val)) ?? '—' }</code>
+                            : safeOperatorText(String(val)) ?? '—' }
                       </td>
                     );
                   }) }
@@ -433,23 +493,25 @@ function LedgerTab({ job }: { job: IngestionJobDetail }) {
 
 function LogsTab({ job }: { job: IngestionJobDetail }) {
   const handleEntries = Object.entries(job.artifactHandles);
+  const message = safeOperatorText(job.message);
+  const failureKind = safeOperatorText(job.failureKind);
 
   return (
     <div className="grid gap-6">
-      { job.message && (
+      { message && (
         <section>
           <SectionLabel>Job message</SectionLabel>
           <p className="rounded-md border border-border/50 bg-background/60 px-3 py-2 text-sm">
-            { job.message }
+            { message }
           </p>
         </section>
       ) }
 
-      { job.failureKind && (
+      { failureKind && (
         <section>
           <SectionLabel>Failure</SectionLabel>
           <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-            <strong>Kind:</strong> { job.failureKind }
+            <strong>Kind:</strong> { failureKind }
           </p>
         </section>
       ) }
@@ -528,13 +590,14 @@ export default function IngestionJobDetail() {
   const eventsQ = useIngestionJobEvents(safeJobId);
   const job = jobQ.data;
   const events = eventsQ.data?.events ?? [];
+  const verdict = job ? operatorVerdict(job) : null;
 
   return (
     <main
       className="h-full overflow-auto bg-background p-4 text-foreground"
       data-testid="ingestion-job-detail-page"
     >
-      {/* Back navigation */}
+      {/* Back navigation */ }
       <div className="mb-3">
         <Link
           to="/admin/ingestion/jobs"
@@ -546,7 +609,7 @@ export default function IngestionJobDetail() {
         </Link>
       </div>
 
-      {/* Header */}
+      {/* Header */ }
       <section className="rounded-xl border border-border/80 bg-card/90 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -575,6 +638,18 @@ export default function IngestionJobDetail() {
             { job && (
               <p className="mt-1 font-mono text-xs text-muted-foreground">{ job.jobId }</p>
             ) }
+            { verdict && (
+              <div
+                className="mt-3 rounded-lg border border-border/70 bg-background/60 px-3 py-2"
+                data-testid="operator-verdict"
+              >
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Operator verdict
+                </p>
+                <p className="mt-1 text-sm font-semibold">{ verdict.title }</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">{ verdict.detail }</p>
+              </div>
+            ) }
           </div>
           <Button
             variant="outline"
@@ -592,7 +667,7 @@ export default function IngestionJobDetail() {
         </div>
       </section>
 
-      {/* Error */}
+      {/* Error */ }
       { jobQ.error && (
         <p
           className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
@@ -603,12 +678,12 @@ export default function IngestionJobDetail() {
         </p>
       ) }
 
-      {/* Skeleton */}
+      {/* Skeleton */ }
       { jobQ.isLoading && (
         <div className="glass scan-sweep mt-4 h-48 rounded-xl" aria-busy="true" aria-label="Loading job detail" />
       ) }
 
-      {/* Content */}
+      {/* Content */ }
       { job && (
         <section className="mt-4 rounded-xl border border-border/80 bg-card/90 p-4">
           <Tabs defaultValue="pipeline">

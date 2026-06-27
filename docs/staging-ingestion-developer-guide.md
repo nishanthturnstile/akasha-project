@@ -26,11 +26,14 @@ to your laptop for local testing.
 | Only final COGs reach your laptop | No raw provider ZIPs, no credentials, ever. |
 | One running job per source/AOI worker lock | Prevents you + the scheduled timer + another dev from triple-hitting Bhoonidhi. Automatic and manual scheduler jobs share the same lock directory. |
 
-There are **two ways imagery gets produced** on staging:
+There are **three ways imagery gets produced** on staging:
 
 1. **Automatic** — the provider-agnostic scheduler timer (`akasha-ingestion-scheduler.timer`)
   evaluates due sources and runs approved ResourceSat/Bhoonidhi jobs.
 2. **On-demand** — you trigger a job with the CLI when you need specific imagery now.
+3. **Admin UI request** — owner/admin users can submit a bounded dry-run-first request from
+   `/admin/ingestion/schedules`. The API writes an inbox request; the host-side dispatcher/wrapper
+   owns execution.
 
 The ad hoc runner invokes `worker.py schedule-source --approved-runtime --manual` and shares the
 same canonical worker lock directory as the automatic scheduler, so a manual run and a scheduled
@@ -88,18 +91,27 @@ while investigating.
    ```
 2. Confirm no scheduler job is queued/running for the source/AOI in `/admin/ingestion/jobs` or the
    CLI job list.
-3. Trigger a bounded manual run only if needed through `scripts/staging_ingestion_job.py trigger`.
-4. Re-enable the scheduler timer after the issue is understood and the dry-run plan looks correct.
+3. If UI-triggered requests are involved, disable the host dispatcher path/timer that drains
+   `/srv/akasha/ingestion-inbox` (or point `INGESTION_JOB_INBOX_DIR` at an unavailable directory) so
+   the API cannot hand off new work.
+   ```bash
+   sudo systemctl disable --now akasha-ingestion-inbox-dispatcher.path akasha-ingestion-inbox-dispatcher.timer
+   sudo systemctl stop akasha-ingestion-inbox-dispatcher.service
+   ```
+4. Trigger a bounded manual run only if needed through `scripts/staging_ingestion_job.py trigger`.
+5. Re-enable the dispatcher and scheduler timer after the issue is understood and the dry-run plan
+   looks correct.
 
 Monitoring APIs may expose only redacted scheduler snapshots and opaque artifact handles. Raw
 provider archives, full logs, internal paths, signed URLs, and credentials remain wrapper/CLI-only
 operator concerns.
 
-### Admin ingestion console (read-only)
+### Admin ingestion console (bounded actions)
 
 Owner/admin operators can also inspect staging ingestion state in the app's internal admin console.
-This console is for operations visibility only; it complements the staging wrapper commands, job
-logs, and validation flow in this guide, but does **not** replace them.
+The console is primarily for operations visibility and now supports one bounded action: submitting a
+dry-run-first ingestion request through the server-side inbox. It complements the staging wrapper
+commands, job logs, and validation flow in this guide, but does **not** replace them.
 
 Access steps:
 
@@ -112,14 +124,30 @@ Access steps:
    - `/admin/ingestion/jobs/<job_id>` — job detail, including pipeline/timeline, output,
      validation status, failure reason, and redacted event/log summaries.
    - `/admin/ingestion/schedules` — source/AOI cadence, due/overdue state, last run, and exposure
-     status.
+     status, plus the bounded trigger panel for enabled source/AOI pairs.
 3. If you are a normal product `member` or `viewer`, you should not see ingestion orchestration in
    product navigation or admin navigation. Direct admin URLs and admin ingestion APIs are blocked;
    hidden navigation is only a convenience, not the security boundary.
 
-The first admin console release is deliberately **read-only**. Retry, rerun, live provider calls,
-downloads, validation execution, artifact sync, and any other state-changing operations stay
-CLI/wrapper-only unless a separate safety design approves UI actions. Keep using:
+Trigger flow and expectations:
+
+1. Start with a **dry run**. Dry-run requests validate source/AOI/window and let the worker search
+   provider candidates without downloading, transforming, compositing, or ingesting.
+2. Live runs require the deploy gate `ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=true` and explicit UI
+   confirmation. When the gate is false, the BFF forces `dryRun=true` even if the browser asks for a
+   live run. The admin UI reads this gate from `/api/config`, so changing the API environment is the
+   source of truth for showing or hiding live canary controls.
+3. The BFF does not run Docker, systemd, or worker commands. It validates the request and writes a
+   redacted `request.json` under `INGESTION_JOB_INBOX_DIR` (default
+   `/srv/akasha/ingestion-inbox`) using an `ingest-ui-<utc>-<suffix>` request id.
+4. A host-side inbox dispatcher notices the request and invokes the approved staging wrapper. The
+   dispatcher/wrapper owns locks, low-priority execution, durable job state, and redaction.
+5. After submission, use `/admin/ingestion/jobs?sourceId=<source>` and the job detail verdict to
+   answer: when it ran, source/AOI/window, state, failure kind/message, found/selected/downloaded
+   counts, no-new-candidates vs validation failure vs success, and next due.
+
+Retry, rerun, validation execution, artifact sync, and arbitrary state-changing operations stay
+CLI/wrapper-only. Keep using:
 
 ```bash
 python scripts/staging_ingestion_job.py list --host akasha-staging
@@ -377,8 +405,9 @@ window and re-trigger if you expected imagery.
   on the Bhoonidhi quota. Prefer `--max-downloads 1` while iterating.
 - **What you can't do (by design):** open an interactive shell on staging, run arbitrary Docker,
   copy raw Bhoonidhi ZIPs, or see credentials. Job-control SSH access only allows the job
-  subcommands. Artifact sync access is read-only in practice and is limited to final prepared
-  artifacts.
+  subcommands. Admin UI triggers only write bounded inbox requests; they do not execute host
+  commands from the API container. Artifact sync access is read-only in practice and is limited to
+  final prepared artifacts.
 
 ---
 
@@ -409,8 +438,10 @@ Every job writes durable artifacts you can inspect via the CLI (no SSH needed):
 | `job.log` | Redacted combined stdout/stderr (what `logs` streams) |
 | `result.json` | Final manifest/composite paths, `composite_date`, verification summary |
 
-The admin ingestion console reads only redacted, operator-safe summaries of this state. Use the CLI
-commands above for authoritative logs, validation, retry/rerun, and local sync workflows.
+The admin ingestion console reads only redacted, operator-safe summaries of this state. Its trigger
+panel writes request directories under `/srv/akasha/ingestion-inbox/<job_request_id>/request.json`
+for the host dispatcher to consume. Use the CLI commands above for authoritative logs, validation,
+retry/rerun, and local sync workflows.
 
 ---
 

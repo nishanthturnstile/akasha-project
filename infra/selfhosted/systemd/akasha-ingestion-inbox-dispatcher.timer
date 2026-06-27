@@ -1,0 +1,13 @@
+[Unit]
+Description=Fallback polling for Akasha ingestion inbox dispatcher
+Documentation=docs/impl-plan/feature-admin-ingestion-trigger-1.md
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Persistent=true
+Unit=akasha-ingestion-inbox-dispatcher.service
+
+[Install]
+WantedBy=timers.target

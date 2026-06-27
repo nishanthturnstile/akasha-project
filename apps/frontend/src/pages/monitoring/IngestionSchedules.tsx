@@ -8,10 +8,11 @@ import {
   Search,
   XCircle,
 } from 'lucide-react';
+import AdminIngestionRunPanel from '@/components/admin/ingestion/AdminIngestionRunPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useIngestionSchedules } from '@/lib/queries';
+import { useConfig, useIngestionSchedules } from '@/lib/queries';
 import type { IngestionScheduleItem } from '@/types/api';
 
 type BadgeVariant = 'success' | 'warning' | 'destructive' | 'info' | 'neutral' | 'outline';
@@ -30,6 +31,11 @@ interface DueStatus {
   key: 'overdue' | 'due' | 'current' | 'unknown';
   label: string;
   variant: BadgeVariant;
+}
+
+interface RunTarget {
+  sourceId: string;
+  aoiId?: string | null;
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -318,9 +324,11 @@ function FilterBar({
 function ScheduleRow({
   schedule,
   generatedAt,
+  onRunSource,
 }: {
   schedule: IngestionScheduleItem;
   generatedAt: string | null | undefined;
+  onRunSource: (target: RunTarget) => void;
 }) {
   const status = dueStatus(schedule, generatedAt);
   return (
@@ -359,20 +367,36 @@ function ScheduleRow({
       </td>
       <td className="py-3 pr-4 text-xs text-muted-foreground">{ fmtCadence(schedule.cadenceDays) }</td>
       <td className="py-3 pr-4 text-xs text-muted-foreground">
-        <span className="line-clamp-2 max-w-[220px]">
+        <span className="line-clamp-2 max-w-55">
           { displayValue(schedule.dueReason) }
         </span>
       </td>
-      <td className="py-3"><DueStatusBadge status={ status } /></td>
+      <td className="py-3 pr-4"><DueStatusBadge status={ status } /></td>
+      <td className="py-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={ () => onRunSource({ sourceId: schedule.sourceId, aoiId: schedule.aoiId }) }
+          aria-label={ `Run this source ${schedule.sourceId}` }
+        >
+          Run this source
+        </Button>
+      </td>
     </tr>
   );
 }
 
 export default function IngestionSchedules() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [runTarget, setRunTarget] = useState<RunTarget | null>(null);
+  const configQ = useConfig();
   const schedulesQ = useIngestionSchedules();
   const schedules = schedulesQ.data?.schedules ?? EMPTY_SCHEDULES;
   const generatedAt = schedulesQ.data?.generatedAt;
+  const runPanelKey = `${runTarget?.sourceId ?? 'default'}:${runTarget?.aoiId ?? ''}:${schedules
+    .map((schedule) => `${schedule.sourceId}:${schedule.aoiId ?? ''}`)
+    .join('|')}`;
   const decoratedSchedules = useMemo(
     () => schedules.map((schedule) => ({ schedule, status: dueStatus(schedule, generatedAt) })),
     [schedules, generatedAt],
@@ -439,6 +463,15 @@ export default function IngestionSchedules() {
         </div>
       </section>
 
+      <div className="mt-4">
+        <AdminIngestionRunPanel
+          key={ runPanelKey }
+          schedules={ schedules }
+          prefill={ runTarget }
+          liveTriggerEnabled={ configQ.data?.adminIngestionLiveTriggerEnabled === true }
+        />
+      </div>
+
       { schedulesQ.error && (
         <p
           className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
@@ -497,7 +530,7 @@ export default function IngestionSchedules() {
               </span>
             ) }
           </div>
-          <ScrollArea className="h-[calc(100vh-300px)] min-h-[360px]">
+          <ScrollArea className="h-[calc(100vh-300px)] min-h-90">
             <div className="px-4 pb-4">
               { schedules.length === 0 ? (
                 <p className="mt-4 rounded-md border border-border/60 p-4 text-center text-sm text-muted-foreground">
@@ -508,7 +541,7 @@ export default function IngestionSchedules() {
                   No schedules match the current filters.
                 </p>
               ) : (
-                <table className="mt-3 min-w-[1500px] w-full text-left text-sm">
+                <table className="mt-3 min-w-375 w-full text-left text-sm">
                   <thead className="sticky top-0 bg-card/95 text-xs uppercase tracking-[0.14em] text-muted-foreground">
                     <tr>
                       <th className="py-2 pr-4">Source ID</th>
@@ -525,7 +558,8 @@ export default function IngestionSchedules() {
                       <th className="py-2 pr-4">Next window</th>
                       <th className="py-2 pr-4">Cadence</th>
                       <th className="py-2 pr-4">Due reason</th>
-                      <th className="py-2">Status</th>
+                      <th className="py-2 pr-4">Status</th>
+                      <th className="py-2">Run</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -534,6 +568,7 @@ export default function IngestionSchedules() {
                         key={ `${schedule.sourceId}:${schedule.aoiId ?? 'global'}` }
                         schedule={ schedule }
                         generatedAt={ generatedAt }
+                        onRunSource={ setRunTarget }
                       />
                     )) }
                   </tbody>

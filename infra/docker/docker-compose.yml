@@ -98,11 +98,14 @@ services:
       AUTH_PASSWORD_PEPPER: "${AUTH_PASSWORD_PEPPER}"
       AUTH_ALLOW_SIGNUP: "${AUTH_ALLOW_SIGNUP:-true}"
       AUTH_COOKIE_SECURE: "false"
+      INGESTION_JOB_INBOX_DIR: "/srv/akasha/ingestion-inbox"
+      ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}"
     expose:
       - "8000"
     volumes:
       - ../../data/seed:/app/data/seed:ro
       - ../../data/work/bhoonidhi:/app/data/work/bhoonidhi:ro
+      - ../../data/work/ingestion-inbox:/srv/akasha/ingestion-inbox
     depends_on:
       postgis:
         condition: service_healthy

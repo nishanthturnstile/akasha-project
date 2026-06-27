@@ -45,6 +45,8 @@ import type {
   IngestionJobDetail,
   IngestionJobEventsResponse,
   IngestionJobFilters,
+  TriggerIngestionJobRequest,
+  TriggerIngestionJobResponse,
   Plot,
   PlotCreatePayload,
   PlotGeometry,
@@ -723,6 +725,14 @@ export function composeTileTemplate(
 
 export const getIngestionSchedules = (): Promise<IngestionScheduleResponse> =>
   request<IngestionScheduleResponse>('/api/monitoring/ingestion-schedules');
+
+export const triggerIngestionJob = (
+  payload: TriggerIngestionJobRequest,
+): Promise<TriggerIngestionJobResponse> =>
+  request<TriggerIngestionJobResponse>('/api/monitoring/ingestion-jobs/trigger', {
+    method: 'POST',
+    body: payload,
+  });
 
 export const listIngestionJobs = (filters?: IngestionJobFilters): Promise<IngestionJobListResponse> => {
   const params = new URLSearchParams();

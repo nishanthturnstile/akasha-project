@@ -1639,6 +1639,46 @@ def test_job_detail_redacts_paths_from_failure_messages(monkeypatch, tmp_path):
     assert "[REDACTED_PATH]" in body["message"]
 
 
+def test_job_detail_redacts_paths_from_failure_kind(monkeypatch, tmp_path):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    job_id = "job_20260620T010000Z_pathkind"
+    jdir = _make_job_dir(jobs_dir, job_id=job_id, state="failed")
+    status = json.loads((jdir / "status.json").read_text(encoding="utf-8"))
+    status["failureKind"] = "/srv/akasha/ingestion/raw/failure-kind.txt"
+    (jdir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+
+    resp = client.get(f"/api/monitoring/ingestion-jobs/{job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    _assert_no_raw_paths(body, context=f"/api/monitoring/ingestion-jobs/{job_id}")
+    assert body["failureKind"] == "[REDACTED_PATH]"
+
+
+def test_job_list_redacts_paths_from_failure_kind(monkeypatch, tmp_path):
+    db = tmp_path / "job_ledger.db"
+    _make_sqlite_ledger(
+        db,
+        [
+            _row(
+                "job_20260620T010000Z_pathkindlist",
+                state="failed",
+                failure_kind="C:\\Users\\operator\\secret\\failure-kind.txt",
+            )
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", str(db), raising=False)
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", "", raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-jobs")
+    assert resp.status_code == 200
+    body = resp.json()
+    _assert_no_raw_paths(body, context="/api/monitoring/ingestion-jobs")
+    assert body["jobs"][0]["failureKind"] == "[REDACTED_PATH]"
+
+
 def test_schedules_does_not_leak_raw_paths(monkeypatch, tmp_path):
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()
@@ -1981,6 +2021,48 @@ def _configure_ingestion_rbac_fixtures(monkeypatch, tmp_path) -> str:
     return job_id
 
 
+def _configure_trigger_fixtures(monkeypatch, tmp_path) -> Path:
+    jobs_dir = tmp_path / "jobs"
+    inbox_dir = tmp_path / "inbox"
+    jobs_dir.mkdir(parents=True)
+    inbox_dir.mkdir(parents=True)
+    job_id = "job_20260620T010000Z_trigger"
+    _make_job_dir(
+        jobs_dir,
+        job_id=job_id,
+        observability_override={
+            "providerInputSummary": {
+                "scheduleState": "routine",
+                "provider": "bhoonidhi",
+                "capabilities": ["search", "download"],
+            },
+            "nextDueAt": "2026-07-04T01:00:00Z",
+            "scheduleDecision": "cadence_elapsed",
+        },
+    )
+    _make_scheduler_ledger(
+        jobs_dir,
+        {"resourcesat-2a-liss3-boa::bangalore-60km": {"lastJobId": job_id}},
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+    monkeypatch.setattr(settings, "ingestion_job_inbox_dir", str(inbox_dir), raising=False)
+    monkeypatch.setattr(settings, "admin_ingestion_live_trigger_enabled", False, raising=False)
+    return inbox_dir
+
+
+def _trigger_payload(**overrides) -> dict:
+    payload = {"sourceId": "resourcesat-2a-liss3-boa"}
+    payload.update(overrides)
+    return payload
+
+
+def _read_submitted_request(inbox_dir: Path, job_request_id: str) -> dict:
+    path = inbox_dir / job_request_id / "request.json"
+    assert path.is_file()
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_ingestion_monitoring_endpoints_allow_owner_and_admin(monkeypatch, tmp_path):
     job_id = _configure_ingestion_rbac_fixtures(monkeypatch, tmp_path)
     endpoints = (
@@ -2017,6 +2099,280 @@ def test_ingestion_monitoring_endpoints_reject_member_and_viewer(monkeypatch, tm
                 assert resp.status_code == 403, f"{role=} should be forbidden from {endpoint}"
         finally:
             app.dependency_overrides.clear()
+
+
+def test_trigger_ingestion_job_allows_owner_and_admin(monkeypatch, tmp_path):
+    for role in ("owner", "admin"):
+        inbox_dir = _configure_trigger_fixtures(monkeypatch, tmp_path / role)
+        _override_current_user_role(role)
+        try:
+            resp = client.post(
+                "/api/monitoring/ingestion-jobs/trigger",
+                json=_trigger_payload(),
+            )
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["status"] == "submitted"
+            assert body["dryRun"] is True
+            assert body["jobRequestId"].startswith("ingest-ui-")
+            assert body["jobsUrl"] == "/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa"
+            assert _read_submitted_request(inbox_dir, body["jobRequestId"])["requested_by"] == (
+                f"{role}@example.test@bff"
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+
+def test_trigger_ingestion_job_rejects_member_and_viewer(monkeypatch, tmp_path):
+    _configure_trigger_fixtures(monkeypatch, tmp_path)
+    for role in ("member", "viewer"):
+        _override_current_user_role(role)
+        try:
+            resp = client.post(
+                "/api/monitoring/ingestion-jobs/trigger",
+                json=_trigger_payload(),
+            )
+            assert resp.status_code == 403
+        finally:
+            app.dependency_overrides.clear()
+
+
+def test_trigger_ingestion_job_writes_snake_case_request_with_dry_run_default(
+    monkeypatch, tmp_path
+):
+    inbox_dir = _configure_trigger_fixtures(monkeypatch, tmp_path)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(notes="operator note"),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        payload = _read_submitted_request(inbox_dir, body["jobRequestId"])
+    finally:
+        app.dependency_overrides.clear()
+
+    assert set(payload) == {
+        "job_id",
+        "source_id",
+        "provider",
+        "aoi_id",
+        "window_days",
+        "window_start",
+        "window_end",
+        "limit",
+        "max_downloads",
+        "min_coverage_percent",
+        "dry_run",
+        "overwrite",
+        "force_upload",
+        "retain_raw_downloads",
+        "keep_intermediate",
+        "requested_by",
+        "notes",
+    }
+    assert payload["job_id"] == body["jobRequestId"]
+    assert payload["source_id"] == "resourcesat-2a-liss3-boa"
+    assert payload["provider"] == "bhoonidhi"
+    assert payload["aoi_id"] == "bangalore-60km"
+    assert payload["window_days"] == 12
+    assert payload["window_start"] == ""
+    assert payload["window_end"] == ""
+    assert payload["limit"] == 100
+    assert payload["max_downloads"] == 1
+    assert payload["min_coverage_percent"] == 95.0
+    assert payload["dry_run"] is True
+    assert payload["overwrite"] is False
+    assert payload["force_upload"] is False
+    assert payload["retain_raw_downloads"] is False
+    assert payload["keep_intermediate"] is False
+    assert payload["requested_by"] == "owner@example.test@bff"
+    assert payload["notes"] == "operator note"
+
+
+def test_trigger_ingestion_live_without_confirm_rejected_when_gate_true(
+    monkeypatch, tmp_path
+):
+    _configure_trigger_fixtures(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "admin_ingestion_live_trigger_enabled", True, raising=False)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(dryRun=False),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "LIVE_CONFIRMATION_REQUIRED"
+
+
+def test_trigger_ingestion_live_with_confirm_writes_non_dry_run_when_gate_true(
+    monkeypatch, tmp_path
+):
+    inbox_dir = _configure_trigger_fixtures(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "admin_ingestion_live_trigger_enabled", True, raising=False)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(dryRun=False, confirmLive=True),
+        )
+        body = resp.json()
+        payload = _read_submitted_request(inbox_dir, body["jobRequestId"])
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert body["dryRun"] is False
+    assert payload["dry_run"] is False
+
+
+def test_trigger_ingestion_gate_false_forces_live_request_to_dry_run(
+    monkeypatch, tmp_path
+):
+    inbox_dir = _configure_trigger_fixtures(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "admin_ingestion_live_trigger_enabled", False, raising=False)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(dryRun=False, confirmLive=True),
+        )
+        body = resp.json()
+        payload = _read_submitted_request(inbox_dir, body["jobRequestId"])
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert body["dryRun"] is True
+    assert payload["dry_run"] is True
+
+
+def test_trigger_ingestion_unknown_or_non_schedulable_source_rejected(
+    monkeypatch, tmp_path
+):
+    _configure_trigger_fixtures(monkeypatch, tmp_path)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(sourceId="sentinel-2-l2a"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "SOURCE_NOT_SCHEDULABLE"
+
+
+def test_trigger_ingestion_rejects_unsafe_source_or_aoi_identifier(monkeypatch, tmp_path):
+    _configure_trigger_fixtures(monkeypatch, tmp_path)
+    _override_current_user_role("owner")
+    try:
+        for payload in (
+            _trigger_payload(sourceId="../resourcesat-2a-liss3-boa"),
+            _trigger_payload(aoiId="bangalore/60km"),
+        ):
+            resp = client.post(
+                "/api/monitoring/ingestion-jobs/trigger",
+                json=payload,
+            )
+            assert resp.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_trigger_ingestion_inbox_missing_returns_unavailable_without_raw_path(
+    monkeypatch, tmp_path
+):
+    _configure_trigger_fixtures(monkeypatch, tmp_path)
+    missing = tmp_path / "missing-inbox"
+    monkeypatch.setattr(settings, "ingestion_job_inbox_dir", str(missing), raising=False)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "unavailable"
+    assert body["jobRequestId"] is None
+    assert body["jobsUrl"] == "/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa"
+    serialized = json.dumps(body)
+    assert str(missing) not in serialized
+    assert "/srv/akasha" not in serialized
+    assert "\\akasha\\" not in serialized
+
+
+def test_trigger_ingestion_bounded_fields_rejected(monkeypatch, tmp_path):
+    _configure_trigger_fixtures(monkeypatch, tmp_path)
+    _override_current_user_role("owner")
+    try:
+        for field, value in (
+            ("windowDays", 0),
+            ("windowDays", 91),
+            ("limit", 0),
+            ("limit", 501),
+            ("maxDownloads", 0),
+            ("maxDownloads", 21),
+            ("minCoveragePercent", -1),
+            ("minCoveragePercent", 101),
+            ("windowStart", "not-a-date"),
+            ("windowEnd", "2026-13-99"),
+            ("notes", "x" * 501),
+        ):
+            resp = client.post(
+                "/api/monitoring/ingestion-jobs/trigger",
+                json=_trigger_payload(**{field: value}),
+            )
+            assert resp.status_code == 422, f"{field}={value!r}"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_trigger_ingestion_response_does_not_leak_paths_or_secrets(monkeypatch, tmp_path):
+    _configure_trigger_fixtures(monkeypatch, tmp_path)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(notes="do not leak token=secret"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    serialized = json.dumps(resp.json())
+    assert str(tmp_path) not in serialized
+    assert "/srv/akasha" not in serialized
+    assert "secret" not in serialized.lower()
+    assert "token" not in serialized.lower()
+
+
+def test_trigger_ingestion_sanitizes_notes_before_writing_request(monkeypatch, tmp_path):
+    inbox_dir = _configure_trigger_fixtures(monkeypatch, tmp_path)
+    _override_current_user_role("owner")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json=_trigger_payload(notes="operator token=secret /srv/akasha/raw/file.tif"),
+        )
+        body = resp.json()
+        payload = _read_submitted_request(inbox_dir, body["jobRequestId"])
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert "token=[redacted]" in payload["notes"].lower()
+    assert "secret" not in payload["notes"].lower()
+    assert "/srv/akasha" not in payload["notes"]
 
 
 def test_monitoring_endpoints_require_auth_when_enabled(monkeypatch, tmp_path):
@@ -2065,6 +2421,7 @@ def test_monitoring_apis_documented_in_openapi():
     paths = schema["paths"]
     assert "/api/monitoring/ingestion-schedules" in paths
     assert "/api/monitoring/ingestion-jobs" in paths
+    assert "/api/monitoring/ingestion-jobs/trigger" in paths
     assert "/api/monitoring/ingestion-jobs/{job_id}" in paths
     assert "/api/monitoring/ingestion-jobs/{job_id}/events" in paths
 
@@ -2076,6 +2433,8 @@ def test_monitoring_apis_documented_in_openapi():
     assert "IngestionJobDetail" in schemas
     assert "IngestionJobEvent" in schemas
     assert "IngestionJobEventsResponse" in schemas
+    assert "TriggerIngestionJobRequest" in schemas
+    assert "TriggerIngestionJobResponse" in schemas
 
     schedule_props = schemas["IngestionScheduleItem"]["properties"]
     for field in (

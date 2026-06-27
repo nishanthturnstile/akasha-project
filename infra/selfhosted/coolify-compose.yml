@@ -81,11 +81,14 @@ services:
       AUTH_REMEMBER_TTL_DAYS: "${AUTH_REMEMBER_TTL_DAYS:-30}"
       AUTH_LOGIN_RATE_LIMIT_PER_MINUTE: "${AUTH_LOGIN_RATE_LIMIT_PER_MINUTE:-10}"
       AUTH_SIGNUP_RATE_LIMIT_PER_HOUR: "${AUTH_SIGNUP_RATE_LIMIT_PER_HOUR:-20}"
+      INGESTION_JOB_INBOX_DIR: "/srv/akasha/ingestion-inbox"
+      ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}"
     expose:
       - "8000"
     volumes:
       - /srv/akasha/bhoonidhi-diagnostics:/srv/akasha/bhoonidhi-diagnostics
       - /srv/akasha/ingestion:/srv/akasha/ingestion:ro
+      - /srv/akasha/ingestion-inbox:/srv/akasha/ingestion-inbox
       - /srv/akasha/data/seed:/app/data/seed:ro
     depends_on:
       postgis:

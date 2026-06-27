@@ -41,6 +41,7 @@ import {
   updateScoutTask,
   updateReportTemplate,
   getIngestionSchedules,
+  triggerIngestionJob,
   listIngestionJobs,
   getIngestionJob,
   getIngestionJobEvents,
@@ -91,6 +92,7 @@ import type {
   FieldUpdatePayload,
   SignupPayload,
   IngestionJobFilters,
+  TriggerIngestionJobRequest,
   BestObservationsParams,
 } from '@/types/api';
 
@@ -798,6 +800,18 @@ export function useIngestionJobs(filters?: IngestionJobFilters) {
   return useQuery({
     queryKey: queryKeys.ingestionJobs(filters),
     queryFn: () => listIngestionJobs(filters),
+  });
+}
+
+export function useTriggerIngestionJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: TriggerIngestionJobRequest) => triggerIngestionJob(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ingestionJobs() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ingestionSchedules });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.imagerySourceMonitoring });
+    },
   });
 }
 

@@ -104,6 +104,7 @@ async def get_config() -> dict[str, Any]:
         "defaultIndex": DEFAULT_INDEX,
         "indexFieldsKind": "global-optical-defaults",
         "indexAvailabilitySource": "/api/sources",
+        "adminIngestionLiveTriggerEnabled": settings.admin_ingestion_live_trigger_enabled,
     }
 
 

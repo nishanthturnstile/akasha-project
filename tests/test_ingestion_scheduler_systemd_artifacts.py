@@ -19,6 +19,11 @@ EXPECTED_FILES = {
     "manual_runner": "akasha-ingestion-job-runner.sh",
     "env_example": "ingestion-scheduler.env.example",
     "installer": "install-akasha-ingestion-scheduler.sh",
+    "jobs_installer": "install-akasha-ingestion-jobs.sh",
+    "inbox_dispatcher": "akasha-ingestion-inbox-dispatcher.sh",
+    "inbox_dispatcher_service": "akasha-ingestion-inbox-dispatcher.service",
+    "inbox_dispatcher_path": "akasha-ingestion-inbox-dispatcher.path",
+    "inbox_dispatcher_timer": "akasha-ingestion-inbox-dispatcher.timer",
 }
 
 
@@ -550,6 +555,99 @@ def test_installer_prints_next_steps_and_rollback():
     assert "Rollback" in installer or "rollback" in installer.lower()
     # Must mention the canary/dry-run steps.
     assert "canary" in installer.lower() or "dry-run" in installer.lower() or "DRY_RUN" in installer
+
+
+# ── Admin ingestion inbox dispatcher ──────────────────────────────────────────
+
+
+def test_inbox_dispatcher_calls_wrapper_start_only():
+    dispatcher = read_artifact("inbox_dispatcher")
+    assert "/opt/akasha/bin/akasha-ingestion-job.sh" in dispatcher
+    assert " start " in dispatcher
+    assert '"${WRAPPER}" start "${request_path}"' in dispatcher
+    assert "docker" not in dispatcher.lower()
+    assert "systemctl" not in dispatcher.lower()
+
+
+def test_inbox_dispatcher_uses_flock_and_canonical_inbox():
+    dispatcher = read_artifact("inbox_dispatcher")
+    assert "flock -n" in dispatcher
+    assert "/srv/akasha/ingestion-inbox" in dispatcher
+    assert 'INBOX_DIR="${AKASHA_INGESTION_INBOX_DIR:-/srv/akasha/ingestion-inbox}"' in dispatcher
+    assert "/submitted" in dispatcher
+    assert "/failed" in dispatcher
+    assert 'lock_file="${request_dir}/.dispatch.lock"' in dispatcher
+
+
+def test_inbox_dispatcher_redacts_failures_and_prunes_retention():
+    dispatcher = read_artifact("inbox_dispatcher")
+    assert "redact_stream()" in dispatcher
+    assert "dispatch_error.txt" in dispatcher
+    assert "AKASHA_INGESTION_INBOX_RETENTION_DAYS:-14" in dispatcher
+    assert "find " in dispatcher
+    assert "-mtime" in dispatcher
+
+
+def test_inbox_dispatcher_moves_unsafe_request_ids_out_of_path_glob():
+    dispatcher = read_artifact("inbox_dispatcher")
+    assert "move_unsafe_request_dir()" in dispatcher
+    assert "failing unsafe request id" in dispatcher
+    assert "failed/unsafe-" in dispatcher
+    assert 'move_unsafe_request_dir "${request_dir}"' in dispatcher
+
+
+def test_inbox_dispatcher_units_are_safe_and_target_correct_paths():
+    service = read_artifact("inbox_dispatcher_service")
+    path_unit = read_artifact("inbox_dispatcher_path")
+    timer = read_artifact("inbox_dispatcher_timer")
+    assert "Type=oneshot" in service
+    assert "WorkingDirectory=/srv/akasha" in service
+    assert "/opt/akasha/bin/akasha-ingestion-inbox-dispatcher.sh" in service
+    assert "network-online.target" not in service
+    assert "docker.service" not in service
+    assert "PathExistsGlob=/srv/akasha/ingestion-inbox/*/request.json" in path_unit
+    assert "Unit=akasha-ingestion-inbox-dispatcher.service" in path_unit
+    assert "OnUnitActiveSec=2min" in timer
+    assert "Persistent=true" in timer
+
+
+def test_jobs_installer_installs_dispatcher_and_creates_inbox():
+    installer = read_artifact("jobs_installer")
+    assert "/opt/akasha/bin/akasha-ingestion-inbox-dispatcher.sh" in installer
+    assert "/etc/systemd/system/akasha-ingestion-inbox-dispatcher.service" in installer
+    assert "/etc/systemd/system/akasha-ingestion-inbox-dispatcher.path" in installer
+    assert "/etc/systemd/system/akasha-ingestion-inbox-dispatcher.timer" in installer
+    assert "/srv/akasha/ingestion-inbox" in installer
+    assert "0770" in installer
+    assert "akasha-ingesters" in installer
+    assert "systemctl daemon-reload" in installer
+
+
+def test_jobs_installer_guidance_does_not_enable_scheduler_timer():
+    installer = read_artifact("jobs_installer")
+    assert "akasha-ingestion-inbox-dispatcher.path" in installer
+    assert "akasha-ingestion-inbox-dispatcher.timer" in installer
+    assert "does not enable akasha-ingestion-scheduler.timer" in installer
+
+
+def test_inbox_dispatcher_artifacts_do_not_use_tmp_data_paths():
+    combined = "\n".join(
+        read_artifact(key)
+        for key in (
+            "inbox_dispatcher",
+            "inbox_dispatcher_service",
+            "inbox_dispatcher_path",
+            "inbox_dispatcher_timer",
+            "jobs_installer",
+        )
+    )
+    non_comment_lines = [
+        line for line in combined.splitlines()
+        if not line.strip().startswith("#")
+    ]
+    non_comment_text = "\n".join(non_comment_lines)
+    assert "/tmp" not in non_comment_text
+    assert "/var/tmp" not in non_comment_text
 
 
 # ── Scheduler ownership / docs comments across artifacts ─────────────────────

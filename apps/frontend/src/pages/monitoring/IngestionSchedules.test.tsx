@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import IngestionSchedules from '@/pages/monitoring/IngestionSchedules';
-import type { IngestionScheduleResponse } from '@/types/api';
+import type { AppConfig, IngestionScheduleResponse } from '@/types/api';
 
 function jsonResponse(payload: unknown, status = 200) {
   return {
@@ -93,8 +93,52 @@ const schedulePayload: IngestionScheduleResponse = {
   ],
 };
 
-function renderPage(payload: IngestionScheduleResponse = schedulePayload) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(payload)));
+function appConfigPayload(liveTriggerEnabled = false): AppConfig {
+  return {
+    appName: 'Akasha',
+    aoi: {
+      id: 'bangalore-60km',
+      name: 'Bangalore 60 km',
+      center: [77.5946, 12.9716],
+      zoom: 9,
+      bounds: [77, 12, 78, 13],
+    },
+    aois: [],
+    basemapStyleUrl: '',
+    basemap: {
+      provider: 'empty',
+      style: '',
+      styleFamily: 'empty',
+      usageModel: 'session',
+      places: 'none',
+      sessionDurationSeconds: 0,
+    },
+    maxPolygonAreaHa: 1000,
+    maxPolygonVertices: 500,
+    usablePixelThresholdPercent: 75,
+    supportedIndices: ['NDVI'],
+    defaultIndex: 'NDVI',
+    adminIngestionLiveTriggerEnabled: liveTriggerEnabled,
+  };
+}
+
+function renderPage(
+  payload: IngestionScheduleResponse = schedulePayload,
+  stubFetch = true,
+  liveTriggerEnabled = false,
+) {
+  if (stubFetch) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(appConfigPayload(liveTriggerEnabled)));
+        }
+        return Promise.resolve(jsonResponse(payload));
+      }),
+    );
+  }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -126,6 +170,7 @@ function expectVisibleSources(sources: string[]) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('IngestionSchedules', () => {
@@ -157,7 +202,7 @@ describe('IngestionSchedules', () => {
     }
 
     expect(screen.getAllByText('ISRO/NRSC').length).toBeGreaterThan(0);
-    expect(screen.getByText('bangalore-60km')).toBeTruthy();
+    expect(screen.getAllByText('bangalore-60km').length).toBeGreaterThan(0);
     expect(screen.getAllByText('active').length).toBeGreaterThan(0);
     expect(screen.getAllByText('queued').length).toBeGreaterThan(0);
     expect(screen.getAllByText('public').length).toBeGreaterThan(0);
@@ -270,5 +315,155 @@ describe('IngestionSchedules', () => {
         String(call[0]).includes('/api/monitoring/ingestion-schedules'),
       ),
     ).toBe(true);
+  });
+
+  it('renders the admin run panel with ResourceSat selectable and dry run as the default', async () => {
+    renderPage();
+    await waitForSchedules();
+
+    expect(screen.getByRole('heading', { name: 'Run one ingestion source' })).toBeTruthy();
+    const sourceSelect = screen.getByLabelText('Ingestion source');
+    const options = within(sourceSelect).getAllByRole('option') as HTMLOptionElement[];
+    expect(options.some((option) => option.value === 'resourcesat-2a-liss3-boa')).toBe(true);
+    expect((screen.getByLabelText('Ingestion AOI') as HTMLSelectElement).value).toBe('bangalore-60km');
+    expect((screen.getByLabelText('Dry run') as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByLabelText('Live canary')).toBeNull();
+  });
+
+  it('prefills the run panel from a schedule row action', async () => {
+    renderPage();
+    await waitForSchedules();
+
+    fireEvent.click(screen.getByRole('button', { name: /Run this source liss4-validation/ }));
+
+    expect((screen.getByLabelText('Ingestion source') as HTMLSelectElement).value).toBe('liss4-validation');
+    expect((screen.getByLabelText('Ingestion AOI') as HTMLSelectElement).value).toBe('mysore-30km');
+  });
+
+  it('gates live canary submit until the checkbox and typed acknowledgment are complete', async () => {
+    renderPage(schedulePayload, true, true);
+    await waitForSchedules();
+
+    fireEvent.click(screen.getByLabelText('Live canary'));
+    const submit = screen.getByRole('button', { name: /Submit ingestion request/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.click(screen.getByLabelText('Confirm live ingestion side effects'));
+    fireEvent.change(screen.getByLabelText('Live canary acknowledgment'), {
+      target: { value: 'LIVE CANARY' },
+    });
+
+    expect(submit.disabled).toBe(false);
+  });
+
+  it('submits a dry-run trigger request and shows the filtered jobs link on success', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.includes('/api/monitoring/ingestion-jobs/trigger') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({
+          status: 'submitted',
+          jobRequestId: 'ingest-ui-20260626-abcdef12',
+          dryRun: true,
+          jobsUrl: '/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa',
+          message: 'Submitted',
+        }));
+      }
+      if (path.includes('/api/config')) {
+        return Promise.resolve(jsonResponse(appConfigPayload()));
+      }
+      return Promise.resolve(jsonResponse(schedulePayload));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPage(schedulePayload, false);
+    await waitForSchedules();
+    fireEvent.change(screen.getByLabelText('Operator notes'), {
+      target: { value: 'Check latest Bangalore coverage' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Submit ingestion request/ }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Submitted — waiting for staging runner pickup')).toBeTruthy(),
+    );
+
+    const triggerCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes('/api/monitoring/ingestion-jobs/trigger'),
+    );
+    expect(triggerCall).toBeTruthy();
+    expect(JSON.parse(String(triggerCall?.[1]?.body))).toMatchObject({
+      sourceId: 'resourcesat-2a-liss3-boa',
+      aoiId: 'bangalore-60km',
+      dryRun: true,
+      confirmLive: false,
+      windowDays: 12,
+      maxDownloads: 1,
+      notes: 'Check latest Bangalore coverage',
+    });
+    expect((screen.getByRole('link', { name: 'View filtered jobs' }) as HTMLAnchorElement).href)
+      .toContain('/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa');
+    expect(screen.getByRole('link', { name: 'All ingestion jobs' })).toBeTruthy();
+  });
+
+  it('shows unavailable trigger responses without claiming the job was submitted', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path.includes('/api/monitoring/ingestion-jobs/trigger') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({
+            status: 'unavailable',
+            jobRequestId: null,
+            dryRun: true,
+            jobsUrl: '/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa',
+            message: 'Ingestion trigger inbox is not configured or unavailable.',
+          }));
+        }
+        if (path.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(appConfigPayload()));
+        }
+        return Promise.resolve(jsonResponse(schedulePayload));
+      }),
+    );
+
+    renderPage(schedulePayload, false);
+    await waitForSchedules();
+    fireEvent.click(screen.getByRole('button', { name: /Submit ingestion request/ }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Ingestion trigger inbox is not configured or unavailable.')).toBeTruthy(),
+    );
+    expect(screen.queryByText('Submitted — waiting for staging runner pickup')).toBeNull();
+    expect(screen.getByRole('link', { name: 'View filtered jobs' })).toBeTruthy();
+  });
+
+  it('renders trigger errors safely without backend details', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path.includes('/api/monitoring/ingestion-jobs/trigger') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({
+            error: {
+              code: 'SOURCE_NOT_SCHEDULABLE',
+              message: 'Source is not schedulable.',
+              details: { rawPath: '/srv/akasha/ingestion-inbox/secret-request.json' },
+            },
+          }, 400));
+        }
+        if (path.includes('/api/config')) {
+          return Promise.resolve(jsonResponse(appConfigPayload()));
+        }
+        return Promise.resolve(jsonResponse(schedulePayload));
+      }),
+    );
+
+    renderPage(schedulePayload, false);
+    await waitForSchedules();
+    fireEvent.click(screen.getByRole('button', { name: /Submit ingestion request/ }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByText('Source is not schedulable.')).toBeTruthy();
+    expect(screen.queryByText(/srv\/akasha/)).toBeNull();
+    expect(screen.queryByText(/secret-request/)).toBeNull();
   });
 });

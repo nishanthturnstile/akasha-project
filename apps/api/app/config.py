@@ -199,6 +199,20 @@ class Settings:
     Set SCHEDULER_JOB_LEDGER_PATH to override. Endpoints degrade gracefully if
     the file does not exist."""
 
+    ingestion_job_inbox_dir: str = field(
+        default_factory=lambda: _get(
+            "INGESTION_JOB_INBOX_DIR", "/srv/akasha/ingestion-inbox"
+        )
+    )
+    """Write-only handoff directory for admin-triggered ingestion job requests.
+    Set INGESTION_JOB_INBOX_DIR to override. Trigger endpoint returns
+    unavailable if the directory does not exist."""
+
+    admin_ingestion_live_trigger_enabled: bool = field(
+        default_factory=lambda: _get_bool("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED", False)
+    )
+    """Gate for non-dry-run admin ingestion triggers. Disabled by default."""
+
     @property
     def cors_allowed_origins(self) -> list[str]:
         """Comma-separated origins. Supports CORS_ALLOWED_ORIGINS (doc name)

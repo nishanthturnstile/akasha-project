@@ -12,6 +12,7 @@ import {
   useSignup,
   usePlots,
   useFieldLeaderboard,
+  useTriggerIngestionJob,
   useUpdateReportTemplate,
   useUpdatePlot,
 } from '@/lib/queries';
@@ -198,5 +199,54 @@ describe('auth query hooks', () => {
     expect(signedUp.user.onboardingCompleted).toBe(false);
     expect(completed.user.onboardingCompleted).toBe(true);
     expect(queryClient.getQueryData(queryKeys.accountMe)).toEqual(completed);
+  });
+});
+
+describe('ingestion trigger query hooks', () => {
+  it('posts trigger requests and invalidates ingestion monitoring queries on success', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/monitoring/ingestion-jobs/trigger' && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({
+          status: 'submitted',
+          jobRequestId: 'ingest-ui-20260626-abcdef12',
+          dryRun: true,
+          jobsUrl: '/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa',
+          message: 'Submitted',
+        }));
+      }
+      return Promise.resolve(jsonResponse({ status: 'ok' }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { Provider, invalidateSpy } = wrapper();
+    const triggerHook = renderHook(() => useTriggerIngestionJob(), { wrapper: Provider });
+
+    await triggerHook.result.current.mutateAsync({
+      sourceId: 'resourcesat-2a-liss3-boa',
+      aoiId: 'bangalore-60km',
+      dryRun: true,
+      confirmLive: false,
+      windowDays: 12,
+      maxDownloads: 1,
+      notes: 'dry-run smoke',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/monitoring/ingestion-jobs/trigger',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          sourceId: 'resourcesat-2a-liss3-boa',
+          aoiId: 'bangalore-60km',
+          dryRun: true,
+          confirmLive: false,
+          windowDays: 12,
+          maxDownloads: 1,
+          notes: 'dry-run smoke',
+        }),
+      }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.ingestionJobs() });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.ingestionSchedules });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.imagerySourceMonitoring });
   });
 });

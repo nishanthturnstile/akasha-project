@@ -89,6 +89,7 @@ The public `web` service is a single container = built React static assets + a r
 | `/api/plots/import/geojson` | POST | Validate and import GeoJSON polygon(s). |
 | `/api/plots/{plotId}/export.geojson` | GET | Export plot as GeoJSON. |
 | `/api/indices/statistics` | POST | Compute index stats for geometry + source + date + index type. |
+| `/api/monitoring/ingestion-jobs/trigger` | POST | Owner/admin-only bounded ingestion trigger handoff. |
 
 Only the `web` (gateway) service is publicly reachable. The browser calls `/api/*` and `/tiles/*` on the same public origin; the gateway proxies them to the internal `api` and `titiler` services. FastAPI, TiTiler, STAC API, PostGIS and MinIO are never given a public domain.
 
@@ -179,6 +180,53 @@ The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative sa
 `POST /api/plots/import/geojson` → returns `{ "imported": [<plot>], "rejected": [{ "reason": "...", "feature": {} }] }`.
 `GET /api/plots/{plotId}/export.geojson` → a GeoJSON Feature.
 All errors use the standard error shape above.
+
+`POST /api/monitoring/ingestion-jobs/trigger`:
+
+Owner/admin-only. Product `member`/`viewer` roles are blocked by the BFF even if they guess the URL.
+The browser submits only bounded request parameters; the BFF validates source/AOI allow-list and
+range limits, redacts notes, and writes a request into the host-owned ingestion inbox. The API
+container must never run Docker, systemd, or `worker.py` directly.
+
+Request shape:
+
+```json
+{
+  "sourceId": "resourcesat-2a-liss3-boa",
+  "aoiId": "bangalore-60km",
+  "windowDays": 12,
+  "windowStart": null,
+  "windowEnd": null,
+  "dryRun": true,
+  "confirmLive": false,
+  "limit": 100,
+  "maxDownloads": 1,
+  "minCoveragePercent": 95,
+  "notes": "dry-run canary"
+}
+```
+
+Response shape:
+
+```json
+{
+  "status": "submitted",
+  "jobRequestId": "ingest-ui-20260626T180000Z-a1b2c3d4",
+  "dryRun": true,
+  "jobsUrl": "/admin/ingestion/jobs?sourceId=resourcesat-2a-liss3-boa",
+  "message": "Ingestion job request submitted."
+}
+```
+
+`status="unavailable"` means the inbox is not configured or writable; no worker was started.
+When `ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false`, the server forces `dryRun=true` regardless of the
+request. When the gate is true, live requests must also set `confirmLive=true` or the BFF returns
+`LIVE_CONFIRMATION_REQUIRED`. `/api/config.adminIngestionLiveTriggerEnabled` echoes the same runtime
+gate so deployed web builds do not need a separate live-trigger build flag. The inbox handoff boundary is
+`INGESTION_JOB_INBOX_DIR/<jobRequestId>/request.json`; the host dispatcher/wrapper owns locks,
+execution, durable logs, validation, and any provider downloads. API responses expose only redacted
+messages and opaque job/request IDs, never raw provider artifacts, signed URLs, credentials, or host
+paths.
 
 ### Index statistics request contract
 

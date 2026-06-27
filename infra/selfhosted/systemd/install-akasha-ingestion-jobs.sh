@@ -62,10 +62,15 @@ if [[ "${uninstall}" == "true" ]]; then
   run "${sudo_cmd[@]}" rm -f \
     /opt/akasha/bin/akasha-ingestion-job.sh \
     /opt/akasha/bin/akasha-ingestion-job-runner.sh \
-    /opt/akasha/bin/akasha-ingestion-forced-command.sh
+    /opt/akasha/bin/akasha-ingestion-forced-command.sh \
+    /opt/akasha/bin/akasha-ingestion-inbox-dispatcher.sh \
+    /etc/systemd/system/akasha-ingestion-inbox-dispatcher.service \
+    /etc/systemd/system/akasha-ingestion-inbox-dispatcher.path \
+    /etc/systemd/system/akasha-ingestion-inbox-dispatcher.timer
+  run "${sudo_cmd[@]}" systemctl daemon-reload
   cat <<'EOF'
 Uninstalled Akasha ingestion job wrapper scripts.
-Kept /srv/akasha ingestion data and /etc/akasha/ingestion-jobs.env.
+Kept /srv/akasha ingestion data, ingestion inbox history, and /etc/akasha/ingestion-jobs.env.
 EOF
   exit 0
 fi
@@ -73,9 +78,13 @@ fi
 run "${sudo_cmd[@]}" install -d -m 0755 /opt/akasha/bin /etc/akasha
 if [[ "${dry_run}" == "true" ]] || getent group akasha-ingesters >/dev/null 2>&1; then
   run "${sudo_cmd[@]}" install -d -m 2770 -o root -g akasha-ingesters /srv/akasha/ingestion/jobs
+  run "${sudo_cmd[@]}" install -d -m 0770 -o root -g akasha-ingesters /srv/akasha/ingestion-inbox
+  run "${sudo_cmd[@]}" install -d -m 0770 -o root -g akasha-ingesters /srv/akasha/ingestion-inbox/submitted /srv/akasha/ingestion-inbox/failed
 else
   run "${sudo_cmd[@]}" install -d -m 2770 /srv/akasha/ingestion/jobs
-  echo "Warning: group akasha-ingesters does not exist yet; create it and chgrp /srv/akasha/ingestion/jobs." >&2
+  run "${sudo_cmd[@]}" install -d -m 0770 /srv/akasha/ingestion-inbox
+  run "${sudo_cmd[@]}" install -d -m 0770 /srv/akasha/ingestion-inbox/submitted /srv/akasha/ingestion-inbox/failed
+  echo "Warning: group akasha-ingesters does not exist yet; create it and chgrp /srv/akasha/ingestion/jobs plus /srv/akasha/ingestion-inbox." >&2
 fi
 
 install_with_mode 0755 "${script_dir}/akasha-ingestion-job.sh" \
@@ -84,6 +93,14 @@ install_with_mode 0755 "${script_dir}/akasha-ingestion-job-runner.sh" \
   /opt/akasha/bin/akasha-ingestion-job-runner.sh
 install_with_mode 0755 "${script_dir}/akasha-ingestion-forced-command.sh" \
   /opt/akasha/bin/akasha-ingestion-forced-command.sh
+install_with_mode 0755 "${script_dir}/akasha-ingestion-inbox-dispatcher.sh" \
+  /opt/akasha/bin/akasha-ingestion-inbox-dispatcher.sh
+install_with_mode 0644 "${script_dir}/akasha-ingestion-inbox-dispatcher.service" \
+  /etc/systemd/system/akasha-ingestion-inbox-dispatcher.service
+install_with_mode 0644 "${script_dir}/akasha-ingestion-inbox-dispatcher.path" \
+  /etc/systemd/system/akasha-ingestion-inbox-dispatcher.path
+install_with_mode 0644 "${script_dir}/akasha-ingestion-inbox-dispatcher.timer" \
+  /etc/systemd/system/akasha-ingestion-inbox-dispatcher.timer
 
 if [[ ! -f /etc/akasha/ingestion-jobs.env ]]; then
   install_with_mode 0640 "${script_dir}/akasha-ingestion-jobs.env.example" \
@@ -91,6 +108,8 @@ if [[ ! -f /etc/akasha/ingestion-jobs.env ]]; then
 else
   echo "Keeping existing /etc/akasha/ingestion-jobs.env"
 fi
+
+run "${sudo_cmd[@]}" systemctl daemon-reload
 
 cat <<'EOF'
 Installed Akasha restricted ingestion job scripts.
@@ -101,4 +120,15 @@ authorized_keys forced-command line template:
 Next checks:
   /opt/akasha/bin/akasha-ingestion-job.sh doctor
   /opt/akasha/bin/akasha-ingestion-job.sh list --limit 5
+
+Admin ingestion inbox dispatcher:
+  sudo systemctl enable --now akasha-ingestion-inbox-dispatcher.path
+  sudo systemctl enable --now akasha-ingestion-inbox-dispatcher.timer
+  sudo systemctl start akasha-ingestion-inbox-dispatcher.service
+
+Rollback:
+  sudo systemctl disable --now akasha-ingestion-inbox-dispatcher.path akasha-ingestion-inbox-dispatcher.timer
+  sudo systemctl stop akasha-ingestion-inbox-dispatcher.service
+
+This installer does not enable akasha-ingestion-scheduler.timer.
 EOF

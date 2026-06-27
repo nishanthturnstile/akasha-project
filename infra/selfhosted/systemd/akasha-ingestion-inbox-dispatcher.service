@@ -1,0 +1,21 @@
+[Unit]
+Description=Akasha ingestion inbox dispatcher
+Documentation=docs/impl-plan/feature-admin-ingestion-trigger-1.md
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/akasha/ingestion-jobs.env
+WorkingDirectory=/srv/akasha
+ExecStartPre=/usr/bin/mkdir -p /srv/akasha/ingestion-inbox /srv/akasha/ingestion-inbox/submitted /srv/akasha/ingestion-inbox/failed
+ExecStart=/usr/bin/flock -n /srv/akasha/ingestion-inbox/dispatcher.lock /bin/bash /opt/akasha/bin/akasha-ingestion-inbox-dispatcher.sh
+TimeoutStartSec=10min
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/akasha/ingestion-inbox /srv/akasha/ingestion
+
+[Install]
+WantedBy=multi-user.target

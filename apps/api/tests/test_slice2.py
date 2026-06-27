@@ -274,6 +274,7 @@ def test_config_endpoint_contract():
     ]
     assert body["defaultIndex"] == "NDVI"
     assert body["indexFieldsKind"] == "global-optical-defaults"
+    assert body["adminIngestionLiveTriggerEnabled"] is False
     assert body["maxPolygonAreaHa"] == 50
     assert body["aoi"]["id"] == "bangalore-60km"
     assert body["aoi"]["name"] == "Bangalore 60 km"

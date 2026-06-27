@@ -462,10 +462,13 @@ The installer copies the wrappers to `/opt/akasha/bin/`, preserves an existing
 `request.json`, `status.json`, `command.txt`, `job.log`, and `result.json` files. Keep
 `/etc/akasha/ingestion-jobs.env` on the VM only. It controls the job root, allowed sources/AOIs,
 default download caps, retention, Coolify Compose discovery overrides, raw/work roots, ledger path,
-and pull policy:
+and pull policy. It also installs the optional admin-trigger inbox dispatcher units and creates
+`/srv/akasha/ingestion-inbox`:
 
 ```text
 AKASHA_INGESTION_JOB_ROOT=/srv/akasha/ingestion/jobs
+AKASHA_INGESTION_INBOX_DIR=/srv/akasha/ingestion-inbox
+AKASHA_INGESTION_INBOX_RETENTION_DAYS=14
 AKASHA_INGESTION_ALLOWED_SOURCES=resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
 AKASHA_INGESTION_ALLOWED_AOIS=bangalore-60km
 AKASHA_INGESTION_DEFAULT_MAX_DOWNLOADS=3
@@ -482,6 +485,33 @@ sudo groupadd --system akasha-ingesters
 sudo usermod -aG akasha-ingesters <developer-linux-user>
 sudo chgrp -R akasha-ingesters /srv/akasha/ingestion/jobs
 sudo chmod 2750 /srv/akasha/ingestion/jobs
+sudo chgrp -R akasha-ingesters /srv/akasha/ingestion-inbox
+sudo chmod 0770 /srv/akasha/ingestion-inbox
+```
+
+The admin UI trigger path uses the inbox instead of giving the API container Docker, systemd, SSH,
+or write access to scheduler state. The Coolify `api` service mounts
+`/srv/akasha/ingestion` read-only for monitoring and mounts
+`/srv/akasha/ingestion-inbox` writable. Keep the inbox as a separate host directory, not a child of
+the read-only monitoring mount. Ensure the API container UID can create
+`<request-id>/request.json` under the inbox and the host dispatcher, running as root, can move that
+folder to `submitted/` or `failed/`.
+
+To activate host pickup for admin-triggered requests after validation:
+
+```bash
+sudo systemctl enable --now akasha-ingestion-inbox-dispatcher.path
+sudo systemctl enable --now akasha-ingestion-inbox-dispatcher.timer
+```
+
+The path unit watches `/srv/akasha/ingestion-inbox/*/request.json`; the timer runs about every two
+minutes as a missed-event fallback. The dispatcher only invokes
+`/opt/akasha/bin/akasha-ingestion-job.sh start <request.json>` and never calls Docker or systemd
+directly. Roll back the bridge with:
+
+```bash
+sudo systemctl disable --now akasha-ingestion-inbox-dispatcher.path akasha-ingestion-inbox-dispatcher.timer
+sudo systemctl stop akasha-ingestion-inbox-dispatcher.service
 ```
 
 For each approved team SSH key, use a forced-command `authorized_keys` line. The forced command

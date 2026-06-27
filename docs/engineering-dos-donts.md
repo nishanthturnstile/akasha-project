@@ -48,6 +48,7 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 - Do keep index formula mapping centralized in the BFF using `NDVI`, `NDRE`, `NDMI`, and `NDWI_GREEN_NIR`.
 - Do log index request duration, source/date/index type, and failure reason.
 - Do compute cloud-masked index statistics in the BFF using rasterio/rio-tiler; TiTiler serves display tiles only.
+- Do keep admin UI ingestion triggers bounded, dry-run-first, wrapper-backed via the inbox dispatcher, and never run Docker/systemd/worker commands from the API container.
 
 ### Don't
 

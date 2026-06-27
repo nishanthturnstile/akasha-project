@@ -33,20 +33,23 @@ Data access contract (REQ-016 / SEC-006):
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
+import uuid
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from .api_models import ApiModel
-from .auth import require_role
+from .auth import CurrentUser, get_current_user, require_role
 from .config import settings
+from .raster.errors import AkashaError
 
 router = APIRouter(
     prefix="/api/monitoring",
@@ -85,6 +88,7 @@ _SCHEDULE_STATE_FILENAME = "schedule_state.json"
 
 #: SQLite WAL busy timeout in milliseconds (read-only queries).
 _SQLITE_BUSY_TIMEOUT_MS = 5_000
+_SAFE_TRIGGER_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 #: Default cursor sentinel (no cursor = start from newest).
 _CURSOR_NONE = ""
@@ -308,6 +312,51 @@ class IngestionJobEventsResponse(_JobsApiModel):
     last_error: str | None = None
 
 
+class TriggerIngestionJobRequest(ApiModel):
+    """Admin request to enqueue a Bhoonidhi ingestion job through the inbox."""
+
+    source_id: str
+    aoi_id: str = "bangalore-60km"
+    window_days: int = Field(12, ge=1, le=90)
+    window_start: str | None = None
+    window_end: str | None = None
+    dry_run: bool = True
+    confirm_live: bool = False
+    limit: int = Field(100, ge=1, le=500)
+    max_downloads: int = Field(1, ge=1, le=20)
+    min_coverage_percent: float = Field(95.0, ge=0, le=100)
+    notes: str = Field("", max_length=500)
+
+    @field_validator("source_id", "aoi_id")
+    @classmethod
+    def _safe_identifier(cls, value: str) -> str:
+        if not _SAFE_TRIGGER_IDENTIFIER_RE.fullmatch(value):
+            raise ValueError("must match ^[A-Za-z0-9._-]+$")
+        return value
+
+    @field_validator("window_start", "window_end")
+    @classmethod
+    def _safe_window_datetime(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("must be an ISO-8601 date or datetime") from exc
+        return text
+
+
+class TriggerIngestionJobResponse(ApiModel):
+    status: Literal["submitted", "rejected", "unavailable"]
+    job_request_id: str | None = None
+    dry_run: bool
+    jobs_url: str
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -388,6 +437,11 @@ def _redact_string_list(values: list[str]) -> list[str]:
         if safe is not None:
             redacted.append(safe)
     return redacted
+
+
+def _safe_failure_kind(value: Any) -> str | None:
+    """Return a browser-safe failure kind string."""
+    return _redact_error(value)
 
 
 def _is_raw_path_key(key: str) -> bool:
@@ -691,6 +745,17 @@ def _resolve_jobs_dir() -> Path | None:
     return p
 
 
+def _resolve_inbox_dir() -> Path | None:
+    """Return the configured ingestion trigger inbox directory, or None if absent."""
+    raw = getattr(settings, "ingestion_job_inbox_dir", "")
+    if not raw or not raw.strip():
+        return None
+    p = Path(raw.strip())
+    if not p.is_dir():
+        return None
+    return p
+
+
 def _resolve_ledger_db() -> Path | None:
     """Return the configured SQLite job ledger path, or None if absent."""
     raw = getattr(settings, "scheduler_job_ledger_path", "")
@@ -837,7 +902,7 @@ def _status_json_to_summary(data: dict[str, Any]) -> IngestionJobSummary | None:
         selected_count=data.get("selectedCount"),
         downloaded_count=data.get("downloadedCount"),
         rejected_count=data.get("rejectedCount"),
-        failure_kind=data.get("failureKind"),
+        failure_kind=_safe_failure_kind(data.get("failureKind")),
         message=_redact_error(data.get("failureMessage")),
         started_at=data.get("startedAt"),
         finished_at=data.get("finishedAt"),
@@ -860,7 +925,7 @@ def _ledger_row_to_summary(row: dict[str, Any]) -> IngestionJobSummary:
         selected_count=row.get("selected_count"),
         downloaded_count=row.get("downloaded_count"),
         rejected_count=row.get("rejected_count"),
-        failure_kind=row.get("failure_kind"),
+        failure_kind=_safe_failure_kind(row.get("failure_kind")),
         message=None,
         started_at=row.get("started_at"),
         finished_at=row.get("finished_at"),
@@ -881,6 +946,54 @@ def _open_ledger_ro(db: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS};")
     return conn
+
+
+def _allowed_trigger_sources() -> set[tuple[str, str]]:
+    """Return source/AOI pairs that are enabled in the scheduler schedule view."""
+    schedules = get_ingestion_schedules()
+    allowed: set[tuple[str, str]] = set()
+    for item in schedules.schedules:
+        if item.schedule_enabled and item.aoi_id:
+            allowed.add((item.source_id, item.aoi_id))
+    return allowed
+
+
+def _new_ingestion_job_request_id() -> str:
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    job_request_id = f"ingest-ui-{timestamp}-{uuid.uuid4().hex[:8]}"
+    _validate_job_id_or_raise(job_request_id)
+    if not _SAFE_TRIGGER_IDENTIFIER_RE.fullmatch(job_request_id):
+        raise HTTPException(status_code=500, detail="Invalid generated request id")
+    return job_request_id
+
+
+def _trigger_request_payload(
+    request: TriggerIngestionJobRequest,
+    *,
+    job_request_id: str,
+    dry_run: bool,
+    user: CurrentUser,
+) -> dict[str, Any]:
+    safe_notes = str(_sanitize_monitoring_value(request.notes)).strip()
+    return {
+        "job_id": job_request_id,
+        "source_id": request.source_id,
+        "provider": "bhoonidhi",
+        "aoi_id": request.aoi_id,
+        "window_days": request.window_days,
+        "window_start": request.window_start or "",
+        "window_end": request.window_end or "",
+        "limit": request.limit,
+        "max_downloads": request.max_downloads,
+        "min_coverage_percent": request.min_coverage_percent,
+        "dry_run": dry_run,
+        "overwrite": False,
+        "force_upload": False,
+        "retain_raw_downloads": False,
+        "keep_intermediate": False,
+        "requested_by": f"{user.email}@bff",
+        "notes": safe_notes,
+    }
 
 
 def _query_ledger_jobs(
@@ -1096,7 +1209,12 @@ def _ledger_rows_for_job(db: Path, job_id: str) -> list[dict[str, Any]]:
         finally:
             conn.close()
         # artifact_summary_path is intentionally excluded (raw path — SEC-006)
-        return [dict(r) for r in rows]
+        safe_rows: list[dict[str, Any]] = []
+        for row in rows:
+            safe_row = _sanitize_monitoring_value(dict(row))
+            if isinstance(safe_row, dict):
+                safe_rows.append(safe_row)
+        return safe_rows
     except Exception:  # noqa: BLE001
         return []
 
@@ -1349,6 +1467,85 @@ def list_ingestion_jobs(
 
 
 # ---------------------------------------------------------------------------
+# Admin ingestion trigger endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/ingestion-jobs/trigger", response_model=TriggerIngestionJobResponse)
+def trigger_ingestion_job(
+    request: TriggerIngestionJobRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> TriggerIngestionJobResponse:
+    """Enqueue an admin-triggered ingestion request into the scheduler inbox."""
+
+    allowed_sources = _allowed_trigger_sources()
+    if (request.source_id, request.aoi_id) not in allowed_sources:
+        raise AkashaError(
+            "SOURCE_NOT_SCHEDULABLE",
+            "This source and AOI are not enabled for scheduled ingestion.",
+            400,
+        )
+
+    is_live_gate_enabled = bool(getattr(settings, "admin_ingestion_live_trigger_enabled", False))
+    dry_run = request.dry_run
+    if not is_live_gate_enabled:
+        dry_run = True
+    elif not dry_run and not request.confirm_live:
+        raise AkashaError(
+            "LIVE_CONFIRMATION_REQUIRED",
+            "Live ingestion requires explicit confirmation.",
+            400,
+        )
+
+    inbox_dir = _resolve_inbox_dir()
+    if inbox_dir is None:
+        return TriggerIngestionJobResponse(
+            status="unavailable",
+            dry_run=dry_run,
+            jobs_url=f"/admin/ingestion/jobs?sourceId={request.source_id}",
+            message="Ingestion trigger inbox is not configured or unavailable.",
+        )
+
+    job_request_id = _new_ingestion_job_request_id()
+    job_dir = inbox_dir / job_request_id
+    request_path = job_dir / "request.json"
+    tmp_path = job_dir / "request.json.tmp"
+    payload = _trigger_request_payload(
+        request,
+        job_request_id=job_request_id,
+        dry_run=dry_run,
+        user=user,
+    )
+
+    try:
+        job_dir.mkdir(mode=0o750)
+        tmp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(tmp_path, request_path)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        raise AkashaError(
+            "INGESTION_TRIGGER_UNAVAILABLE",
+            "Ingestion trigger inbox is unavailable.",
+            503,
+        ) from exc
+
+    return TriggerIngestionJobResponse(
+        status="submitted",
+        job_request_id=job_request_id,
+        dry_run=dry_run,
+        jobs_url=f"/admin/ingestion/jobs?sourceId={request.source_id}",
+        message="Ingestion job request submitted.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Job events endpoint
 # ---------------------------------------------------------------------------
 
@@ -1518,7 +1715,7 @@ def get_ingestion_job(job_id: str) -> IngestionJobDetail:
         selected_count=status_data.get("selectedCount"),
         downloaded_count=status_data.get("downloadedCount"),
         rejected_count=status_data.get("rejectedCount"),
-        failure_kind=status_data.get("failureKind"),
+        failure_kind=_safe_failure_kind(status_data.get("failureKind")),
         message=_redact_error(
             status_data.get("failureMessage") or safe_result.get("failureMessage")
         ),

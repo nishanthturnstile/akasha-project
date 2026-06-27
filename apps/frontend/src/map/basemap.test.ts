@@ -28,6 +28,7 @@ const CONFIG: AppConfig = {
   usablePixelThresholdPercent: 70,
   supportedIndices: ['NDVI'],
   defaultIndex: 'NDVI',
+  adminIngestionLiveTriggerEnabled: false,
 };
 
 afterEach(() => {

@@ -523,6 +523,96 @@ describe('IngestionJobDetail', () => {
     expect(screen.getAllByText('Scene download timed out after 300s').length).toBeGreaterThan(0);
   });
 
+  it('shows a top operator verdict for no new candidates', async () => {
+    mockDefaultJobAndEventsFetch({
+      ...jobDetailPayload,
+      state: 'succeeded',
+      failureKind: 'no_new_candidates',
+      foundCount: 0,
+      selectedCount: 0,
+      downloadedCount: 0,
+      rejectedCount: 0,
+      message: 'No Bhoonidhi candidates matched the requested window.',
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('operator-verdict')).toBeTruthy(),
+    );
+
+    const verdict = screen.getByTestId('operator-verdict');
+    expect(verdict.textContent).toContain('Provider returned no candidates');
+    expect(verdict.textContent).toContain('No Bhoonidhi candidates matched the requested window.');
+  });
+
+  it('shows downloaded product count in the top operator verdict', async () => {
+    mockDefaultJobAndEventsFetch({
+      ...jobDetailPayload,
+      state: 'succeeded',
+      failureKind: null,
+      downloadedCount: 5,
+      message: 'Job completed successfully',
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('operator-verdict')).toBeTruthy(),
+    );
+
+    const verdict = screen.getByTestId('operator-verdict');
+    expect(verdict.textContent).toContain('Downloaded 5 products');
+    expect(verdict.textContent).toContain('Ingestion completed successfully.');
+  });
+
+  it('redacts raw path-like validation details in the top operator verdict', async () => {
+    mockDefaultJobAndEventsFetch({
+      ...jobDetailPayload,
+      state: 'validation_failed',
+      failureKind: 'validation_failed',
+      message: 'Validation failed for /srv/akasha/data/work/scene-001/analytic.tif',
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('operator-verdict')).toBeTruthy(),
+    );
+
+    const verdict = screen.getByTestId('operator-verdict');
+    expect(verdict.textContent).toContain('Validation failed');
+    expect(verdict.textContent).toContain('Detail redacted by monitoring safeguards.');
+    expect(verdict.textContent).not.toContain('/srv/akasha');
+  });
+
+  it('redacts path-like failure fields across force-mounted detail sections', async () => {
+    const rawFailureKind = '/srv/akasha/ingestion/raw/failure-kind.txt';
+    const rawMessage = 'failed reading C:\\Users\\operator\\secret\\download.zip';
+    mockDefaultJobAndEventsFetch({
+      ...jobDetailPayload,
+      state: 'failed',
+      failureKind: rawFailureKind,
+      message: rawMessage,
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('ingestion-job-detail-page')).toBeTruthy(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('operator-verdict')).toBeTruthy(),
+    );
+
+    const pageText = screen.getByTestId('ingestion-job-detail-page').textContent ?? '';
+    expect(pageText).toContain('Detail redacted by monitoring safeguards.');
+    expect(pageText).not.toContain('/srv/akasha');
+    expect(pageText).not.toContain('C:\\Users');
+    expect(pageText).not.toContain('failure-kind.txt');
+    expect(pageText).not.toContain('download.zip');
+  });
+
   it('shows artifact handles as opaque storage keys — not as raw filesystem paths or external URLs', async () => {
     mockDefaultJobAndEventsFetch();
 

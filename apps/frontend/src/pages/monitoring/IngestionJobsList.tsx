@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -35,6 +35,20 @@ function fmtDateTime(value: string | null | undefined): string {
 function fmtCount(value: number | null | undefined): string {
   if (value == null) return '—';
   return String(value);
+}
+
+function safeOperatorText(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (!text) return null;
+  if (
+    /(?:https?:\/\/|s3:\/\/|file:\/\/)/i.test(text)
+    || /(?:^|\s)\/(?:srv|tmp|var|data|opt)\//i.test(text)
+    || /[A-Za-z]:\\/.test(text)
+  ) {
+    return 'Detail redacted by monitoring safeguards.';
+  }
+  return text.length > 180 ? `${text.slice(0, 177)}…` : text;
 }
 
 type StateBadgeVariant = 'success' | 'warning' | 'destructive' | 'info' | 'neutral';
@@ -77,6 +91,8 @@ function StateIcon({ state }: { state: string }) {
 
 function JobRow({ job }: { job: IngestionJobSummary }) {
   const variant = stateVariant(job.state);
+  const failureKind = safeOperatorText(job.failureKind);
+  const message = safeOperatorText(job.message);
   return (
     <tr className="group border-t border-border/60 align-top hover:bg-accent/40 transition-colors">
       <td className="py-3 pr-4">
@@ -99,8 +115,8 @@ function JobRow({ job }: { job: IngestionJobSummary }) {
           <StateIcon state={ job.state } />
           { job.state }
         </Badge>
-        { job.failureKind && (
-          <div className="mt-1 text-xs text-destructive">{ job.failureKind }</div>
+        { failureKind && (
+          <div className="mt-1 text-xs text-destructive">{ failureKind }</div>
         ) }
       </td>
       <td className="py-3 pr-4 text-xs text-muted-foreground">
@@ -130,8 +146,8 @@ function JobRow({ job }: { job: IngestionJobSummary }) {
         </div>
       </td>
       <td className="py-3 pr-4 text-xs text-muted-foreground">
-        { job.message
-          ? <span className="line-clamp-2 max-w-[220px]">{ job.message }</span>
+        { message
+          ? <span className="line-clamp-2 max-w-55">{ message }</span>
           : '—' }
       </td>
       <td className="py-3 text-xs text-muted-foreground whitespace-nowrap">
@@ -208,8 +224,20 @@ function FilterBar({
 // ---------------------------------------------------------------------------
 
 export default function IngestionJobsList() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [stateFilter, setStateFilter] = useState('');
-  const [sourceFilter, setSourceFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState(searchParams.get('sourceId') ?? '');
+
+  const updateSourceFilter = (value: string) => {
+    setSourceFilter(value);
+    const next = new URLSearchParams(searchParams);
+    if (value) {
+      next.set('sourceId', value);
+    } else {
+      next.delete('sourceId');
+    }
+    setSearchParams(next, { replace: true });
+  };
 
   const filters = {
     ...(stateFilter ? { state: stateFilter } : {}),
@@ -225,7 +253,7 @@ export default function IngestionJobsList() {
       className="h-full overflow-auto bg-background p-4 text-foreground"
       data-testid="ingestion-jobs-list-page"
     >
-      {/* Header */}
+      {/* Header */ }
       <section className="rounded-xl border border-border/80 bg-card/90 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -258,12 +286,12 @@ export default function IngestionJobsList() {
             state={ stateFilter }
             onStateChange={ setStateFilter }
             sourceId={ sourceFilter }
-            onSourceChange={ setSourceFilter }
+            onSourceChange={ updateSourceFilter }
           />
         </div>
       </section>
 
-      {/* Error */}
+      {/* Error */ }
       { jobsQ.error && (
         <p
           className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
@@ -273,12 +301,12 @@ export default function IngestionJobsList() {
         </p>
       ) }
 
-      {/* Skeleton */}
+      {/* Skeleton */ }
       { jobsQ.isLoading && (
         <div className="glass scan-sweep mt-4 h-32 rounded-xl" aria-busy="true" aria-label="Loading jobs" />
       ) }
 
-      {/* Table */}
+      {/* Table */ }
       { !jobsQ.isLoading && (
         <section className="mt-4 rounded-xl border border-border/80 bg-card/90">
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
@@ -296,14 +324,14 @@ export default function IngestionJobsList() {
               </span>
             ) }
           </div>
-          <ScrollArea className="h-[calc(100vh-280px)] min-h-[320px]">
+          <ScrollArea className="h-[calc(100vh-280px)] min-h-80">
             <div className="px-4 pb-4">
               { jobs.length === 0 && !jobsQ.isLoading ? (
                 <p className="mt-4 rounded-md border border-border/60 p-4 text-center text-sm text-muted-foreground">
                   No ingestion jobs match the current filters.
                 </p>
               ) : (
-                <table className="mt-3 min-w-[900px] w-full text-left text-sm">
+                <table className="mt-3 min-w-225 w-full text-left text-sm">
                   <thead className="sticky top-0 bg-card/95 text-xs uppercase tracking-[0.14em] text-muted-foreground">
                     <tr>
                       <th className="py-2 pr-4">Job ID</th>

@@ -36,6 +36,7 @@ export interface AppConfig {
   usablePixelThresholdPercent: number;
   supportedIndices: string[];
   defaultIndex: string;
+  adminIngestionLiveTriggerEnabled: boolean;
 }
 
 export interface IrrigationType {
@@ -274,6 +275,28 @@ export interface IngestionScheduleResponse {
   generatedAt: string;
   schedules: IngestionScheduleItem[];
   lastError?: string | null;
+}
+
+export interface TriggerIngestionJobRequest {
+  sourceId: string;
+  aoiId?: string;
+  windowDays?: number;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  dryRun?: boolean;
+  confirmLive?: boolean;
+  limit?: number;
+  maxDownloads?: number;
+  minCoveragePercent?: number;
+  notes?: string;
+}
+
+export interface TriggerIngestionJobResponse {
+  status: 'submitted' | 'rejected' | 'unavailable';
+  jobRequestId: string | null;
+  dryRun: boolean;
+  jobsUrl: string;
+  message: string;
 }
 
 export interface IngestionJobSummary {

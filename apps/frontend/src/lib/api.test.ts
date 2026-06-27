@@ -52,7 +52,7 @@ describe('api client error mapping', () => {
   });
 
   it('parses a successful JSON payload from the same-origin endpoint', async () => {
-    const payload = { appName: 'Akasha' };
+    const payload = { appName: 'Akasha', adminIngestionLiveTriggerEnabled: false };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,

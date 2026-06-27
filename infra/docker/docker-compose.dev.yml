@@ -19,6 +19,8 @@ services:
       # Docker Desktop on Windows/WSL can miss inotify events from bind mounts.
       # Polling is slower but much more predictable for team-local development.
       WATCHFILES_FORCE_POLLING: "${WATCHFILES_FORCE_POLLING:-true}"
+      INGESTION_JOB_INBOX_DIR: "/srv/akasha/ingestion-inbox"
+      ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}"
     volumes:
       # Live API source for backend hot reload.
       - ../../apps/api/app:/app/app

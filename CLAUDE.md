@@ -213,6 +213,10 @@ These are hard rules for `akasha-staging` and any Bhoonidhi/ResourceSat ingestio
 - **Run ingestion only through the wrapper**: use `python scripts/staging_ingestion_job.py ...`
   from a workstation or `/opt/akasha/bin/akasha-ingestion-job.sh ...` on the VM. The wrapper owns
   job state, locks, redaction, bounded defaults, and low-priority `ionice`/`nice` execution.
+- **Admin UI triggers are inbox handoffs, not API-side execution**: the BFF writes bounded requests
+  under `INGESTION_JOB_INBOX_DIR` (default `/srv/akasha/ingestion-inbox`) and the host dispatcher
+  invokes the wrapper. `ADMIN_INGESTION_LIVE_TRIGGER_ENABLED` defaults false, forcing UI requests to
+  dry-run unless an operator explicitly enables live triggers.
 - **Do not run direct `docker run ... worker.py verify-composite` or direct
   `docker compose run ... ingestion-worker python worker.py ...` on `akasha-staging`** unless an
   operator is performing emergency recovery with explicit I/O throttling and monitoring. Direct

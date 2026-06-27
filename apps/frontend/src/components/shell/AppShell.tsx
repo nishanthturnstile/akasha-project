@@ -76,10 +76,6 @@ function slugFor(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function shouldMatchNavItemExactly(path: string): boolean {
-  return path === '/admin/ingestion';
-}
-
 function isNavItemVisibleForRole(item: ProductNavItem, role?: string): boolean {
   if (!item.requiredRoles || item.requiredRoles.length === 0) return true;
   return Boolean(role && item.requiredRoles.includes(role));
@@ -362,7 +358,7 @@ export function AppShell() {
                     <NavLink
                       key={ item.path }
                       to={ item.path }
-                      end={ shouldMatchNavItemExactly(item.path) }
+                      end={ false }
                       data-testid={ `mobile-${testIdFor(item.label)}` }
                       className={ ({ isActive }) =>
                         cn(
@@ -482,7 +478,7 @@ export function AppShell() {
                         ) }
                       >
                         { tab === 'active' ? 'Active' : tab === 'planned' ? 'Planned' : 'Ended' }
-                        { count > 0 && <span className="ml-1.5 opacity-80">({count})</span> }
+                        { count > 0 && <span className="ml-1.5 opacity-80">({ count })</span> }
                       </button>
                     );
                   }) }
@@ -525,7 +521,7 @@ export function AppShell() {
                           <Card
                             key={ season.id }
                             className={ cn(
-                              'border-border/60 bg-card/90 shadow-sm cursor-pointer transition-colors duration-fast min-h-[200px]',
+                              'border-border/60 bg-card/90 shadow-sm cursor-pointer transition-colors duration-fast min-h-50',
                               isCurrent && 'border-primary/50 ring-1 ring-primary/20',
                             ) }
                             onClick={ () => {
@@ -593,21 +589,21 @@ export function AppShell() {
                                   </button>
                                   <button
                                     type="button"
-                                    disabled={!season.canDelete}
-                                    title={!season.canDelete ? "Cannot delete your only season" : undefined}
-                                    className={cn(
+                                    disabled={ !season.canDelete }
+                                    title={ !season.canDelete ? "Cannot delete your only season" : undefined }
+                                    className={ cn(
                                       "rounded-md border px-3 py-1.5 text-sm",
                                       !season.canDelete
                                         ? "border-dashed text-muted-foreground cursor-not-allowed"
                                         : "border-border text-foreground hover:bg-accent/40"
-                                    )}
+                                    ) }
                                     onClick={ (e) => { e.stopPropagation(); if (season.canDelete) setDeletingSeasonId(season.id); } }
                                   >
-                                  Delete
-                                </button>
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                              {seasonFields.length === 0 && (
+                              { seasonFields.length === 0 && (
                                 <button
                                   type="button"
                                   onClick={ (e) => {
@@ -621,7 +617,7 @@ export function AppShell() {
                                 >
                                   + Add field
                                 </button>
-                              )}
+                              ) }
                             </CardContent>
                           </Card>
                         );
@@ -645,7 +641,7 @@ export function AppShell() {
                 const slug = slugFor(group.label);
                 const isExpanded = expandedGroups.has(group.label);
                 const panelId = `nav-group-panel-${slug}`;
-                  if (railCollapsed) {
+                if (railCollapsed) {
                   const GroupIcon = group.icon;
                   const isHovered = hoveredGroup === group.label;
                   const panelFlyoutId = `nav-flyout-${slug}`;
@@ -692,7 +688,7 @@ export function AppShell() {
                               <NavLink
                                 key={ item.path }
                                 to={ item.path }
-                                end={ shouldMatchNavItemExactly(item.path) }
+                                end={ false }
                                 role="menuitem"
                                 data-testid={ testIdFor(item.label) }
                                 onClick={ () => {
@@ -700,9 +696,9 @@ export function AppShell() {
                                   setGlobalViewOpen(false);
                                 } }
                                 className={ ({ isActive }) =>
-                                 cn(
-                                   'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                   isActive && !globalViewOpen && 'text-primary font-semibold',
+                                  cn(
+                                    'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                    isActive && !globalViewOpen && 'text-primary font-semibold',
                                   )
                                 }
                               >
@@ -759,7 +755,7 @@ export function AppShell() {
                           <NavLink
                             key={ item.path }
                             to={ item.path }
-                            end={ shouldMatchNavItemExactly(item.path) }
+                            end={ false }
                             data-testid={ testIdFor(item.label) }
                             onClick={ () => setGlobalViewOpen(false) }
                             className={ ({ isActive }) =>
@@ -803,7 +799,7 @@ export function AppShell() {
                         <TooltipTrigger asChild>
                           <NavLink
                             to={ item.path }
-                            end={ shouldMatchNavItemExactly(item.path) }
+                            end={ false }
                             data-testid={ testIdFor(item.label) }
                             aria-label={ item.label }
                             className={ ({ isActive }) =>
@@ -824,7 +820,7 @@ export function AppShell() {
                     <NavLink
                       key={ item.path }
                       to={ item.path }
-                      end={ shouldMatchNavItemExactly(item.path) }
+                      end={ false }
                       data-testid={ testIdFor(item.label) }
                       className={ ({ isActive }) =>
                         cn(
@@ -880,10 +876,10 @@ export function AppShell() {
                       ) }
                       { !railCollapsed && (
                         <span className="min-w-0 flex-1 truncate text-left">
-                        <span className="block truncate text-sm text-foreground/90">
-                          { account.data?.user?.displayName ?? 'Akasha user' }
-                        </span>
-                        <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                          <span className="block truncate text-sm text-foreground/90">
+                            { account.data?.user?.displayName ?? 'Akasha user' }
+                          </span>
+                          <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
                             { account.data?.currentTeam?.name ?? 'Workspace' }
                           </span>
                         </span>
@@ -899,15 +895,15 @@ export function AppShell() {
         </aside>
       </div>
 
-      <AlertDialogRoot open={!!deletingSeasonId} onOpenChange={(open) => { if (!open) setDeletingSeasonId(null); }}>
+      <AlertDialogRoot open={ !!deletingSeasonId } onOpenChange={ (open) => { if (!open) setDeletingSeasonId(null); } }>
         <AlertDialogContent>
           <AlertDialogTitle>Delete season?</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete "{deletingSeason?.name}"? This action cannot be undone.
+            Are you sure you want to delete "{ deletingSeason?.name }"? This action cannot be undone.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => {
+            <AlertDialogAction onClick={ async () => {
               if (!deletingSeasonId) return;
               try {
                 await deleteSeason.mutateAsync(deletingSeasonId);
@@ -916,7 +912,7 @@ export function AppShell() {
               }
               setDeletingSeasonId(null);
               window.location.reload();
-            }}>
+            } }>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

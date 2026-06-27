@@ -10,6 +10,8 @@ import {
   useDeletePlot,
   useImportPlotsGeoJson,
   useSignup,
+  useIngestionSources,
+  useIngestionSourceProducts,
   usePlots,
   useFieldLeaderboard,
   useTriggerIngestionJob,
@@ -203,6 +205,95 @@ describe('auth query hooks', () => {
 });
 
 describe('ingestion trigger query hooks', () => {
+  it('fetches simplified ingestion sources from the satellite-centric endpoint', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (String(input) === '/api/monitoring/ingestion-sources') {
+        return Promise.resolve(jsonResponse({
+          status: 'ok',
+          generatedAt: '2026-06-25T12:00:00Z',
+          liveTriggerEnabled: true,
+          sources: [
+            {
+              sourceId: 'resourcesat-2a-liss3-boa',
+              label: 'ResourceSat-2A LISS-3 BOA',
+              provider: 'ISRO/NRSC Bhoonidhi',
+              kind: 'optical',
+              active: true,
+              gatedReason: null,
+              aoiId: 'bangalore-60km',
+              cadenceDays: 7,
+              lastRunAt: '2026-06-20T01:00:00Z',
+              lastSuccessAt: '2026-06-20T01:30:00Z',
+              lastFailureAt: null,
+              nextDueAt: '2026-06-27T01:00:00Z',
+              isDue: false,
+              isOverdue: false,
+              latestCompositeDate: '2026-06-18',
+              lastJob: null,
+            },
+          ],
+        }));
+      }
+      return Promise.resolve(jsonResponse({ status: 'ok' }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { Provider } = wrapper();
+
+    const { result } = renderHook(() => useIngestionSources(), { wrapper: Provider });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/monitoring/ingestion-sources',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(result.current.data?.sources[0].sourceId).toBe('resourcesat-2a-liss3-boa');
+  });
+
+  it('fetches per-source product rows lazily when enabled', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/monitoring/ingestion-sources/resourcesat-2a-liss3-boa/products')) {
+        return Promise.resolve(jsonResponse({
+          status: 'ok',
+          generatedAt: '2026-06-25T12:00:00Z',
+          sourceId: 'resourcesat-2a-liss3-boa',
+          products: [
+            {
+              productId: 'RA319MAR2026048153009900065PSANSTUCSRHTDF',
+              sceneKey: 'resourcesat-2a-liss3-boa:BOA:99:65:2026-03-19T00:00:00Z',
+              acquisitionDate: '2026-03-19',
+              status: 'downloaded',
+              bytes: 1048576,
+              updatedAt: '2026-06-20T01:30:00Z',
+              error: null,
+            },
+          ],
+        }));
+      }
+      return Promise.resolve(jsonResponse({ status: 'ok' }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { Provider } = wrapper();
+
+    const disabled = renderHook(
+      () => useIngestionSourceProducts('resourcesat-2a-liss3-boa', { enabled: false }),
+      { wrapper: Provider },
+    );
+    expect(disabled.result.current.fetchStatus).toBe('idle');
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const enabled = renderHook(
+      () => useIngestionSourceProducts('resourcesat-2a-liss3-boa', { enabled: true, limit: 10 }),
+      { wrapper: Provider },
+    );
+
+    await waitFor(() => expect(enabled.result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/monitoring/ingestion-sources/resourcesat-2a-liss3-boa/products?limit=10',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(enabled.result.current.data?.products[0].productId).toContain('RA319');
+  });
+
   it('posts trigger requests and invalidates ingestion monitoring queries on success', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === '/api/monitoring/ingestion-jobs/trigger' && init?.method === 'POST') {

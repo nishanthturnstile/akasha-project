@@ -1,6 +1,6 @@
 [Unit]
 Description=Akasha multi-source ingestion scheduler run
-Documentation=docs/impl-plan/architecture-satellite-ingestion-scheduler-1.md
+Documentation=https://github.com/nishanthturnstile/akasha-project/blob/main/docs/impl-plan/architecture-satellite-ingestion-scheduler-1.md
 After=docker.service network-online.target
 Wants=network-online.target
 # Do not start if Docker is not running.

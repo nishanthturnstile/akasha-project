@@ -116,15 +116,11 @@ describe('AppShell', () => {
 
       expect(screen.getByTestId('admin-ingestion-jobs-page')).toBeTruthy();
       await waitFor(() =>
-        expect(screen.getByTestId('nav-link-ingestion-jobs').getAttribute('aria-current')).toBe(
-          'page',
-        ),
-      );
-      expect(screen.getByTestId('nav-link-ingestion-overview').getAttribute('aria-current')).toBe(
-        null,
+        expect(screen.getByTestId('nav-link-satellite-ingestion').getAttribute('aria-current'))
+          .toBe('page'),
       );
       expect(screen.getByTestId('nav-group-toggle-operations-admin')).toBeTruthy();
-      expect(screen.getByTestId('mobile-nav-link-ingestion-jobs')).toBeTruthy();
+      expect(screen.getByTestId('mobile-nav-link-satellite-ingestion')).toBeTruthy();
       expect(screen.queryByRole('heading', { name: 'Global View' })).toBeNull();
     },
   );
@@ -146,12 +142,8 @@ describe('AppShell', () => {
       expect(screen.getByTestId('forecast-page')).toBeTruthy();
       await waitFor(() => expect(screen.getByText('Team')).toBeTruthy());
       expect(screen.queryByTestId('nav-group-toggle-operations-admin')).toBeNull();
-      expect(screen.queryByTestId('nav-link-ingestion-overview')).toBeNull();
-      expect(screen.queryByTestId('nav-link-ingestion-jobs')).toBeNull();
-      expect(screen.queryByTestId('nav-link-schedules')).toBeNull();
-      expect(screen.queryByTestId('mobile-nav-link-ingestion-overview')).toBeNull();
-      expect(screen.queryByTestId('mobile-nav-link-ingestion-jobs')).toBeNull();
-      expect(screen.queryByTestId('mobile-nav-link-schedules')).toBeNull();
+      expect(screen.queryByTestId('nav-link-satellite-ingestion')).toBeNull();
+      expect(screen.queryByTestId('mobile-nav-link-satellite-ingestion')).toBeNull();
     },
   );
 
@@ -164,10 +156,8 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByTestId('nav-group-toggle-monitoring'));
 
       expect(screen.getByTestId('nav-link-field-analytics')).toBeTruthy();
-      expect(screen.queryByTestId('nav-link-ingestion-overview')).toBeNull();
-      expect(screen.queryByTestId('nav-link-ingestion-jobs')).toBeNull();
-      expect(screen.queryByTestId('nav-link-schedules')).toBeNull();
-      expect(screen.queryByTestId('mobile-nav-link-ingestion-overview')).toBeNull();
+      expect(screen.queryByTestId('nav-link-satellite-ingestion')).toBeNull();
+      expect(screen.queryByTestId('mobile-nav-link-satellite-ingestion')).toBeNull();
     },
   );
 });

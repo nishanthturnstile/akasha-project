@@ -9,8 +9,8 @@ vi.mock('@/pages/monitoring/FieldAnalyticsPage', () => ({
   default: () => <div data-testid="map-page">Map workspace</div>,
 }));
 
-vi.mock('@/pages/monitoring/AdminIngestionOverview', () => ({
-  default: () => <div data-testid="admin-ingestion-overview-page">Admin ingestion overview</div>,
+vi.mock('@/pages/monitoring/AdminIngestionSources', () => ({
+  default: () => <div data-testid="admin-ingestion-sources-page">Satellite ingestion</div>,
 }));
 
 vi.mock('@/pages/monitoring/IngestionJobsList', () => ({
@@ -19,10 +19,6 @@ vi.mock('@/pages/monitoring/IngestionJobsList', () => ({
 
 vi.mock('@/pages/monitoring/IngestionJobDetail', () => ({
   default: () => <div data-testid="ingestion-job-detail-page">Ingestion job detail</div>,
-}));
-
-vi.mock('@/pages/monitoring/IngestionSchedules', () => ({
-  default: () => <div data-testid="ingestion-schedules-page">Ingestion schedules</div>,
 }));
 
 // Stub the map renderer so tests don't load the real maplibre-gl/Esri WebGL
@@ -188,12 +184,12 @@ describe('ProductRoutes', () => {
   });
 
   it.each(['owner', 'admin'] as const)(
-    'renders canonical admin ingestion overview for %s users',
+    'renders canonical satellite ingestion admin page for %s users',
     async (role) => {
       renderRoutes('/admin/ingestion', role);
 
       await waitFor(
-        () => expect(screen.getByTestId('admin-ingestion-overview-page')).toBeTruthy(),
+        () => expect(screen.getByTestId('admin-ingestion-sources-page')).toBeTruthy(),
         { timeout: 8000 },
       );
       expect(screen.queryByTestId('map-page')).toBeNull();
@@ -214,13 +210,16 @@ describe('ProductRoutes', () => {
   );
 
   it.each(['owner', 'admin'] as const)(
-    'renders canonical admin ingestion schedules for %s users',
+    'redirects legacy admin ingestion schedules route to the satellite page for %s users',
     async (role) => {
       renderRoutes('/admin/ingestion/schedules', role);
 
       await waitFor(
-        () => expect(screen.getByTestId('ingestion-schedules-page')).toBeTruthy(),
+        () => expect(screen.getByTestId('admin-ingestion-sources-page')).toBeTruthy(),
         { timeout: 8000 },
+      );
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+        '/admin/ingestion',
       );
       expect(screen.queryByTestId('map-page')).toBeNull();
     },
@@ -237,7 +236,7 @@ describe('ProductRoutes', () => {
       expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
         '/monitoring/field-analytics',
       );
-      expect(screen.queryByTestId('admin-ingestion-overview-page')).toBeNull();
+      expect(screen.queryByTestId('admin-ingestion-sources-page')).toBeNull();
     },
   );
 
@@ -267,19 +266,19 @@ describe('ProductRoutes', () => {
       expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
         '/monitoring/field-analytics',
       );
-      expect(screen.queryByTestId('ingestion-schedules-page')).toBeNull();
+      expect(screen.queryByTestId('admin-ingestion-sources-page')).toBeNull();
     },
   );
 
   // Deprecated compatibility aliases: temporary owner/admin-gated redirects only.
   // They must not reintroduce ingestion orchestration content under the product monitoring namespace.
   it.each(['owner', 'admin'] as const)(
-    'redirects the deprecated global operator alias to the canonical admin overview for %s users',
+    'redirects the deprecated global operator alias to the canonical satellite admin page for %s users',
     async (role) => {
       renderRoutes('/monitoring/global', role);
 
       await waitFor(
-        () => expect(screen.getByTestId('admin-ingestion-overview-page')).toBeTruthy(),
+        () => expect(screen.getByTestId('admin-ingestion-sources-page')).toBeTruthy(),
         { timeout: 8000 },
       );
       expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
@@ -300,7 +299,7 @@ describe('ProductRoutes', () => {
       expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
         '/monitoring/field-analytics',
       );
-      expect(screen.queryByTestId('admin-ingestion-overview-page')).toBeNull();
+      expect(screen.queryByTestId('admin-ingestion-sources-page')).toBeNull();
     },
   );
 

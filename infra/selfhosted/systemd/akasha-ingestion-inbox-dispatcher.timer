@@ -1,6 +1,6 @@
 [Unit]
 Description=Fallback polling for Akasha ingestion inbox dispatcher
-Documentation=docs/impl-plan/feature-admin-ingestion-trigger-1.md
+Documentation=https://github.com/nishanthturnstile/akasha-project/blob/main/docs/impl-plan/feature-admin-ingestion-trigger-1.md
 
 [Timer]
 OnBootSec=2min

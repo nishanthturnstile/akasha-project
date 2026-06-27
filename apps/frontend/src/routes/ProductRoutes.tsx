@@ -7,10 +7,9 @@ import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
 
 const FieldAnalyticsPage = lazy(() => import('@/pages/monitoring/FieldAnalyticsPage'));
 const FieldCreatePage = lazy(() => import('@/pages/monitoring/FieldCreatePage'));
-const AdminIngestionOverview = lazy(() => import('@/pages/monitoring/AdminIngestionOverview'));
+const AdminIngestionSources = lazy(() => import('@/pages/monitoring/AdminIngestionSources'));
 const IngestionJobsList = lazy(() => import('@/pages/monitoring/IngestionJobsList'));
 const IngestionJobDetail = lazy(() => import('@/pages/monitoring/IngestionJobDetail'));
-const IngestionSchedules = lazy(() => import('@/pages/monitoring/IngestionSchedules'));
 
 function lazyPlaceholderPage(name: keyof typeof import('@/pages/product/ProductPlaceholderPages')) {
   return lazy(async () => {
@@ -100,10 +99,10 @@ export function ProductRoutes() {
       <Route path="onboarding/field-create" element={ onboardingRoute(OnboardingFieldCreate) } />
       <Route path="onboarding/step3" element={ onboardingRoute(OnboardingStep3) } />
       <Route path="admin/ingestion" element={ adminRoute(<AppShell />) }>
-        <Route index element={ withSuspense(AdminIngestionOverview) } />
+        <Route index element={ withSuspense(AdminIngestionSources) } />
         <Route path="jobs" element={ withSuspense(IngestionJobsList) } />
         <Route path="jobs/:jobId" element={ withSuspense(IngestionJobDetail) } />
-        <Route path="schedules" element={ withSuspense(IngestionSchedules) } />
+        <Route path="schedules" element={ <Navigate to="/admin/ingestion" replace /> } />
       </Route>
       <Route element={ <AuthGate requireOnboardingComplete><AppShell /></AuthGate> }>
         <Route index element={ <Navigate to={ MAIN_MONITORING_ROUTE } replace /> } />

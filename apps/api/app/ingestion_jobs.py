@@ -49,6 +49,7 @@ from pydantic import ConfigDict, Field, field_validator
 from .api_models import ApiModel
 from .auth import CurrentUser, get_current_user, require_role
 from .config import settings
+from .raster import catalog_resolver as catalog
 from .raster.errors import AkashaError
 
 router = APIRouter(
@@ -212,6 +213,70 @@ class IngestionScheduleResponse(_JobsApiModel):
     status: str
     generated_at: str
     schedules: list[IngestionScheduleItem] = Field(default_factory=list)
+    last_error: str | None = None
+
+
+class IngestionSourceLastJob(_JobsApiModel):
+    """Latest scheduler job summary for the simplified satellite view."""
+
+    job_id: str
+    state: str
+    found_count: int | None = None
+    selected_count: int | None = None
+    downloaded_count: int | None = None
+    rejected_count: int | None = None
+    window_start: str | None = None
+    window_end: str | None = None
+    failure_kind: str | None = None
+    message: str | None = None
+
+
+class IngestionSourceSummary(_JobsApiModel):
+    """One satellite/source row for the simplified ingestion dashboard."""
+
+    source_id: str
+    label: str
+    provider: str | None = None
+    kind: str | None = None
+    active: bool
+    gated_reason: str | None = None
+    aoi_id: str | None = None
+    cadence_days: float | None = None
+    last_run_at: str | None = None
+    last_success_at: str | None = None
+    last_failure_at: str | None = None
+    next_due_at: str | None = None
+    is_due: bool = False
+    is_overdue: bool = False
+    latest_composite_date: str | None = None
+    last_job: IngestionSourceLastJob | None = None
+
+
+class IngestionSourcesResponse(_JobsApiModel):
+    status: str
+    generated_at: str
+    sources: list[IngestionSourceSummary] = Field(default_factory=list)
+    live_trigger_enabled: bool
+    last_error: str | None = None
+
+
+class IngestionProductItem(_JobsApiModel):
+    """One downloaded/provider product row for a source."""
+
+    product_id: str
+    scene_key: str | None = None
+    acquisition_date: str | None = None
+    status: str
+    bytes: int = 0
+    updated_at: str | None = None
+    error: str | None = None
+
+
+class IngestionSourceProductsResponse(_JobsApiModel):
+    status: str
+    generated_at: str
+    source_id: str
+    products: list[IngestionProductItem] = Field(default_factory=list)
     last_error: str | None = None
 
 
@@ -933,6 +998,137 @@ def _ledger_row_to_summary(row: dict[str, Any]) -> IngestionJobSummary:
     )
 
 
+def _ledger_row_to_source_last_job(row: dict[str, Any]) -> IngestionSourceLastJob:
+    """Convert a scheduler_jobs SQLite row to a source-card last-job summary."""
+    return IngestionSourceLastJob(
+        job_id=str(row["job_id"]),
+        state=str(row["state"]),
+        found_count=row.get("found_count"),
+        selected_count=row.get("selected_count"),
+        downloaded_count=row.get("downloaded_count"),
+        rejected_count=row.get("rejected_count"),
+        window_start=row.get("window_start"),
+        window_end=row.get("window_end"),
+        failure_kind=_safe_failure_kind(row.get("failure_kind")),
+        message=_redact_error(row.get("message")),
+    )
+
+
+def _latest_jobs_with_counts_by_source(db: Path) -> dict[str, IngestionSourceLastJob]:
+    """Return the newest scheduler job for each source, including counts."""
+    conn = _open_ledger_ro(db)
+    try:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT job_id, source_id, provider, aoi_id, state, "
+                "scheduled_at, started_at, finished_at, window_start, window_end, "
+                "found_count, selected_count, downloaded_count, rejected_count, "
+                "failed_count, failure_kind, schedule_decision, next_due_at "
+                "FROM scheduler_jobs "
+                "ORDER BY coalesce(scheduled_at, '') DESC, job_id DESC"
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+    latest: dict[str, IngestionSourceLastJob] = {}
+    for row in rows:
+        source_id = str(row.get("source_id") or "")
+        if not source_id or source_id in latest:
+            continue
+        latest[source_id] = _ledger_row_to_source_last_job(row)
+    return latest
+
+
+def _resolve_product_ledger_db() -> Path | None:
+    """Return the configured per-product Bhoonidhi ledger path, or None if absent."""
+    raw = getattr(settings, "bhoonidhi_ledger_path", "")
+    if not raw or not raw.strip():
+        return None
+    p = Path(raw.strip())
+    if not p.is_file():
+        return None
+    return p
+
+
+def _open_product_ledger_ro(db: Path) -> sqlite3.Connection:
+    """Open the per-product ingestion ledger read-only."""
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro&immutable=1", uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS};")
+    return conn
+
+
+def _extract_date_from_identifier(value: Any) -> str | None:
+    """Extract a YYYY-MM-DD acquisition/composite date from a scene/product identifier."""
+    if value is None:
+        return None
+    match = re.search(r"(\d{4}-\d{2}-\d{2})(?:T|$)", str(value))
+    return match.group(1) if match else None
+
+
+def _latest_composite_dates_by_source(db: Path) -> dict[str, str]:
+    """Return latest successful composite date per source from the product ledger."""
+    conn = _open_product_ledger_ro(db)
+    try:
+        rows = conn.execute(
+            "SELECT product_id, source_id, scene_key, updated_at "
+            "FROM ingestion_ledger "
+            "WHERE status = 'composited' AND product_id LIKE 'composite:%' "
+            "ORDER BY coalesce(updated_at, '') DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    latest: dict[str, tuple[str, str]] = {}
+    for row in rows:
+        source_id = str(row["source_id"])
+        date_text = _extract_date_from_identifier(
+            row["product_id"]
+        ) or _extract_date_from_identifier(row["scene_key"])
+        if not date_text:
+            continue
+        updated_at = str(row["updated_at"] or "")
+        previous = latest.get(source_id)
+        if previous is None or (date_text, updated_at) > previous:
+            latest[source_id] = (date_text, updated_at)
+    return {source_id: date_text for source_id, (date_text, _updated_at) in latest.items()}
+
+
+def _product_row_to_item(row: sqlite3.Row) -> IngestionProductItem:
+    scene_key = row["scene_key"]
+    return IngestionProductItem(
+        product_id=str(row["product_id"]),
+        scene_key=str(scene_key) if scene_key else None,
+        acquisition_date=_extract_date_from_identifier(scene_key) or _extract_date_from_identifier(
+            row["product_id"]
+        ),
+        status=str(row["status"]),
+        bytes=int(row["bytes"] or 0),
+        updated_at=row["updated_at"],
+        error=_redact_error(row["error"]),
+    )
+
+
+def _source_products(db: Path, source_id: str, *, limit: int) -> list[IngestionProductItem]:
+    """Return recent real provider products for one source, excluding synthetic rows."""
+    conn = _open_product_ledger_ro(db)
+    try:
+        rows = conn.execute(
+            "SELECT product_id, source_id, scene_key, status, retries, bytes, error, updated_at "
+            "FROM ingestion_ledger "
+            "WHERE source_id = ? "
+            "AND product_id NOT LIKE 'sync:%' "
+            "AND product_id NOT LIKE 'composite:%' "
+            "ORDER BY coalesce(updated_at, '') DESC, product_id DESC LIMIT ?",
+            (source_id, limit),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [_product_row_to_item(row) for row in rows]
+
+
 def _open_ledger_ro(db: Path) -> sqlite3.Connection:
     """Open the SQLite ledger from the BFF's read-only scheduler mount.
 
@@ -1372,6 +1568,138 @@ def get_ingestion_schedules() -> IngestionScheduleResponse:
         status="ok",
         generated_at=generated_at,
         schedules=schedules,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Simplified satellite-centric source endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/ingestion-sources", response_model=IngestionSourcesResponse)
+def list_ingestion_sources() -> IngestionSourcesResponse:
+    """Return satellite/source rows for the simplified ingestion dashboard.
+
+    This endpoint intentionally reshapes existing scheduler/catalog state into
+    an operator-friendly source list: available satellites, last/next run, last
+    job counts, and latest composite date. It is read-only and fail-soft.
+    """
+    generated_at = _now_iso()
+    last_error: str | None = None
+
+    schedules_response = get_ingestion_schedules()
+    schedule_by_source: dict[str, IngestionScheduleItem] = {}
+    for schedule in schedules_response.schedules:
+        existing = schedule_by_source.get(schedule.source_id)
+        if existing is None or (schedule.schedule_enabled and not existing.schedule_enabled):
+            schedule_by_source[schedule.source_id] = schedule
+    if schedules_response.status == "unavailable" and schedules_response.last_error:
+        last_error = schedules_response.last_error
+
+    last_jobs_by_source: dict[str, IngestionSourceLastJob] = {}
+    db = _resolve_ledger_db()
+    if db is not None:
+        try:
+            last_jobs_by_source = _latest_jobs_with_counts_by_source(db)
+        except Exception as exc:  # noqa: BLE001 — monitoring must remain fail-soft
+            last_error = _redact_error(str(exc))
+
+    latest_composite_by_source: dict[str, str] = {}
+    product_db = _resolve_product_ledger_db()
+    if product_db is not None:
+        try:
+            latest_composite_by_source = _latest_composite_dates_by_source(product_db)
+        except Exception as exc:  # noqa: BLE001 — monitoring must remain fail-soft
+            last_error = _redact_error(str(exc))
+
+    sources: list[IngestionSourceSummary] = []
+    for source in catalog.list_sources():
+        source_id = str(source["id"])
+        schedule = schedule_by_source.get(source_id)
+        availability_status = str(source.get("availabilityStatus") or "active")
+        sources.append(
+            IngestionSourceSummary(
+                source_id=source_id,
+                label=str(source.get("label") or source_id),
+                provider=source.get("provider"),
+                kind=source.get("kind"),
+                active=availability_status == "active",
+                gated_reason=source.get("gatedReason"),
+                aoi_id=schedule.aoi_id if schedule else None,
+                cadence_days=schedule.cadence_days if schedule else None,
+                last_run_at=schedule.last_run_at if schedule else None,
+                last_success_at=schedule.last_success_at if schedule else None,
+                last_failure_at=schedule.last_failure_at if schedule else None,
+                next_due_at=schedule.next_due_at if schedule else None,
+                is_due=schedule.is_due if schedule else False,
+                is_overdue=schedule.is_overdue if schedule else False,
+                latest_composite_date=latest_composite_by_source.get(source_id),
+                last_job=last_jobs_by_source.get(source_id),
+            )
+        )
+
+    sources.sort(key=lambda item: 0 if item.active else 1)
+
+    return IngestionSourcesResponse(
+        status="ok" if last_error is None else "unavailable",
+        generated_at=generated_at,
+        sources=sources,
+        live_trigger_enabled=bool(getattr(settings, "admin_ingestion_live_trigger_enabled", False)),
+        last_error=last_error,
+    )
+
+
+@router.get(
+    "/ingestion-sources/{source_id}/products",
+    response_model=IngestionSourceProductsResponse,
+)
+def list_ingestion_source_products(
+    source_id: str,
+    limit: int = Query(25, ge=1, le=100, description="Maximum products to return"),
+) -> IngestionSourceProductsResponse:
+    """Return recent per-product rows for one satellite source.
+
+    The underlying Bhoonidhi ledger contains both real provider products and
+    synthetic bookkeeping rows. This endpoint returns only real provider rows.
+    """
+    generated_at = _now_iso()
+    if not _SAFE_TRIGGER_IDENTIFIER_RE.fullmatch(source_id):
+        raise HTTPException(status_code=400, detail="Invalid sourceId")
+
+    raw = getattr(settings, "bhoonidhi_ledger_path", "")
+    if not raw or not raw.strip():
+        return IngestionSourceProductsResponse(
+            status="unconfigured",
+            generated_at=generated_at,
+            source_id=source_id,
+            products=[],
+        )
+
+    db = _resolve_product_ledger_db()
+    if db is None:
+        return IngestionSourceProductsResponse(
+            status="missing",
+            generated_at=generated_at,
+            source_id=source_id,
+            products=[],
+        )
+
+    try:
+        products = _source_products(db, source_id, limit=limit)
+    except Exception as exc:  # noqa: BLE001 — monitoring must remain fail-soft
+        return IngestionSourceProductsResponse(
+            status="unavailable",
+            generated_at=generated_at,
+            source_id=source_id,
+            products=[],
+            last_error=_redact_error(str(exc)),
+        )
+
+    return IngestionSourceProductsResponse(
+        status="ok",
+        generated_at=generated_at,
+        source_id=source_id,
+        products=products,
     )
 
 

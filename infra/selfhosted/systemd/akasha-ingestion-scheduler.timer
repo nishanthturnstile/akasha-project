@@ -1,6 +1,6 @@
 [Unit]
 Description=Akasha multi-source ingestion scheduler (orchestrator timer)
-Documentation=docs/impl-plan/architecture-satellite-ingestion-scheduler-1.md
+Documentation=https://github.com/nishanthturnstile/akasha-project/blob/main/docs/impl-plan/architecture-satellite-ingestion-scheduler-1.md
 # Phase 8 — one orchestrator timer replaces per-source timer growth.
 # INSTALL DISABLED by default. Enable only after canary validation passes:
 #   sudo systemctl enable akasha-ingestion-scheduler.timer

@@ -277,6 +277,64 @@ export interface IngestionScheduleResponse {
   lastError?: string | null;
 }
 
+export interface IngestionSourceLastJob {
+  jobId: string;
+  state: string;
+  foundCount?: number | null;
+  selectedCount?: number | null;
+  downloadedCount?: number | null;
+  rejectedCount?: number | null;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  failureKind?: string | null;
+  message?: string | null;
+}
+
+export interface IngestionSourceSummary {
+  sourceId: string;
+  label: string;
+  provider?: string | null;
+  kind?: string | null;
+  active: boolean;
+  gatedReason?: string | null;
+  aoiId?: string | null;
+  cadenceDays?: number | null;
+  lastRunAt?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  nextDueAt?: string | null;
+  isDue?: boolean;
+  isOverdue?: boolean;
+  latestCompositeDate?: string | null;
+  lastJob?: IngestionSourceLastJob | null;
+}
+
+export interface IngestionSourcesResponse {
+  status: string;
+  generatedAt: string;
+  sources: IngestionSourceSummary[];
+  liveTriggerEnabled: boolean;
+  lastError?: string | null;
+}
+
+export interface IngestionProductItem {
+  productId: string;
+  sceneKey?: string | null;
+  acquisitionDate?: string | null;
+  status: string;
+  bytes: number;
+  updatedAt?: string | null;
+  error?: string | null;
+}
+
+export interface IngestionSourceProductsResponse {
+  status: string;
+  generatedAt: string;
+  sourceId: string;
+  products: IngestionProductItem[];
+  lastError?: string | null;
+}
+
 export interface TriggerIngestionJobRequest {
   sourceId: string;
   aoiId?: string;
@@ -386,14 +444,14 @@ export interface IngestionJobEvent {
   eventType: string;
   stage: PipelineStageId | 'running' | 'terminal' | 'unknown';
   status:
-    | PipelineStageState
-    | 'planned'
-    | 'queued'
-    | 'blocked_by_lock'
-    | 'cancelled'
-    | 'skipped_not_due'
-    | 'skipped_gated'
-    | 'unknown';
+  | PipelineStageState
+  | 'planned'
+  | 'queued'
+  | 'blocked_by_lock'
+  | 'cancelled'
+  | 'skipped_not_due'
+  | 'skipped_gated'
+  | 'unknown';
   message: string;
   payload: Record<string, unknown>;
 }

@@ -1,6 +1,6 @@
 [Unit]
 Description=Watch Akasha ingestion inbox for admin trigger requests
-Documentation=docs/impl-plan/feature-admin-ingestion-trigger-1.md
+Documentation=https://github.com/nishanthturnstile/akasha-project/blob/main/docs/impl-plan/feature-admin-ingestion-trigger-1.md
 
 [Path]
 PathExistsGlob=/srv/akasha/ingestion-inbox/*/request.json

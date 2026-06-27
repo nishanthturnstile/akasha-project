@@ -41,6 +41,8 @@ import {
   updateScoutTask,
   updateReportTemplate,
   getIngestionSchedules,
+  getIngestionSources,
+  getIngestionSourceProducts,
   triggerIngestionJob,
   listIngestionJobs,
   getIngestionJob,
@@ -165,6 +167,9 @@ export const queryKeys = {
   assistantStatus: ['assistant', 'status'] as const,
   imagerySourceMonitoring: ['monitoring', 'imagery-sources'] as const,
   ingestionSchedules: ['monitoring', 'ingestion-schedules'] as const,
+  ingestionSources: ['monitoring', 'ingestion-sources'] as const,
+  ingestionSourceProducts: (sourceId: string, limit = 25) =>
+    ['monitoring', 'ingestion-sources', sourceId, 'products', limit] as const,
   ingestionJobs: (filters?: IngestionJobFilters) =>
     ['monitoring', 'ingestion-jobs', filters ?? {}] as const,
   ingestionJob: (jobId: string) => ['monitoring', 'ingestion-jobs', jobId] as const,
@@ -796,6 +801,25 @@ export function useIngestionSchedules() {
   });
 }
 
+export function useIngestionSources() {
+  return useQuery({
+    queryKey: queryKeys.ingestionSources,
+    queryFn: getIngestionSources,
+  });
+}
+
+export function useIngestionSourceProducts(
+  sourceId: string,
+  options: { enabled?: boolean; limit?: number } = {},
+) {
+  const limit = options.limit ?? 25;
+  return useQuery({
+    queryKey: queryKeys.ingestionSourceProducts(sourceId, limit),
+    queryFn: () => getIngestionSourceProducts(sourceId, limit),
+    enabled: (options.enabled ?? true) && Boolean(sourceId),
+  });
+}
+
 export function useIngestionJobs(filters?: IngestionJobFilters) {
   return useQuery({
     queryKey: queryKeys.ingestionJobs(filters),
@@ -810,6 +834,7 @@ export function useTriggerIngestionJob() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.ingestionJobs() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.ingestionSchedules });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ingestionSources });
       void queryClient.invalidateQueries({ queryKey: queryKeys.imagerySourceMonitoring });
     },
   });

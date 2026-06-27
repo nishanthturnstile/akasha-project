@@ -280,6 +280,40 @@ def _row(
     }
 
 
+def _make_ingestion_ledger(path: Path, rows: list[dict]) -> None:
+    """Create a Bhoonidhi ingestion_ledger SQLite DB with the given rows."""
+    conn = sqlite3.connect(str(path))
+    conn.execute("""
+        CREATE TABLE ingestion_ledger (
+            product_id TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            scene_key TEXT,
+            status TEXT NOT NULL,
+            retries INTEGER NOT NULL DEFAULT 0,
+            bytes INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (product_id, source_id)
+        )
+    """)
+    for row in rows:
+        conn.execute(
+            """
+            INSERT INTO ingestion_ledger (
+                product_id, source_id, scene_key, status, retries,
+                bytes, error, created_at, updated_at
+            ) VALUES (
+                :product_id, :source_id, :scene_key, :status, :retries,
+                :bytes, :error, :created_at, :updated_at
+            )
+            """,
+            row,
+        )
+    conn.commit()
+    conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Schedules endpoint
 # ---------------------------------------------------------------------------
@@ -1523,6 +1557,222 @@ def test_schedules_reads_redacted_schedule_snapshot_before_success_ledger(monkey
 
 
 # ---------------------------------------------------------------------------
+# Simplified satellite-centric source endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_ingestion_sources_summarize_satellites_with_latest_job_and_schedule(
+    monkeypatch, tmp_path
+):
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    db = tmp_path / "job_ledger.db"
+    product_ledger = tmp_path / "bhoonidhi_ledger.sqlite"
+    _make_schedule_snapshot(
+        jobs_dir,
+        [
+            {
+                "sourceId": "resourcesat-2a-liss3-boa",
+                "provider": "bhoonidhi",
+                "aoiId": "bangalore-60km",
+                "scheduleState": "routine",
+                "scheduleEnabled": True,
+                "lastRunAt": "2026-06-20T01:00:00Z",
+                "lastSuccessAt": "2026-06-20T01:30:00Z",
+                "lastFailureAt": "2026-06-18T01:30:00Z",
+                "nextDueAt": "2026-06-25T06:00:00Z",
+                "cadenceDays": 7,
+                "dueReason": "cadence_elapsed",
+                "isDue": True,
+                "isOverdue": False,
+            }
+        ],
+    )
+    _make_sqlite_ledger(
+        db,
+        [
+            _row(
+                "job_20260618T010000Z_old_fail",
+                state="failed",
+                scheduled_at="2026-06-18T01:00:00Z",
+                finished_at="2026-06-18T01:30:00Z",
+                found_count=2,
+                selected_count=1,
+                downloaded_count=0,
+                rejected_count=1,
+                failure_kind="bhoonidhi_download",
+            ),
+            _row(
+                "job_20260620T010000Z_latest_success",
+                state="succeeded",
+                scheduled_at="2026-06-20T01:00:00Z",
+                finished_at="2026-06-20T01:30:00Z",
+                found_count=8,
+                selected_count=4,
+                downloaded_count=3,
+                rejected_count=4,
+                next_due_at="2026-06-25T06:00:00Z",
+            ),
+        ],
+    )
+    _make_ingestion_ledger(
+        product_ledger,
+        [
+            {
+                "product_id": "composite:bangalore-60km:2026-06-18",
+                "source_id": "resourcesat-2a-liss3-boa",
+                "scene_key": "composite:bangalore-60km:2026-06-18",
+                "status": "composited",
+                "retries": 0,
+                "bytes": 1234,
+                "error": None,
+                "created_at": "2026-06-18T02:00:00Z",
+                "updated_at": "2026-06-18T02:00:00Z",
+            },
+            {
+                "product_id": "composite:bangalore-60km:2026-06-21",
+                "source_id": "resourcesat-2a-liss3-boa",
+                "scene_key": "composite:bangalore-60km:2026-06-21",
+                "status": "composited",
+                "retries": 0,
+                "bytes": 5678,
+                "error": None,
+                "created_at": "2026-06-17T02:00:00Z",
+                "updated_at": "2026-06-17T02:00:00Z",
+            }
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", str(db), raising=False)
+    monkeypatch.setattr(settings, "bhoonidhi_ledger_path", str(product_ledger), raising=False)
+    monkeypatch.setattr(settings, "admin_ingestion_live_trigger_enabled", True, raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-sources")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["liveTriggerEnabled"] is True
+    sources = {item["sourceId"]: item for item in body["sources"]}
+    source = sources["resourcesat-2a-liss3-boa"]
+    assert source["label"] == "ResourceSat-2A LISS-3 BOA"
+    assert source["provider"] == "ISRO/NRSC Bhoonidhi"
+    assert source["kind"] == "optical"
+    assert source["active"] is True
+    assert source["aoiId"] == "bangalore-60km"
+    assert source["cadenceDays"] == 7.0
+    assert source["lastRunAt"] == "2026-06-20T01:00:00Z"
+    assert source["lastSuccessAt"] == "2026-06-20T01:30:00Z"
+    assert source["lastFailureAt"] == "2026-06-18T01:30:00Z"
+    assert source["nextDueAt"] == "2026-06-25T06:00:00Z"
+    assert source["isDue"] is True
+    assert source["isOverdue"] is False
+    assert source["latestCompositeDate"] == "2026-06-21"
+    assert source["lastJob"] == {
+        "jobId": "job_20260620T010000Z_latest_success",
+        "state": "succeeded",
+        "foundCount": 8,
+        "selectedCount": 4,
+        "downloadedCount": 3,
+        "rejectedCount": 4,
+        "windowStart": "2026-06-01T00:00:00Z",
+        "windowEnd": "2026-06-20T00:00:00Z",
+        "failureKind": None,
+        "message": None,
+    }
+    assert any(not item["active"] and item["gatedReason"] for item in body["sources"])
+
+
+def test_ingestion_source_products_returns_real_scenes_only_and_redacts_errors(
+    monkeypatch, tmp_path
+):
+    ledger = tmp_path / "bhoonidhi_ledger.sqlite"
+    _make_ingestion_ledger(
+        ledger,
+        [
+            {
+                "product_id": "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+                "source_id": "resourcesat-2a-liss3-boa",
+                "scene_key": "resourcesat-2a-liss3-boa:BOA:99:65:2026-03-19T00:00:00Z",
+                "status": "downloaded",
+                "retries": 0,
+                "bytes": 1048576,
+                "error": None,
+                "created_at": "2026-06-20T01:00:00Z",
+                "updated_at": "2026-06-20T01:30:00Z",
+            },
+            {
+                "product_id": "RA319MAR2026048153009900065FAILED",
+                "source_id": "resourcesat-2a-liss3-boa",
+                "scene_key": "resourcesat-2a-liss3-boa:BOA:99:66:2026-03-20T00:00:00Z",
+                "status": "failed",
+                "retries": 2,
+                "bytes": 0,
+                "error": "failed at /srv/akasha/raw/product.zip token=secret-value",
+                "created_at": "2026-06-20T02:00:00Z",
+                "updated_at": "2026-06-20T02:30:00Z",
+            },
+            {
+                "product_id": "sync:bangalore-60km:2026-06-20",
+                "source_id": "resourcesat-2a-liss3-boa",
+                "scene_key": "sync:bangalore-60km:2026-06-20",
+                "status": "searched",
+                "retries": 0,
+                "bytes": 0,
+                "error": None,
+                "created_at": "2026-06-20T03:00:00Z",
+                "updated_at": "2026-06-20T03:00:00Z",
+            },
+            {
+                "product_id": "composite:bangalore-60km:2026-06-20",
+                "source_id": "resourcesat-2a-liss3-boa",
+                "scene_key": "composite:bangalore-60km:2026-06-20",
+                "status": "composited",
+                "retries": 0,
+                "bytes": 100,
+                "error": None,
+                "created_at": "2026-06-20T04:00:00Z",
+                "updated_at": "2026-06-20T04:00:00Z",
+            },
+            {
+                "product_id": "AW319MAR2026048153009900065PSANSTUCSRHTDF",
+                "source_id": "resourcesat-2a-awifs-boa",
+                "scene_key": "resourcesat-2a-awifs-boa:BOA:99:65:2026-03-19T00:00:00Z",
+                "status": "downloaded",
+                "retries": 0,
+                "bytes": 2048,
+                "error": None,
+                "created_at": "2026-06-20T05:00:00Z",
+                "updated_at": "2026-06-20T05:00:00Z",
+            },
+        ],
+    )
+    monkeypatch.setattr(settings, "bhoonidhi_ledger_path", str(ledger), raising=False)
+
+    resp = client.get(
+        "/api/monitoring/ingestion-sources/resourcesat-2a-liss3-boa/products?limit=10"
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["sourceId"] == "resourcesat-2a-liss3-boa"
+    products = body["products"]
+    assert [item["productId"] for item in products] == [
+        "RA319MAR2026048153009900065FAILED",
+        "RA319MAR2026048153009900065PSANSTUCSRHTDF",
+    ]
+    assert products[0]["acquisitionDate"] == "2026-03-20"
+    assert products[1]["acquisitionDate"] == "2026-03-19"
+    assert products[1]["bytes"] == 1048576
+    serialized = json.dumps(body)
+    assert "sync:bangalore" not in serialized
+    assert "composite:bangalore" not in serialized
+    assert "/srv/akasha" not in serialized
+    assert "secret-value" not in serialized
+
+
+# ---------------------------------------------------------------------------
 # No raw filesystem paths in responses (SEC-006)
 # ---------------------------------------------------------------------------
 
@@ -2066,6 +2316,8 @@ def _read_submitted_request(inbox_dir: Path, job_request_id: str) -> dict:
 def test_ingestion_monitoring_endpoints_allow_owner_and_admin(monkeypatch, tmp_path):
     job_id = _configure_ingestion_rbac_fixtures(monkeypatch, tmp_path)
     endpoints = (
+        "/api/monitoring/ingestion-sources",
+        "/api/monitoring/ingestion-sources/resourcesat-2a-liss3-boa/products",
         "/api/monitoring/ingestion-schedules",
         "/api/monitoring/ingestion-jobs",
         f"/api/monitoring/ingestion-jobs/{job_id}",
@@ -2085,6 +2337,8 @@ def test_ingestion_monitoring_endpoints_allow_owner_and_admin(monkeypatch, tmp_p
 def test_ingestion_monitoring_endpoints_reject_member_and_viewer(monkeypatch, tmp_path):
     job_id = _configure_ingestion_rbac_fixtures(monkeypatch, tmp_path)
     endpoints = (
+        "/api/monitoring/ingestion-sources",
+        "/api/monitoring/ingestion-sources/resourcesat-2a-liss3-boa/products",
         "/api/monitoring/ingestion-schedules",
         "/api/monitoring/ingestion-jobs",
         f"/api/monitoring/ingestion-jobs/{job_id}",
@@ -2420,6 +2674,8 @@ def test_monitoring_apis_documented_in_openapi():
     schema = client.get("/api/openapi.json").json()
     paths = schema["paths"]
     assert "/api/monitoring/ingestion-schedules" in paths
+    assert "/api/monitoring/ingestion-sources" in paths
+    assert "/api/monitoring/ingestion-sources/{source_id}/products" in paths
     assert "/api/monitoring/ingestion-jobs" in paths
     assert "/api/monitoring/ingestion-jobs/trigger" in paths
     assert "/api/monitoring/ingestion-jobs/{job_id}" in paths
@@ -2435,6 +2691,11 @@ def test_monitoring_apis_documented_in_openapi():
     assert "IngestionJobEventsResponse" in schemas
     assert "TriggerIngestionJobRequest" in schemas
     assert "TriggerIngestionJobResponse" in schemas
+    assert "IngestionSourceLastJob" in schemas
+    assert "IngestionSourceSummary" in schemas
+    assert "IngestionSourcesResponse" in schemas
+    assert "IngestionProductItem" in schemas
+    assert "IngestionSourceProductsResponse" in schemas
 
     schedule_props = schemas["IngestionScheduleItem"]["properties"]
     for field in (
@@ -2445,6 +2706,20 @@ def test_monitoring_apis_documented_in_openapi():
         "cadenceDays", "dueReason",
     ):
         assert field in schedule_props, f"scheduleItem missing field {field!r}"
+
+    source_props = schemas["IngestionSourceSummary"]["properties"]
+    for field in (
+        "sourceId", "label", "provider", "kind", "active", "gatedReason", "aoiId",
+        "cadenceDays", "lastRunAt", "lastSuccessAt", "lastFailureAt", "nextDueAt",
+        "isDue", "isOverdue", "latestCompositeDate", "lastJob",
+    ):
+        assert field in source_props, f"ingestionSourceSummary missing field {field!r}"
+
+    product_props = schemas["IngestionProductItem"]["properties"]
+    for field in (
+        "productId", "sceneKey", "acquisitionDate", "status", "bytes", "updatedAt", "error",
+    ):
+        assert field in product_props, f"ingestionProductItem missing field {field!r}"
 
     job_props = schemas["IngestionJobSummary"]["properties"]
     for field in (

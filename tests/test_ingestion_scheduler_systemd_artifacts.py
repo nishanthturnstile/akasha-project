@@ -611,6 +611,30 @@ def test_inbox_dispatcher_units_are_safe_and_target_correct_paths():
     assert "Persistent=true" in timer
 
 
+def test_systemd_documentation_entries_use_valid_uris():
+    unit_keys = (
+        "service",
+        "timer",
+        "inbox_dispatcher_service",
+        "inbox_dispatcher_path",
+        "inbox_dispatcher_timer",
+    )
+    docs_by_unit = {
+        key: [
+            line.split("=", 1)[1].strip()
+            for line in read_artifact(key).splitlines()
+            if line.startswith("Documentation=")
+        ]
+        for key in unit_keys
+    }
+    assert all(docs_by_unit.values()), "systemd units should keep operator documentation linked"
+    for key, docs in docs_by_unit.items():
+        for doc in docs:
+            assert doc.startswith(("https://", "http://", "file:", "man:", "info:")), (
+                f"systemd ignores relative Documentation= entries in {key}: {doc}"
+            )
+
+
 def test_jobs_installer_installs_dispatcher_and_creates_inbox():
     installer = read_artifact("jobs_installer")
     assert "/opt/akasha/bin/akasha-ingestion-inbox-dispatcher.sh" in installer

@@ -41,6 +41,8 @@ import type {
   CloudMaskOptions,
   ImagerySourceMonitoringResponse,
   IngestionScheduleResponse,
+  IngestionSourceProductsResponse,
+  IngestionSourcesResponse,
   IngestionJobListResponse,
   IngestionJobDetail,
   IngestionJobEventsResponse,
@@ -725,6 +727,17 @@ export function composeTileTemplate(
 
 export const getIngestionSchedules = (): Promise<IngestionScheduleResponse> =>
   request<IngestionScheduleResponse>('/api/monitoring/ingestion-schedules');
+
+export const getIngestionSources = (): Promise<IngestionSourcesResponse> =>
+  request<IngestionSourcesResponse>('/api/monitoring/ingestion-sources');
+
+export const getIngestionSourceProducts = (
+  sourceId: string,
+  limit = 25,
+): Promise<IngestionSourceProductsResponse> =>
+  request<IngestionSourceProductsResponse>(
+    `/api/monitoring/ingestion-sources/${encodeURIComponent(sourceId)}/products?limit=${encodeURIComponent(String(limit))}`,
+  );
 
 export const triggerIngestionJob = (
   payload: TriggerIngestionJobRequest,

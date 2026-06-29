@@ -239,7 +239,7 @@ export function AppShell() {
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
   const showGlobalViewPanel = !isAdminIngestionRoute && globalViewOpen;
-  const isGlobalViewActive = location.pathname === MAIN_MONITORING_ROUTE && globalViewOpen;
+  const isGlobalViewActive = showGlobalViewPanel;
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),

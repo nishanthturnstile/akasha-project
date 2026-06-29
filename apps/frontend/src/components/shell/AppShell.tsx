@@ -312,7 +312,7 @@ export function AppShell() {
     });
   };
 
-  const railWidth = railCollapsed ? '3.5rem' : '12rem';
+  const railWidth = railCollapsed ? '3.5rem' : '16rem';
 
   return (
     <TooltipProvider delayDuration={ 200 }>

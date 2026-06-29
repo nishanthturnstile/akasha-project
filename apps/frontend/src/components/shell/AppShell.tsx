@@ -388,7 +388,7 @@ export function AppShell() {
         ) }
 
         <aside
-          className="hidden border-l border-border bg-background/96 lg:flex lg:min-h-0 lg:min-w-0 lg:flex-col"
+          className="hidden border-l border-border bg-background/96 lg:flex lg:min-h-0 lg:flex-col"
           data-testid="product-rail"
         >
           {/* Brand row + collapse toggle */ }

@@ -711,7 +711,7 @@ export function AppShell() {
                         onMouseLeave={ () => setHoveredGroup(null) }
                         className={ cn(
                           'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                          activeGroupLabel === group.label && 'text-primary',
+                          activeGroupLabel === group.label && !globalViewOpen && 'text-primary',
                         ) }
                       >
                         { GroupIcon && (
@@ -780,7 +780,7 @@ export function AppShell() {
                       aria-controls={ panelId }
                       className={ cn(
                         'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                        (isExpanded || activeGroupLabel === group.label) && 'bg-primary/10 text-primary',
+                        (isExpanded || (activeGroupLabel === group.label && !globalViewOpen)) && 'bg-primary/10 text-primary',
                       ) }
                     >
                       <span className="flex items-center gap-2 truncate">

@@ -1036,57 +1036,61 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         />
       </div>
 
-      <div
-        className="pointer-events-none absolute bottom-[calc(var(--timeline-height)+0.5rem)] left-4 z-toolbar max-w-[calc(100vw-2rem)] truncate rounded-sm bg-[hsl(var(--panel)/0.55)] px-1.5 py-0.5 text-[11px] text-foreground/80 backdrop-blur-sm"
-        data-testid="attribution"
-      >
-        { attribution }
-      </div>
-
-      {/* Bottom: temporal filmstrip + fullscreen card */ }
-      <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
-        <div id="timeline-bar" className="min-w-0 flex-1">
-          <TimelineBar
-          dates={ activeTimelineDates }
-          selectedDate={ selectedDate }
-          onSelect={ bestMode ? handleBestDateSelect : view.setDate }
-          sourceKind={ bestMode ? undefined : activeSourceKind }
-          sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
-          loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
-          error={
-            bestMode
-              ? (bestObsQ.isError ? messageFor(bestObsQ.error) : null)
-              : (datesQ.isError ? messageFor(datesQ.error) : null)
-          }
-          onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
-          marginalNote={ bestMode ? null : marginalNote }
-          nearestPassNote={ bestMode ? null : nearestPassNote }
-          onPrefetchDate={ undefined }
-          periodFrom={ periodFrom }
-          periodTo={ periodTo }
-          onPeriodChange={ view.setPeriod }
-          bestMode={ bestMode }
-          onBestModeChange={ view.setBestMode }
-          />
+      { overlaysVisible && (
+        <div
+          className="pointer-events-none absolute bottom-[calc(var(--timeline-height)+0.5rem)] left-4 z-toolbar max-w-[calc(100vw-2rem)] truncate rounded-sm bg-[hsl(var(--panel)/0.55)] px-1.5 py-0.5 text-[11px] text-foreground/80 backdrop-blur-sm"
+          data-testid="attribution"
+        >
+          { attribution }
         </div>
+      ) }
 
-        {/* Fullscreen card — same height as timeline bar */}
-        <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
-          <button
-            type="button"
-            aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }
-            data-testid="map-fullscreen-btn"
-            onClick={ () => view.setMapFullscreen(!view.mapFullscreen) }
-            className="flex items-center justify-center text-foreground/80 transition-colors duration-fast hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring size-full"
-          >
-            { view.mapFullscreen ? (
-              <Minimize className="size-4" strokeWidth={ 1.75 } />
-            ) : (
-              <Maximize className="size-4" strokeWidth={ 1.75 } />
-            ) }
-          </button>
+      { overlaysVisible && (
+        /* Bottom: temporal filmstrip + fullscreen card */
+        <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
+          <div id="timeline-bar" className="min-w-0 flex-1">
+            <TimelineBar
+            dates={ activeTimelineDates }
+            selectedDate={ selectedDate }
+            onSelect={ bestMode ? handleBestDateSelect : view.setDate }
+            sourceKind={ bestMode ? undefined : activeSourceKind }
+            sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
+            loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
+            error={
+              bestMode
+                ? (bestObsQ.isError ? messageFor(bestObsQ.error) : null)
+                : (datesQ.isError ? messageFor(datesQ.error) : null)
+            }
+            onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
+            marginalNote={ bestMode ? null : marginalNote }
+            nearestPassNote={ bestMode ? null : nearestPassNote }
+            onPrefetchDate={ undefined }
+            periodFrom={ periodFrom }
+            periodTo={ periodTo }
+            onPeriodChange={ view.setPeriod }
+            bestMode={ bestMode }
+            onBestModeChange={ view.setBestMode }
+            />
+          </div>
+
+          {/* Fullscreen card — same height as timeline bar */}
+          <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
+            <button
+              type="button"
+              aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }
+              data-testid="map-fullscreen-btn"
+              onClick={ () => view.setMapFullscreen(!view.mapFullscreen) }
+              className="flex items-center justify-center text-foreground/80 transition-colors duration-fast hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring size-full"
+            >
+              { view.mapFullscreen ? (
+                <Minimize className="size-4" strokeWidth={ 1.75 } />
+              ) : (
+                <Maximize className="size-4" strokeWidth={ 1.75 } />
+              ) }
+            </button>
+          </div>
         </div>
-      </div>
+      ) }
 
       <AlertDialogRoot
         open={!!deleteFieldTarget}

@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronsLeft,
   Clock,
-  Globe,
   LogOut,
   Menu,
   Plus,
@@ -239,7 +238,6 @@ export function AppShell() {
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
   const showGlobalViewPanel = !isAdminIngestionRoute && globalViewOpen;
-  const isGlobalViewActive = showGlobalViewPanel;
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
@@ -302,6 +300,16 @@ export function AppShell() {
     }
   }
 
+  // When Global View closes, re-expand the active nav group so its dropdown
+  // is open and the active item (e.g. Field Analytics) is visible/highlighted.
+  const [prevGlobalViewOpen, setPrevGlobalViewOpen] = useState(globalViewOpen);
+  if (globalViewOpen !== prevGlobalViewOpen) {
+    setPrevGlobalViewOpen(globalViewOpen);
+    if (!globalViewOpen && activeGroupLabel && !expandedGroups.has(activeGroupLabel)) {
+      setExpandedGroups(new Set([activeGroupLabel]));
+    }
+  }
+
   const toggleGroup = (label: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
@@ -353,31 +361,20 @@ export function AppShell() {
           </div>
           <nav aria-label="Product modules" className="-mx-1 overflow-x-auto px-1">
             <div className="flex min-w-max gap-1 pb-1">
-              <button
-                type="button"
-                onClick={ () => { setGlobalViewOpen(true); navigate(MAIN_MONITORING_ROUTE); } }
-                data-testid="mobile-nav-link-global-view"
-                className={ cn(
-                  'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
-                  isGlobalViewActive && 'bg-primary/15 text-foreground shadow-e1',
-                ) }
-              >
-                <Globe className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
-                Global View
-              </button>
               { visibleNavigation.flatMap((group) =>
                 group.items.map((item) => {
                   const Icon = item.icon;
                   return (
                     <NavLink
-                      key={ item.path }
+                      key={ `${group.label}-${item.label}` }
                       to={ item.path }
                       end={ false }
                       data-testid={ `mobile-${testIdFor(item.label)}` }
+                      onClick={ item.globalView ? () => setGlobalViewOpen(true) : undefined }
                       className={ ({ isActive }) =>
                         cn(
                           'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
-                          isActive && 'bg-primary/15 text-foreground shadow-e1',
+                          (item.globalView ? isActive && globalViewOpen : isActive) && 'bg-primary/15 text-foreground shadow-e1',
                         )
                       }
                     >
@@ -651,39 +648,7 @@ export function AppShell() {
               aria-label="Product modules"
               className={ cn('flex flex-col gap-2 px-3 py-3', railCollapsed && 'px-1') }
             >
-              {/* Global View — always visible, toggles the global view panel */ }
-              { railCollapsed ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Global View"
-                      onClick={ () => { setGlobalViewOpen(true); navigate(MAIN_MONITORING_ROUTE); } }
-                      className={ cn(
-                        'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                        isGlobalViewActive && 'bg-primary/15 text-foreground shadow-e1',
-                      ) }
-                    >
-                      <Globe className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">Global View</TooltipContent>
-                </Tooltip>
-              ) : (
-                <button
-                  type="button"
-                  onClick={ () => { setGlobalViewOpen(true); navigate(MAIN_MONITORING_ROUTE); } }
-                  data-testid="nav-link-global-view"
-                  className={ cn(
-                    'group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                    isGlobalViewActive && 'bg-primary/15 text-foreground shadow-e1',
-                  ) }
-                >
-                  <Globe className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left">Global View</span>
-                </button>
-              ) }
-              <Separator className="my-1" />
+
               { primaryGroups.map((group) => {
                 const slug = slugFor(group.label);
                 const isExpanded = expandedGroups.has(group.label);
@@ -711,7 +676,7 @@ export function AppShell() {
                         onMouseLeave={ () => setHoveredGroup(null) }
                         className={ cn(
                           'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                          activeGroupLabel === group.label && !globalViewOpen && 'text-primary',
+                          activeGroupLabel === group.label && 'text-primary',
                         ) }
                       >
                         { GroupIcon && (
@@ -733,19 +698,21 @@ export function AppShell() {
                             const ItemIcon = item.icon;
                             return (
                               <NavLink
-                                key={ item.path }
+                                key={ `${group.label}-${item.label}` }
                                 to={ item.path }
                                 end={ false }
                                 role="menuitem"
                                 data-testid={ testIdFor(item.label) }
                                 onClick={ () => {
                                   setHoveredGroup(null);
-                                  setGlobalViewOpen(false);
+                                  setGlobalViewOpen(!!item.globalView);
                                 } }
                                 className={ ({ isActive }) =>
                                   cn(
                                     'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                    isActive && !globalViewOpen && 'text-primary font-semibold',
+                                    item.globalView
+                                      ? isActive && globalViewOpen && 'text-primary font-semibold'
+                                      : isActive && !globalViewOpen && 'text-primary font-semibold',
                                   )
                                 }
                               >
@@ -780,7 +747,7 @@ export function AppShell() {
                       aria-controls={ panelId }
                       className={ cn(
                         'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                        (isExpanded || (activeGroupLabel === group.label && !globalViewOpen)) && 'bg-primary/10 text-primary',
+                        (isExpanded || activeGroupLabel === group.label) && 'bg-primary/10 text-primary',
                       ) }
                     >
                       <span className="flex items-center gap-2 truncate">
@@ -800,15 +767,17 @@ export function AppShell() {
                       <div id={ panelId } className="mt-1 flex flex-col gap-1">
                         { group.items.map((item) => (
                           <NavLink
-                            key={ item.path }
+                            key={ `${group.label}-${item.label}` }
                             to={ item.path }
                             end={ false }
                             data-testid={ testIdFor(item.label) }
-                            onClick={ () => setGlobalViewOpen(false) }
+                            onClick={ () => setGlobalViewOpen(!!item.globalView) }
                             className={ ({ isActive }) =>
                               cn(
                                 'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                isActive && !globalViewOpen && 'text-primary font-semibold',
+                                item.globalView
+                                  ? isActive && globalViewOpen && 'text-primary font-semibold'
+                                  : isActive && !globalViewOpen && 'text-primary font-semibold',
                               )
                             }
                           >

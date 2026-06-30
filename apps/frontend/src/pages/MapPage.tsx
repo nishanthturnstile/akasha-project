@@ -1045,35 +1045,35 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         </div>
       ) }
 
-      { overlaysVisible && (
-        /* Bottom: temporal filmstrip + fullscreen card */
-        <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
-          <div id="timeline-bar" className="min-w-0 flex-1">
-            <TimelineBar
-            dates={ activeTimelineDates }
-            selectedDate={ selectedDate }
-            onSelect={ bestMode ? handleBestDateSelect : view.setDate }
-            sourceKind={ bestMode ? undefined : activeSourceKind }
-            sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
-            loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
-            error={
-              bestMode
-                ? (bestObsQ.isError ? messageFor(bestObsQ.error) : null)
-                : (datesQ.isError ? messageFor(datesQ.error) : null)
-            }
-            onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
-            marginalNote={ bestMode ? null : marginalNote }
-            nearestPassNote={ bestMode ? null : nearestPassNote }
-            onPrefetchDate={ undefined }
-            periodFrom={ periodFrom }
-            periodTo={ periodTo }
-            onPeriodChange={ view.setPeriod }
-            bestMode={ bestMode }
-            onBestModeChange={ view.setBestMode }
-            />
-          </div>
+      {/* Bottom: temporal filmstrip — always visible */}
+      <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
+        <div id="timeline-bar" className="min-w-0 flex-1">
+          <TimelineBar
+          dates={ activeTimelineDates }
+          selectedDate={ selectedDate }
+          onSelect={ bestMode ? handleBestDateSelect : view.setDate }
+          sourceKind={ bestMode ? undefined : activeSourceKind }
+          sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
+          loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
+          error={
+            bestMode
+              ? (bestObsQ.isError ? messageFor(bestObsQ.error) : null)
+              : (datesQ.isError ? messageFor(datesQ.error) : null)
+          }
+          onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
+          marginalNote={ bestMode ? null : marginalNote }
+          nearestPassNote={ bestMode ? null : nearestPassNote }
+          onPrefetchDate={ undefined }
+          periodFrom={ periodFrom }
+          periodTo={ periodTo }
+          onPeriodChange={ view.setPeriod }
+          bestMode={ bestMode }
+          onBestModeChange={ view.setBestMode }
+          />
+        </div>
 
-          {/* Fullscreen card — same height as timeline bar */}
+        { overlaysVisible && (
+          /* Fullscreen card — same height as timeline bar */
           <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
             <button
               type="button"
@@ -1089,8 +1089,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
               ) }
             </button>
           </div>
-        </div>
-      ) }
+        ) }
+      </div>
 
       <AlertDialogRoot
         open={!!deleteFieldTarget}

@@ -531,8 +531,7 @@ def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
         "background_value": 0,
         "nodata_policy": "all-band-background-or-warp-gap",
         "note": (
-            "LISS-4 L2 reflectance metadata is provisional until staging radiometry "
-            "validation."
+            "LISS-4 L2 reflectance metadata is provisional until staging radiometry " "validation."
         ),
     }
     analytic = collection["item_assets"]["analytic"]
@@ -1631,6 +1630,72 @@ def test_eos04_sar_display_tile_route_uses_backscatter_asset(monkeypatch):
     )
 
 
+def test_eos04_sar_asset_resolution_requires_explicit_polarization_metadata(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="eos-04-sar-mrs-l2b": [
+            {
+                "type": "Feature",
+                "id": "eos04-missing-pol",
+                "collection": "eos-04-sar-mrs-l2b",
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+                "properties": {
+                    "datetime": "2026-04-26T01:30:00Z",
+                    "akasha:acquisition_date": "2026-04-26",
+                },
+                "assets": {
+                    "backscatter": {
+                        "href": "s3://akasha-cogs/eos-04/a/backscatter.tif",
+                        "raster:bands": [{"nodata": -9999.0}],
+                    }
+                },
+            }
+        ],
+    )
+
+    with pytest.raises(AkashaError) as exc:
+        catalog.resolve_assets_for_date("eos-04-sar-mrs-l2b", "2026-04-26")
+
+    assert exc.value.code == "MISSING_SAR_POLARIZATIONS"
+    assert exc.value.details["sourceId"] == "eos-04-sar-mrs-l2b"
+
+
+def test_eos04_sar_asset_resolution_rejects_generic_band_names(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+
+    monkeypatch.setattr(
+        catalog,
+        "list_items",
+        lambda source_id="eos-04-sar-mrs-l2b": [
+            {
+                "type": "Feature",
+                "id": "eos04-b1",
+                "collection": "eos-04-sar-mrs-l2b",
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+                "properties": {
+                    "datetime": "2026-04-26T01:30:00Z",
+                    "akasha:acquisition_date": "2026-04-26",
+                },
+                "assets": {
+                    "backscatter": {
+                        "href": "s3://akasha-cogs/eos-04/a/backscatter.tif",
+                        "raster:bands": [{"name": "B1", "nodata": -9999.0}],
+                    }
+                },
+            }
+        ],
+    )
+
+    with pytest.raises(AkashaError) as exc:
+        catalog.resolve_assets_for_date("eos-04-sar-mrs-l2b", "2026-04-26")
+
+    assert exc.value.code == "MISSING_SAR_POLARIZATIONS"
+    assert exc.value.details["availableBands"] == ["B1"]
+
+
 def test_sar_vv_tile_route_uses_actual_vv_band_position(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import tiles
@@ -2163,11 +2228,10 @@ def test_statistics_multi_scene_overlap_fails_without_leaking_hrefs(monkeypatch)
 def test_synthetic_dual_cog_statistics_end_to_end(tmp_path, monkeypatch):
     rasterio = pytest.importorskip("rasterio")
     pytest.importorskip("pyproj")
-    from pyproj import Transformer  # noqa: I001
-    from rasterio.transform import from_origin
-
     from app.raster import catalog_resolver as catalog
     from app.raster.service import compute_statistics
+    from pyproj import Transformer  # noqa: I001
+    from rasterio.transform import from_origin
 
     crs = "EPSG:32643"
     res = 10.0

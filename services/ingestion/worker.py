@@ -33,6 +33,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -80,6 +81,63 @@ def _manifest_paths(manifest_glob: str | None, collection_id: str | None = None)
     if not paths:
         raise SystemExit("no prepare_manifest.json files found")
     return paths
+
+
+_SOURCE_ID_ALIASES = {
+    "EOS-04_SAR-MRS_L2B": "eos-04-sar-mrs-l2b",
+}
+
+
+def _normalize_manifest_source_id(value: object) -> str:
+    if value in (None, ""):
+        return ""
+    text = str(value)
+    return _SOURCE_ID_ALIASES.get(text, text)
+
+
+def _manifest_source_id(manifest_data: dict) -> str:
+    props = (
+        manifest_data.get("properties")
+        if isinstance(manifest_data.get("properties"), dict)
+        else {}
+    )
+    for value in (
+        manifest_data.get("source_id"),
+        manifest_data.get("sourceId"),
+        manifest_data.get("collection_id"),
+        manifest_data.get("collection"),
+        props.get("akasha:source_id"),
+        props.get("collection"),
+    ):
+        normalized = _normalize_manifest_source_id(value)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _validate_manifest_ingest_gate(manifest_paths: list[Path], collection_id: str | None) -> None:
+    """Fail closed before upload/STAC load for source profiles that require hard gating."""
+    from akasha_ingest.validation_profiles import get_validation_profile, validate_manifest_metadata
+
+    gated_sources = {"eos-04-sar-mrs-l2b"}
+    for manifest_path in manifest_paths:
+        manifest_data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        source_id = _normalize_manifest_source_id(collection_id) or _manifest_source_id(
+            manifest_data
+        )
+        if source_id not in gated_sources:
+            continue
+        spec = get_validation_profile(source_id)
+        result = validate_manifest_metadata(spec, manifest_data, source_id=source_id)
+        for check in result.checks:
+            print(f"[PASS] pre-ingest {manifest_path}: {check}")
+        if not result.ok:
+            for problem in result.problems:
+                print(f"[FAIL] pre-ingest {manifest_path}: {problem}", file=sys.stderr)
+            raise SystemExit(
+                f"pre-ingest validation failed for {source_id}: {result.detail}. "
+                "No upload or pgSTAC load was attempted."
+            )
 
 
 def _load_requested_aoi(args: argparse.Namespace) -> dict:
@@ -209,6 +267,7 @@ def cmd_ingest_manifest(args: argparse.Namespace) -> int:
 
     manifest_paths = _manifest_paths(args.manifest_glob, args.collection_id)
     print(f"found {len(manifest_paths)} prepared manifest(s)")
+    _validate_manifest_ingest_gate(manifest_paths, args.collection_id)
     print(storage.ensure_bucket())
     for line in storage.seed_manifest_cogs(manifest_paths, force=args.force):
         print(line)
@@ -684,9 +743,10 @@ def _resolve_sync_window(args: argparse.Namespace, *, aoi_id: str, ledger_path: 
         )
 
     window_end = args.window_end or datetime.now(UTC).date().isoformat()
-    window_start = args.window_start or (
-        _parse_date(window_end) - timedelta(days=int(args.window_days) - 1)
-    ).isoformat()
+    window_start = (
+        args.window_start
+        or (_parse_date(window_end) - timedelta(days=int(args.window_days) - 1)).isoformat()
+    )
     return sync.SyncWindow(
         window_start=window_start,
         window_end=window_end,

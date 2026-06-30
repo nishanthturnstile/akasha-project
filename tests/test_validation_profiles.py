@@ -75,6 +75,7 @@ def _sar_manifest(source_id: str = "eos-04-sar-mrs-l2b", **extra) -> dict:
     """Minimal valid SAR prepare-manifest for eos-04 or similar sources."""
     m = {
         "source_id": source_id,
+        "sar:polarizations": ["HH"],
         "outputs": {
             "backscatter": {
                 "path": "backscatter.tif",
@@ -127,9 +128,7 @@ def _liss3_manifest(band_count: int = 4, **extra) -> dict:
         "bbox": [77.0, 12.0, 78.0, 13.0],
         "geometry": {
             "type": "Polygon",
-            "coordinates": [
-                [[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]
-            ],
+            "coordinates": [[[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]],
         },
         "outputs": {
             "analytic": {
@@ -251,9 +250,7 @@ class TestVerifyRasterProductSAR:
 
     def test_accepts_valid_sar_manifest(self, tmp_path):
         manifest_path = tmp_path / "prepare_manifest.json"
-        manifest_path.write_text(
-            json.dumps(_sar_manifest("eos-04-sar-mrs-l2b")), encoding="utf-8"
-        )
+        manifest_path.write_text(json.dumps(_sar_manifest("eos-04-sar-mrs-l2b")), encoding="utf-8")
         rc = worker.main(
             [
                 "verify-raster-product",
@@ -364,12 +361,116 @@ class TestVerifyRasterProductSAR:
         out = capsys.readouterr().out
         assert "backscatter.tif" in out
 
+    def test_rejects_eos04_manifest_missing_explicit_polarizations(self, tmp_path, capsys):
+        manifest = _sar_manifest("eos-04-sar-mrs-l2b")
+        manifest.pop("sar:polarizations")
+        manifest_path = tmp_path / "prepare_manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        rc = worker.main(
+            [
+                "verify-raster-product",
+                "--source",
+                "eos-04-sar-mrs-l2b",
+                "--manifest",
+                str(manifest_path),
+                "--metadata-only",
+            ]
+        )
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "sar:polarizations" in out
+        assert "VV or HH" in out
+
+    def test_rejects_eos04_manifest_with_non_float32_backscatter(self, tmp_path, capsys):
+        manifest = _sar_manifest("eos-04-sar-mrs-l2b")
+        manifest["outputs"]["backscatter"]["dtype"] = "uint16"
+        manifest_path = tmp_path / "prepare_manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        rc = worker.main(
+            [
+                "verify-raster-product",
+                "--source",
+                "eos-04-sar-mrs-l2b",
+                "--manifest",
+                str(manifest_path),
+                "--metadata-only",
+            ]
+        )
+
+        assert rc == 1
+        assert "float32" in capsys.readouterr().out
+
+    def test_rejects_eos04_manifest_missing_backscatter_dtype(self, tmp_path, capsys):
+        manifest = _sar_manifest("eos-04-sar-mrs-l2b")
+        manifest["outputs"]["backscatter"].pop("dtype")
+        manifest_path = tmp_path / "prepare_manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        rc = worker.main(
+            [
+                "verify-raster-product",
+                "--source",
+                "eos-04-sar-mrs-l2b",
+                "--manifest",
+                str(manifest_path),
+                "--metadata-only",
+            ]
+        )
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "dtype" in out
+        assert "float32" in out
+
+    def test_rejects_eos04_manifest_missing_backscatter_band_count(self, tmp_path, capsys):
+        manifest = _sar_manifest("eos-04-sar-mrs-l2b")
+        manifest["outputs"]["backscatter"].pop("band_count")
+        manifest_path = tmp_path / "prepare_manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        rc = worker.main(
+            [
+                "verify-raster-product",
+                "--source",
+                "eos-04-sar-mrs-l2b",
+                "--manifest",
+                str(manifest_path),
+                "--metadata-only",
+            ]
+        )
+
+        assert rc == 1
+        assert "band_count" in capsys.readouterr().out
+
+    def test_rejects_eos04_manifest_with_unknown_polarization_token(self, tmp_path, capsys):
+        manifest = _sar_manifest("eos-04-sar-mrs-l2b")
+        manifest["sar:polarizations"] = ["B1"]
+        manifest_path = tmp_path / "prepare_manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        rc = worker.main(
+            [
+                "verify-raster-product",
+                "--source",
+                "eos-04-sar-mrs-l2b",
+                "--manifest",
+                str(manifest_path),
+                "--metadata-only",
+            ]
+        )
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "unsupported token" in out
+        assert "B1" in out
+
     def test_fails_cleanly_when_no_source_no_profile(self, tmp_path, capsys):
         manifest_path = tmp_path / "prepare_manifest.json"
         manifest_path.write_text("{}", encoding="utf-8")
-        rc = worker.main(
-            ["verify-raster-product", "--manifest", str(manifest_path)]
-        )
+        rc = worker.main(["verify-raster-product", "--manifest", str(manifest_path)])
         assert rc == 1
         err = capsys.readouterr().err
         assert "--source" in err or "--profile" in err
@@ -931,17 +1032,17 @@ class TestLISS3STACItemBandMetadata:
     def test_raster_bands_scale_is_0_0001(self):
         item = self._build_item()
         for band in item["assets"]["analytic"]["raster:bands"]:
-            assert band.get("scale") == pytest.approx(0.0001), (
-                f"Expected scale 0.0001, got {band.get('scale')}"
-            )
+            assert band.get("scale") == pytest.approx(
+                0.0001
+            ), f"Expected scale 0.0001, got {band.get('scale')}"
 
     def test_raster_bands_offset_is_0_not_minus_0_1(self):
         """Reflectance offset for LISS-3 BOA is 0.0, NOT Sentinel-2's -0.1."""
         item = self._build_item()
         for band in item["assets"]["analytic"]["raster:bands"]:
-            assert band.get("offset") == pytest.approx(0.0), (
-                f"Expected offset 0.0 (not -0.1), got {band.get('offset')}"
-            )
+            assert band.get("offset") == pytest.approx(
+                0.0
+            ), f"Expected offset 0.0 (not -0.1), got {band.get('offset')}"
 
     def test_mask_asset_has_1_raster_band(self):
         item = self._build_item()

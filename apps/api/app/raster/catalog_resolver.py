@@ -27,6 +27,7 @@ SENTINEL_1_SOURCE_ID = "sentinel-1-grd"
 RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
 RESOURCESAT_AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
 RESOURCESAT_LISS4_SOURCE_ID = "resourcesat-2a-liss4-mx70-l2"
+EOS04_SAR_SOURCE_ID = "eos-04-sar-mrs-l2b"
 RESOURCESAT_BOA_SOURCE_IDS = {
     RESOURCESAT_LISS3_SOURCE_ID,
     RESOURCESAT_AWIFS_SOURCE_ID,
@@ -36,6 +37,7 @@ COLLECTION_ID = RESOURCESAT_LISS3_SOURCE_ID
 SOURCE_LABEL = "ResourceSat-2A LISS-3 BOA"
 SOURCE_PROVIDER = "ISRO/NRSC Bhoonidhi"
 _LEGACY_SENTINEL_SOURCE_IDS = {SENTINEL_2_SOURCE_ID, SENTINEL_1_SOURCE_ID}
+_EOS04_KNOWN_POLARIZATIONS = {"HH", "HV", "VH", "VV", "RH", "RV"}
 
 _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     SENTINEL_2_SOURCE_ID: {
@@ -275,8 +277,8 @@ _SOURCE_REGISTRY.update(
             "availabilityStatus": "gated",
             "gatedReason": "No validated EOS-06 NDVI context COG has been ingested.",
         },
-        "eos-04-sar-mrs-l2b": {
-            "id": "eos-04-sar-mrs-l2b",
+        EOS04_SAR_SOURCE_ID: {
+            "id": EOS04_SAR_SOURCE_ID,
             "label": "EOS-04 SAR MRS L2B",
             "provider": "ISRO/NRSC Bhoonidhi",
             "kind": "sar",
@@ -287,7 +289,10 @@ _SOURCE_REGISTRY.update(
             "maskAsset": None,
             "displayModes": ["VV_GRAYSCALE"],
             "defaultDisplayMode": "VV_GRAYSCALE",
-            "description": "ISRO EOS-04 C-band SAR backscatter (display-only; cloud-penetrating).",
+            "description": (
+                "ISRO EOS-04 C-band SAR backscatter (display-only; "
+                "cloud-penetrating, no optical indices)."
+            ),
             "attribution": "ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "radar",
             "defaultRescale": "-25,5",
@@ -295,7 +300,12 @@ _SOURCE_REGISTRY.update(
             "resolutionMeters": None,
             "analysisLevel": "context",
             "refreshPolicy": "Backscatter display only; no optical indices or cloud mask.",
-            "limitations": ["Not an optical vegetation-index source."],
+            "limitations": [
+                "Display-only SAR backscatter; no NDVI/MSAVI/NDMI/NDWI/NDRE/RECI.",
+                "No cloud/SCL/ResourceSat threshold mask controls.",
+                "Date-level mosaics are unavailable until a SAR mosaic backend exists.",
+                "Catalog items must declare explicit SAR polarizations before tiles render.",
+            ],
             "maskMethod": None,
             "metricsProvisional": True,
             "availabilityStatus": "gated",
@@ -671,11 +681,7 @@ def _tile_unavailable_reason(source_id: str, date_items: list[dict[str, Any]]) -
         )
 
     missing = sorted(
-        {
-            key
-            for item in date_items
-            for key in _missing_tile_asset_keys(item, source_id)
-        }
+        {key for item in date_items for key in _missing_tile_asset_keys(item, source_id)}
     )
     if missing:
         return f"Required raster assets are missing for this date: {', '.join(missing)}."
@@ -758,9 +764,7 @@ def list_dates(source_id: str = COLLECTION_ID) -> list[dict[str, Any]]:
                     ),
                     "tileAvailable": tile_available,
                     "unavailableReason": (
-                        None
-                        if tile_available
-                        else _tile_unavailable_reason(source_id, date_items)
+                        None if tile_available else _tile_unavailable_reason(source_id, date_items)
                     ),
                 }
             )
@@ -891,6 +895,37 @@ def _band_names_from_raster_bands(asset: dict[str, Any]) -> list[str]:
     return names
 
 
+def _sar_polarizations(item: dict[str, Any], asset: dict[str, Any]) -> list[str]:
+    props = item.get("properties", {}) if isinstance(item.get("properties"), dict) else {}
+    value = asset.get("sar:polarizations") or props.get("sar:polarizations") or []
+    if isinstance(value, str):
+        raw = [part for part in value.replace(";", ",").split(",")]
+    elif isinstance(value, list):
+        raw = value
+    else:
+        raw = []
+    return [str(pol).strip().upper() for pol in raw if str(pol).strip()]
+
+
+def _explicit_sar_band_names(asset: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for band in asset.get("raster:bands", []):
+        name = band.get("name") or band.get("common_name") or band.get("description")
+        if name:
+            names.append(str(name))
+    return names
+
+
+def _sar_band_name_polarizations(band_names: list[str]) -> list[str]:
+    polarizations: list[str] = []
+    for name in band_names:
+        tokens = [token for token in str(name).upper().replace("-", "_").split("_") if token]
+        matched = next((token for token in tokens if token in _EOS04_KNOWN_POLARIZATIONS), None)
+        if matched and matched not in polarizations:
+            polarizations.append(matched)
+    return polarizations
+
+
 def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> dict[str, Any]:
     """Resolve source-specific asset hrefs and minimal raster metadata for one item."""
     source_id = source_id or item.get("collection") or COLLECTION_ID
@@ -908,10 +943,31 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
             )
         raster_bands = backscatter.get("raster:bands", [])
         first = raster_bands[0] if raster_bands else {}
-        band_names = _band_names_from_raster_bands(backscatter)
+        polarizations = _sar_polarizations(item, backscatter)
+        band_names = _explicit_sar_band_names(backscatter)
+        if source_id == EOS04_SAR_SOURCE_ID:
+            invalid_polarizations = [
+                pol for pol in polarizations if pol not in _EOS04_KNOWN_POLARIZATIONS
+            ]
+            band_name_polarizations = _sar_band_name_polarizations(band_names)
+            if invalid_polarizations or (not polarizations and not band_name_polarizations):
+                raise upstream_error(
+                    "EOS-04 SAR item must declare explicit valid SAR polarizations.",
+                    code="MISSING_SAR_POLARIZATIONS",
+                    itemId=item.get("id"),
+                    sourceId=source_id,
+                    availablePolarizations=polarizations,
+                    availableBands=band_names,
+                    allowedPolarizations=sorted(_EOS04_KNOWN_POLARIZATIONS),
+                )
+            if not polarizations:
+                polarizations = band_name_polarizations
+        if polarizations and (
+            not band_names or all(name.upper().startswith("B") for name in band_names)
+        ):
+            band_names = polarizations
         if not band_names:
-            polarizations = item.get("properties", {}).get("sar:polarizations") or []
-            band_names = [str(pol).upper() for pol in polarizations] or ["VV"]
+            band_names = ["VV"]
         return {
             "itemId": item.get("id"),
             "backscatterHref": backscatter.get("href"),
@@ -943,8 +999,7 @@ def _resolve_item_assets(item: dict[str, Any], source_id: str | None = None) -> 
             "scale": float(first.get("scale", 1.0)),
             "offset": float(first.get("offset", 0.0)),
             "nodata": first.get("nodata"),
-            "epsg": context_asset.get("proj:epsg")
-            or item.get("properties", {}).get("proj:epsg"),
+            "epsg": context_asset.get("proj:epsg") or item.get("properties", {}).get("proj:epsg"),
             "bbox": item.get("bbox"),
         }
 
@@ -1048,9 +1103,7 @@ def default_index(source_id: str = COLLECTION_ID) -> str:
 # Best-resolution resolver (Phase D)
 # ---------------------------------------------------------------------------
 
-_NDMI_PROVENANCE_NOTE = (
-    "Moisture served from LISS-3 (24 m) -- LISS-4 has no SWIR band."
-)
+_NDMI_PROVENANCE_NOTE = "Moisture served from LISS-3 (24 m) -- LISS-4 has no SWIR band."
 
 # Indices not supported by LISS-4 (no SWIR / no red-edge).
 _LISS4_UNSUPPORTED_INDICES: frozenset[str] = frozenset({"NDMI", "NDRE", "RECI"})
@@ -1198,9 +1251,7 @@ def resolve_best_resolution_source(
 
         # Pick the composite whose date is closest to the requested date.
         candidates.sort(
-            key=lambda d: abs(
-                (_date.fromisoformat(d["acquisitionDate"]) - target).days
-            )
+            key=lambda d: abs((_date.fromisoformat(d["acquisitionDate"]) - target).days)
         )
         best = candidates[0]
 
@@ -1231,8 +1282,8 @@ def resolve_best_resolution_source(
 # Sources absent from this map get _DEFAULT_SOURCE_PRIORITY.
 _SOURCE_PRIORITY_MAP: dict[str, int] = {
     RESOURCESAT_LISS4_SOURCE_ID: 100,  # 5.8 m high-res field enhancement
-    RESOURCESAT_LISS3_SOURCE_ID: 80,   # 24 m field-level production baseline
-    RESOURCESAT_AWIFS_SOURCE_ID: 20,   # 56 m regional (coarse)
+    RESOURCESAT_LISS3_SOURCE_ID: 80,  # 24 m field-level production baseline
+    RESOURCESAT_AWIFS_SOURCE_ID: 20,  # 56 m regional (coarse)
 }
 _DEFAULT_SOURCE_PRIORITY: int = 10
 
@@ -1406,8 +1457,8 @@ def resolve_best_observation(
 
         source_kind = source.get("kind", "optical")
 
-        # For optical-index queries, skip non-optical sources.
-        if index_type and source_kind != "optical":
+        # Best-observation resolution ranks optical field analytics only.
+        if source_kind != "optical":
             continue
 
         # Check index support.

@@ -38,6 +38,8 @@ Historical product planning, early MVP sequencing, and Emergent handoff context 
 
 - Self-hosted Coolify (Azure VM) MVP, Docker-compatible for future on-prem/customer-controlled deployment.
 - ResourceSat-2A LISS-3 BOA first, Bangalore 60 km AOI first.
+- EOS-04 SAR-MRS L2B is in display-only integration: loadable/manual validation path, gated
+  product exposure, backscatter tiles only, no optical indices/statistics/cloud masks.
 - React/TypeScript + MapLibre + Terra Draw frontend.
 - FastAPI BFF.
 - TiTiler for COG display tiles; the BFF computes masked statistics with rasterio/rio-tiler/GDAL.

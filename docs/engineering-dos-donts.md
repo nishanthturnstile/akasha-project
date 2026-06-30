@@ -70,6 +70,8 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 - Do use nearest-neighbour resampling for categorical masks and overviews; continuous reflectance overviews use bilinear/cubic.
 - Do validate COGs and STAC items before marking scenes available.
 - Do keep unsupported indices source-specific: ResourceSat LISS-3 does not expose NDRE/RECI because it has no red-edge band.
+- Do keep SAR display-only sources separate from optical analytics: EOS-04 uses Float32 dB
+  `backscatter.tif` plus explicit `sar:polarizations`, not ResourceSat analytic/mask assets.
 
 ### Don't
 
@@ -78,6 +80,8 @@ This is the concise implementation guardrail checklist for Akasha. Concise guard
 - Don't blindly set `nodata=0`; valid reflectance can be zero.
 - Don't reuse Sentinel-2 RGB positions, SCL rules, or offset assumptions for ResourceSat.
 - Don't treat SAR sources as NDVI/NDRE/NDMI/NDWI_GREEN_NIR sources.
+- Don't default unknown EOS-04 backscatter bands to VV/HH; require file-name inference or explicit
+  polarization metadata before preparing, validating, ingesting, or rendering tiles.
 
 ## Deployment
 

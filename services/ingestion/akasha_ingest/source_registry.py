@@ -311,8 +311,9 @@ _DEFAULT_AOI_IDS: tuple[str, ...] = ("bangalore-60km",)
 # Capabilities shorthands
 _SEARCH_ONLY = frozenset({Capability.SEARCH})
 _SEARCH_DOWNLOAD = frozenset({Capability.SEARCH, Capability.DOWNLOAD})
-_SEARCH_DOWNLOAD_PREPARE = frozenset(
-    {Capability.SEARCH, Capability.DOWNLOAD, Capability.PREPARE}
+_SEARCH_DOWNLOAD_PREPARE = frozenset({Capability.SEARCH, Capability.DOWNLOAD, Capability.PREPARE})
+_SEARCH_DOWNLOAD_PREPARE_VALIDATE = frozenset(
+    {Capability.SEARCH, Capability.DOWNLOAD, Capability.PREPARE, Capability.VALIDATE}
 )
 _FULL_OPTICAL = frozenset(
     {
@@ -668,16 +669,18 @@ _register(
         instrument_mode="MRS",
         product_variant="L2B",
         analysis_level="L2B",
-        lifecycle_state=LifecycleState.PROVIDER_CONFIGURED,
-        schedule_state=ScheduleState.DISABLED,
-        capabilities=_SEARCH_DOWNLOAD_PREPARE,
+        lifecycle_state=LifecycleState.VALIDATE_ENABLED,
+        schedule_state=ScheduleState.MANUAL_ONLY,
+        capabilities=_SEARCH_DOWNLOAD_PREPARE_VALIDATE,
         product_exposure=ProductExposure.HIDDEN,
         commercial_state=CommercialState.FREE,
         aoi_scope=AoiScope.IN_AOI,
         validation_state=ValidationState.UNVALIDATED,
         readiness_reasons=(
-            "SAR backscatter validation profile not yet implemented.",
+            "One real EOS-04 SAR-MRS L2B product must pass Step 0, COG, STAC, "
+            "BFF tile, and frontend smoke validation before product exposure.",
             "GEO-002: SAR sources must not advertise optical vegetation indices.",
+            "Manual/staging validation only; no routine schedule or product exposure.",
             "MRS/CRS modes only; FRS-1 fine modes are not freely available.",
         ),
         validation_profile=ValidationProfile.SAR_BACKSCATTER,
@@ -685,7 +688,7 @@ _register(
         host_pool=HostPool.STAGING_BHOONIDHI,
         owned_by=OwnedBy.MANUAL_ONLY,
         notes="C-band SAR; 1–50 m modes; 12-day revisit. "
-              "Retained for prepare-script dispatch compatibility. "
+              "Manual validation path enabled for display-only backscatter. "
               "MRS/CRS modes free via NRSC; FRS-1 not free.",
     ),
 )
@@ -1196,17 +1199,31 @@ def all_catalog_slugs() -> list[str]:
 # Self-check (run as module for quick sanity validation)
 # ---------------------------------------------------------------------------
 
+
 def _selfcheck() -> None:
     """Run basic invariant checks; raise AssertionError on any failure."""
     # All 20 catalogue slugs must be represented
     expected_slugs = {
-        "resourcesat-2a", "sentinel-2", "sentinel-1",
-        "landsat-8", "landsat-9", "modis",
-        "cartosat-3", "eos-04-risat", "eos-06-oceansat-3",
-        "alos-2-palsar-2", "superview-neo-1", "planetscope",
-        "skysat", "blacksky-gen-3", "kompsat-3a",
-        "landsat-7", "landsat-5", "irs-1c",
-        "naip", "nisar",
+        "resourcesat-2a",
+        "sentinel-2",
+        "sentinel-1",
+        "landsat-8",
+        "landsat-9",
+        "modis",
+        "cartosat-3",
+        "eos-04-risat",
+        "eos-06-oceansat-3",
+        "alos-2-palsar-2",
+        "superview-neo-1",
+        "planetscope",
+        "skysat",
+        "blacksky-gen-3",
+        "kompsat-3a",
+        "landsat-7",
+        "landsat-5",
+        "irs-1c",
+        "naip",
+        "nisar",
     }
     registered_slugs = {r.catalog_slug for r in SOURCE_REGISTRY.values()}
     missing = expected_slugs - registered_slugs
@@ -1224,25 +1241,20 @@ def _selfcheck() -> None:
 
     # Only ISRO/Bhoonidhi sources should be executable initially
     active = executable_source_ids()
-    non_bhoonidhi = [
-        sid for sid in active
-        if SOURCE_REGISTRY[sid].provider_adapter != "bhoonidhi"
-    ]
+    non_bhoonidhi = [sid for sid in active if SOURCE_REGISTRY[sid].provider_adapter != "bhoonidhi"]
     assert not non_bhoonidhi, f"non-bhoonidhi sources are executable: {non_bhoonidhi}"
 
     # product_active sources must be routine-scheduled (not background)
     for sid in product_active_source_ids():
         row = SOURCE_REGISTRY[sid]
-        assert row.schedule_state == ScheduleState.ROUTINE, (
-            f"{sid}: product_active but not ROUTINE"
-        )
+        assert row.schedule_state == ScheduleState.ROUTINE, f"{sid}: product_active but not ROUTINE"
 
     # No source should have ORDER capability while commercial_blocked
     for row in SOURCE_REGISTRY.values():
         if row.commercial_state == CommercialState.COMMERCIAL_BLOCKED:
-            assert Capability.ORDER not in row.capabilities, (
-                f"{row.source_id}: commercial_blocked but has ORDER capability"
-            )
+            assert (
+                Capability.ORDER not in row.capabilities
+            ), f"{row.source_id}: commercial_blocked but has ORDER capability"
 
     # All 20 catalogue slugs covered
     assert len(expected_slugs) == 20

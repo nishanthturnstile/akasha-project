@@ -61,6 +61,9 @@ The scheduler, BFF, and monitoring UI must apply these gates in order:
 6. `scheduleState=dry_run` may create plans, job records, and redacted artifacts, but may not download, order, prepare, composite, upload, or register STAC.
 7. `scheduleState=background_only` may run allowed non-commercial actions, but the source remains non-selectable unless a later validated product decision changes `productExposure`.
 8. `scheduleState=archive_only` only runs explicit backfill/on-demand windows, never current-monitoring routine cadence.
+9. EOS-04 SAR-MRS L2B uses `scheduleState=manual_only` and `productExposure=hidden` for
+   validation. Its STAC collection can be loadable while BFF product exposure remains gated; only
+   `validationState=validation_passed` plus an explicit product decision may move it to active.
 
 ### 1.2 Invalid combinations
 
@@ -233,6 +236,7 @@ Current ownership matrix:
 | `resourcesat-2a-liss3-boa` | `bangalore-60km` | `scheduler_active` | `true` | `2026-06-25` | Disable scheduler timer; use `scripts/staging_ingestion_job.py trigger --source resourcesat-2a-liss3-boa ...` for bounded manual runs. |
 | `resourcesat-2a-liss4-mx70-l2` | `bangalore-60km` | `scheduler_active` | `true` | `2026-06-25` | Disable scheduler timer; use `scripts/staging_ingestion_job.py trigger --source resourcesat-2a-liss4-mx70-l2 ...` for bounded manual runs. |
 | `resourcesat-2a-awifs-boa` | `bangalore-60km` | `scheduler_active` | `true` | `2026-06-25` | Disable scheduler timer; use `scripts/staging_ingestion_job.py trigger --source resourcesat-2a-awifs-boa ...` for bounded manual runs. |
+| `eos-04-sar-mrs-l2b` | `bangalore-60km` | `manual_only` | `false` | `null` | Use only bounded manual validation: `scripts/staging_ingestion_job.py trigger --source eos-04-sar-mrs-l2b --dry-run`, then one-product live validation after approval. |
 
 Canary sequence:
 

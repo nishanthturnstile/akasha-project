@@ -85,6 +85,9 @@ checklist for adding a new satellite — is
   `[BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1]`, FCC `NIR,RED,GREEN`, Akasha threshold mask
   v1 with `{1,4}` valid by default, reflectance scale `0.0001` and offset `0.0`, separate
   analytic/mask COGs, deterministic keys, STAC metadata preservation, and upsert behavior.
+- EOS-04 SAR-MRS L2B may use a manual/staging validation path for search, download, prepare, and
+  validation, but remains product-gated until a real product passes COG, STAC, BFF tile, and
+  frontend smoke validation. Do not add it to default MVP source lists just to make validation run.
 
 ## AOI Rules
 
@@ -169,6 +172,22 @@ that its band roles support.
 ResourceSat LISS-3 must not advertise NDRE or RECI because it has no true
 red-edge band. SAR sources must advertise no optical vegetation indices.
 
+## EOS-04 SAR-MRS L2B Display-Only Rules
+
+EOS-04 SAR-MRS L2B is a SAR backscatter source, not a BOA optical source.
+Phase 1 supports display-only grayscale backscatter through the existing
+compatible `VV_GRAYSCALE` route token, labelled to users as backscatter.
+
+- Prepared output is one `backscatter.tif` COG containing Float32 dB bands with nodata `-9999.0`.
+- The prepare manifest and STAC item must declare explicit `sar:polarizations` (for example
+  `HH,HV` or `RH,RV`). Missing polarization metadata fails closed; never invent VV/HH defaults.
+- EOS-04 has no `analytic.tif`, no `mask.tif`, no SCL, and no ResourceSat threshold mask.
+- EOS-04 must not advertise NDVI, MSAVI, NDMI, NDWI, NDRE, RECI, or field index statistics.
+- Date metrics for radar sources keep optical fields (`usablePixelPercent`,
+  `cloudMaskedPercent`) null; coverage may be present when known.
+- A single same-date SAR scene may tile. Multiple same-date SAR scenes are marked tile-unavailable
+  until a SAR mosaic backend exists.
+
 ## Statistics Rules
 
 Cloud/mask-aware index statistics are computed in the BFF with
@@ -211,6 +230,9 @@ Every scene or composite item must include:
   - `data` / `reflectance` for analytic COGs.
   - `metadata` / `data-mask` for mask COGs.
   - `backscatter` for SAR COGs.
+
+EOS-04 collection loadability and product exposure are separate. A STAC collection may be present
+and loadable for validation while BFF/source-registry product exposure remains gated.
 
 ## Object Key Rules
 

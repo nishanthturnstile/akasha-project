@@ -10,6 +10,7 @@ Verifies:
             scheduled; NAIP is excluded for bangalore-60km; contradictory
             state combinations fail closed.
 """
+
 from __future__ import annotations
 
 import sys
@@ -80,6 +81,7 @@ ARCHIVE_ONLY_SLUGS: frozenset[str] = frozenset({"landsat-7", "landsat-5", "irs-1
 # Helper — collect all source rows grouped by catalog_slug
 # ---------------------------------------------------------------------------
 
+
 def _rows_by_slug() -> dict[str, list[SourceStateRow]]:
     result: dict[str, list[SourceStateRow]] = {}
     for row in SOURCE_REGISTRY.values():
@@ -125,9 +127,7 @@ def test_no_executable_row_missing_catalog_slug():
         for row in SOURCE_REGISTRY.values()
         if row.schedule_state in _EXECUTABLE_STATES and not row.catalog_slug
     ]
-    assert not offenders, (
-        f"Executable rows missing catalog_slug: {offenders}"
-    )
+    assert not offenders, f"Executable rows missing catalog_slug: {offenders}"
 
 
 def test_multi_row_slugs_use_explicit_product_variant_split():
@@ -175,13 +175,8 @@ def test_out_of_aoi_and_reference_only_rows_cover_excluded_slugs():
     # NAIP must have at least one row with out_of_aoi or reference_only aoi_scope
     naip_rows = rows_by_slug.get("naip", [])
     assert naip_rows, "naip slug has no source rows in the registry"
-    naip_excluded = [
-        r for r in naip_rows
-        if r.aoi_scope in excluded_aoi_scopes
-    ]
-    assert naip_excluded, (
-        "naip slug has no row marked as out_of_aoi / reference_only"
-    )
+    naip_excluded = [r for r in naip_rows if r.aoi_scope in excluded_aoi_scopes]
+    assert naip_excluded, "naip slug has no row marked as out_of_aoi / reference_only"
 
 
 # ===========================================================================
@@ -199,14 +194,10 @@ def test_commercial_sources_default_to_commercial_blocked():
     for slug in COMMERCIAL_SLUGS:
         rows = rows_by_slug.get(slug, [])
         non_blocked = [
-            r.source_id
-            for r in rows
-            if r.commercial_state != CommercialState.COMMERCIAL_BLOCKED
+            r.source_id for r in rows if r.commercial_state != CommercialState.COMMERCIAL_BLOCKED
         ]
         if non_blocked:
-            violations.append(
-                f"{slug!r}: expected commercial_blocked for {non_blocked}"
-            )
+            violations.append(f"{slug!r}: expected commercial_blocked for {non_blocked}")
     assert not violations, "\n".join(violations)
 
 
@@ -219,9 +210,7 @@ def test_commercial_blocked_sources_have_no_order_capability():
         if row.commercial_state == CommercialState.COMMERCIAL_BLOCKED
         and row.capabilities & order_caps
     ]
-    assert not violations, (
-        f"commercial_blocked rows expose order capability: {violations}"
-    )
+    assert not violations, f"commercial_blocked rows expose order capability: {violations}"
 
 
 def test_all_commercial_slug_rows_are_commercial_blocked():
@@ -276,9 +265,8 @@ def test_archive_on_demand_cadence_rows_are_not_routine_scheduled():
         if row.cadence == CadenceClass.ARCHIVE_ON_DEMAND
         and row.schedule_state in _ROUTINE_SCHEDULE_STATES
     ]
-    assert not violations, (
-        "archive_on_demand rows must not be routine-scheduled:\n"
-        + "\n".join(violations)
+    assert not violations, "archive_on_demand rows must not be routine-scheduled:\n" + "\n".join(
+        violations
     )
 
 
@@ -288,24 +276,24 @@ def test_archive_on_demand_cadence_rows_are_not_routine_scheduled():
 def test_naip_is_reference_only_and_out_of_aoi():
     """NAIP must be disabled and reference_only aoi_scope — not executable for Bangalore."""
     naip_row = SOURCE_REGISTRY["naip-reference-only"]
-    assert naip_row.schedule_state == ScheduleState.DISABLED, (
-        f"naip schedule_state is {naip_row.schedule_state.value!r}; expected disabled"
-    )
-    assert naip_row.aoi_scope == AoiScope.REFERENCE_ONLY, (
-        f"naip aoi_scope is {naip_row.aoi_scope.value!r}; expected reference_only"
-    )
-    assert naip_row.product_exposure != ProductExposure.PRODUCT_ACTIVE, (
-        "naip must not have product_active exposure"
-    )
+    assert (
+        naip_row.schedule_state == ScheduleState.DISABLED
+    ), f"naip schedule_state is {naip_row.schedule_state.value!r}; expected disabled"
+    assert (
+        naip_row.aoi_scope == AoiScope.REFERENCE_ONLY
+    ), f"naip aoi_scope is {naip_row.aoi_scope.value!r}; expected reference_only"
+    assert (
+        naip_row.product_exposure != ProductExposure.PRODUCT_ACTIVE
+    ), "naip must not have product_active exposure"
 
 
 def test_naip_has_no_bangalore_60km_aoi():
     """No NAIP row may declare bangalore-60km as a default_aoi_id."""
     naip_rows = [r for r in SOURCE_REGISTRY.values() if r.catalog_slug == "naip"]
     for row in naip_rows:
-        assert "bangalore-60km" not in row.default_aoi_ids, (
-            f"{row.source_id!r}: NAIP row must not target bangalore-60km"
-        )
+        assert (
+            "bangalore-60km" not in row.default_aoi_ids
+        ), f"{row.source_id!r}: NAIP row must not target bangalore-60km"
 
 
 def test_naip_is_not_executable():
@@ -511,9 +499,9 @@ def test_validate_row_rejects_manual_only_executable_row_missing_catalog_slug():
 
 def test_registry_total_row_count_is_at_least_20():
     """Registry must have at least 20 rows (at least one per catalogue platform)."""
-    assert len(SOURCE_REGISTRY) >= 20, (
-        f"Registry has only {len(SOURCE_REGISTRY)} rows; expected at least 20"
-    )
+    assert (
+        len(SOURCE_REGISTRY) >= 20
+    ), f"Registry has only {len(SOURCE_REGISTRY)} rows; expected at least 20"
 
 
 def test_all_source_ids_are_unique():
@@ -536,17 +524,14 @@ def test_product_active_sources_are_routine_scheduled():
         if row.product_exposure == ProductExposure.PRODUCT_ACTIVE
         and row.schedule_state != ScheduleState.ROUTINE
     ]
-    assert not violations, (
-        f"product_active sources must be ROUTINE: {violations}"
-    )
+    assert not violations, f"product_active sources must be ROUTINE: {violations}"
 
 
 def test_executable_source_ids_are_all_bhoonidhi_initially():
     """Only ISRO/Bhoonidhi sources should be routine-executable in the initial registry."""
     executable = sr.executable_source_ids()
     non_bhoonidhi = [
-        sid for sid in executable
-        if SOURCE_REGISTRY[sid].provider_adapter != "bhoonidhi"
+        sid for sid in executable if SOURCE_REGISTRY[sid].provider_adapter != "bhoonidhi"
     ]
     assert not non_bhoonidhi, (
         f"Non-Bhoonidhi sources are currently executable: {non_bhoonidhi}. "
@@ -599,9 +584,9 @@ def test_selfcheck_passes():
 def test_liss3_is_routine_scheduled():
     """TASK-041: liss3-boa must be ROUTINE scheduled."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
-    assert row.schedule_state == ScheduleState.ROUTINE, (
-        f"liss3-boa schedule_state is {row.schedule_state.value!r}; expected routine"
-    )
+    assert (
+        row.schedule_state == ScheduleState.ROUTINE
+    ), f"liss3-boa schedule_state is {row.schedule_state.value!r}; expected routine"
 
 
 def test_liss3_has_full_optical_capabilities():
@@ -609,54 +594,55 @@ def test_liss3_has_full_optical_capabilities():
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
     required = frozenset(
         {
-            Capability.SEARCH, Capability.DOWNLOAD, Capability.PREPARE,
-            Capability.COMPOSITE, Capability.VALIDATE,
+            Capability.SEARCH,
+            Capability.DOWNLOAD,
+            Capability.PREPARE,
+            Capability.COMPOSITE,
+            Capability.VALIDATE,
         }
     )
     missing = required - row.capabilities
-    assert not missing, (
-        f"liss3-boa missing capabilities: {[c.value for c in missing]}"
-    )
+    assert not missing, f"liss3-boa missing capabilities: {[c.value for c in missing]}"
 
 
 def test_liss3_is_product_active():
     """TASK-041: liss3-boa must be product_active."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
-    assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE, (
-        f"liss3-boa product_exposure is {row.product_exposure.value!r}; expected product_active"
-    )
+    assert (
+        row.product_exposure == ProductExposure.PRODUCT_ACTIVE
+    ), f"liss3-boa product_exposure is {row.product_exposure.value!r}; expected product_active"
 
 
 def test_liss3_min_coverage_is_95():
     """TASK-041: liss3-boa must require 95% coverage threshold."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
-    assert row.min_coverage_percent == 95.0, (
-        f"liss3-boa min_coverage_percent is {row.min_coverage_percent}; expected 95.0"
-    )
+    assert (
+        row.min_coverage_percent == 95.0
+    ), f"liss3-boa min_coverage_percent is {row.min_coverage_percent}; expected 95.0"
 
 
 def test_liss3_validation_passed():
     """TASK-041: liss3-boa must have validation_passed state."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
-    assert row.validation_state == ValidationState.VALIDATION_PASSED, (
-        f"liss3-boa validation_state is {row.validation_state.value!r}; expected validation_passed"
-    )
+    assert (
+        row.validation_state == ValidationState.VALIDATION_PASSED
+    ), f"liss3-boa validation_state is {row.validation_state.value!r}; expected validation_passed"
 
 
 def test_liss3_host_pool_is_staging_bhoonidhi():
     """TASK-041: liss3-boa must target staging_bhoonidhi host pool."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
-    assert row.host_pool == sr.HostPool.STAGING_BHOONIDHI, (
-        f"liss3-boa host_pool is {row.host_pool.value!r}; expected staging_bhoonidhi"
-    )
+    assert (
+        row.host_pool == sr.HostPool.STAGING_BHOONIDHI
+    ), f"liss3-boa host_pool is {row.host_pool.value!r}; expected staging_bhoonidhi"
 
 
 def test_liss3_owned_by_scheduler_active():
     """TASK-041: liss3-boa is owned by the scheduler after the cutover."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss3-boa"]
-    assert row.owned_by == sr.OwnedBy.SCHEDULER_ACTIVE, (
-        f"liss3-boa owned_by is {row.owned_by.value!r}; expected scheduler_active"
-    )
+    assert (
+        row.owned_by == sr.OwnedBy.SCHEDULER_ACTIVE
+    ), f"liss3-boa owned_by is {row.owned_by.value!r}; expected scheduler_active"
 
 
 def test_liss3_provider_is_bhoonidhi():
@@ -671,20 +657,20 @@ def test_liss3_provider_is_bhoonidhi():
 def test_liss4_is_routine_product_active():
     """TASK-042: liss4-mx70-l2 must be ROUTINE and product_active."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss4-mx70-l2"]
-    assert row.schedule_state == ScheduleState.ROUTINE, (
-        f"liss4-mx70-l2 schedule_state is {row.schedule_state.value!r}; expected routine"
-    )
-    assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE, (
-        f"liss4-mx70-l2 product_exposure is {row.product_exposure.value!r}; expected product_active"
-    )
+    assert (
+        row.schedule_state == ScheduleState.ROUTINE
+    ), f"liss4-mx70-l2 schedule_state is {row.schedule_state.value!r}; expected routine"
+    assert (
+        row.product_exposure == ProductExposure.PRODUCT_ACTIVE
+    ), f"liss4-mx70-l2 product_exposure is {row.product_exposure.value!r}; expected product_active"
 
 
 def test_liss4_narrow_swath_acceptance():
     """TASK-042: liss4-mx70-l2 must accept narrow-swath with min_coverage_percent=10."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss4-mx70-l2"]
-    assert row.min_coverage_percent == 10.0, (
-        f"liss4-mx70-l2 min_coverage_percent is {row.min_coverage_percent}; expected 10.0"
-    )
+    assert (
+        row.min_coverage_percent == 10.0
+    ), f"liss4-mx70-l2 min_coverage_percent is {row.min_coverage_percent}; expected 10.0"
 
 
 def test_liss4_field_intersection_semantics_in_notes_or_reasons():
@@ -700,9 +686,9 @@ def test_liss4_field_intersection_semantics_in_notes_or_reasons():
 def test_liss4_staging_host_affinity():
     """TASK-042: liss4-mx70-l2 must target staging_bhoonidhi host pool."""
     row = SOURCE_REGISTRY["resourcesat-2a-liss4-mx70-l2"]
-    assert row.host_pool == sr.HostPool.STAGING_BHOONIDHI, (
-        f"liss4-mx70-l2 host_pool is {row.host_pool.value!r}; expected staging_bhoonidhi"
-    )
+    assert (
+        row.host_pool == sr.HostPool.STAGING_BHOONIDHI
+    ), f"liss4-mx70-l2 host_pool is {row.host_pool.value!r}; expected staging_bhoonidhi"
 
 
 def test_liss4_validation_passed():
@@ -723,52 +709,52 @@ def test_liss4_provider_is_bhoonidhi():
 def test_awifs_is_routine_schedule():
     """TASK-043: awifs-boa is now routine-scheduled (active product source)."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.schedule_state == ScheduleState.ROUTINE, (
-        f"awifs-boa schedule_state is {row.schedule_state.value!r}; expected routine"
-    )
+    assert (
+        row.schedule_state == ScheduleState.ROUTINE
+    ), f"awifs-boa schedule_state is {row.schedule_state.value!r}; expected routine"
 
 
 def test_awifs_product_exposure_is_product_active():
     """TASK-043: awifs-boa now has product_active exposure."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE, (
-        f"awifs-boa product_exposure is {row.product_exposure.value!r}; expected product_active"
-    )
+    assert (
+        row.product_exposure == ProductExposure.PRODUCT_ACTIVE
+    ), f"awifs-boa product_exposure is {row.product_exposure.value!r}; expected product_active"
 
 
 def test_awifs_validation_passed_without_readiness_blockers():
     """TASK-043: awifs-boa is now validation_passed with no readiness blockers."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.validation_state == ValidationState.VALIDATION_PASSED, (
-        f"awifs-boa validation_state is {row.validation_state.value!r}; expected validation_passed"
-    )
-    assert row.readiness_reasons == (), (
-        f"awifs-boa must have no readiness_reasons once validated; got {row.readiness_reasons!r}"
-    )
+    assert (
+        row.validation_state == ValidationState.VALIDATION_PASSED
+    ), f"awifs-boa validation_state is {row.validation_state.value!r}; expected validation_passed"
+    assert (
+        row.readiness_reasons == ()
+    ), f"awifs-boa must have no readiness_reasons once validated; got {row.readiness_reasons!r}"
 
 
 def test_awifs_min_coverage_is_60():
     """TASK-043: awifs-boa uses a reachable 60% regional coverage threshold."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.min_coverage_percent == 60.0, (
-        f"awifs-boa min_coverage_percent is {row.min_coverage_percent}; expected 60.0"
-    )
+    assert (
+        row.min_coverage_percent == 60.0
+    ), f"awifs-boa min_coverage_percent is {row.min_coverage_percent}; expected 60.0"
 
 
 def test_awifs_staging_host_affinity():
     """TASK-043: awifs-boa must target staging_bhoonidhi host pool."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert row.host_pool == sr.HostPool.STAGING_BHOONIDHI, (
-        f"awifs-boa host_pool is {row.host_pool.value!r}; expected staging_bhoonidhi"
-    )
+    assert (
+        row.host_pool == sr.HostPool.STAGING_BHOONIDHI
+    ), f"awifs-boa host_pool is {row.host_pool.value!r}; expected staging_bhoonidhi"
 
 
 def test_awifs_has_search_capability():
     """TASK-043: awifs-boa must remain search-enabled during background ingestion."""
     row = SOURCE_REGISTRY["resourcesat-2a-awifs-boa"]
-    assert Capability.SEARCH in row.capabilities, (
-        "awifs-boa must retain SEARCH capability during background-only phase"
-    )
+    assert (
+        Capability.SEARCH in row.capabilities
+    ), "awifs-boa must retain SEARCH capability during background-only phase"
 
 
 def test_awifs_is_product_active():
@@ -783,13 +769,19 @@ def test_awifs_is_product_active():
 # --- TASK-044: Disabled/scaffolded ISRO rows ---------------------------------
 
 
-def test_eos04_is_disabled_with_correct_profile():
-    """TASK-044: EOS-04 must be disabled with SAR_BACKSCATTER profile and bhoonidhi provider."""
+def test_eos04_is_manual_validation_only_with_correct_profile():
+    """EOS-04 may run bounded manual validation but remains product-hidden."""
     row = SOURCE_REGISTRY["eos-04-sar-mrs-l2b"]
-    assert row.schedule_state == ScheduleState.DISABLED
+    assert row.schedule_state == ScheduleState.MANUAL_ONLY
     assert row.provider_adapter == "bhoonidhi"
     assert row.validation_profile == sr.ValidationProfile.SAR_BACKSCATTER
-    assert row.readiness_reasons, "eos-04 must document why it is disabled"
+    assert Capability.SEARCH in row.capabilities
+    assert Capability.DOWNLOAD in row.capabilities
+    assert Capability.PREPARE in row.capabilities
+    assert Capability.VALIDATE in row.capabilities
+    assert row.product_exposure == ProductExposure.HIDDEN
+    assert row.validation_state == sr.ValidationState.UNVALIDATED
+    assert row.readiness_reasons, "eos-04 must document why it is product-hidden"
 
 
 def test_eos06_is_disabled_with_correct_profile():
@@ -824,8 +816,7 @@ def test_cartosat3_is_scaffolded_and_gated():
     """TASK-044: Cartosat-3 must be a manual-only placeholder with VISUAL_ONLY profile."""
     row = SOURCE_REGISTRY["cartosat-3-gated"]
     assert row.schedule_state == ScheduleState.MANUAL_ONLY, (
-        f"cartosat-3-gated schedule_state is {row.schedule_state.value!r}; "
-        f"expected manual_only"
+        f"cartosat-3-gated schedule_state is {row.schedule_state.value!r}; " f"expected manual_only"
     )
     assert row.validation_profile == sr.ValidationProfile.VISUAL_ONLY
     assert row.readiness_reasons, "cartosat-3 must document gating reason"
@@ -841,9 +832,7 @@ def test_isro_disabled_rows_are_not_executable():
     }
     executable = set(sr.executable_source_ids())
     leaked = gated_ids & executable
-    assert not leaked, (
-        f"Disabled ISRO rows leaked into executable_source_ids: {leaked}"
-    )
+    assert not leaked, f"Disabled ISRO rows leaked into executable_source_ids: {leaked}"
 
 
 # ===========================================================================
@@ -865,20 +854,20 @@ def test_isro_disabled_rows_are_not_executable():
 def test_sentinel2_is_disabled_and_hidden():
     """TASK-073: sentinel-2-l2a must remain disabled + hidden before CDSE adapter is live."""
     row = SOURCE_REGISTRY["sentinel-2-l2a"]
-    assert row.schedule_state == ScheduleState.DISABLED, (
-        f"sentinel-2-l2a schedule_state is {row.schedule_state.value!r}; expected disabled"
-    )
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"sentinel-2-l2a product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.schedule_state == ScheduleState.DISABLED
+    ), f"sentinel-2-l2a schedule_state is {row.schedule_state.value!r}; expected disabled"
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"sentinel-2-l2a product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_sentinel2_uses_cdse_provider():
     """TASK-073: sentinel-2-l2a must use the cdse provider adapter."""
     row = SOURCE_REGISTRY["sentinel-2-l2a"]
-    assert row.provider_adapter == "cdse", (
-        f"sentinel-2-l2a provider_adapter is {row.provider_adapter!r}; expected cdse"
-    )
+    assert (
+        row.provider_adapter == "cdse"
+    ), f"sentinel-2-l2a provider_adapter is {row.provider_adapter!r}; expected cdse"
 
 
 def test_sentinel2_uses_optical_composite_profile():
@@ -893,20 +882,20 @@ def test_sentinel2_uses_optical_composite_profile():
 def test_sentinel1_is_disabled_and_hidden():
     """TASK-073: sentinel-1-grd must remain disabled + hidden before CDSE/SAR adapter is live."""
     row = SOURCE_REGISTRY["sentinel-1-grd"]
-    assert row.schedule_state == ScheduleState.DISABLED, (
-        f"sentinel-1-grd schedule_state is {row.schedule_state.value!r}; expected disabled"
-    )
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"sentinel-1-grd product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.schedule_state == ScheduleState.DISABLED
+    ), f"sentinel-1-grd schedule_state is {row.schedule_state.value!r}; expected disabled"
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"sentinel-1-grd product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_sentinel1_uses_cdse_provider():
     """TASK-073: sentinel-1-grd must use the cdse provider adapter."""
     row = SOURCE_REGISTRY["sentinel-1-grd"]
-    assert row.provider_adapter == "cdse", (
-        f"sentinel-1-grd provider_adapter is {row.provider_adapter!r}; expected cdse"
-    )
+    assert (
+        row.provider_adapter == "cdse"
+    ), f"sentinel-1-grd provider_adapter is {row.provider_adapter!r}; expected cdse"
 
 
 def test_sentinel1_uses_sar_backscatter_profile():
@@ -934,20 +923,20 @@ def test_cdse_rows_are_not_executable():
 def test_landsat8_is_disabled_and_hidden():
     """TASK-074: landsat-8-c2-l2 must be disabled + hidden until USGS adapter is live."""
     row = SOURCE_REGISTRY["landsat-8-c2-l2"]
-    assert row.schedule_state == ScheduleState.DISABLED, (
-        f"landsat-8-c2-l2 schedule_state is {row.schedule_state.value!r}; expected disabled"
-    )
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"landsat-8-c2-l2 product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.schedule_state == ScheduleState.DISABLED
+    ), f"landsat-8-c2-l2 schedule_state is {row.schedule_state.value!r}; expected disabled"
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"landsat-8-c2-l2 product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_landsat8_uses_usgs_provider():
     """TASK-074: landsat-8-c2-l2 must use the usgs provider adapter."""
     row = SOURCE_REGISTRY["landsat-8-c2-l2"]
-    assert row.provider_adapter == "usgs", (
-        f"landsat-8-c2-l2 provider_adapter is {row.provider_adapter!r}; expected usgs"
-    )
+    assert (
+        row.provider_adapter == "usgs"
+    ), f"landsat-8-c2-l2 provider_adapter is {row.provider_adapter!r}; expected usgs"
 
 
 def test_landsat8_uses_optical_composite_profile():
@@ -962,20 +951,20 @@ def test_landsat8_uses_optical_composite_profile():
 def test_landsat9_is_disabled_and_hidden():
     """TASK-074: landsat-9-c2-l2 must be disabled + hidden until USGS adapter is live."""
     row = SOURCE_REGISTRY["landsat-9-c2-l2"]
-    assert row.schedule_state == ScheduleState.DISABLED, (
-        f"landsat-9-c2-l2 schedule_state is {row.schedule_state.value!r}; expected disabled"
-    )
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"landsat-9-c2-l2 product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.schedule_state == ScheduleState.DISABLED
+    ), f"landsat-9-c2-l2 schedule_state is {row.schedule_state.value!r}; expected disabled"
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"landsat-9-c2-l2 product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_landsat9_uses_usgs_provider():
     """TASK-074: landsat-9-c2-l2 must use the usgs provider adapter."""
     row = SOURCE_REGISTRY["landsat-9-c2-l2"]
-    assert row.provider_adapter == "usgs", (
-        f"landsat-9-c2-l2 provider_adapter is {row.provider_adapter!r}; expected usgs"
-    )
+    assert (
+        row.provider_adapter == "usgs"
+    ), f"landsat-9-c2-l2 provider_adapter is {row.provider_adapter!r}; expected usgs"
 
 
 def test_landsat9_uses_optical_composite_profile():
@@ -992,9 +981,7 @@ def test_active_landsat_rows_are_not_executable():
     active_landsat_ids = {"landsat-8-c2-l2", "landsat-9-c2-l2"}
     executable = set(sr.executable_source_ids())
     leaked = active_landsat_ids & executable
-    assert not leaked, (
-        f"Active Landsat rows leaked into executable_source_ids: {sorted(leaked)}"
-    )
+    assert not leaked, f"Active Landsat rows leaked into executable_source_ids: {sorted(leaked)}"
 
 
 # ---------------------------------------------------------------------------
@@ -1005,20 +992,20 @@ def test_active_landsat_rows_are_not_executable():
 def test_modis_is_disabled_and_hidden():
     """TASK-075: modis-13q1-061 must be disabled + hidden (precomputed context, GEO-003)."""
     row = SOURCE_REGISTRY["modis-13q1-061"]
-    assert row.schedule_state == ScheduleState.DISABLED, (
-        f"modis-13q1-061 schedule_state is {row.schedule_state.value!r}; expected disabled"
-    )
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"modis-13q1-061 product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.schedule_state == ScheduleState.DISABLED
+    ), f"modis-13q1-061 schedule_state is {row.schedule_state.value!r}; expected disabled"
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"modis-13q1-061 product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_modis_uses_earthdata_provider():
     """TASK-075: modis-13q1-061 must use the earthdata provider adapter."""
     row = SOURCE_REGISTRY["modis-13q1-061"]
-    assert row.provider_adapter == "earthdata", (
-        f"modis-13q1-061 provider_adapter is {row.provider_adapter!r}; expected earthdata"
-    )
+    assert (
+        row.provider_adapter == "earthdata"
+    ), f"modis-13q1-061 provider_adapter is {row.provider_adapter!r}; expected earthdata"
 
 
 def test_modis_uses_precomputed_context_profile():
@@ -1033,9 +1020,9 @@ def test_modis_uses_precomputed_context_profile():
 def test_modis_is_not_executable():
     """TASK-075: MODIS must not appear in executable_source_ids()."""
     executable = sr.executable_source_ids()
-    assert "modis-13q1-061" not in executable, (
-        "modis-13q1-061 must not be executable (precomputed context source)"
-    )
+    assert (
+        "modis-13q1-061" not in executable
+    ), "modis-13q1-061 must not be executable (precomputed context source)"
 
 
 def test_nisar_mentions_dual_provider_in_readiness_reasons():
@@ -1060,33 +1047,33 @@ def test_nisar_mentions_dual_provider_in_readiness_reasons():
 def test_eos04_product_exposure_is_hidden():
     """TASK-076: eos-04-sar-mrs-l2b must have hidden product exposure (SAR, not activated)."""
     row = SOURCE_REGISTRY["eos-04-sar-mrs-l2b"]
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"eos-04-sar-mrs-l2b product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"eos-04-sar-mrs-l2b product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_eos06_product_exposure_is_hidden():
     """TASK-076: eos-06-ocm-lac-ndvi-8day-360m must have hidden product exposure."""
     row = SOURCE_REGISTRY["eos-06-ocm-lac-ndvi-8day-360m"]
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"eos-06 product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"eos-06 product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_nisar_product_exposure_is_hidden():
     """TASK-076: nisar-ssar-beta-gcov must have hidden product exposure (data-gated)."""
     row = SOURCE_REGISTRY["nisar-ssar-beta-gcov"]
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"nisar product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"nisar product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_cartosat3_uses_vendor_provider():
     """TASK-076: cartosat-3-gated must use the vendor provider (no Bhoonidhi catalog path)."""
     row = SOURCE_REGISTRY["cartosat-3-gated"]
-    assert row.provider_adapter == "vendor", (
-        f"cartosat-3-gated provider_adapter is {row.provider_adapter!r}; expected vendor"
-    )
+    assert (
+        row.provider_adapter == "vendor"
+    ), f"cartosat-3-gated provider_adapter is {row.provider_adapter!r}; expected vendor"
 
 
 def test_cartosat3_is_manual_only_vendor_hidden():
@@ -1097,23 +1084,22 @@ def test_cartosat3_is_manual_only_vendor_hidden():
     """
     row = SOURCE_REGISTRY["cartosat-3-gated"]
     assert row.schedule_state == ScheduleState.MANUAL_ONLY, (
-        f"cartosat-3-gated schedule_state is {row.schedule_state.value!r}; "
-        "expected manual_only"
+        f"cartosat-3-gated schedule_state is {row.schedule_state.value!r}; " "expected manual_only"
     )
-    assert row.provider_adapter == "vendor", (
-        f"cartosat-3-gated provider_adapter is {row.provider_adapter!r}; expected vendor"
-    )
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"cartosat-3-gated product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.provider_adapter == "vendor"
+    ), f"cartosat-3-gated provider_adapter is {row.provider_adapter!r}; expected vendor"
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"cartosat-3-gated product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 def test_cartosat3_product_exposure_is_hidden():
     """TASK-076: cartosat-3-gated product_exposure must be hidden (manual VHR placeholder)."""
     row = SOURCE_REGISTRY["cartosat-3-gated"]
-    assert row.product_exposure == ProductExposure.HIDDEN, (
-        f"cartosat-3-gated product_exposure is {row.product_exposure.value!r}; expected hidden"
-    )
+    assert (
+        row.product_exposure == ProductExposure.HIDDEN
+    ), f"cartosat-3-gated product_exposure is {row.product_exposure.value!r}; expected hidden"
 
 
 # ---------------------------------------------------------------------------
@@ -1126,29 +1112,27 @@ def test_archive_landsat_rows_are_not_executable():
     archive_ids = {"landsat-7-c2-l2", "landsat-5-c2-l2"}
     executable = set(sr.executable_source_ids())
     leaked = archive_ids & executable
-    assert not leaked, (
-        f"Archive Landsat rows leaked into executable_source_ids: {sorted(leaked)}"
-    )
+    assert not leaked, f"Archive Landsat rows leaked into executable_source_ids: {sorted(leaked)}"
 
 
 def test_archive_landsat_rows_have_archive_only_schedule_state():
     """TASK-077: Landsat 7/5 must be exactly archive_only + archive_on_demand (not disabled)."""
     for sid in ("landsat-7-c2-l2", "landsat-5-c2-l2"):
         row = SOURCE_REGISTRY[sid]
-        assert row.schedule_state == ScheduleState.ARCHIVE_ONLY, (
-            f"{sid!r} schedule_state is {row.schedule_state.value!r}; expected archive_only"
-        )
-        assert row.cadence == CadenceClass.ARCHIVE_ON_DEMAND, (
-            f"{sid!r} cadence is {row.cadence.value!r}; expected archive_on_demand"
-        )
+        assert (
+            row.schedule_state == ScheduleState.ARCHIVE_ONLY
+        ), f"{sid!r} schedule_state is {row.schedule_state.value!r}; expected archive_only"
+        assert (
+            row.cadence == CadenceClass.ARCHIVE_ON_DEMAND
+        ), f"{sid!r} cadence is {row.cadence.value!r}; expected archive_on_demand"
 
 
 def test_irs1c_archive_is_not_executable():
     """TASK-077: irs-1c-liss3-archive must not appear in executable_source_ids()."""
     executable = sr.executable_source_ids()
-    assert "irs-1c-liss3-archive" not in executable, (
-        "irs-1c-liss3-archive must not be executable (archive_only row)"
-    )
+    assert (
+        "irs-1c-liss3-archive" not in executable
+    ), "irs-1c-liss3-archive must not be executable (archive_only row)"
 
 
 def test_archive_backfill_rows_use_archive_on_demand_cadence():
@@ -1156,9 +1140,9 @@ def test_archive_backfill_rows_use_archive_on_demand_cadence():
     archive_source_ids = ["landsat-7-c2-l2", "landsat-5-c2-l2", "irs-1c-liss3-archive"]
     for sid in archive_source_ids:
         row = SOURCE_REGISTRY[sid]
-        assert row.cadence == CadenceClass.ARCHIVE_ON_DEMAND, (
-            f"{sid!r}: expected archive_on_demand cadence, got {row.cadence.value!r}"
-        )
+        assert (
+            row.cadence == CadenceClass.ARCHIVE_ON_DEMAND
+        ), f"{sid!r}: expected archive_on_demand cadence, got {row.cadence.value!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -1178,17 +1162,17 @@ def test_alos2_mosaic_is_not_routine_or_background_scheduled():
 def test_alos2_mosaic_uses_archive_on_demand_cadence():
     """TASK-078: alos2-mosaic-25m cadence must be archive_on_demand (annual free mosaic only)."""
     row = SOURCE_REGISTRY["alos2-mosaic-25m"]
-    assert row.cadence == CadenceClass.ARCHIVE_ON_DEMAND, (
-        f"alos2-mosaic-25m cadence is {row.cadence.value!r}; expected archive_on_demand"
-    )
+    assert (
+        row.cadence == CadenceClass.ARCHIVE_ON_DEMAND
+    ), f"alos2-mosaic-25m cadence is {row.cadence.value!r}; expected archive_on_demand"
 
 
 def test_alos2_mosaic_is_not_executable():
     """TASK-078: alos2-mosaic-25m must not appear in executable_source_ids()."""
     executable = sr.executable_source_ids()
-    assert "alos2-mosaic-25m" not in executable, (
-        "alos2-mosaic-25m must not be executable (archive_on_demand + disabled)"
-    )
+    assert (
+        "alos2-mosaic-25m" not in executable
+    ), "alos2-mosaic-25m must not be executable (archive_on_demand + disabled)"
 
 
 def test_alos2_scene_is_commercial_blocked():
@@ -1212,19 +1196,20 @@ def test_naip_remains_reference_only_for_india_phase12():
     never be promoted to product_active or background_only for any India deployment.
     """
     naip_row = SOURCE_REGISTRY["naip-reference-only"]
-    assert naip_row.schedule_state == ScheduleState.DISABLED, (
-        f"naip schedule_state is {naip_row.schedule_state.value!r}; expected disabled"
-    )
-    assert naip_row.aoi_scope == AoiScope.REFERENCE_ONLY, (
-        f"naip aoi_scope is {naip_row.aoi_scope.value!r}; expected reference_only"
-    )
+    assert (
+        naip_row.schedule_state == ScheduleState.DISABLED
+    ), f"naip schedule_state is {naip_row.schedule_state.value!r}; expected disabled"
+    assert (
+        naip_row.aoi_scope == AoiScope.REFERENCE_ONLY
+    ), f"naip aoi_scope is {naip_row.aoi_scope.value!r}; expected reference_only"
     assert naip_row.product_exposure not in (
-        ProductExposure.PRODUCT_ACTIVE, ProductExposure.BACKGROUND_ONLY
+        ProductExposure.PRODUCT_ACTIVE,
+        ProductExposure.BACKGROUND_ONLY,
     ), (
         f"naip product_exposure is {naip_row.product_exposure.value!r}; "
         "must not be product_active or background_only for India AOI"
     )
     executable = sr.executable_source_ids()
-    assert "naip-reference-only" not in executable, (
-        "naip-reference-only must not be executable for India AOI (SRC-006)"
-    )
+    assert (
+        "naip-reference-only" not in executable
+    ), "naip-reference-only must not be executable for India AOI (SRC-006)"

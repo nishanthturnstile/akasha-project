@@ -79,6 +79,26 @@ Current ResourceSat ownership:
 4. When the canary looks correct, run one bounded live job with small `--max-downloads` and validate
   the resulting composite before widening the run budget.
 
+#### Enabling live scheduler + manual UI sync on staging
+
+Automatic and manual ingestion are intentionally controlled by different gates:
+
+- **Automatic scheduler:** edit `/etc/akasha/ingestion-scheduler.env` on `akasha-staging` and set
+  `AKASHA_SCHEDULER_ACTIVE=true`, `AKASHA_SCHEDULER_APPROVED_RUNTIME=true`, and
+  `AKASHA_SCHEDULER_DRY_RUN=false`, then enable/start `akasha-ingestion-scheduler.timer`.
+- **Manual admin UI sync:** set `ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=true` in the Coolify stack
+  environment and recreate/redeploy the `api` service so `/api/config` and
+  `/api/monitoring/ingestion-sources` both report live triggers enabled.
+- **Dispatcher bridge:** keep `akasha-ingestion-inbox-dispatcher.path` and
+  `akasha-ingestion-inbox-dispatcher.timer` enabled so BFF inbox requests are picked up by the
+  host wrapper.
+
+The systemd timer checks due-source state every **4 hours** with a 15-minute randomized delay, but
+ResourceSat LISS-3, LISS-4, and AWiFS use the source-registry `five_to_ten_days` cadence, which the
+orchestrator maps to **5 days between successful live runs**. The scheduler pass is therefore a
+frequent lightweight check; Bhoonidhi live download/prepare work only starts when a source/AOI is
+due or when an owner/admin submits a confirmed manual sync.
+
 #### Rollback
 
 Rollback is scheduler-first: pause automatic scheduling, then use bounded manual scheduler runs

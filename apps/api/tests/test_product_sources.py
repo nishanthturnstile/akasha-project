@@ -63,3 +63,19 @@ def test_hidden_unvalidated_sar_sources_are_not_bff_active() -> None:
     assert eos04["gatedReason"]
     assert nisar["availabilityStatus"] == "gated"
     assert nisar["gatedReason"]
+
+
+def test_eos04_source_payload_is_display_only_sar_contract() -> None:
+    eos04 = catalog.source_payload("eos-04-sar-mrs-l2b")
+
+    assert eos04["kind"] == "sar"
+    assert eos04["availabilityStatus"] == "gated"
+    assert eos04["expectedAssets"] == ["backscatter"]
+    assert eos04["supportedIndices"] == []
+    assert eos04["maskAsset"] is None
+    assert eos04["availableMaskOptions"] == []
+    assert eos04["displayModes"] == ["VV_GRAYSCALE"]
+    assert eos04["defaultDisplayMode"] == "VV_GRAYSCALE"
+    assert eos04["dateMetricsKind"] == "radar"
+    assert eos04["defaultRescale"] == "-25,5"
+    assert any("no NDVI" in limitation for limitation in eos04["limitations"])

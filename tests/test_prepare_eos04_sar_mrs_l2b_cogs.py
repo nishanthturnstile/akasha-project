@@ -21,9 +21,10 @@ def test_polarizations_are_normalized_and_display_ordered():
 
 
 def test_acquisition_datetime_inferred_from_product_id():
-    assert prep.acquisition_datetime_from_product_id(
-        "EOS04_SAR_MRS_20260615T053000_XYZ"
-    ) == "2026-06-15T05:30:00Z"
+    assert (
+        prep.acquisition_datetime_from_product_id("EOS04_SAR_MRS_20260615T053000_XYZ")
+        == "2026-06-15T05:30:00Z"
+    )
     # Date-only fallback.
     assert prep.acquisition_datetime_from_product_id("EOS04_20260615_abc") == (
         "2026-06-15T00:00:00Z"
@@ -55,6 +56,19 @@ def test_selected_product_from_manifest_entry_reads_bhoonidhi_fields(tmp_path):
     assert product.relative_orbit == "123"
     assert product.orbit_state == "ascending"
     assert product.product_type == prep.BHOONIDHI_COLLECTION
+
+
+def test_selected_product_does_not_default_missing_polarizations(tmp_path):
+    product = prep.selected_product_from_manifest_entry(
+        {
+            "item_id": "EOS04_SAR_MRS_20260615T053000_XYZ",
+            "datetime": "2026-06-15T05:30:00Z",
+        },
+        raw_dir=tmp_path,
+        default_polarizations=[],
+    )
+
+    assert product.polarizations == []
 
 
 def test_selected_entries_resolve_from_download_manifest_candidates():
@@ -89,3 +103,18 @@ def test_detect_input_scale_auto_heuristic():
     assert prep.detect_input_scale(np, np.array([1500.0, 3000.0]), "auto") == "amplitude"
     # Explicit request always wins.
     assert prep.detect_input_scale(np, np.array([0.01]), "db") == "db"
+
+
+def test_find_backscatter_bands_fails_closed_without_polarization_tokens(tmp_path):
+    (tmp_path / "backscatter.tif").write_bytes(b"not-a-real-tif")
+
+    with pytest.raises(SystemExit, match="Could not infer EOS-04 SAR polarizations"):
+        prep.find_backscatter_bands(tmp_path, [], None)
+
+
+def test_explicit_band_path_requires_declared_polarization(tmp_path):
+    band = tmp_path / "scene.tif"
+    band.write_bytes(b"not-a-real-tif")
+
+    with pytest.raises(SystemExit, match="requires --polarizations"):
+        prep.find_backscatter_bands(tmp_path, [], band)

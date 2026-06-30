@@ -318,6 +318,7 @@ def run_eos04_validation(
         for line in storage.seed_manifest_cogs(prepared_manifest_paths, force=params.force):
             log(line)
         result.uploaded = True
+        log(catalog.load_collection(method=params.method, collection_id=params.source_id))
         log(catalog.load_manifest_items(prepared_manifest_paths, method=params.method))
         result.stac_loaded = True
         ok, detail = storage.verify_manifest_cogs(prepared_manifest_paths)

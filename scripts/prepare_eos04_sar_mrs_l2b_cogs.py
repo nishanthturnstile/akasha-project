@@ -492,6 +492,17 @@ def to_db(np: Any, values: Any, scale: str) -> Any:
     return (10.0 * np.log10(np.maximum(values, DB_EPSILON))).astype("float32")
 
 
+def masked_band_to_float64(np: Any, raw: Any) -> Any:
+    """Return a float64 ndarray from a rasterio masked band.
+
+    Rasterio often returns integer masked arrays for SAR products.  Integer
+    masked arrays cannot be filled with NaN directly, so cast first.
+    """
+    if hasattr(raw, "filled"):
+        return np.asarray(raw.astype("float64").filled(np.nan), dtype="float64")
+    return np.asarray(raw, dtype="float64")
+
+
 def write_backscatter_db_intermediate(
     *,
     deps: dict[str, Any],
@@ -539,7 +550,7 @@ def write_backscatter_db_intermediate(
                         )
                     raw = src.read(1, masked=True)
                     source_nodata = src.nodata
-                values = np.asarray(raw.filled(np.nan), dtype="float64")
+                values = masked_band_to_float64(np, raw)
                 valid = np.isfinite(values)
                 if source_nodata is not None:
                     valid &= values != float(source_nodata)

@@ -105,6 +105,17 @@ def test_detect_input_scale_auto_heuristic():
     assert prep.detect_input_scale(np, np.array([0.01]), "db") == "db"
 
 
+def test_masked_uint16_band_converts_to_float_nan():
+    np = pytest.importorskip("numpy")
+    raw = np.ma.array([100, 200], mask=[False, True], dtype="uint16")
+
+    values = prep.masked_band_to_float64(np, raw)
+
+    assert values.dtype == np.dtype("float64")
+    assert values[0] == 100.0
+    assert np.isnan(values[1])
+
+
 def test_find_backscatter_bands_fails_closed_without_polarization_tokens(tmp_path):
     (tmp_path / "backscatter.tif").write_bytes(b"not-a-real-tif")
 

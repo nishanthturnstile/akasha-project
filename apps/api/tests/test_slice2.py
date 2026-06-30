@@ -2153,6 +2153,67 @@ def test_sar_support_resolver_reports_nearby_eos04_scene(monkeypatch):
     assert support["confidence"] == "high"
 
 
+def test_sar_support_resolver_rejects_zero_valid_sar_coverage(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import sar_support
+
+    monkeypatch.setattr(
+        catalog,
+        "list_dates",
+        lambda source_id: [
+            {
+                "acquisitionDate": "2026-03-20",
+                "bounds": [78.19, 12.09, 78.22, 12.12],
+                "tileAvailable": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets",
+        lambda source_id, acquisition_date: {
+            "backscatterHref": "s3://akasha-cogs/eos/backscatter.tif",
+            "bandNames": ["HH_dB", "HV_dB"],
+            "nodata": -9999.0,
+        },
+    )
+    monkeypatch.setattr(
+        sar_support,
+        "_read_sar_statistics",
+        lambda **_kwargs: {
+            "intersects": True,
+            "coveragePercent": 0.0,
+            "bands": [
+                {
+                    "name": "HH_dB",
+                    "min": None,
+                    "max": None,
+                    "mean": None,
+                    "stddev": None,
+                    "validPixelPercent": 0.0,
+                }
+            ],
+        },
+    )
+
+    support = sar_support.compute_sar_support(
+        geometry=IN_FOOTPRINT_POLY,
+        optical_source_id="resourcesat-2a-liss3-boa",
+        optical_acquisition_date="2026-03-19",
+        optical_cloud_masked_percent=50.0,
+        optical_masked_pixels=10,
+        geometry_bounds=[78.19, 12.09, 78.22, 12.12],
+        window_days=7,
+        cloud_threshold_percent=20,
+    )
+
+    assert support["available"] is False
+    assert support["status"] == "no_valid_pixels"
+    assert support["reason"] == (
+        "EOS-04 scene overlaps this field but has no valid backscatter pixels."
+    )
+
+
 def test_resourcesat_statistics_uses_mask_only_nodata_policy(monkeypatch):
     from app.raster import service
     from app.raster.raster_reader import WindowRead

@@ -251,96 +251,96 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         );
     });
 
-        it('surfaces EOS-04 SAR support as cloud-gap context only', async () => {
-            vi.stubGlobal(
-                'fetch',
-                vi.fn((input: RequestInfo | URL) => {
-                    const path = String(input);
-                    if (path === '/api/fields/plot-1/indices/statistics') {
-                        return Promise.resolve(
-                            jsonResponse({
-                                plotId: 'plot-1',
-                                provider: 'native',
-                                scope: 'field',
-                                indexType: 'NDVI',
-                                sourceId: 'resourcesat-2a-liss3-boa',
-                                acquisitionDate: '2026-03-19',
-                                cloudMask,
-                                statistics: {
-                                    min: 0.1,
-                                    max: 0.8,
-                                    mean: 0.42,
-                                    stddev: 0.12,
-                                    validPixelPercent: 55,
-                                    cloudMaskedPercent: 45,
-                                    coveragePercent: 97,
-                                },
-                                pixelCounts: {
-                                    totalPixels: 100,
-                                    nodataPixels: 3,
-                                    coveragePixels: 97,
-                                    maskedPixels: 42,
-                                    validPixels: 55,
-                                },
-                                sarSupport: {
-                                    available: true,
-                                    status: 'available',
-                                    sourceId: 'eos-04-sar-mrs-l2b',
-                                    acquisitionDate: '2026-03-20',
-                                    daysFromOpticalDate: 1,
-                                    windowDays: 7,
-                                    cloudGap: true,
-                                    opticalCloudMaskedPercent: 45,
-                                    opticalMaskedPixels: 42,
-                                    polarizations: ['HH', 'HV'],
-                                    coveragePercent: 88,
-                                    confidence: 'high',
-                                    reason: 'EOS-04 SAR support is available for cloudy/masked optical pixels.',
-                                    bands: [],
-                                    wetnessSignal: 'not_assessed',
-                                    changeSignal: 'not_assessed',
-                                },
-                                metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'], warnings: [] },
-                            }),
-                        );
-                    }
-                    if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
-                        return Promise.resolve(
-                            jsonResponse({
-                                plotId: 'plot-1',
-                                provider: 'native',
-                                scope: 'native_fallback',
-                                sourceId: 'resourcesat-2a-liss3-boa',
-                                indexType: 'NDVI',
-                                startDate: '2025-09-20',
-                                endDate: '2026-03-19',
-                                points: [],
-                                metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'] },
-                            }),
-                        );
-                    }
-                    throw new Error(`Unexpected request: ${path}`);
-                }),
-            );
+    it('surfaces EOS-04 SAR support as cloud-gap context only', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-03-19',
+                            cloudMask,
+                            statistics: {
+                                min: 0.1,
+                                max: 0.8,
+                                mean: 0.42,
+                                stddev: 0.12,
+                                validPixelPercent: 55,
+                                cloudMaskedPercent: 45,
+                                coveragePercent: 97,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 3,
+                                coveragePixels: 97,
+                                maskedPixels: 42,
+                                validPixels: 55,
+                            },
+                            sarSupport: {
+                                available: true,
+                                status: 'available',
+                                sourceId: 'eos-04-sar-mrs-l2b',
+                                acquisitionDate: '2026-03-20',
+                                daysFromOpticalDate: 1,
+                                windowDays: 7,
+                                cloudGap: true,
+                                opticalCloudMaskedPercent: 45,
+                                opticalMaskedPixels: 42,
+                                polarizations: ['HH', 'HV'],
+                                coveragePercent: 88,
+                                confidence: 'high',
+                                reason: 'EOS-04 SAR support is available for cloudy/masked optical pixels.',
+                                bands: [],
+                                wetnessSignal: 'not_assessed',
+                                changeSignal: 'not_assessed',
+                            },
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'], warnings: [] },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDVI',
+                            startDate: '2025-09-20',
+                            endDate: '2026-03-19',
+                            points: [],
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
 
-            renderPanel(
-                <IndexPanel
-                    selectedPlot={ plot }
-                    selectedDate="2026-03-19"
-                    sourceId="resourcesat-2a-liss3-boa"
-                    displayMode="NDVI"
-                    supportedIndices={ ['NDVI', 'NDMI'] }
-                    cloudMask={ cloudMask }
-                />,
-            );
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-03-19"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'NDMI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
 
-            activateTab('index-panel-tab-chart');
+        activateTab('index-panel-tab-chart');
 
-            const note = await screen.findByTestId('analytics-sar-support');
-            expect(note.textContent).toContain('EOS-04 SAR support available');
-            expect(note.textContent).toContain('high confidence');
-            expect(note.textContent).not.toContain('NDVI replacement');
-        });
+        const note = await screen.findByTestId('analytics-sar-support');
+        expect(note.textContent).toContain('EOS-04 SAR support available');
+        expect(note.textContent).toContain('high confidence');
+        expect(note.textContent).not.toContain('NDVI replacement');
+    });
 
     it('switches to Activities tab and shows the empty state with a disabled add button', () => {
         renderPanel(

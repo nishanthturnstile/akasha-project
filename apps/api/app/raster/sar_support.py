@@ -125,7 +125,7 @@ def compute_sar_support(
             last_status = "no_overlap"
             last_reason = "Nearest EOS-04 scene does not overlap this field."
             continue
-        if not stats["bands"]:
+        if not _has_valid_sar_pixels(stats):
             last_status = "no_valid_pixels"
             last_reason = "EOS-04 scene overlaps this field but has no valid backscatter pixels."
             continue
@@ -260,6 +260,18 @@ def _band_stats(name: str, values: Any, geometry_pixels: int) -> dict[str, Any]:
         "stddev": round(float(values.std()), 6),
         "validPixelPercent": round(100.0 * int(values.size) / max(1, geometry_pixels), 2),
     }
+
+
+def _has_valid_sar_pixels(stats: dict[str, Any]) -> bool:
+    try:
+        if float(stats.get("coveragePercent") or 0.0) <= 0.0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    bands = stats.get("bands")
+    if not isinstance(bands, list) or not bands:
+        return False
+    return any((band or {}).get("mean") is not None for band in bands if isinstance(band, dict))
 
 
 def _confidence(days_from_optical: int, coverage_percent: float | None) -> str:

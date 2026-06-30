@@ -127,3 +127,10 @@ def test_selfhosted_env_documents_admin_ingestion_live_trigger_gate():
     assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false" in env
     assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED" in compose
     assert "${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}" in compose
+
+
+def test_ingestion_image_packages_eos04_prepare_script():
+    """EOS-04 live validation requires the prepare script inside ingestion-worker."""
+    dockerfile = _text("services/ingestion/Dockerfile")
+
+    assert "prepare_eos04_sar_mrs_l2b_cogs.py" in dockerfile

@@ -651,6 +651,27 @@ class TestApprovedRuntimeGate:
         assert manifest["source_id"] == _EOS04_SOURCE
         assert manifest["selection"]["selected_product_ids"] == ["EOS04_TEST"]
 
+    def test_manual_eos04_live_run_fails_closed_until_pipeline_exists(self, tmp_path):
+        result = run_source_job(
+            _EOS04_SOURCE,
+            _DEFAULT_AOI,
+            dry_run=False,
+            approved_runtime=True,
+            trigger="manual",
+            window_start="2026-05-17",
+            window_end="2026-06-30",
+            limit=20,
+            max_downloads=1,
+            min_coverage_percent=0.0,
+            base_dir=tmp_path,
+            lock_dir=tmp_path / "locks",
+            now=_FIXED_NOW,
+        )
+
+        assert result.status == str(JobStatus.SKIPPED_GATED)
+        assert result.failure_kind == "manual_validation_live_deferred"
+        assert "dedicated" in (result.failure_message or "")
+
     def test_env_var_approves_runtime(self, tmp_path, monkeypatch):
         """AKASHA_APPROVED_RUNTIME=1 in env should allow the job past the preflight gate."""
         monkeypatch.setenv(APPROVED_RUNTIME_ENV_VAR, "1")

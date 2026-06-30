@@ -1325,6 +1325,44 @@ def run_source_job(
                 except Exception:  # noqa: BLE001
                     pass
 
+    if source_id == EOS04_SAR_SOURCE_ID and trigger == "manual":
+        message = (
+            "EOS-04 live manual validation is deferred until the dedicated "
+            "search/download/prepare/verify/ingest path is wired. Run with --dry-run "
+            "for search-only validation."
+        )
+        finish_job(
+            job_id,
+            JobStatus.SKIPPED_GATED,
+            {"sourceId": source_id, "aoiId": aoi_id, "reason": message},
+            base_dir,
+            failure_kind="manual_validation_live_deferred",
+            failure_message=message,
+            now=_now,
+        )
+        _write_observability_safe(
+            job_id, source_id, aoi_id, row.provider_adapter,
+            str(JobStatus.SKIPPED_GATED), base_dir, _sql_ledger,
+            scheduled_at=_scheduled_at, started_at=None,
+            finished_at=_now_iso(_now),
+            window_start=window_start, window_end=window_end,
+            sched_decision="manual_validation_live_deferred",
+            next_due_at=next_due_at,
+            failure_kind="manual_validation_live_deferred",
+            provider_input_summary=_prov_input,
+            provider_response_summary={},
+            verification_summary={"verdict": "deferred", "reason": message},
+        )
+        return SourceJobResult(
+            job_id=job_id,
+            source_id=source_id,
+            aoi_id=aoi_id,
+            status=str(JobStatus.SKIPPED_GATED),
+            dry_run=False,
+            failure_kind="manual_validation_live_deferred",
+            failure_message=message,
+        )
+
     # ── Dry-run / local-test path ──────────────────────────────────────────
     if is_dry:
         # Phase 7: build the dry-run plan payload, extending base fields with

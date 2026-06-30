@@ -75,6 +75,7 @@ from akasha_ingest.source_registry import (  # noqa: E402
 _LISS3_SOURCE = "resourcesat-2a-liss3-boa"
 _LISS4_SOURCE = "resourcesat-2a-liss4-mx70-l2"
 _AWIFS_SOURCE = "resourcesat-2a-awifs-boa"
+_EOS04_SOURCE = "eos-04-sar-mrs-l2b"
 _NAIP_SOURCE = "naip-reference-only"
 _ARCHIVE_SOURCE = "landsat-7-c2-l2"  # ARCHIVE_ON_DEMAND cadence
 _COMMERCIAL_SOURCE = "planetscope"  # commercial_blocked
@@ -586,6 +587,69 @@ class TestApprovedRuntimeGate:
                 now=_FIXED_NOW,
             )
         mock_adapter.assert_not_called()
+
+    def test_manual_eos04_dry_run_searches_without_download(self, tmp_path, monkeypatch):
+        """Explicit manual EOS-04 dry-run validates Bhoonidhi search only."""
+        calls: dict[str, object] = {}
+
+        monkeypatch.setattr(
+            "akasha_ingest.bhoonidhi.load_aoi",
+            lambda *args, **kwargs: {
+                "id": _DEFAULT_AOI,
+                "bbox": [77.0, 12.0, 78.0, 13.0],
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 12.0]]
+                    ],
+                },
+            },
+        )
+
+        class FakeClient:
+            def search(self, **kwargs):
+                calls["search"] = kwargs
+                return [
+                    {
+                        "id": "EOS04_TEST",
+                        "bbox": [77.2, 12.2, 77.8, 12.8],
+                        "properties": {"Online": "Y", "datetime": "2026-06-15T05:30:00Z"},
+                    }
+                ]
+
+            def logout(self, **kwargs):
+                calls["logout"] = kwargs
+
+        monkeypatch.setattr("akasha_ingest.bhoonidhi.BhoonidhiClient", lambda: FakeClient())
+
+        result = run_source_job(
+            _EOS04_SOURCE,
+            _DEFAULT_AOI,
+            dry_run=True,
+            approved_runtime=True,
+            trigger="manual",
+            window_start="2026-05-17",
+            window_end="2026-06-30",
+            limit=20,
+            max_downloads=1,
+            min_coverage_percent=0.0,
+            base_dir=tmp_path,
+            lock_dir=tmp_path / "locks",
+            now=_FIXED_NOW,
+        )
+
+        assert result.status == str(JobStatus.SUCCEEDED)
+        assert result.dry_run is True
+        assert result.summary["stopPoint"] == "after_search_before_download"
+        assert result.summary["foundCount"] == 1
+        assert result.summary["downloadedCount"] == 0
+        assert calls["search"]["collection"] == "EOS-04_SAR-MRS_L2B"
+        assert calls["search"]["limit"] == 20
+        manifest_path = Path(result.summary["coverageManifest"])
+        assert manifest_path.is_file()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["source_id"] == _EOS04_SOURCE
+        assert manifest["selection"]["selected_product_ids"] == ["EOS04_TEST"]
 
     def test_env_var_approves_runtime(self, tmp_path, monkeypatch):
         """AKASHA_APPROVED_RUNTIME=1 in env should allow the job past the preflight gate."""

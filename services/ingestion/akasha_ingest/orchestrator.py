@@ -93,6 +93,7 @@ from .jobs import (
     append_event,
     create_job,
     finish_job,
+    job_dir,
     make_artifact_handle,
     transition_status,
     write_observability,
@@ -133,6 +134,7 @@ SCHEDULE_STATE_FILENAME = "schedule_state.json"
 
 #: Environment variable that approves non-dry-run execution for staging-only sources.
 APPROVED_RUNTIME_ENV_VAR = "AKASHA_APPROVED_RUNTIME"
+EOS04_SAR_SOURCE_ID = "eos-04-sar-mrs-l2b"
 
 #: Mapping from CadenceClass string value to minimum days between auto-scheduled runs.
 #: ``None`` means the source is never automatically due (archive/reference).
@@ -533,6 +535,35 @@ def _gate_reason(row: SourceStateRow, aoi_id: str) -> str | None:
         return "commercial_state=commercial_blocked"
 
     return None
+
+
+def _run_source_gate_reason(row: SourceStateRow, aoi_id: str, *, trigger: str) -> str | None:
+    """Return the execution gate for a direct source job.
+
+    ``schedule_state=manual_only`` is intentionally allowed only for explicit
+    manual wrapper runs. All other source gates remain fail-closed.
+    """
+    gate = _gate_reason(row, aoi_id)
+    if gate == "schedule_state=manual_only" and trigger == "manual":
+        return None
+    return gate
+
+
+def _is_eos04_manual_validation_search(
+    source_id: str,
+    row: SourceStateRow,
+    *,
+    trigger: str,
+    is_dry: bool,
+) -> bool:
+    """Return True for the bounded EOS-04 search-only validation path."""
+    return (
+        source_id == EOS04_SAR_SOURCE_ID
+        and row.schedule_state == ScheduleState.MANUAL_ONLY
+        and trigger == "manual"
+        and is_dry
+        and _is_bhoonidhi_source(row)
+    )
 
 
 def _planning_ownership_gate(row: SourceStateRow, *, dry_run: bool) -> str | None:
@@ -1140,7 +1171,7 @@ def run_source_job(
             pass  # initial ledger write failures must not block job execution
 
     # ── Gate checks (state-based) — fail closed ────────────────────────────
-    gate = _gate_reason(row, aoi_id)
+    gate = _run_source_gate_reason(row, aoi_id, trigger=trigger)
     if gate:
         finish_job(
             job_id,
@@ -1172,6 +1203,127 @@ def run_source_job(
             failure_kind="gated",
             failure_message=gate,
         )
+
+    # ── EOS-04 manual validation dry-run: live search, no download/upload ──
+    if _is_eos04_manual_validation_search(source_id, row, trigger=trigger, is_dry=is_dry):
+        from akasha_ingest import bhoonidhi as _bh  # noqa: PLC0415
+        from akasha_ingest import config as _cfg  # noqa: PLC0415
+        from akasha_ingest import sync as _sync  # noqa: PLC0415
+
+        client = None
+        try:
+            _aoi = _bh.load_aoi(None, aoi_id=aoi_id, aoi_dir=_cfg.AOI_CONFIG_DIR)
+            collection = _bh.source_collection(source_id)
+            datetime_range = _sync.datetime_range_for_window(window_start, window_end)
+            client = _bh.BhoonidhiClient()
+            items = client.search(
+                collection=collection,
+                datetime_range=datetime_range,
+                intersects=_aoi["geometry"],
+                limit=limit or 100,
+            )
+            manifest = _bh.build_search_manifest(
+                source_id=source_id,
+                collection=collection,
+                aoi=_aoi,
+                datetime_range=datetime_range,
+                items=items,
+            )
+            manifest_path = job_dir(job_id, base_dir) / "coverage_manifest.json"
+            _bh.write_manifest(manifest, manifest_path)
+            found_count = len(items)
+            selected_count = len(manifest.get("selection", {}).get("selected_product_ids", []))
+            summary = {
+                "sourceId": source_id,
+                "aoiId": aoi_id,
+                "provider": row.provider_adapter,
+                "collection": collection,
+                "windowStart": window_start,
+                "windowEnd": window_end,
+                "datetimeRange": datetime_range,
+                "dryRun": True,
+                "manualValidation": True,
+                "stopPoint": "after_search_before_download",
+                "foundCount": found_count,
+                "selectedCount": selected_count,
+                "downloadedCount": 0,
+                "coverageManifest": str(manifest_path),
+            }
+            append_event(
+                job_id,
+                "manual_validation_search",
+                {**summary, "coverageManifestHandle": make_artifact_handle(job_id, "coverage")},
+                base_dir,
+                now=_now,
+            )
+            finish_job(job_id, JobStatus.SUCCEEDED, summary, base_dir, now=_now)
+            _write_observability_safe(
+                job_id, source_id, aoi_id, row.provider_adapter,
+                str(JobStatus.SUCCEEDED), base_dir, _sql_ledger,
+                scheduled_at=_scheduled_at, started_at=None,
+                finished_at=_now_iso(_now),
+                window_start=window_start, window_end=window_end,
+                sched_decision="manual_validation_search",
+                next_due_at=next_due_at,
+                failure_kind=None,
+                provider_input_summary={**_prov_input, "collection": collection},
+                provider_response_summary={
+                    "foundCount": found_count,
+                    "selectedCount": selected_count,
+                    "downloadedCount": 0,
+                },
+                verification_summary={"verdict": "search_only", "manifest": str(manifest_path)},
+                found_count=found_count,
+                selected_count=selected_count,
+                downloaded_count=0,
+            )
+            return SourceJobResult(
+                job_id=job_id,
+                source_id=source_id,
+                aoi_id=aoi_id,
+                status=str(JobStatus.SUCCEEDED),
+                dry_run=True,
+                summary=summary,
+            )
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
+            failure_message = str(exc) or exc.__class__.__name__
+            finish_job(
+                job_id,
+                JobStatus.FAILED,
+                {"sourceId": source_id, "aoiId": aoi_id, "failureKind": "provider_search_failed"},
+                base_dir,
+                failure_kind="provider_search_failed",
+                failure_message=failure_message,
+                now=_now,
+            )
+            _write_observability_safe(
+                job_id, source_id, aoi_id, row.provider_adapter,
+                str(JobStatus.FAILED), base_dir, _sql_ledger,
+                scheduled_at=_scheduled_at, started_at=None,
+                finished_at=_now_iso(_now),
+                window_start=window_start, window_end=window_end,
+                sched_decision="manual_validation_search",
+                next_due_at=next_due_at,
+                failure_kind="provider_search_failed",
+                provider_input_summary=_prov_input,
+                provider_response_summary={},
+                verification_summary={"verdict": "failed", "reason": failure_message},
+            )
+            return SourceJobResult(
+                job_id=job_id,
+                source_id=source_id,
+                aoi_id=aoi_id,
+                status=str(JobStatus.FAILED),
+                dry_run=True,
+                failure_kind="provider_search_failed",
+                failure_message=failure_message,
+            )
+        finally:
+            if client is not None:
+                try:
+                    client.logout(ignore_errors=True)
+                except Exception:  # noqa: BLE001
+                    pass
 
     # ── Dry-run / local-test path ──────────────────────────────────────────
     if is_dry:

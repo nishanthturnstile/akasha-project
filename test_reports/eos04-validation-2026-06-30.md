@@ -66,9 +66,9 @@ Resolved asset metadata:
 - `epsg=32644`
 - `nodata=-9999.0`
 
-Source exposure was activated after validation and remains SAR-display-only:
+Source exposure remains backend-only after validation:
 
-- `availabilityStatus=active`
+- `availabilityStatus=gated`
 - `supportedIndices=[]`
 - `maskAsset=null`
 - `displayModes=["VV_GRAYSCALE"]`
@@ -92,4 +92,4 @@ Follow-up: staging deploy/reconcile procedures should include `stac-api` (and `t
 
 ## Decision
 
-EOS-04 real-product pipeline is validated for a single product and is activated as a display-only SAR context layer. It remains manual-refresh/operator-controlled for ingestion; no optical index/statistics/cloud-mask workflows are enabled.
+EOS-04 real-product pipeline is validated for a single product and should be used as backend SAR support for cloudy optical analytics. It remains manual-refresh/operator-controlled for ingestion; no direct user-selectable EOS-04 layer, optical index/statistics, or cloud-mask workflow is enabled yet.

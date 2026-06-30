@@ -656,7 +656,7 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
-# 8. EOS-04 / RISAT (ISRO/Bhoonidhi) — active display-only SAR
+# 8. EOS-04 / RISAT (ISRO/Bhoonidhi) — validated backend SAR support
 # ---------------------------------------------------------------------------
 
 _register(
@@ -671,14 +671,16 @@ _register(
         analysis_level="L2B",
         lifecycle_state=LifecycleState.VALIDATE_ENABLED,
         schedule_state=ScheduleState.MANUAL_ONLY,
-        capabilities=(
-            _SEARCH_DOWNLOAD_PREPARE_VALIDATE | frozenset({Capability.DISPLAY_TILES})
-        ),
-        product_exposure=ProductExposure.PRODUCT_ACTIVE,
+        capabilities=_SEARCH_DOWNLOAD_PREPARE_VALIDATE,
+        product_exposure=ProductExposure.BACKGROUND_ONLY,
         commercial_state=CommercialState.FREE,
         aoi_scope=AoiScope.IN_AOI,
         validation_state=ValidationState.VALIDATION_PASSED,
-        readiness_reasons=(),
+        readiness_reasons=(
+            "Validated for backend SAR-assisted analytics and cloud-gap support; "
+            "not directly user-selectable as an optical index source.",
+            "GEO-002: SAR sources must not advertise optical vegetation indices.",
+        ),
         validation_profile=ValidationProfile.SAR_BACKSCATTER,
         cadence=CadenceClass.TEN_TO_TWENTY_DAYS,
         host_pool=HostPool.STAGING_BHOONIDHI,
@@ -687,8 +689,8 @@ _register(
         max_downloads=1,
         min_coverage_percent=0.0,
         notes="C-band SAR; 1–50 m modes; 12-day revisit. "
-              "Product-active as display-only backscatter after one-product staging validation; "
-              "manual refresh remains operator-controlled until routine SAR refresh policy exists. "
+              "Validated as backend support for cloudy optical analytics; "
+              "manual refresh remains operator-controlled until SAR-assist fusion is built. "
               "MRS/CRS modes free via NRSC; FRS-1 not free.",
     ),
 )

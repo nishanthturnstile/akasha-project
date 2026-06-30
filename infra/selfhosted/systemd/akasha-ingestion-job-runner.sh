@@ -265,7 +265,7 @@ preflight() {
   discover_compose || { update_status failed 2 preflight "compose file not found; set AKASHA_COMPOSE_FILE"; exit 2; }
   grep -q "ingestion-worker" "${compose_file}" || { update_status failed 2 preflight "compose file does not include ingestion-worker"; exit 2; }
   compose_has_bhoonidhi_env || { update_status failed 2 preflight "compose file does not expose Bhoonidhi credentials to ingestion-worker"; exit 2; }
-  csv_contains "${AKASHA_INGESTION_ALLOWED_SOURCES:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}" "${source_id}" || {
+  csv_contains "${AKASHA_INGESTION_ALLOWED_SOURCES:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa,eos-04-sar-mrs-l2b}" "${source_id}" || {
     update_status failed 2 validation "source is not allowed"
     exit 2
   }

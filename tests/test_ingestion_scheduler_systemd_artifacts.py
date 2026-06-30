@@ -20,6 +20,7 @@ EXPECTED_FILES = {
     "env_example": "ingestion-scheduler.env.example",
     "installer": "install-akasha-ingestion-scheduler.sh",
     "jobs_installer": "install-akasha-ingestion-jobs.sh",
+    "jobs_env_example": "akasha-ingestion-jobs.env.example",
     "inbox_dispatcher": "akasha-ingestion-inbox-dispatcher.sh",
     "inbox_dispatcher_service": "akasha-ingestion-inbox-dispatcher.service",
     "inbox_dispatcher_path": "akasha-ingestion-inbox-dispatcher.path",
@@ -372,6 +373,14 @@ def test_manual_runner_forwards_eos04_validation_flags():
     assert "--keep-intermediate" in runner
     assert "--force" in runner
     assert "--overwrite" in runner
+
+
+def test_manual_runner_allows_eos04_backend_source_by_default():
+    """EOS-04 must be accepted by the bounded manual wrapper for backend SAR support."""
+    runner = read_artifact("manual_runner")
+    env = read_artifact("jobs_env_example")
+    assert "eos-04-sar-mrs-l2b" in runner
+    assert "eos-04-sar-mrs-l2b" in env
 
 
 def test_manual_runner_doctor_checks_internal_catalog_and_tile_services():

@@ -436,10 +436,10 @@ def test_sources_endpoint_contract():
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["displayModes"] == ["NDVI_CONTEXT"]
-    # EOS-04 is active after one-product SAR validation; NISAR remains gated.
+    # EOS-04 is validated for backend SAR-assist, but not directly product-active.
     assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
-    assert sources["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "active"
-    assert sources["eos-04-sar-mrs-l2b"]["gatedReason"] is None
+    assert sources["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "gated"
+    assert "backend SAR-assisted" in sources["eos-04-sar-mrs-l2b"]["gatedReason"]
     assert sources["eos-04-sar-mrs-l2b"]["supportedIndices"] == []
     assert sources["eos-04-sar-mrs-l2b"]["displayModes"] == ["VV_GRAYSCALE"]
     assert sources["nisar-ssar-beta-gcov"]["kind"] == "sar"

@@ -470,7 +470,7 @@ and pull policy. It also installs the optional admin-trigger inbox dispatcher un
 AKASHA_INGESTION_JOB_ROOT=/srv/akasha/ingestion/jobs
 AKASHA_INGESTION_INBOX_DIR=/srv/akasha/ingestion-inbox
 AKASHA_INGESTION_INBOX_RETENTION_DAYS=14
-AKASHA_INGESTION_ALLOWED_SOURCES=resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
+AKASHA_INGESTION_ALLOWED_SOURCES=resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa,eos-04-sar-mrs-l2b
 AKASHA_INGESTION_ALLOWED_AOIS=bangalore-60km
 AKASHA_INGESTION_DEFAULT_MAX_DOWNLOADS=3
 AKASHA_SYNC_RAW_ROOT=/srv/akasha/data/raw/bhoonidhi
@@ -478,6 +478,10 @@ AKASHA_SYNC_TEMP_ROOT=/srv/akasha/data/work/bhoonidhi
 AKASHA_SYNC_LEDGER_PATH=/srv/akasha/ingestion/ledger.sqlite
 AKASHA_SYNC_PULL_POLICY=never
 ```
+
+`eos-04-sar-mrs-l2b` is allowed here only for bounded manual/backend SAR-support
+runs. It is not part of routine scheduler ownership and is not a directly user-selectable
+optical index source.
 
 Restrict job access to an OS group instead of general shell users:
 

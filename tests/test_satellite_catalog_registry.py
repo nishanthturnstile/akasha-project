@@ -516,17 +516,15 @@ def test_all_source_ids_are_unique():
     assert not mismatches, "registry keys must match row.source_id:\n" + "\n".join(mismatches)
 
 
-def test_product_active_sources_are_schedulable_or_manual_refresh():
-    """product_active sources must be routine-scheduled or explicitly manual-refresh."""
+def test_product_active_sources_are_routine_scheduled():
+    """product_active sources must be ROUTINE (not background, archive, etc.)."""
     violations = [
         row.source_id
         for row in SOURCE_REGISTRY.values()
         if row.product_exposure == ProductExposure.PRODUCT_ACTIVE
-        and row.schedule_state not in {ScheduleState.ROUTINE, ScheduleState.MANUAL_ONLY}
+        and row.schedule_state != ScheduleState.ROUTINE
     ]
-    assert not violations, (
-        "product_active sources must be ROUTINE or MANUAL_ONLY refresh: " f"{violations}"
-    )
+    assert not violations, f"product_active sources must be ROUTINE: {violations}"
 
 
 def test_executable_source_ids_are_all_bhoonidhi_initially():
@@ -771,8 +769,8 @@ def test_awifs_is_product_active():
 # --- TASK-044: Disabled/scaffolded ISRO rows ---------------------------------
 
 
-def test_eos04_is_product_active_manual_refresh_with_correct_profile():
-    """EOS-04 is active for display tiles while refresh remains manually controlled."""
+def test_eos04_is_validated_backend_sar_support_with_correct_profile():
+    """EOS-04 is validated for backend SAR assist, not direct optical layer selection."""
     row = SOURCE_REGISTRY["eos-04-sar-mrs-l2b"]
     assert row.schedule_state == ScheduleState.MANUAL_ONLY
     assert row.provider_adapter == "bhoonidhi"
@@ -781,10 +779,10 @@ def test_eos04_is_product_active_manual_refresh_with_correct_profile():
     assert Capability.DOWNLOAD in row.capabilities
     assert Capability.PREPARE in row.capabilities
     assert Capability.VALIDATE in row.capabilities
-    assert Capability.DISPLAY_TILES in row.capabilities
-    assert row.product_exposure == ProductExposure.PRODUCT_ACTIVE
+    assert Capability.DISPLAY_TILES not in row.capabilities
+    assert row.product_exposure == ProductExposure.BACKGROUND_ONLY
     assert row.validation_state == sr.ValidationState.VALIDATION_PASSED
-    assert row.readiness_reasons == ()
+    assert row.readiness_reasons
 
 
 def test_eos06_is_disabled_with_correct_profile():
@@ -1046,14 +1044,14 @@ def test_nisar_mentions_dual_provider_in_readiness_reasons():
 # ---------------------------------------------------------------------------
 
 
-def test_eos04_product_exposure_is_active_display_only():
-    """TASK-076: eos-04-sar-mrs-l2b is active as display-only SAR backscatter."""
+def test_eos04_product_exposure_is_background_only():
+    """TASK-076: eos-04-sar-mrs-l2b is backend-only SAR support, not direct UI."""
     row = SOURCE_REGISTRY["eos-04-sar-mrs-l2b"]
     assert (
-        row.product_exposure == ProductExposure.PRODUCT_ACTIVE
+        row.product_exposure == ProductExposure.BACKGROUND_ONLY
     ), (
         "eos-04-sar-mrs-l2b product_exposure is "
-        f"{row.product_exposure.value!r}; expected product_active"
+        f"{row.product_exposure.value!r}; expected background_only"
     )
 
 

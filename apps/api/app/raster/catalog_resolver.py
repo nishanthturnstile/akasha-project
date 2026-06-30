@@ -310,8 +310,11 @@ _SOURCE_REGISTRY.update(
             ],
             "maskMethod": None,
             "metricsProvisional": True,
-            "availabilityStatus": "active",
-            "gatedReason": None,
+            "availabilityStatus": "gated",
+            "gatedReason": (
+                "EOS-04 is validated for backend SAR-assisted cloudy optical analytics; "
+                "it is not a directly selectable optical index layer."
+            ),
         },
         "nisar-ssar-beta-gcov": {
             "id": "nisar-ssar-beta-gcov",

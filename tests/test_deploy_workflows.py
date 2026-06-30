@@ -12,6 +12,10 @@ AKASHA_IMAGES = (
 DEPLOY_WORKFLOWS = ("deploy-staging.yml", "deploy-production.yml")
 
 
+def _text(path: str) -> str:
+    return (REPO_ROOT / path).read_text()
+
+
 def _workflow(name: str) -> dict:
     return yaml.safe_load((REPO_ROOT / ".github" / "workflows" / name).read_text())
 
@@ -112,3 +116,14 @@ def test_production_deploy_uses_service_patch_instant_deploy_without_generic_dep
     assert "Trigger Coolify deployment" not in step_names
     assert '"instant_deploy": True' in patch_step["run"]
     assert "/deploy?" not in patch_step["run"]
+
+
+def test_selfhosted_env_documents_admin_ingestion_live_trigger_gate():
+    """The deploy env template must include the manual live-sync gate used by the API."""
+    env = _text("infra/selfhosted/env.example")
+    compose = _text("infra/selfhosted/coolify-compose.yml")
+
+    assert "INGESTION_JOB_INBOX_DIR=/srv/akasha/ingestion-inbox" in env
+    assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false" in env
+    assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED" in compose
+    assert "${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}" in compose

@@ -1,4 +1,4 @@
-/** Human label for an internal display-mode token (e.g. `VV_GRAYSCALE` → `VV`). */
+/** Human label for an internal display-mode token (e.g. `VV_GRAYSCALE` -> `Backscatter`). */
 export function modeLabel(mode: string): string {
     switch (mode) {
         case 'RGB':
@@ -16,7 +16,7 @@ export function modeLabel(mode: string): string {
         case 'FALSE_COLOR':
             return 'False colour';
         case 'VV_GRAYSCALE':
-            return 'VV';
+            return 'Backscatter';
         case 'VH_GRAYSCALE':
             return 'VH';
         default:

@@ -144,12 +144,8 @@ _OPTICAL_SCENE_STAC: tuple[str, ...] = _OPTICAL_STAC_BASE
 
 # Display and statistics role sets
 _FCC_DISPLAY_ROLES: frozenset[str] = frozenset({"NIR", "RED", "GREEN"})
-_LISS3_STATS_ROLES: frozenset[str] = frozenset(
-    {"NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"}
-)
-_LISS4_STATS_ROLES: frozenset[str] = frozenset(
-    {"NDVI", "MSAVI", "NDWI_GREEN_NIR"}
-)
+_LISS3_STATS_ROLES: frozenset[str] = frozenset({"NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"})
+_LISS4_STATS_ROLES: frozenset[str] = frozenset({"NDVI", "MSAVI", "NDWI_GREEN_NIR"})
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +162,7 @@ LISS3_NODATA: float = 0.0
 LISS3_MASK_VALID_CLASSES: frozenset[int] = frozenset({1, 4})
 LISS3_MASK_EXCLUDED_CLASSES: frozenset[int] = frozenset({0, 2, 3})
 LISS3_FCC_DISPLAY_ROLES: frozenset[str] = frozenset({"NIR", "RED", "GREEN"})
-LISS3_SUPPORTED_STATS: frozenset[str] = frozenset(
-    {"NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"}
-)
+LISS3_SUPPORTED_STATS: frozenset[str] = frozenset({"NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"})
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +462,7 @@ _EOS04_SAR_SPEC = ValidationProfileSpec(
     expected_assets=("backscatter.tif",),
     optional_assets=("backscatter_vv.tif", "backscatter_vh.tif"),
     band_count=None,
-    allowed_dtypes=frozenset({"float32", "uint16"}),
+    allowed_dtypes=frozenset({"float32"}),
     scale=None,
     offset=None,
     nodata=None,
@@ -493,7 +487,8 @@ _EOS04_SAR_SPEC = ValidationProfileSpec(
     allowed_statistics_roles=frozenset(),
     notes=(
         "EOS-04 (RISAT) SAR MRS/CRS backscatter. C-band; L2B product. "
-        "GEO-002: no optical vegetation indices. "
+        "Prepared output must be Float32 dB backscatter.tif with explicit "
+        "sar:polarizations. GEO-002: no optical vegetation indices. "
         "MRS/CRS modes free via NRSC; FRS-1 fine modes are not freely available."
     ),
 )
@@ -587,8 +582,7 @@ def validate_band_count(spec: ValidationProfileSpec, actual: int) -> None:
     """Raise ValueError if actual band count does not match the profile requirement."""
     if spec.band_count is not None and actual != spec.band_count:
         raise ValueError(
-            f"profile {spec.profile_id!r} requires {spec.band_count} band(s); "
-            f"got {actual}."
+            f"profile {spec.profile_id!r} requires {spec.band_count} band(s); " f"got {actual}."
         )
 
 
@@ -749,6 +743,7 @@ _OPTICAL_INDEX_NAMES: frozenset[str] = frozenset(
         "RECI",
     }
 )
+_EOS04_KNOWN_POLARIZATIONS: frozenset[str] = frozenset({"HH", "HV", "VH", "VV", "RH", "RV"})
 
 
 @dataclass(frozen=True)
@@ -819,6 +814,23 @@ def _as_label_tuple(value: object) -> tuple[tuple[int, str], ...] | None:
             return None
         return tuple(sorted(labels))
     return None
+
+
+def _sar_polarization_list(*containers: dict) -> list[str]:
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        value = container.get("sar:polarizations") or container.get("polarizations")
+        if isinstance(value, str):
+            raw = value.replace(";", ",").replace(" ", ",").split(",")
+        elif isinstance(value, list):
+            raw = value
+        else:
+            continue
+        polarizations = [str(pol).strip().upper() for pol in raw if str(pol).strip()]
+        if polarizations:
+            return polarizations
+    return []
 
 
 def validate_manifest_metadata(
@@ -913,6 +925,75 @@ def validate_manifest_metadata(
         else:
             checks.append("analytic asset not present for band_count check; check skipped")
 
+    if spec.profile_id == "sar_backscatter":
+        backscatter_data = _first_asset_dict(outputs, assets_top, "backscatter", "backscatter.tif")
+        props_sar_asset: dict = {}
+        if isinstance(manifest_data.get("properties"), dict):
+            props_sar_asset = manifest_data["properties"]
+        polarizations = _sar_polarization_list(
+            manifest_data,
+            props_sar_asset,
+            backscatter_data or {},
+        )
+        if isinstance(backscatter_data, dict):
+            dtype = backscatter_data.get("dtype")
+            if dtype is None:
+                if source_id == "eos-04-sar-mrs-l2b":
+                    problems.append(
+                        "EOS-04 backscatter dtype must be declared as float32 before ingest."
+                    )
+                else:
+                    checks.append("backscatter dtype not declared in manifest; check skipped")
+            elif str(dtype).lower() in spec.allowed_dtypes:
+                checks.append(f"backscatter dtype {dtype!r} allowed by spec")
+            else:
+                problems.append(
+                    f"backscatter dtype {dtype!r} not in allowed dtypes "
+                    f"{sorted(spec.allowed_dtypes)} (profile {spec.profile_id!r})"
+                )
+            actual_count = backscatter_data.get("band_count")
+            if actual_count is None:
+                if source_id == "eos-04-sar-mrs-l2b":
+                    problems.append(
+                        "EOS-04 backscatter band_count must be declared and at least 1."
+                    )
+                else:
+                    checks.append("backscatter band_count not declared in manifest; check skipped")
+            else:
+                try:
+                    band_count = int(actual_count)
+                except (TypeError, ValueError):
+                    problems.append(f"backscatter band_count {actual_count!r} is not an integer")
+                else:
+                    if band_count < 1:
+                        problems.append("backscatter band_count must be at least 1")
+                    elif (
+                        source_id == "eos-04-sar-mrs-l2b"
+                        and polarizations
+                        and band_count != len(polarizations)
+                    ):
+                        problems.append(
+                            "EOS-04 backscatter band_count must match explicit "
+                            f"sar:polarizations ({band_count} != {len(polarizations)})"
+                        )
+                    else:
+                        checks.append(f"backscatter band_count {band_count} is valid")
+        if source_id == "eos-04-sar-mrs-l2b":
+            if polarizations:
+                unknown = [pol for pol in polarizations if pol not in _EOS04_KNOWN_POLARIZATIONS]
+                if unknown:
+                    problems.append(
+                        "EOS-04 sar:polarizations contains unsupported token(s) "
+                        f"{unknown}. Allowed: {sorted(_EOS04_KNOWN_POLARIZATIONS)}."
+                    )
+                else:
+                    checks.append(f"EOS-04 sar:polarizations declared: {polarizations}")
+            else:
+                problems.append(
+                    "EOS-04 SAR manifest requires explicit sar:polarizations; "
+                    "do not default unknown backscatter bands to VV or HH."
+                )
+
     analytic_data = _first_asset_dict(outputs, assets_top, "analytic", "analytic.tif")
     if isinstance(analytic_data, dict):
         if spec.allowed_dtypes:
@@ -995,9 +1076,7 @@ def validate_manifest_metadata(
                 else {}
             )
             manifest_roles = tuple(
-                _role_for_eo_band(b, band_name_to_role)
-                for b in eo_bands
-                if isinstance(b, dict)
+                _role_for_eo_band(b, band_name_to_role) for b in eo_bands if isinstance(b, dict)
             )
             if manifest_roles == spec.band_roles:
                 checks.append(f"eo:bands roles match spec: {spec.band_roles}")
@@ -1079,18 +1158,13 @@ def validate_manifest_metadata(
                 f"raw-band field statistics. Context/visual sources are display-only."
             )
         else:
-            checks.append(
-                f"GEO-003: no raw-band field statistics advertised ({spec.profile_id!r})"
-            )
+            checks.append(f"GEO-003: no raw-band field statistics advertised ({spec.profile_id!r})")
 
     ok = len(problems) == 0
-    detail = (
-        f"profile {spec.profile_id!r}: {len(checks)} check(s) passed"
-        + (
-            f", {len(problems)} problem(s): {'; '.join(problems)}"
-            if problems
-            else ", all checks passed"
-        )
+    detail = f"profile {spec.profile_id!r}: {len(checks)} check(s) passed" + (
+        f", {len(problems)} problem(s): {'; '.join(problems)}"
+        if problems
+        else ", all checks passed"
     )
     return ManifestValidationResult(
         ok=ok,
@@ -1113,46 +1187,47 @@ def _selfcheck() -> None:
 
     # All alias targets must resolve to registered profiles
     for alias, canonical in _ALIAS_MAP.items():
-        assert canonical in _PROFILES, (
-            f"alias {alias!r} -> {canonical!r} not in _PROFILES"
-        )
+        assert canonical in _PROFILES, f"alias {alias!r} -> {canonical!r} not in _PROFILES"
 
     # SAR profile must have empty allowed_statistics_roles (GEO-002)
     sar = _PROFILES["sar_backscatter"]
-    assert len(sar.allowed_statistics_roles) == 0, (
-        "sar_backscatter profile must not allow any statistics roles (GEO-002)"
-    )
+    assert (
+        len(sar.allowed_statistics_roles) == 0
+    ), "sar_backscatter profile must not allow any statistics roles (GEO-002)"
 
     # precomputed_context must have empty allowed_statistics_roles (GEO-003)
     ctx = _PROFILES["precomputed_context"]
-    assert len(ctx.allowed_statistics_roles) == 0, (
-        "precomputed_context profile must not allow field statistics roles (GEO-003)"
-    )
+    assert (
+        len(ctx.allowed_statistics_roles) == 0
+    ), "precomputed_context profile must not allow field statistics roles (GEO-003)"
 
     # visual_only must have empty allowed_statistics_roles
     vis = _PROFILES["visual_only"]
-    assert len(vis.allowed_statistics_roles) == 0, (
-        "visual_only profile must not allow field statistics roles"
-    )
+    assert (
+        len(vis.allowed_statistics_roles) == 0
+    ), "visual_only profile must not allow field statistics roles"
 
     # LISS-3 source override must encode exact REQ-017 invariants
     liss3 = _SOURCE_SPEC_OVERRIDES["resourcesat-2a-liss3-boa"]
     assert liss3.band_count == 4, "LISS-3 must have exactly 4 bands"
-    assert liss3.band_roles == ("GREEN", "RED", "NIR", "SWIR1"), (
-        "LISS-3 band roles must be (BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1)"
-    )
+    assert liss3.band_roles == (
+        "GREEN",
+        "RED",
+        "NIR",
+        "SWIR1",
+    ), "LISS-3 band roles must be (BAND2 Green, BAND3 Red, BAND4 NIR, BAND5 SWIR1)"
     assert liss3.scale == 0.0001, "LISS-3 reflectance scale must be 0.0001"
     assert liss3.offset == 0.0, "LISS-3 reflectance offset must be 0.0 (not -0.1)"
     assert liss3.mask_asset == "mask.tif", "LISS-3 must have a separate mask.tif asset"
-    assert liss3.mask_valid_classes == frozenset({1, 4}), (
-        "LISS-3 Akasha mask v1 valid classes must be {1, 4}"
-    )
-    assert liss3.mask_excluded_classes == frozenset({0, 2, 3}), (
-        "LISS-3 Akasha mask v1 excluded classes must be {0, 2, 3}"
-    )
-    assert liss3.allowed_display_roles == frozenset({"NIR", "RED", "GREEN"}), (
-        "LISS-3 display must be FCC NIR/RED/GREEN only"
-    )
+    assert liss3.mask_valid_classes == frozenset(
+        {1, 4}
+    ), "LISS-3 Akasha mask v1 valid classes must be {1, 4}"
+    assert liss3.mask_excluded_classes == frozenset(
+        {0, 2, 3}
+    ), "LISS-3 Akasha mask v1 excluded classes must be {0, 2, 3}"
+    assert liss3.allowed_display_roles == frozenset(
+        {"NIR", "RED", "GREEN"}
+    ), "LISS-3 display must be FCC NIR/RED/GREEN only"
     assert liss3.allowed_statistics_roles == frozenset(
         {"NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"}
     ), "LISS-3 supported statistics must be NDVI, MSAVI, NDMI, NDWI_GREEN_NIR"
@@ -1161,9 +1236,9 @@ def _selfcheck() -> None:
 
     # All source overrides must reference a valid profile_id
     for src_id, spec in _SOURCE_SPEC_OVERRIDES.items():
-        assert spec.profile_id in _CANONICAL_PROFILE_IDS, (
-            f"source override {src_id!r} has unknown profile_id {spec.profile_id!r}"
-        )
+        assert (
+            spec.profile_id in _CANONICAL_PROFILE_IDS
+        ), f"source override {src_id!r} has unknown profile_id {spec.profile_id!r}"
 
     print(
         f"validation_profiles selfcheck OK: "

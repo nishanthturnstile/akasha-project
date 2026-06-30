@@ -54,7 +54,6 @@ DEFAULT_VV_RESCALE = "-25,5"
 # Accept the full set of plausible polarization tokens (RISAT circular RH/RV plus
 # linear HH/HV/VH/VV) rather than restricting to Sentinel-1's {VV,VH,HH,HV}.
 KNOWN_POLARIZATIONS = ("HH", "HV", "VH", "VV", "RH", "RV")
-DEFAULT_POLARIZATION = "HH"
 # Stable display order so band 1 (what VV_GRAYSCALE renders) is deterministic.
 POL_DISPLAY_ORDER = {pol: index for index, pol in enumerate(KNOWN_POLARIZATIONS)}
 
@@ -355,17 +354,15 @@ def selected_product_from_args(args: argparse.Namespace) -> SelectedProduct:
         else latest_source_path(resolve_repo_path(args.raw_dir))
     )
     product_id = product_id_from_name(args.product_id or source_path)
-    acquisition_datetime = (
-        args.acquisition_datetime or acquisition_datetime_from_product_id(product_id)
+    acquisition_datetime = args.acquisition_datetime or acquisition_datetime_from_product_id(
+        product_id
     )
     if not acquisition_datetime:
         raise SystemExit(
             f"Could not infer acquisition datetime from {product_id}; pass --acquisition-datetime."
         )
     acquisition_date = args.date or acquisition_date_from_datetime(acquisition_datetime)
-    polarizations = sort_polarizations(
-        normalize_polarizations(args.polarizations) or [DEFAULT_POLARIZATION]
-    )
+    polarizations = sort_polarizations(normalize_polarizations(args.polarizations))
     return SelectedProduct(
         product_id=product_id,
         source_path=source_path,
@@ -423,7 +420,12 @@ def find_backscatter_bands(
     polarization tokens in filenames; otherwise fall back to sorted TIFFs.
     """
     if explicit_band is not None:
-        pol = polarizations[0] if polarizations else DEFAULT_POLARIZATION
+        if not polarizations:
+            raise SystemExit(
+                "EOS-04 explicit --band-path requires --polarizations so the "
+                "backscatter band is not mislabelled."
+            )
+        pol = polarizations[0]
         return [(pol, explicit_band)]
 
     tifs = sorted(
@@ -444,13 +446,17 @@ def find_backscatter_bands(
             by_pol[pol] = path
 
     if by_pol:
-        wanted = [pol for pol in polarizations if pol in by_pol] or sort_polarizations(
-            list(by_pol)
-        )
+        wanted = [pol for pol in polarizations if pol in by_pol] or sort_polarizations(list(by_pol))
         return [(pol, by_pol[pol]) for pol in wanted]
 
-    # No polarization tokens in filenames: assign declared pols to sorted TIFFs.
-    pols = polarizations or [DEFAULT_POLARIZATION]
+    if not polarizations:
+        raise SystemExit(
+            "Could not infer EOS-04 SAR polarizations from filenames. Pass "
+            "--polarizations (for example HH,HV or RH,RV) instead of relying on a default."
+        )
+
+    # No polarization tokens in filenames: assign explicitly declared pols to sorted TIFFs.
+    pols = polarizations
     pairs: list[tuple[str, Path]] = []
     for index, path in enumerate(tifs[: len(pols)]):
         pairs.append((pols[index], path))
@@ -742,9 +748,7 @@ def prepare_one(
     print(f"source: {product.source_path}")
     print(f"output: {paths.output_dir}")
 
-    product_dir = extract_product(
-        product.source_path, paths.extract_dir, overwrite=args.reextract
-    )
+    product_dir = extract_product(product.source_path, paths.extract_dir, overwrite=args.reextract)
     explicit_band = resolve_repo_path(args.band_path) if args.band_path else None
     bands = find_backscatter_bands(product_dir, product.polarizations, explicit_band)
     print("bands: " + ", ".join(f"{pol}->{path.name}" for pol, path in bands))
@@ -868,9 +872,7 @@ def main(argv: list[str] | None = None) -> int:
 
     deps = require_raster_deps()
     output_root = resolve_repo_path(args.output_root)
-    default_polarizations = sort_polarizations(
-        normalize_polarizations(args.polarizations) or [DEFAULT_POLARIZATION]
-    )
+    default_polarizations = sort_polarizations(normalize_polarizations(args.polarizations))
 
     if args.selection_manifest:
         selection_manifest = resolve_repo_path(args.selection_manifest)

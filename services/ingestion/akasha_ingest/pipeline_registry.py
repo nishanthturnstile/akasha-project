@@ -20,6 +20,8 @@ class PipelineSource:
     default_min_coverage_percent: float
     output_profile: str
     notes: str
+    supports_validate: bool = False
+    manual_validation_enabled: bool = False
 
 
 DEFAULT_AOI_IDS = ("bangalore-60km",)
@@ -93,15 +95,20 @@ PIPELINE_SOURCES: dict[str, PipelineSource] = {
         provider="bhoonidhi",
         collection_id="EOS-04_SAR-MRS_L2B",
         prepare_script="prepare_eos04_sar_mrs_l2b_cogs.py",
-        supports_search=False,
-        supports_download=False,
+        supports_search=True,
+        supports_download=True,
         supports_composite=False,
         mvp_enabled=False,
         default_aoi_ids=(),
         default_max_downloads=0,
         default_min_coverage_percent=0.0,
         output_profile="eos-04-sar-mrs-l2b",
-        notes="Gated Bhoonidhi SAR source retained for prepare-script dispatch compatibility.",
+        notes=(
+            "Gated Bhoonidhi SAR source enabled for explicit manual/staging validation only; "
+            "display-only backscatter, no composite or default MVP exposure."
+        ),
+        supports_validate=True,
+        manual_validation_enabled=True,
     ),
     "nisar-ssar-beta-gcov": PipelineSource(
         source_id="nisar-ssar-beta-gcov",
@@ -148,4 +155,4 @@ def is_source_allowed(source_id: str, allowed_sources: set[str] | None) -> bool:
     source = get_pipeline_source(source_id)
     if allowed_sources is None:
         return source.mvp_enabled
-    return source.mvp_enabled and source_id in allowed_sources
+    return source_id in allowed_sources and (source.mvp_enabled or source.manual_validation_enabled)

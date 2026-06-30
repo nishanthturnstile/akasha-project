@@ -910,7 +910,12 @@ def _as_list(value: Any) -> list[Any]:
     return [value]
 
 
-def _sar_polarizations(manifest: dict[str, Any], meta: dict[str, Any]) -> list[str]:
+def _sar_polarizations(
+    manifest: dict[str, Any],
+    meta: dict[str, Any],
+    *,
+    source_id: str | None = None,
+) -> list[str]:
     props = _properties(manifest)
     value = _first(
         manifest.get("sar:polarizations"),
@@ -920,7 +925,14 @@ def _sar_polarizations(manifest: dict[str, Any], meta: dict[str, Any]) -> list[s
         meta.get("polarizations"),
     )
     polarizations = [str(pol).upper() for pol in _as_list(value)]
-    return polarizations or ["VV"]
+    if polarizations:
+        return polarizations
+    if source_id == config.EOS04_SAR_COLLECTION_ID:
+        raise ValueError(
+            "EOS-04 SAR manifest requires explicit sar:polarizations; "
+            "do not default unknown backscatter bands to VV or HH."
+        )
+    return ["VV"]
 
 
 def _backscatter_raster_bands(
@@ -1238,6 +1250,7 @@ def _build_sar_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict
     )
     props = _properties(manifest)
     backscatter = _output_meta(manifest, "backscatter")
+    polarizations = _sar_polarizations(manifest, backscatter, source_id=scene.source_id)
     bbox = _bbox_from_manifest(manifest, backscatter)
     geometry = _geometry_from_manifest(manifest, backscatter, bbox)
     epsg = _epsg(_first(backscatter.get("crs"), manifest.get("crs"), props.get("proj:epsg")))
@@ -1250,7 +1263,6 @@ def _build_sar_stac_item(manifest: dict[str, Any], scene: SceneIdentity) -> dict
         backscatter.get("gsd"),
         source_meta["default_gsd"],
     )
-    polarizations = _sar_polarizations(manifest, backscatter)
 
     item_props: dict[str, Any] = {
         "datetime": scene.acquisition_datetime,

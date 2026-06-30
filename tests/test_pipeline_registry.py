@@ -46,8 +46,7 @@ def test_awifs_pipeline_source_declares_regional_production_profile():
 
 def test_sar_sources_keep_source_specific_prepare_scripts():
     assert (
-        pipeline_registry.prepare_script_name("sentinel-1-grd")
-        == "prepare_sentinel1_grd_cogs.py"
+        pipeline_registry.prepare_script_name("sentinel-1-grd") == "prepare_sentinel1_grd_cogs.py"
     )
     assert (
         pipeline_registry.prepare_script_name("eos-04-sar-mrs-l2b")
@@ -57,6 +56,21 @@ def test_sar_sources_keep_source_specific_prepare_scripts():
         pipeline_registry.prepare_script_name("nisar-ssar-beta-gcov")
         == "prepare_nisar_ssar_beta_gcov_cogs.py"
     )
+
+
+def test_eos04_pipeline_is_manual_validation_enabled_not_mvp_default():
+    source = pipeline_registry.get_pipeline_source("eos-04-sar-mrs-l2b")
+
+    assert source.provider == "bhoonidhi"
+    assert source.collection_id == "EOS-04_SAR-MRS_L2B"
+    assert source.supports_search is True
+    assert source.supports_download is True
+    assert source.supports_validate is True
+    assert source.supports_composite is False
+    assert source.mvp_enabled is False
+    assert source.manual_validation_enabled is True
+    assert pipeline_registry.is_source_allowed("eos-04-sar-mrs-l2b", None) is False
+    assert pipeline_registry.is_source_allowed("eos-04-sar-mrs-l2b", {"eos-04-sar-mrs-l2b"}) is True
 
 
 def test_supported_source_ids_returns_sorted_mvp_bhoonidhi_sources():

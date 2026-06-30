@@ -190,9 +190,9 @@ def test_catalog_emits_three_band_liss4_resourcesat_item():
         "BAND4",
     ]
     assert len(item["assets"]["analytic"]["raster:bands"]) == 3
-    assert {
-        band["spatial_resolution"] for band in item["assets"]["analytic"]["raster:bands"]
-    } == {5.0}
+    assert {band["spatial_resolution"] for band in item["assets"]["analytic"]["raster:bands"]} == {
+        5.0
+    }
 
 
 def test_catalog_emits_manifest_derived_liss4_composite_item():
@@ -214,9 +214,7 @@ def test_catalog_emits_manifest_derived_liss4_composite_item():
         "bbox": [77.0, 12.0, 78.0, 13.0],
         "geometry": {
             "type": "Polygon",
-            "coordinates": [
-                [[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]
-            ],
+            "coordinates": [[[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]],
         },
         "outputs": {
             "analytic": {
@@ -267,8 +265,7 @@ def test_catalog_emits_manifest_derived_liss4_composite_item():
     assert len(item["assets"]["analytic"]["raster:bands"]) == 3
     assert len(item["assets"]["mask"]["raster:bands"]) == 1
     expected_prefix = (
-        "s3://akasha-cogs/resourcesat-2a-liss4-mx70-l2/"
-        "composite/bangalore-60km/2026-01-30/"
+        "s3://akasha-cogs/resourcesat-2a-liss4-mx70-l2/" "composite/bangalore-60km/2026-01-30/"
     )
     assert item["assets"]["analytic"]["href"] == f"{expected_prefix}analytic.tif"
     assert item["assets"]["mask"]["href"] == f"{expected_prefix}mask.tif"
@@ -294,15 +291,11 @@ def test_catalog_emits_awifs_resourcesat_item():
             "NIR": "BAND4",
             "SWIR1": "BAND5",
         },
-        "contributing_scenes": [
-            {"id": "awifs-scene", "datetime": "2026-03-19T00:00:00Z"}
-        ],
+        "contributing_scenes": [{"id": "awifs-scene", "datetime": "2026-03-19T00:00:00Z"}],
         "bbox": [77.0, 12.0, 78.0, 13.0],
         "geometry": {
             "type": "Polygon",
-            "coordinates": [
-                [[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]
-            ],
+            "coordinates": [[[77.0, 12.0], [78.0, 12.0], [78.0, 13.0], [77.0, 13.0], [77.0, 12.0]]],
         },
         "outputs": {
             "analytic": {
@@ -353,13 +346,12 @@ def test_catalog_emits_awifs_resourcesat_item():
     ]
     assert len(item["assets"]["analytic"]["raster:bands"]) == 4
     assert len(item["assets"]["mask"]["raster:bands"]) == 1
-    assert {
-        band["spatial_resolution"] for band in item["assets"]["analytic"]["raster:bands"]
-    } == {56}
+    assert {band["spatial_resolution"] for band in item["assets"]["analytic"]["raster:bands"]} == {
+        56
+    }
     assert item["properties"]["akasha:band_role_mapping"]["SWIR1"] == "BAND5"
     expected_prefix = (
-        "s3://akasha-cogs/resourcesat-2a-awifs-boa/"
-        "composite/bangalore-60km/2026-03-19/"
+        "s3://akasha-cogs/resourcesat-2a-awifs-boa/" "composite/bangalore-60km/2026-03-19/"
     )
     assert item["assets"]["analytic"]["href"] == f"{expected_prefix}analytic.tif"
     assert item["assets"]["mask"]["href"] == f"{expected_prefix}mask.tif"
@@ -973,12 +965,7 @@ def test_worker_bhoonidhi_search_selects_aoi_from_directory(monkeypatch, tmp_pat
     )
 
     manifest = json.loads(
-        (
-            tmp_path
-            / "work"
-            / "resourcesat-2a-liss3-boa"
-            / "coverage_manifest.json"
-        ).read_text()
+        (tmp_path / "work" / "resourcesat-2a-liss3-boa" / "coverage_manifest.json").read_text()
     )
     assert result == 0
     assert manifest["aoi"]["id"] == "mysore-60km"
@@ -1266,9 +1253,7 @@ def test_prepare_script_dispatch_routes_each_source_to_its_script():
         "prepare_resourcesat_liss3_boa_cogs.py"
     )
     assert sync.prepare_script_name("sentinel-1-grd") == "prepare_sentinel1_grd_cogs.py"
-    assert sync.prepare_script_name("eos-04-sar-mrs-l2b") == (
-        "prepare_eos04_sar_mrs_l2b_cogs.py"
-    )
+    assert sync.prepare_script_name("eos-04-sar-mrs-l2b") == ("prepare_eos04_sar_mrs_l2b_cogs.py")
     assert sync.prepare_script_name("nisar-ssar-beta-gcov") == (
         "prepare_nisar_ssar_beta_gcov_cogs.py"
     )
@@ -1319,11 +1304,7 @@ def test_bhoonidhi_sync_prepare_command_uses_temp_root_derived_work_dir(
     assert "--work-dir" in command
     work_dir = Path(command[command.index("--work-dir") + 1])
     assert work_dir == (
-        tmp_path
-        / "temp-root"
-        / "resourcesat-2a-liss3-boa"
-        / "bangalore-60km"
-        / "prepare"
+        tmp_path / "temp-root" / "resourcesat-2a-liss3-boa" / "bangalore-60km" / "prepare"
     )
 
 
@@ -1714,9 +1695,7 @@ def test_worker_bhoonidhi_sync_empty_search_is_noop_without_composite_failure(
     conn = sqlite3.connect(ledger_path)
     try:
         assert conn.execute("select count(*) from ingestion_ledger").fetchone() == (1,)
-        row = conn.execute(
-            "select product_id, status, error from ingestion_ledger"
-        ).fetchone()
+        row = conn.execute("select product_id, status, error from ingestion_ledger").fetchone()
     finally:
         conn.close()
     assert row == (
@@ -1987,9 +1966,7 @@ def test_worker_bhoonidhi_sync_records_search_failure(monkeypatch, tmp_path):
     assert "HTTP 429" in row[2]
 
 
-def test_worker_bhoonidhi_sync_records_download_failure_with_triage_prefix(
-    monkeypatch, tmp_path
-):
+def test_worker_bhoonidhi_sync_records_download_failure_with_triage_prefix(monkeypatch, tmp_path):
     aoi_path = tmp_path / "aoi.geojson"
     _write_test_aoi(aoi_path)
     ledger_path = tmp_path / "ledger.sqlite"
@@ -2253,3 +2230,136 @@ def test_worker_bhoonidhi_sync_deletes_raw_downloads_after_success(monkeypatch, 
     assert result == 0
     assert status == ("composited",)
     assert not downloaded_path.exists()
+
+
+def test_ingest_manifest_blocks_invalid_eos04_before_upload(monkeypatch, tmp_path, capsys):
+    manifest_path = tmp_path / "prepare_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "source_id": "eos-04-sar-mrs-l2b",
+                "outputs": {
+                    "backscatter": {
+                        "path": "backscatter.tif",
+                        "band_count": 1,
+                        "dtype": "float32",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    called: dict[str, bool] = {}
+
+    monkeypatch.setattr(config, "prepared_manifest_files", lambda **_kwargs: [manifest_path])
+    monkeypatch.setattr(storage, "ensure_bucket", lambda: called.setdefault("bucket", True))
+    monkeypatch.setattr(
+        storage,
+        "seed_manifest_cogs",
+        lambda *_args, **_kwargs: called.setdefault("upload", True),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "load_manifest_items",
+        lambda *_args, **_kwargs: called.setdefault("load", True),
+    )
+
+    with pytest.raises(SystemExit, match="No upload or pgSTAC load was attempted"):
+        worker.main(["ingest-manifest", "--collection-id", "eos-04-sar-mrs-l2b"])
+
+    assert called == {}
+    assert "sar:polarizations" in capsys.readouterr().err
+
+
+def test_ingest_manifest_blocks_invalid_eos04_provider_collection_alias_before_upload(
+    monkeypatch, tmp_path, capsys
+):
+    manifest_path = tmp_path / "prepare_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "collection": "EOS-04_SAR-MRS_L2B",
+                "outputs": {
+                    "backscatter": {
+                        "path": "backscatter.tif",
+                        "band_count": 1,
+                        "dtype": "float32",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    called: dict[str, bool] = {}
+
+    monkeypatch.setattr(config, "prepared_manifest_files", lambda **_kwargs: [manifest_path])
+    monkeypatch.setattr(storage, "ensure_bucket", lambda: called.setdefault("bucket", True))
+    monkeypatch.setattr(
+        storage,
+        "seed_manifest_cogs",
+        lambda *_args, **_kwargs: called.setdefault("upload", True),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "load_manifest_items",
+        lambda *_args, **_kwargs: called.setdefault("load", True),
+    )
+
+    with pytest.raises(SystemExit, match="No upload or pgSTAC load was attempted"):
+        worker.main(["ingest-manifest", "--collection-id", "EOS-04_SAR-MRS_L2B"])
+
+    assert called == {}
+    assert "sar:polarizations" in capsys.readouterr().err
+
+
+def test_catalog_refuses_to_invent_eos04_polarizations():
+    with pytest.raises(ValueError, match="requires explicit sar:polarizations"):
+        catalog.build_stac_item_from_prepare_manifest(
+            {
+                "collection": "EOS-04_SAR-MRS_L2B",
+                "product_id": "EOS04_SAR_MRS_20260615T053000_XYZ",
+                "acquisition_datetime": "2026-06-15T05:30:00Z",
+                "outputs": {
+                    "backscatter": {
+                        "path": "backscatter.tif",
+                        "band_count": 1,
+                        "dtype": "float32",
+                    }
+                },
+            }
+        )
+
+
+def test_ingest_manifest_allows_valid_eos04_after_preupload_validation(
+    monkeypatch, tmp_path, capsys
+):
+    manifest_path = tmp_path / "prepare_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "source_id": "eos-04-sar-mrs-l2b",
+                "sar:polarizations": ["HH"],
+                "outputs": {
+                    "backscatter": {
+                        "path": "backscatter.tif",
+                        "band_count": 1,
+                        "dtype": "float32",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(config, "prepared_manifest_files", lambda **_kwargs: [manifest_path])
+    monkeypatch.setattr(storage, "ensure_bucket", lambda: "bucket exists")
+    monkeypatch.setattr(storage, "seed_manifest_cogs", lambda *_args, **_kwargs: ["uploaded"])
+    monkeypatch.setattr(catalog, "load_manifest_items", lambda *_args, **_kwargs: "loaded")
+
+    result = worker.main(["ingest-manifest", "--collection-id", "eos-04-sar-mrs-l2b"])
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "[PASS] pre-ingest" in out
+    assert "uploaded" in out
+    assert "loaded" in out

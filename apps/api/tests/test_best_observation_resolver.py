@@ -253,9 +253,9 @@ def test_score_beyond_window_clamps_proximity_to_zero() -> None:
 def test_liss4_preferred_over_liss3(_mock_catalog: None) -> None:
     candidates = resolve_best_observation(target_date="2026-01-15", index_type="NDVI")
     assert candidates, "Expected at least one candidate"
-    assert candidates[0].source_id == RESOURCESAT_LISS4_SOURCE_ID, (
-        f"Expected LISS-4 first (highest priority+usable), got {candidates[0].source_id}"
-    )
+    assert (
+        candidates[0].source_id == RESOURCESAT_LISS4_SOURCE_ID
+    ), f"Expected LISS-4 first (highest priority+usable), got {candidates[0].source_id}"
 
 
 def test_awifs_excluded_field_use_case(_mock_catalog: None) -> None:
@@ -315,6 +315,44 @@ def test_gated_source_excluded(_mock_catalog: None) -> None:
         candidates = resolve_best_observation(target_date="2026-01-15")
         ids = {c.source_id for c in candidates}
         assert RESOURCESAT_LISS4_SOURCE_ID not in ids, "Gated LISS-4 must not appear"
+
+
+def test_sar_source_excluded_even_if_product_active(_mock_catalog: None) -> None:
+    """Best-observation remains an optical analytics resolver, not SAR display selection."""
+    sar_id = "eos-04-sar-mrs-l2b"
+
+    def selectable_with_sar() -> list[str]:
+        return [sar_id, *_mock_selectable_ids()]
+
+    def source_with_sar(source_id: str) -> dict[str, Any]:
+        if source_id == sar_id:
+            return _make_source(
+                sar_id,
+                kind="sar",
+                supportedIndices=[],
+                availabilityStatus="active",
+                analysisLevel="context",
+                resolutionMeters=None,
+                displayModes=["VV_GRAYSCALE"],
+                defaultDisplayMode="VV_GRAYSCALE",
+                expectedAssets=["backscatter"],
+                maskAsset=None,
+            )
+        return _mock_get_source(source_id)
+
+    def dates_with_sar(source_id: str) -> list[dict[str, Any]]:
+        if source_id == sar_id:
+            return [{**_LISS3_DATE, "usablePixelPercent": None, "cloudMaskedPercent": None}]
+        return _mock_list_dates(source_id)
+
+    with (
+        patch("app.raster.catalog_resolver.selectable_source_ids", side_effect=selectable_with_sar),
+        patch("app.raster.catalog_resolver.get_source", side_effect=source_with_sar),
+        patch("app.raster.catalog_resolver.list_dates", side_effect=dates_with_sar),
+    ):
+        candidates = resolve_best_observation(target_date="2026-01-15")
+
+    assert sar_id not in {c.source_id for c in candidates}
 
 
 def test_field_geometry_far_away_excluded(_mock_catalog: None) -> None:
@@ -553,9 +591,7 @@ def test_post_resolve_observation_smoke() -> None:
     payload = {
         "geometry": {
             "type": "Polygon",
-            "coordinates": [
-                [[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.1]]
-            ],
+            "coordinates": [[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.1]]],
         },
         "targetDate": "2026-01-15",
         "indexType": "NDVI",
@@ -572,9 +608,7 @@ def test_post_resolve_invalid_target_date() -> None:
     payload = {
         "geometry": {
             "type": "Polygon",
-            "coordinates": [
-                [[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.1]]
-            ],
+            "coordinates": [[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.1]]],
         },
         "targetDate": "bad-date",
     }
@@ -611,13 +645,13 @@ def test_analysis_level_coarse_excluded_from_field_queries(_mock_catalog: None) 
     with patch("app.raster.catalog_resolver.get_source", side_effect=_patched_get_source):
         candidates = resolve_best_observation(target_date="2026-01-15", use_case="field")
         ids = {c.source_id for c in candidates}
-        assert RESOURCESAT_LISS3_SOURCE_ID not in ids, (
-            "LISS-3 with analysisLevel=context must be excluded for field use case"
-        )
+        assert (
+            RESOURCESAT_LISS3_SOURCE_ID not in ids
+        ), "LISS-3 with analysisLevel=context must be excluded for field use case"
         # LISS-4 (analysisLevel=field by default) should still appear.
-        assert RESOURCESAT_LISS4_SOURCE_ID in ids, (
-            "LISS-4 must still appear when only LISS-3 is demoted to context"
-        )
+        assert (
+            RESOURCESAT_LISS4_SOURCE_ID in ids
+        ), "LISS-4 must still appear when only LISS-3 is demoted to context"
 
 
 def test_resolution_meters_present_in_candidates(_mock_catalog: None) -> None:
@@ -646,9 +680,7 @@ def test_get_and_post_consistent_top_candidate(_mock_catalog: None) -> None:
     share the same resolve_best_observation() backend.  The top candidate source must match.
     The POST /resolve 'best' field must equal the top GET candidate.
     """
-    get_resp = client.get(
-        "/api/observations/best?targetDate=2026-01-15&maxCandidates=3"
-    )
+    get_resp = client.get("/api/observations/best?targetDate=2026-01-15&maxCandidates=3")
     post_resp = client.post(
         "/api/observations/resolve",
         json={
@@ -663,10 +695,10 @@ def test_get_and_post_consistent_top_candidate(_mock_catalog: None) -> None:
     post_data = post_resp.json()
     assert get_data["candidates"], "GET /best must return at least one candidate"
     assert post_data["candidates"], "POST /resolve must return at least one candidate"
-    assert get_data["candidates"][0]["sourceId"] == post_data["candidates"][0]["sourceId"], (
-        "GET /best and POST /resolve must agree on the top candidate source"
-    )
+    assert (
+        get_data["candidates"][0]["sourceId"] == post_data["candidates"][0]["sourceId"]
+    ), "GET /best and POST /resolve must agree on the top candidate source"
     assert post_data["best"] is not None, "POST /resolve must expose a 'best' field"
-    assert post_data["best"]["sourceId"] == get_data["candidates"][0]["sourceId"], (
-        "POST /resolve 'best' must match the top GET /best candidate"
-    )
+    assert (
+        post_data["best"]["sourceId"] == get_data["candidates"][0]["sourceId"]
+    ), "POST /resolve 'best' must match the top GET /best candidate"

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,48 +10,28 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
-import { useCompleteOnboarding, useCrops, useSeasons, useUpdateField } from '@/lib/queries';
+import { useCompleteOnboarding, useCrops, useUpdateField } from '@/lib/queries';
 import type { VegetationCycleCreate } from '@/types/api';
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
 
-const CROP_OPTIONS = [
-  'Wheat',
-  'Rice',
-  'Corn',
-  'Soybean',
-  'Barley',
-  'Cotton',
-  'Sugarcane',
-  'Potato',
-  'Tomato',
-  'Sunflower',
-];
-
 /**
  * Onboarding step 3 – add crop details.
- * Shows crop name dropdown and auto-filled start date from the season.
+ * Shows crop name dropdown (populated from the /api/crops endpoint) and
+ * auto-filled start date from the season.
  */
 export default function OnboardingStep3() {
   const navigate = useNavigate();
-  const seasonsQ = useSeasons();
   const cropsQ = useCrops();
   const completeOnboarding = useCompleteOnboarding();
   const updateField = useUpdateField();
   const [cropName, setCropName] = useState('');
+  const [startDate, setStartDate] = useState('2026-01-01');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
-
-  const seasonStartDate = useMemo(() => {
-    if (seasonsQ.data && seasonId) {
-      const season = seasonsQ.data.find((s) => s.id === seasonId);
-      return season?.startDate ?? null;
-    }
-    return null;
-  }, [seasonsQ.data, seasonId]);
 
   const handleCancel = () => {
     navigate('/onboarding/step2');
@@ -86,7 +66,7 @@ export default function OnboardingStep3() {
             seasonId,
             year: new Date().getFullYear(),
             cropType: crop.id,
-            sowingDate: seasonStartDate ?? undefined,
+            sowingDate: startDate || undefined,
           }];
           await updateField.mutateAsync({
             fieldId: lastFieldId,
@@ -117,35 +97,42 @@ export default function OnboardingStep3() {
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Crop name</label>
-            <Select
-              value={ cropName }
-              onValueChange={ (value) => {
-                setCropName(value);
-                setError(null);
-              } }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a crop" />
-              </SelectTrigger>
-              <SelectContent>
-                { CROP_OPTIONS.map((crop) => (
-                  <SelectItem key={ crop } value={ crop }>{ crop }</SelectItem>
-                )) }
-              </SelectContent>
-            </Select>
+            { cropsQ.isPending ? (
+              <div className="h-10 flex items-center text-sm text-muted-foreground px-1">
+                Loading crops…
+              </div>
+            ) : cropsQ.error ? (
+              <div className="h-10 flex items-center text-sm text-destructive px-1">
+                Failed to load crops
+              </div>
+            ) : (
+              <Select
+                value={ cropName }
+                onValueChange={ (value) => {
+                  setCropName(value);
+                  setError(null);
+                } }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a crop" />
+                </SelectTrigger>
+                <SelectContent>
+                  { (cropsQ.data ?? []).map((crop) => (
+                    <SelectItem key={ crop.id } value={ crop.name }>{ crop.name }</SelectItem>
+                  )) }
+                </SelectContent>
+              </Select>
+            ) }
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Start date</label>
             <input
               type="date"
-              value={ seasonStartDate ?? '' }
-              readOnly
-              className="w-full rounded-md border border-border bg-muted px-3 py-2 text-muted-foreground cursor-not-allowed"
+              value={ startDate }
+              onChange={ (e) => setStartDate(e.target.value) }
+              className="w-full rounded-md border border-border bg-background px-3 py-2"
             />
-            <p className="text-xs text-muted-foreground">
-              Auto-filled from the selected season
-            </p>
           </div>
 
           { error && <p className="text-sm text-destructive">{ error }</p> }

@@ -2001,6 +2001,158 @@ def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
     assert body["metadata"]["metricsProvisional"] is True
 
 
+def test_statistics_attaches_sar_support_without_changing_optical_stats(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import service
+    from app.raster.raster_reader import WindowRead
+
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "resourcesat-composite",
+                "analyticHref": "s3://akasha-cogs/resourcesat/analytic.tif",
+                "maskHref": "s3://akasha-cogs/resourcesat/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {"RED": "BAND3", "NIR": "BAND4"},
+                "maskMethod": "Akasha threshold mask v1",
+                "excludedMaskClasses": [0, 2, 3],
+                "scale": 0.0001,
+                "offset": 0.0,
+                "nodata": 0,
+                "bbox": [78.19, 12.09, 78.22, 12.12],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        service,
+        "read_index_windows",
+        lambda **_kwargs: WindowRead(
+            band_arrays={
+                2: np.array([[1000, 1000]], dtype="uint16"),
+                3: np.array([[3000, 3000]], dtype="uint16"),
+            },
+            mask=np.array([[1, 2]], dtype="uint8"),
+            geometry_mask=np.array([[True, True]]),
+            nodata=0,
+            height=1,
+            width=2,
+            intersects=True,
+        ),
+    )
+
+    captured = {}
+
+    def fake_sar_support(**kwargs):
+        captured.update(kwargs)
+        return {
+            "available": True,
+            "status": "available",
+            "sourceId": "eos-04-sar-mrs-l2b",
+            "acquisitionDate": "2026-03-20",
+            "daysFromOpticalDate": 1,
+            "windowDays": 7,
+            "cloudGap": True,
+            "opticalCloudMaskedPercent": kwargs["optical_cloud_masked_percent"],
+            "opticalMaskedPixels": kwargs["optical_masked_pixels"],
+            "polarizations": ["HH", "HV"],
+            "coveragePercent": 100.0,
+            "confidence": "high",
+            "reason": "EOS-04 SAR support is available for cloudy/masked optical pixels.",
+            "bands": [
+                {
+                    "name": "HH_dB",
+                    "min": -15.0,
+                    "max": -10.0,
+                    "mean": -12.5,
+                    "stddev": 2.5,
+                    "validPixelPercent": 100.0,
+                }
+            ],
+            "wetnessSignal": "not_assessed",
+            "changeSignal": "not_assessed",
+        }
+
+    monkeypatch.setattr(service, "compute_sar_support", fake_sar_support)
+
+    body = service.compute_statistics(
+        geometry=IN_FOOTPRINT_POLY,
+        source_id="resourcesat-2a-liss3-boa",
+        acquisition_date="2026-03-19",
+        index_type="NDVI",
+    )
+
+    assert body["statistics"]["mean"] == pytest.approx(0.5)
+    assert body["pixelCounts"]["maskedPixels"] == 1
+    assert captured["optical_cloud_masked_percent"] == pytest.approx(50.0)
+    assert captured["optical_masked_pixels"] == 1
+    assert body["sarSupport"]["available"] is True
+    assert body["sarSupport"]["sourceId"] == "eos-04-sar-mrs-l2b"
+    assert body["sarSupport"]["bands"][0]["name"] == "HH_dB"
+
+
+def test_sar_support_resolver_reports_nearby_eos04_scene(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import sar_support
+
+    monkeypatch.setattr(
+        catalog,
+        "list_dates",
+        lambda source_id: [
+            {
+                "acquisitionDate": "2026-03-20",
+                "bounds": [78.19, 12.09, 78.22, 12.12],
+                "tileAvailable": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets",
+        lambda source_id, acquisition_date: {
+            "backscatterHref": "s3://akasha-cogs/eos/backscatter.tif",
+            "bandNames": ["HH_dB", "HV_dB"],
+            "nodata": -9999.0,
+        },
+    )
+    monkeypatch.setattr(
+        sar_support,
+        "_read_sar_statistics",
+        lambda **_kwargs: {
+            "intersects": True,
+            "coveragePercent": 88.0,
+            "bands": [
+                {
+                    "name": "HH_dB",
+                    "min": -18.0,
+                    "max": -9.0,
+                    "mean": -12.0,
+                    "stddev": 1.5,
+                    "validPixelPercent": 88.0,
+                }
+            ],
+        },
+    )
+
+    support = sar_support.compute_sar_support(
+        geometry=IN_FOOTPRINT_POLY,
+        optical_source_id="resourcesat-2a-liss3-boa",
+        optical_acquisition_date="2026-03-19",
+        optical_cloud_masked_percent=50.0,
+        optical_masked_pixels=10,
+        geometry_bounds=[78.19, 12.09, 78.22, 12.12],
+        window_days=7,
+        cloud_threshold_percent=20,
+    )
+
+    assert support["available"] is True
+    assert support["acquisitionDate"] == "2026-03-20"
+    assert support["daysFromOpticalDate"] == 1
+    assert support["polarizations"] == ["HH", "HV"]
+    assert support["confidence"] == "high"
+
+
 def test_resourcesat_statistics_uses_mask_only_nodata_policy(monkeypatch):
     from app.raster import service
     from app.raster.raster_reader import WindowRead

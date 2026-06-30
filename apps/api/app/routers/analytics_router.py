@@ -149,6 +149,7 @@ def _field_statistics(
         statistics=IndexStatisticsModel(**computed["statistics"]),
         pixel_counts=PixelCounts(**computed["pixelCounts"]),
         metadata=metadata,
+        sar_support=computed.get("sarSupport"),
         resolved_source_id=resolution.source_id,
         resolution_meters=resolution.resolution_meters,
         enhanced=resolution.enhanced,

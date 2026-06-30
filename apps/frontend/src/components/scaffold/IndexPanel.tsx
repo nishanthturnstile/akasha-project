@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarDays, Layers, Lock, Plus, Sprout, Zap } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Info, Layers, Lock, Plus, Sprout, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldTrendPoint, Plot } from '@/types/api';
+import type { CloudMaskOptions, FieldTrendPoint, Plot, SarSupport } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
@@ -118,6 +118,7 @@ export function IndexPanel({
   const enhanced = statsResponse?.enhanced ?? false;
   const resolutionMeters = statsResponse?.resolutionMeters ?? null;
   const provenanceNote = statsResponse?.provenanceNote ?? null;
+  const sarSupport = statsResponse?.sarSupport ?? null;
 
   return (
     <section
@@ -231,6 +232,7 @@ export function IndexPanel({
                 enhanced={ enhanced }
                 resolutionMeters={ resolutionMeters }
                 provenanceNote={ provenanceNote }
+                sarSupport={ sarSupport }
               />
             </TabsContent>
 
@@ -407,6 +409,7 @@ interface ChartTabProps {
   enhanced?: boolean;
   resolutionMeters?: number | null;
   provenanceNote?: string | null;
+  sarSupport?: SarSupport | null;
 }
 
 function ChartTab({
@@ -433,6 +436,7 @@ function ChartTab({
   enhanced = false,
   resolutionMeters,
   provenanceNote,
+  sarSupport,
 }: ChartTabProps) {
   const maskMethod = sourceMaskMethod ?? null;
   const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud / masked';
@@ -477,6 +481,20 @@ function ChartTab({
           >
             <Zap className="size-3 shrink-0" strokeWidth={ 1.75 } />
             Enhanced { resolutionMeters != null ? `${resolutionMeters} m` : '' } (LISS-4)
+          </div>
+        ) }
+
+        { sarSupport?.cloudGap && (
+          <div
+            className="mb-2 flex items-start gap-1.5 rounded-md border border-info/30 bg-info/10 px-2 py-1.5 text-[11px] leading-4 text-info"
+            data-testid="analytics-sar-support"
+          >
+            <Info className="mt-0.5 size-3 shrink-0" strokeWidth={ 1.75 } />
+            <span>
+              { sarSupport.available
+                ? `EOS-04 SAR support available (${sarSupport.confidence} confidence${sarSupport.daysFromOpticalDate != null ? `, ${Math.abs(sarSupport.daysFromOpticalDate)} day offset` : ''}).`
+                : `EOS-04 SAR support unavailable: ${sarSupport.reason ?? sarSupport.status}.` }
+            </span>
           </div>
         ) }
 

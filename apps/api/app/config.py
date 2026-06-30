@@ -145,6 +145,15 @@ class Settings:
         default_factory=lambda: _get_int("AKASHA_BEST_RESOLUTION_WINDOW_DAYS", 12)
     )
 
+    # SAR support for cloudy optical field analytics. This does not fabricate
+    # optical indices; it only finds/reads nearby EOS-04 backscatter as context.
+    sar_support_window_days: int = field(
+        default_factory=lambda: _get_int("AKASHA_SAR_SUPPORT_WINDOW_DAYS", 7)
+    )
+    sar_support_cloud_threshold_percent: int = field(
+        default_factory=lambda: _get_int("AKASHA_SAR_SUPPORT_CLOUD_THRESHOLD_PERCENT", 20)
+    )
+
     # Phase 12 auth/team foundations. AUTH_MODE=disabled requires explicit local opt-in.
     auth_mode: str = field(default_factory=lambda: _get("AUTH_MODE", "disabled"))
     auth_allow_disabled: bool = field(

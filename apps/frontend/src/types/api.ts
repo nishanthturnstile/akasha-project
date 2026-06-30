@@ -682,6 +682,34 @@ export interface PixelCounts {
   validPixels: number;
 }
 
+export interface SarBandStatistics {
+  name: string;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  stddev: number | null;
+  validPixelPercent: number;
+}
+
+export interface SarSupport {
+  available: boolean;
+  status: string;
+  sourceId: string;
+  acquisitionDate: string | null;
+  daysFromOpticalDate: number | null;
+  windowDays: number;
+  cloudGap: boolean;
+  opticalCloudMaskedPercent: number | null;
+  opticalMaskedPixels: number | null;
+  polarizations: string[];
+  coveragePercent: number | null;
+  confidence: 'none' | 'low' | 'medium' | 'high' | string;
+  reason: string | null;
+  bands: SarBandStatistics[];
+  wetnessSignal: string;
+  changeSignal: string;
+}
+
 export interface FieldStatisticsRequest {
   sourceId: string;
   acquisitionDate?: string | null;
@@ -700,6 +728,7 @@ export interface FieldStatisticsResponse {
   cloudMask: CloudMaskOptions;
   statistics: IndexStatistics;
   pixelCounts: PixelCounts;
+  sarSupport?: SarSupport | null;
   maskedPixels?: number;
   maskMethod?: string | null;
   metricsProvisional?: boolean;

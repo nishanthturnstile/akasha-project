@@ -8,6 +8,7 @@ import {
   FileBarChart,
   Flag,
   Gauge,
+  Globe,
   HelpCircle,
   KeyRound,
   Layers3,
@@ -31,6 +32,7 @@ export interface ProductNavItem {
   requiredRoles?: string[];
   status?: 'ready' | 'planned';
   surface?: 'product' | 'admin';
+  globalView?: boolean;
 }
 
 export interface ProductNavGroup {
@@ -46,6 +48,14 @@ export const productNavigation: ProductNavGroup[] = [
     label: 'Monitoring',
     icon: Activity,
     items: [
+      {
+        label: 'Global View',
+        path: MAIN_MONITORING_ROUTE,
+        icon: Globe,
+        description: 'Overview of all fields across seasons.',
+        status: 'ready',
+        globalView: true,
+      },
       {
         label: 'Field analytics',
         path: MAIN_MONITORING_ROUTE,

@@ -656,7 +656,7 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
-# 8. EOS-04 / RISAT (ISRO/Bhoonidhi) — gated SAR
+# 8. EOS-04 / RISAT (ISRO/Bhoonidhi) — active display-only SAR
 # ---------------------------------------------------------------------------
 
 _register(
@@ -671,24 +671,24 @@ _register(
         analysis_level="L2B",
         lifecycle_state=LifecycleState.VALIDATE_ENABLED,
         schedule_state=ScheduleState.MANUAL_ONLY,
-        capabilities=_SEARCH_DOWNLOAD_PREPARE_VALIDATE,
-        product_exposure=ProductExposure.HIDDEN,
+        capabilities=(
+            _SEARCH_DOWNLOAD_PREPARE_VALIDATE | frozenset({Capability.DISPLAY_TILES})
+        ),
+        product_exposure=ProductExposure.PRODUCT_ACTIVE,
         commercial_state=CommercialState.FREE,
         aoi_scope=AoiScope.IN_AOI,
-        validation_state=ValidationState.UNVALIDATED,
-        readiness_reasons=(
-            "One real EOS-04 SAR-MRS L2B product must pass Step 0, COG, STAC, "
-            "BFF tile, and frontend smoke validation before product exposure.",
-            "GEO-002: SAR sources must not advertise optical vegetation indices.",
-            "Manual/staging validation only; no routine schedule or product exposure.",
-            "MRS/CRS modes only; FRS-1 fine modes are not freely available.",
-        ),
+        validation_state=ValidationState.VALIDATION_PASSED,
+        readiness_reasons=(),
         validation_profile=ValidationProfile.SAR_BACKSCATTER,
         cadence=CadenceClass.TEN_TO_TWENTY_DAYS,
         host_pool=HostPool.STAGING_BHOONIDHI,
         owned_by=OwnedBy.MANUAL_ONLY,
+        default_aoi_ids=_DEFAULT_AOI_IDS,
+        max_downloads=1,
+        min_coverage_percent=0.0,
         notes="C-band SAR; 1–50 m modes; 12-day revisit. "
-              "Manual validation path enabled for display-only backscatter. "
+              "Product-active as display-only backscatter after one-product staging validation; "
+              "manual refresh remains operator-controlled until routine SAR refresh policy exists. "
               "MRS/CRS modes free via NRSC; FRS-1 not free.",
     ),
 )
@@ -1244,10 +1244,13 @@ def _selfcheck() -> None:
     non_bhoonidhi = [sid for sid in active if SOURCE_REGISTRY[sid].provider_adapter != "bhoonidhi"]
     assert not non_bhoonidhi, f"non-bhoonidhi sources are executable: {non_bhoonidhi}"
 
-    # product_active sources must be routine-scheduled (not background)
+    # product_active sources must not be disabled/background-only.  Display-only
+    # SAR context layers may remain MANUAL_ONLY when refresh is operator-controlled.
     for sid in product_active_source_ids():
         row = SOURCE_REGISTRY[sid]
-        assert row.schedule_state == ScheduleState.ROUTINE, f"{sid}: product_active but not ROUTINE"
+        assert row.schedule_state in {ScheduleState.ROUTINE, ScheduleState.MANUAL_ONLY}, (
+            f"{sid}: product_active but schedule_state={row.schedule_state.value!r}"
+        )
 
     # No source should have ORDER capability while commercial_blocked
     for row in SOURCE_REGISTRY.values():

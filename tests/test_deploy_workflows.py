@@ -134,3 +134,13 @@ def test_ingestion_image_packages_eos04_prepare_script():
     dockerfile = _text("services/ingestion/Dockerfile")
 
     assert "prepare_eos04_sar_mrs_l2b_cogs.py" in dockerfile
+
+
+def test_staging_validator_checks_internal_stac_and_titiler_services():
+    """Post-deploy staging validation must include catalog and tile internals."""
+    validator = _text("scripts/validate_selfhosted_staging_bhoonidhi.py")
+
+    assert "for service in web api stac-api titiler" in validator
+    assert "for service in web api stac-api titiler postgis minio" in validator
+    assert "http://stac-api:8080/collections" in validator
+    assert "http://titiler:8000/healthz" in validator

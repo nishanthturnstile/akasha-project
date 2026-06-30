@@ -299,7 +299,9 @@ _SOURCE_REGISTRY.update(
             "tileRouteMode": "vv_grayscale",
             "resolutionMeters": None,
             "analysisLevel": "context",
-            "refreshPolicy": "Backscatter display only; no optical indices or cloud mask.",
+            "refreshPolicy": (
+                "Validated single-scene backscatter display only; no optical indices or cloud mask."
+            ),
             "limitations": [
                 "Display-only SAR backscatter; no NDVI/MSAVI/NDMI/NDWI/NDRE/RECI.",
                 "No cloud/SCL/ResourceSat threshold mask controls.",
@@ -308,8 +310,8 @@ _SOURCE_REGISTRY.update(
             ],
             "maskMethod": None,
             "metricsProvisional": True,
-            "availabilityStatus": "gated",
-            "gatedReason": "EOS-04 SAR backscatter is not validated for product exposure.",
+            "availabilityStatus": "active",
+            "gatedReason": None,
         },
         "nisar-ssar-beta-gcov": {
             "id": "nisar-ssar-beta-gcov",

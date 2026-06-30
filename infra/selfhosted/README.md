@@ -174,11 +174,12 @@ python scripts/validate_selfhosted_staging_bhoonidhi.py --expected-sha <git-sha>
 ```
 
 Remove `--skip-timer-check` after the Phase 3 systemd timer is installed. The validator confirms
-the Coolify compose image tags, running `web`/`api` image revisions, container health,
-`worker.py verify`, `worker.py verify-cogs`, current-window Bhoonidhi search behavior, and the
-known historical dry-run sync window. It stops immediately when the expected image tag is not
-running; use `--continue-after-failure` only when intentionally gathering diagnostics from a
-known-bad deploy.
+the Coolify compose image tags, running `web`/`api` image revisions, `web`/`api`/`stac-api`/`titiler`
+service presence, internal `stac-api` catalog reachability from the API container, internal TiTiler
+health, container health, `worker.py verify`, `worker.py verify-cogs`, current-window Bhoonidhi
+search behavior, and the known historical dry-run sync window. It stops immediately when the
+expected image tag is not running; use `--continue-after-failure` only when intentionally gathering
+diagnostics from a known-bad deploy.
 
 To include the public gateway/API smoke in the same run, add `--public-origin
 https://<staging-domain>`. Without a strict flag, public smoke is advisory because

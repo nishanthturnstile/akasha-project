@@ -31,6 +31,24 @@ def read_artifact(key: str) -> str:
     return (SYSTEMD_DIR / EXPECTED_FILES[key]).read_text()
 
 
+def python_heredocs(shell_text: str) -> list[str]:
+    snippets: list[str] = []
+    lines = shell_text.splitlines()
+    index = 0
+    while index < len(lines):
+        if "python - <<'PY'" not in lines[index]:
+            index += 1
+            continue
+        index += 1
+        snippet: list[str] = []
+        while index < len(lines) and lines[index].strip() != "PY":
+            snippet.append(lines[index])
+            index += 1
+        snippets.append("\n".join(snippet))
+        index += 1
+    return snippets
+
+
 # ── Artifact existence ────────────────────────────────────────────────────────
 
 
@@ -354,6 +372,23 @@ def test_manual_runner_forwards_eos04_validation_flags():
     assert "--keep-intermediate" in runner
     assert "--force" in runner
     assert "--overwrite" in runner
+
+
+def test_manual_runner_doctor_checks_internal_catalog_and_tile_services():
+    """Doctor must fail if stac-api/titiler are missing after deploy/reconcile."""
+    runner = read_artifact("manual_runner")
+    assert "for service in web api stac-api titiler postgis minio" in runner
+    assert "http://stac-api:8080/collections" in runner
+    assert "http://titiler:8000/healthz" in runner
+    assert 'print(f"{name}=ok")' in runner
+
+
+def test_manual_runner_python_heredocs_compile():
+    """Embedded Python snippets must stay syntactically valid."""
+    snippets = python_heredocs(read_artifact("manual_runner"))
+    assert snippets, "expected Python heredocs in manual runner"
+    for snippet in snippets:
+        compile(snippet, "akasha-ingestion-job-runner.sh heredoc", "exec")
 
 
 def test_wrapper_sources_env_file_for_resilience():

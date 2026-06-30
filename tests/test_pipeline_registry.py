@@ -58,7 +58,7 @@ def test_sar_sources_keep_source_specific_prepare_scripts():
     )
 
 
-def test_eos04_pipeline_is_manual_validation_enabled_not_mvp_default():
+def test_eos04_pipeline_remains_manual_refresh_not_legacy_mvp_default():
     source = pipeline_registry.get_pipeline_source("eos-04-sar-mrs-l2b")
 
     assert source.provider == "bhoonidhi"
@@ -67,6 +67,8 @@ def test_eos04_pipeline_is_manual_validation_enabled_not_mvp_default():
     assert source.supports_download is True
     assert source.supports_validate is True
     assert source.supports_composite is False
+    # Product exposure is controlled by source_registry/BFF activation.  The legacy
+    # mvp_enabled flag stays false so old composite-oriented helpers do not schedule SAR.
     assert source.mvp_enabled is False
     assert source.manual_validation_enabled is True
     assert pipeline_registry.is_source_allowed("eos-04-sar-mrs-l2b", None) is False

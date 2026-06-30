@@ -343,6 +343,19 @@ def test_wrapper_uses_compose_file_discovery():
     assert "AKASHA_SYNC_PULL_POLICY" in wrapper
 
 
+def test_manual_runner_forwards_eos04_validation_flags():
+    """Manual wrapper must forward bounded EOS-04 validation controls."""
+    runner = read_artifact("manual_runner")
+    assert "input_scale" in runner
+    assert "polarizations" in runner
+    assert "--input-scale" in runner
+    assert "--polarizations" in runner
+    assert "--retain-raw-downloads" in runner
+    assert "--keep-intermediate" in runner
+    assert "--force" in runner
+    assert "--overwrite" in runner
+
+
 def test_wrapper_sources_env_file_for_resilience():
     """Wrapper must source /etc/akasha/ingestion-scheduler.env for out-of-systemd runs."""
     wrapper = read_artifact("wrapper")

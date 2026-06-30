@@ -146,6 +146,16 @@ fields = {
     "force_upload": str(bool(value("force_upload", default=False))).lower(),
     "retain_raw_downloads": str(bool(value("retain_raw_downloads", default=False))).lower(),
     "keep_intermediate": str(bool(value("keep_intermediate", default=False))).lower(),
+    "input_scale": safe(
+      "input_scale",
+      value("input_scale", default="auto"),
+      r"auto|linear|amplitude|db",
+    ),
+    "polarizations": safe(
+      "polarizations",
+      value("polarizations", default=""),
+      r"[A-Za-z0-9,; _-]*",
+    ),
 }
 for key, val in fields.items():
     print(f"{key}={shlex.quote(str(val))}")
@@ -311,6 +321,12 @@ run_job() {
     --json
   )
   [[ "${dry_run}" == "true" ]] && sync_args+=(--dry-run)
+  [[ "${overwrite}" == "true" ]] && sync_args+=(--overwrite)
+  [[ "${force_upload}" == "true" ]] && sync_args+=(--force)
+  [[ "${retain_raw_downloads}" == "true" ]] && sync_args+=(--retain-raw-downloads)
+  [[ "${keep_intermediate}" == "true" ]] && sync_args+=(--keep-intermediate)
+  [[ -n "${input_scale}" ]] && sync_args+=(--input-scale "${input_scale}")
+  [[ -n "${polarizations}" ]] && sync_args+=(--polarizations "${polarizations}")
   priority_prefix
 
   {

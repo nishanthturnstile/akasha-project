@@ -126,6 +126,8 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
         "force_upload": bool(args.force_upload),
         "retain_raw_downloads": bool(args.retain_raw_downloads),
         "keep_intermediate": bool(args.keep_intermediate),
+        "input_scale": args.input_scale,
+        "polarizations": args.polarizations or "",
         "requested_by": args.requested_by or _requested_by(),
         "notes": args.notes or "",
     }
@@ -634,6 +636,17 @@ def build_parser() -> argparse.ArgumentParser:
     trigger.add_argument("--force-upload", action="store_true")
     trigger.add_argument("--retain-raw-downloads", action="store_true")
     trigger.add_argument("--keep-intermediate", action="store_true")
+    trigger.add_argument(
+        "--input-scale",
+        choices=("auto", "linear", "amplitude", "db"),
+        default="auto",
+        help="EOS-04 source pixel scale for validation prepare step.",
+    )
+    trigger.add_argument(
+        "--polarizations",
+        default="",
+        help="EOS-04 comma-separated polarizations, e.g. HH,HV or RH,RV.",
+    )
     trigger.add_argument("--requested-by", default="")
     trigger.add_argument("--notes", default="")
     trigger.add_argument("--wait", action="store_true")

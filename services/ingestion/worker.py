@@ -933,6 +933,12 @@ def cmd_schedule_source(args: argparse.Namespace) -> int:
     limit = getattr(args, "limit", None)
     max_downloads = getattr(args, "max_downloads", None)
     min_coverage_percent = getattr(args, "min_coverage_percent", None)
+    overwrite = bool(getattr(args, "overwrite", False))
+    force = bool(getattr(args, "force", False))
+    keep_intermediate = bool(getattr(args, "keep_intermediate", False))
+    retain_raw_downloads = bool(getattr(args, "retain_raw_downloads", False))
+    input_scale = getattr(args, "input_scale", "auto")
+    polarizations = getattr(args, "polarizations", None)
     trigger = "manual" if getattr(args, "manual", False) else "scheduler"
 
     try:
@@ -951,6 +957,12 @@ def cmd_schedule_source(args: argparse.Namespace) -> int:
             limit=limit,
             max_downloads=max_downloads,
             min_coverage_percent=min_coverage_percent,
+            overwrite=overwrite,
+            force=force,
+            keep_intermediate=keep_intermediate,
+            retain_raw_downloads=retain_raw_downloads,
+            input_scale=input_scale,
+            polarizations=polarizations,
             ledger_db_path=ledger_db_path,
         )
     except ValueError as exc:
@@ -1431,6 +1443,25 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Composite validation coverage threshold for this source run.",
+    )
+    p_sched_src.add_argument("--overwrite", action="store_true", help="Overwrite prepared outputs.")
+    p_sched_src.add_argument("--force", action="store_true", help="Force upload overwrite.")
+    p_sched_src.add_argument(
+        "--keep-intermediate", action="store_true", help="Keep prepare intermediates."
+    )
+    p_sched_src.add_argument(
+        "--retain-raw-downloads", action="store_true", help="Keep raw downloaded archives."
+    )
+    p_sched_src.add_argument(
+        "--input-scale",
+        choices=("auto", "linear", "amplitude", "db"),
+        default="auto",
+        help="EOS-04 source pixel scale for backscatter conversion.",
+    )
+    p_sched_src.add_argument(
+        "--polarizations",
+        default=None,
+        help="EOS-04 comma-separated polarizations, e.g. HH,HV or RH,RV.",
     )
     p_sched_src.add_argument(
         "--base-dir",

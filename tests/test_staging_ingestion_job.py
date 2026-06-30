@@ -122,6 +122,8 @@ def test_trigger_sends_default_filled_canonical_request(monkeypatch, capsys):
         "force_upload": False,
         "retain_raw_downloads": False,
         "keep_intermediate": False,
+        "input_scale": "auto",
+        "polarizations": "",
         "requested_by": "dev@workstation",
         "notes": "",
     }

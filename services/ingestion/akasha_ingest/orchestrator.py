@@ -1019,6 +1019,12 @@ def run_source_job(
     limit: int | None = None,
     max_downloads: int | None = None,
     min_coverage_percent: float | None = None,
+    overwrite: bool = False,
+    force: bool = False,
+    keep_intermediate: bool = False,
+    retain_raw_downloads: bool = False,
+    input_scale: str = "auto",
+    polarizations: str | None = None,
     now: datetime | None = None,
     ledger_db_path: str | Path | None = None,
     schedule_decision: str | None = None,
@@ -1150,6 +1156,12 @@ def run_source_job(
         "productExposure": row.product_exposure.value,
         "validationState": row.validation_state.value,
         "dryRun": is_dry,
+        "overwrite": overwrite,
+        "force": force,
+        "keepIntermediate": keep_intermediate,
+        "retainRawDownloads": retain_raw_downloads,
+        "inputScale": input_scale,
+        "polarizationsDeclared": bool(polarizations),
         "phase": "phase7_scheduler_path" if _is_bhoonidhi_source(row) else "phase4_conservative",
     }
 
@@ -1324,44 +1336,6 @@ def run_source_job(
                     client.logout(ignore_errors=True)
                 except Exception:  # noqa: BLE001
                     pass
-
-    if source_id == EOS04_SAR_SOURCE_ID and trigger == "manual":
-        message = (
-            "EOS-04 live manual validation is deferred until the dedicated "
-            "search/download/prepare/verify/ingest path is wired. Run with --dry-run "
-            "for search-only validation."
-        )
-        finish_job(
-            job_id,
-            JobStatus.SKIPPED_GATED,
-            {"sourceId": source_id, "aoiId": aoi_id, "reason": message},
-            base_dir,
-            failure_kind="manual_validation_live_deferred",
-            failure_message=message,
-            now=_now,
-        )
-        _write_observability_safe(
-            job_id, source_id, aoi_id, row.provider_adapter,
-            str(JobStatus.SKIPPED_GATED), base_dir, _sql_ledger,
-            scheduled_at=_scheduled_at, started_at=None,
-            finished_at=_now_iso(_now),
-            window_start=window_start, window_end=window_end,
-            sched_decision="manual_validation_live_deferred",
-            next_due_at=next_due_at,
-            failure_kind="manual_validation_live_deferred",
-            provider_input_summary=_prov_input,
-            provider_response_summary={},
-            verification_summary={"verdict": "deferred", "reason": message},
-        )
-        return SourceJobResult(
-            job_id=job_id,
-            source_id=source_id,
-            aoi_id=aoi_id,
-            status=str(JobStatus.SKIPPED_GATED),
-            dry_run=False,
-            failure_kind="manual_validation_live_deferred",
-            failure_message=message,
-        )
 
     # ── Dry-run / local-test path ──────────────────────────────────────────
     if is_dry:
@@ -1612,6 +1586,117 @@ def run_source_job(
                 failure_message=val_msg,
             )
 
+        # ── Live EOS-04 SAR validation pipeline ───────────────────────────
+        if source_id == EOS04_SAR_SOURCE_ID:
+            from akasha_ingest import bhoonidhi as _bh
+            from akasha_ingest import config as _cfg
+            from akasha_ingest import sync as _sync
+            from akasha_ingest.eos04_pipeline import (
+                Eos04ValidationParams,
+                run_eos04_validation,
+            )
+
+            _logs: list[str] = []
+            try:
+                _aoi = _bh.load_aoi(None, aoi_id=aoi_id, aoi_dir=_cfg.AOI_CONFIG_DIR)
+                _params = Eos04ValidationParams(
+                    source_id=source_id,
+                    aoi=_aoi,
+                    aoi_id=aoi_id,
+                    window_start=window_start,
+                    window_end=window_end,
+                    datetime_range=_sync.datetime_range_for_window(window_start, window_end),
+                    limit=limit or 100,
+                    max_downloads=max_downloads if max_downloads is not None else 1,
+                    overwrite=overwrite,
+                    keep_intermediate=keep_intermediate,
+                    force=force,
+                    retain_raw_downloads=retain_raw_downloads,
+                    input_scale=input_scale,
+                    polarizations=polarizations,
+                )
+                _ingest = run_eos04_validation(_params, log=_logs.append)
+            except (Exception, SystemExit) as exc:  # noqa: BLE001
+                _fk = _classify_pipeline_failure(exc)
+                _fmsg = str(exc) or exc.__class__.__name__
+                finish_job(
+                    job_id,
+                    JobStatus.FAILED,
+                    {
+                        "sourceId": source_id,
+                        "aoiId": aoi_id,
+                        "provider": row.provider_adapter,
+                        "windowStart": window_start,
+                        "windowEnd": window_end,
+                        "failureKind": _fk,
+                    },
+                    base_dir,
+                    failure_kind=_fk,
+                    failure_message=_fmsg,
+                    now=_now,
+                )
+                _write_observability_safe(
+                    job_id, source_id, aoi_id, row.provider_adapter,
+                    str(JobStatus.FAILED), base_dir, _sql_ledger,
+                    scheduled_at=_scheduled_at, started_at=_job_started_at,
+                    finished_at=_now_iso(_now),
+                    window_start=window_start, window_end=window_end,
+                    sched_decision=_sched_decision, next_due_at=next_due_at,
+                    failure_kind=_fk,
+                    provider_input_summary=_prov_input,
+                    provider_response_summary={},
+                    verification_summary={"verdict": "failed", "failureKind": _fk},
+                )
+                return SourceJobResult(
+                    job_id=job_id,
+                    source_id=source_id,
+                    aoi_id=aoi_id,
+                    status=str(JobStatus.FAILED),
+                    dry_run=False,
+                    failure_kind=_fk,
+                    failure_message=_fmsg,
+                )
+
+            _summary = {
+                "sourceId": source_id,
+                "aoiId": aoi_id,
+                "provider": row.provider_adapter,
+                "windowStart": window_start,
+                "windowEnd": window_end,
+                "phase": "eos04_manual_validation",
+                **_ingest.to_dict(),
+            }
+            finish_job(job_id, JobStatus.SUCCEEDED, _summary, base_dir, now=_now)
+            _write_observability_safe(
+                job_id, source_id, aoi_id, row.provider_adapter,
+                str(JobStatus.SUCCEEDED), base_dir, _sql_ledger,
+                scheduled_at=_scheduled_at, started_at=_job_started_at,
+                finished_at=_now_iso(_now),
+                window_start=window_start, window_end=window_end,
+                sched_decision="manual_validation_live",
+                next_due_at=next_due_at,
+                failure_kind=None,
+                provider_input_summary=_prov_input,
+                provider_response_summary={
+                    "foundCount": _ingest.found_count,
+                    "selectedCount": _ingest.selected_count,
+                    "downloadedCount": _ingest.downloaded_count,
+                    "deferredCount": _ingest.deferred_count,
+                },
+                verification_summary=_ingest.to_dict(),
+                found_count=_ingest.found_count,
+                selected_count=_ingest.selected_count,
+                downloaded_count=_ingest.downloaded_count,
+            )
+            return SourceJobResult(
+                job_id=job_id,
+                source_id=source_id,
+                aoi_id=aoi_id,
+                status=str(JobStatus.SUCCEEDED),
+                dry_run=False,
+                summary=_summary,
+            )
+
         # ── Live ResourceSat/Bhoonidhi ingestion pipeline ──────────────────
         if _is_bhoonidhi_source(row):
             from akasha_ingest import bhoonidhi as _bh
@@ -1641,6 +1726,10 @@ def run_source_job(
                         if min_coverage_percent is not None
                         else row.min_coverage_percent or 95.0
                     ),
+                    overwrite=overwrite,
+                    keep_intermediate=keep_intermediate,
+                    force=force,
+                    retain_raw_downloads=retain_raw_downloads,
                 )
                 _ingest = run_resourcesat_ingest(_params, log=_logs.append)
             except (Exception, SystemExit) as exc:  # noqa: BLE001

@@ -22,6 +22,7 @@ import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -651,7 +652,35 @@ class TestApprovedRuntimeGate:
         assert manifest["source_id"] == _EOS04_SOURCE
         assert manifest["selection"]["selected_product_ids"] == ["EOS04_TEST"]
 
-    def test_manual_eos04_live_run_fails_closed_until_pipeline_exists(self, tmp_path):
+    def test_manual_eos04_live_run_invokes_dedicated_pipeline(self, tmp_path, monkeypatch):
+        """EOS-04 live validation uses the SAR-specific pipeline, not ResourceSat composite."""
+        calls: dict[str, object] = {}
+
+        monkeypatch.setattr(
+            "akasha_ingest.bhoonidhi.load_aoi",
+            lambda *args, **kwargs: {"id": _DEFAULT_AOI, "geometry": {"type": "Polygon"}},
+        )
+
+        def fake_run(params, *, log):
+            calls["params"] = params
+            log("fake eos04 validation")
+            return SimpleNamespace(
+                found_count=1,
+                selected_count=1,
+                downloaded_count=1,
+                deferred_count=0,
+                to_dict=lambda: {
+                    "verdict": "succeeded",
+                    "foundCount": 1,
+                    "selectedCount": 1,
+                    "downloadedCount": 1,
+                    "prepared": True,
+                    "ingested": True,
+                },
+            )
+
+        monkeypatch.setattr("akasha_ingest.eos04_pipeline.run_eos04_validation", fake_run)
+
         result = run_source_job(
             _EOS04_SOURCE,
             _DEFAULT_AOI,
@@ -663,14 +692,29 @@ class TestApprovedRuntimeGate:
             limit=20,
             max_downloads=1,
             min_coverage_percent=0.0,
+            overwrite=True,
+            force=True,
+            keep_intermediate=True,
+            retain_raw_downloads=True,
+            input_scale="db",
+            polarizations="HH,HV",
             base_dir=tmp_path,
             lock_dir=tmp_path / "locks",
             now=_FIXED_NOW,
         )
 
-        assert result.status == str(JobStatus.SKIPPED_GATED)
-        assert result.failure_kind == "manual_validation_live_deferred"
-        assert "dedicated" in (result.failure_message or "")
+        assert result.status == str(JobStatus.SUCCEEDED)
+        assert result.summary["phase"] == "eos04_manual_validation"
+        params = calls["params"]
+        assert params.source_id == _EOS04_SOURCE
+        assert params.limit == 20
+        assert params.max_downloads == 1
+        assert params.overwrite is True
+        assert params.force is True
+        assert params.keep_intermediate is True
+        assert params.retain_raw_downloads is True
+        assert params.input_scale == "db"
+        assert params.polarizations == "HH,HV"
 
     def test_env_var_approves_runtime(self, tmp_path, monkeypatch):
         """AKASHA_APPROVED_RUNTIME=1 in env should allow the job past the preflight gate."""

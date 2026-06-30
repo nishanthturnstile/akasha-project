@@ -1,9 +1,11 @@
 # EOS-04 SAR-MRS L2B COG preparation runbook
 
-Display-only (Phase 1) ingestion of ISRO EOS-04 (RISAT-class C-band) SAR-MRS L2B
+Backend-support ingestion of ISRO EOS-04 (RISAT-class C-band) SAR-MRS L2B
 backscatter into Akasha. EOS-04 is a **radar/backscatter** source — never an
 optical vegetation-index source. L2B is already geocoded, so **no ESA SNAP step
-is required** (unlike Sentinel-1 GRD).
+is required** (unlike Sentinel-1 GRD). In the product map/source selector it
+remains gated because it is not an optical index layer; in `/admin/ingestion` it
+is an operator-managed backend SAR support source.
 
 Manual validation pipeline: `bhoonidhi-search` -> `bhoonidhi-download` ->
 `scripts/prepare_eos04_sar_mrs_l2b_cogs.py` -> `worker.py verify-raster-product` ->
@@ -12,8 +14,11 @@ Do **not** use `bhoonidhi-sync` / `build-composite` (composite-coupled,
 ResourceSat-only).
 
 The STAC collection may be loadable for validation while the BFF/source registry
-keeps `eos-04-sar-mrs-l2b` product exposure gated. Do not treat collection
-availability as product activation.
+keeps `eos-04-sar-mrs-l2b` unavailable as a direct optical/map source. Do not
+treat collection availability as product activation. After validation, the
+expected posture is `productExposure=background_only`, `scheduleState=manual_only`:
+owner/admin users can monitor and manually sync it from `/admin/ingestion`, but
+field users must not select it as NDVI/MSAVI/NDMI/NDWI imagery.
 
 ## Prerequisites
 
@@ -112,13 +117,18 @@ This uploads `backscatter.tif` to
 - COG: `rasterio` reports band count >= 1 and non-empty band-1 overviews
   (matches `storage._verify_cog_metadata`).
 - API: `GET /api/sources` lists `eos-04-sar-mrs-l2b` as a gated SAR source
-  until activation; direct validation calls to
+  for map/product selection; `/api/monitoring/ingestion-sources` lists it as
+  admin-manageable backend support when the scheduler row is `manual_only` +
+  `background_only`; direct validation calls to
   `GET /api/sources/eos-04-sar-mrs-l2b/dates` return the ingested date with
   null optical (cloud/usable) metrics;
   `GET /api/tiles/eos-04-sar-mrs-l2b/<date>/VV_GRAYSCALE/{z}/{x}/{y}.png` returns
   a PNG (renders the first backscatter band when no VV is present).
-- UI: selecting the source renders the grayscale backscatter layer with no
-  NDVI/cloud controls (the SPA hides them for `kind === "sar"`).
+- Admin UI: `/admin/ingestion` shows last run, last job status/counts, per-product
+  ledger rows, and a bounded manual Sync action for owner/admin users.
+- Product UI: EOS-04 remains hidden/gated from normal optical index workflows;
+  SAR support appears only as contextual `sarSupport` metadata on cloudy/masked
+  ResourceSat analytics.
 
 ## Activation checklist
 
@@ -130,7 +140,8 @@ Keep product exposure gated until all of these pass for one real product:
 4. `ingest-manifest --collection-id eos-04-sar-mrs-l2b` passes its pre-upload validation gate.
 5. pgSTAC item contains explicit `sar:polarizations` and no optical fields.
 6. BFF dates/tiles work for one scene and multi-scene dates remain tile-unavailable.
-7. Frontend renders grayscale backscatter and keeps cloud/index/statistics controls disabled.
+7. Admin ingestion console shows EOS-04 as backend support/manual sync, while product/map UI keeps
+  direct SAR selection and optical index/statistics controls disabled.
 
 ## Notes
 

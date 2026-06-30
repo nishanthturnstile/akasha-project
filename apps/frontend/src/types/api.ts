@@ -280,6 +280,7 @@ export interface IngestionScheduleResponse {
 export interface IngestionSourceLastJob {
   jobId: string;
   state: string;
+  runAt?: string | null;
   foundCount?: number | null;
   selectedCount?: number | null;
   downloadedCount?: number | null;
@@ -295,9 +296,17 @@ export interface IngestionSourceSummary {
   label: string;
   provider?: string | null;
   kind?: string | null;
+  availabilityStatus?: SourceAvailabilityStatus | string | null;
   active: boolean;
+  adminManageable?: boolean;
+  syncEnabled?: boolean;
   gatedReason?: string | null;
   aoiId?: string | null;
+  scheduleState?: string | null;
+  scheduleEnabled?: boolean;
+  productExposure?: string | null;
+  validationState?: string | null;
+  capabilities?: string[];
   cadenceDays?: number | null;
   lastRunAt?: string | null;
   lastSuccessAt?: string | null;

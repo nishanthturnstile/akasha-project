@@ -59,8 +59,29 @@ function statusText(value: string | null | undefined): string {
     return value.replace(/_/g, ' ');
 }
 
+function isAdminManageable(source: IngestionSourceSummary): boolean {
+    return Boolean(source.adminManageable ?? source.active);
+}
+
+function isSyncEnabled(source: IngestionSourceSummary): boolean {
+    return Boolean(source.syncEnabled ?? (source.active && source.aoiId));
+}
+
+function exposureBadge(source: IngestionSourceSummary): { label: string; variant: BadgeVariant } | null {
+    if (source.productExposure === 'background_only') {
+        return { label: 'Backend support', variant: 'info' };
+    }
+    if (source.productExposure === 'reference_only') {
+        return { label: 'Reference only', variant: 'neutral' };
+    }
+    if (source.productExposure === 'product_active' || source.active) {
+        return { label: 'Map layer', variant: 'success' };
+    }
+    return null;
+}
+
 function sourceBadge(source: IngestionSourceSummary): { label: string; variant: BadgeVariant } {
-    if (!source.active) return { label: 'Not yet active', variant: 'neutral' };
+    if (!isAdminManageable(source)) return { label: 'Not sync-enabled', variant: 'neutral' };
     const state = source.lastJob?.state?.toLowerCase();
     if (state === 'succeeded') return { label: 'Success', variant: 'success' };
     if (state === 'failed' || state === 'validation_failed' || state === 'cancelled') {
@@ -69,6 +90,7 @@ function sourceBadge(source: IngestionSourceSummary): { label: string; variant: 
     if (source.isOverdue) return { label: 'Overdue', variant: 'destructive' };
     if (state === 'running' || state === 'queued') return { label: 'Running', variant: 'info' };
     if (source.isDue) return { label: 'Due', variant: 'warning' };
+    if (!state && source.scheduleState === 'manual_only') return { label: 'Manual sync', variant: 'info' };
     if (!state) return { label: 'Never run', variant: 'warning' };
     return { label: statusText(state), variant: 'neutral' };
 }
@@ -167,9 +189,10 @@ function SatelliteCard({
 }) {
     const trigger = useTriggerIngestionJob();
     const badge = sourceBadge(source);
+    const exposure = exposureBadge(source);
     const lastJob = source.lastJob;
     const syncLabel = liveTriggerEnabled ? `Sync now ${source.label}` : `Run test sync ${source.label}`;
-    const canSync = source.active && Boolean(source.aoiId);
+    const canSync = isSyncEnabled(source) && Boolean(source.aoiId);
 
     async function confirmSync() {
         if (!source.aoiId) return;
@@ -207,9 +230,10 @@ function SatelliteCard({
                         <span className="flex flex-wrap items-center gap-2">
                             <span className="text-lg font-semibold tracking-[-0.01em]">{ source.label }</span>
                             <Badge variant={ badge.variant }>{ badge.label }</Badge>
+                            { exposure && <Badge variant={ exposure.variant }>{ exposure.label }</Badge> }
                         </span>
                         <span className="mt-1 block text-sm text-muted-foreground">
-                            { source.provider ?? 'Unknown provider' } · { source.kind ?? 'source' } · { source.aoiId ?? 'No AOI configured' }
+                            { source.provider ?? 'Unknown provider' } · { source.kind ?? 'source' } · { statusText(source.scheduleState) } · { source.aoiId ?? 'No AOI configured' }
                         </span>
                     </span>
                     { isOpen ? (
@@ -250,7 +274,7 @@ function SatelliteCard({
                             <p className="font-medium text-foreground">Sync { source.label } now?</p>
                             <p className="mt-1 text-muted-foreground">
                                 { liveTriggerEnabled
-                                    ? `This checks Bhoonidhi and downloads up to ${DEFAULT_MAX_DOWNLOADS} new product.`
+                                    ? `This checks Bhoonidhi and downloads up to ${DEFAULT_MAX_DOWNLOADS} new product for backend ingestion.`
                                     : 'Live downloads are disabled for this environment, so this will run a safe test sync.' }
                             </p>
                         </div>
@@ -310,7 +334,7 @@ function SatelliteCard({
                             <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
                             <h2 className="text-sm font-semibold">Downloaded satellite data</h2>
                         </div>
-                        <ProductRows sourceId={ source.sourceId } enabled={ isOpen && source.active } />
+                        <ProductRows sourceId={ source.sourceId } enabled={ isOpen && isAdminManageable(source) } />
                     </div>
                 </CardContent>
             ) }
@@ -318,23 +342,23 @@ function SatelliteCard({
     );
 }
 
-function GatedSources({ sources }: { sources: IngestionSourceSummary[] }) {
+function RegisteredSources({ sources }: { sources: IngestionSourceSummary[] }) {
     if (sources.length === 0) return null;
     return (
-        <section className="mt-4 rounded-xl border border-border/70 bg-muted/20 p-4" aria-label="Not yet active satellites">
+        <section className="mt-4 rounded-xl border border-border/70 bg-muted/20 p-4" aria-label="Registered satellites not sync-enabled">
             <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <h2 className="text-sm font-semibold">Not yet active satellites</h2>
+                <h2 className="text-sm font-semibold">Registered but not sync-enabled</h2>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2">
                 { sources.map((source) => (
                     <article key={ source.sourceId } className="rounded-lg border border-border/60 bg-card/55 p-3">
                         <div className="flex flex-wrap items-center gap-2">
                             <p className="font-medium">{ source.label }</p>
-                            <Badge variant="neutral">Not yet active</Badge>
+                            <Badge variant="neutral">Not sync-enabled</Badge>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
-                            { source.gatedReason ?? 'This source is registered but not validated for operator sync yet.' }
+                            { source.gatedReason ?? 'This source is registered but not validated or configured for operator sync yet.' }
                         </p>
                     </article>
                 )) }
@@ -353,8 +377,8 @@ export default function AdminIngestionSources() {
         configQ.data?.adminIngestionLiveTriggerEnabled ?? sourcesQ.data?.liveTriggerEnabled,
     );
     const sources = sourcesQ.data?.sources ?? [];
-    const activeSources = sources.filter((source) => source.active);
-    const gatedSources = sources.filter((source) => !source.active);
+    const managedSources = sources.filter(isAdminManageable);
+    const registeredSources = sources.filter((source) => !isAdminManageable(source));
 
     function toggleSource(sourceId: string) {
         setOpenSources((current) => {
@@ -376,7 +400,7 @@ export default function AdminIngestionSources() {
                         </p>
                         <h1 className="mt-1 text-2xl font-semibold">Satellite ingestion</h1>
                         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-                            One place to see each satellite, when it last ran, what it downloaded, and when it runs next.
+                            One place to manage satellite ingestion, including backend-only support sources that are not selectable map layers.
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -421,14 +445,14 @@ export default function AdminIngestionSources() {
                 </div>
             ) }
 
-            { !sourcesQ.isLoading && activeSources.length === 0 && (
+            { !sourcesQ.isLoading && managedSources.length === 0 && (
                 <p className="mt-4 rounded-xl border border-border/70 bg-card/70 p-6 text-sm text-muted-foreground">
-                    No active ingestion satellites are reported yet.
+                    No admin-manageable ingestion satellites are reported yet.
                 </p>
             ) }
 
-            <section className="mt-4 space-y-3" aria-label="Active satellites">
-                { activeSources.map((source) => (
+            <section className="mt-4 space-y-3" aria-label="Admin-managed satellites">
+                { managedSources.map((source) => (
                     <SatelliteCard
                         key={ source.sourceId }
                         source={ source }
@@ -442,7 +466,7 @@ export default function AdminIngestionSources() {
                 )) }
             </section>
 
-            <GatedSources sources={ gatedSources } />
+            <RegisteredSources sources={ registeredSources } />
         </main>
     );
 }

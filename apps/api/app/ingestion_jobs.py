@@ -78,6 +78,17 @@ _CADENCE_DAYS: dict[str, float] = {
 #: Schedule states that count as "scheduling enabled" for the front-end flag.
 _SCHEDULE_ENABLED_STATES: frozenset[str] = frozenset({"routine", "background_only", "dry_run"})
 
+#: Schedule states that an owner/admin may trigger from the admin ingestion console.
+#: ``manual_only`` is intentionally included: no timer owns those sources, but operators
+#: may still submit bounded, lock-protected sync requests through the inbox bridge.
+_TRIGGER_ENABLED_STATES: frozenset[str] = _SCHEDULE_ENABLED_STATES | frozenset({"manual_only"})
+
+#: Product-exposure values that should appear in the admin console even when they are not
+#: selectable map/product layers.  This is separate from raster ``availabilityStatus``.
+_ADMIN_MANAGEABLE_PRODUCT_EXPOSURES: frozenset[str] = frozenset(
+    {"product_active", "background_only", "reference_only"}
+)
+
 #: Scheduler next-due grace period before a due source is considered overdue.
 _SCHEDULER_OVERDUE_GRACE_HOURS: int = 24
 
@@ -221,6 +232,7 @@ class IngestionSourceLastJob(_JobsApiModel):
 
     job_id: str
     state: str
+    run_at: str | None = None
     found_count: int | None = None
     selected_count: int | None = None
     downloaded_count: int | None = None
@@ -238,9 +250,17 @@ class IngestionSourceSummary(_JobsApiModel):
     label: str
     provider: str | None = None
     kind: str | None = None
+    availability_status: str | None = None
     active: bool
+    admin_manageable: bool = False
+    sync_enabled: bool = False
     gated_reason: str | None = None
     aoi_id: str | None = None
+    schedule_state: str | None = None
+    schedule_enabled: bool = False
+    product_exposure: str | None = None
+    validation_state: str | None = None
+    capabilities: list[str] = Field(default_factory=list)
     cadence_days: float | None = None
     last_run_at: str | None = None
     last_success_at: str | None = None
@@ -1000,9 +1020,11 @@ def _ledger_row_to_summary(row: dict[str, Any]) -> IngestionJobSummary:
 
 def _ledger_row_to_source_last_job(row: dict[str, Any]) -> IngestionSourceLastJob:
     """Convert a scheduler_jobs SQLite row to a source-card last-job summary."""
+    run_at = row.get("finished_at") or row.get("started_at") or row.get("scheduled_at")
     return IngestionSourceLastJob(
         job_id=str(row["job_id"]),
         state=str(row["state"]),
+        run_at=run_at,
         found_count=row.get("found_count"),
         selected_count=row.get("selected_count"),
         downloaded_count=row.get("downloaded_count"),
@@ -1144,12 +1166,37 @@ def _open_ledger_ro(db: Path) -> sqlite3.Connection:
     return conn
 
 
+def _schedule_item_supports_admin_trigger(item: IngestionScheduleItem | None) -> bool:
+    """Return whether an owner/admin may submit a bounded manual sync for *item*."""
+    if item is None or not item.aoi_id:
+        return False
+    if item.schedule_state not in _TRIGGER_ENABLED_STATES:
+        return False
+    if item.schedule_enabled:
+        return True
+    capabilities = set(item.capabilities or [])
+    return item.schedule_state == "manual_only" and {
+        "search_enabled",
+        "download_enabled",
+    }.issubset(capabilities)
+
+
+def _source_is_admin_manageable(
+    *, availability_status: str, schedule: IngestionScheduleItem | None, sync_enabled: bool
+) -> bool:
+    """Return whether a source belongs in the admin-managed satellite section."""
+    if availability_status == "active" or sync_enabled:
+        return True
+    product_exposure = schedule.product_exposure if schedule else None
+    return product_exposure in _ADMIN_MANAGEABLE_PRODUCT_EXPOSURES
+
+
 def _allowed_trigger_sources() -> set[tuple[str, str]]:
-    """Return source/AOI pairs that are enabled in the scheduler schedule view."""
+    """Return source/AOI pairs that owners/admins may trigger from the console."""
     schedules = get_ingestion_schedules()
     allowed: set[tuple[str, str]] = set()
     for item in schedules.schedules:
-        if item.schedule_enabled and item.aoi_id:
+        if _schedule_item_supports_admin_trigger(item) and item.aoi_id:
             allowed.add((item.source_id, item.aoi_id))
     return allowed
 
@@ -1617,28 +1664,54 @@ def list_ingestion_sources() -> IngestionSourcesResponse:
         source_id = str(source["id"])
         schedule = schedule_by_source.get(source_id)
         availability_status = str(source.get("availabilityStatus") or "active")
+        last_job = last_jobs_by_source.get(source_id)
+        sync_enabled = _schedule_item_supports_admin_trigger(schedule)
+        admin_manageable = _source_is_admin_manageable(
+            availability_status=availability_status,
+            schedule=schedule,
+            sync_enabled=sync_enabled,
+        )
+        last_run_at = schedule.last_run_at if schedule else None
+        last_success_at = schedule.last_success_at if schedule else None
+        last_failure_at = schedule.last_failure_at if schedule else None
+        if last_job and not last_run_at:
+            last_run_at = last_job.run_at
+        if last_job and last_job.state == "succeeded" and not last_success_at:
+            last_success_at = last_job.run_at
+        if last_job and last_job.state in {"failed", "validation_failed"} and not last_failure_at:
+            last_failure_at = last_job.run_at
         sources.append(
             IngestionSourceSummary(
                 source_id=source_id,
                 label=str(source.get("label") or source_id),
                 provider=source.get("provider"),
                 kind=source.get("kind"),
+                availability_status=availability_status,
                 active=availability_status == "active",
+                admin_manageable=admin_manageable,
+                sync_enabled=sync_enabled,
                 gated_reason=source.get("gatedReason"),
                 aoi_id=schedule.aoi_id if schedule else None,
+                schedule_state=schedule.schedule_state if schedule else None,
+                schedule_enabled=schedule.schedule_enabled if schedule else False,
+                product_exposure=schedule.product_exposure if schedule else None,
+                validation_state=schedule.validation_state if schedule else None,
+                capabilities=schedule.capabilities if schedule else [],
                 cadence_days=schedule.cadence_days if schedule else None,
-                last_run_at=schedule.last_run_at if schedule else None,
-                last_success_at=schedule.last_success_at if schedule else None,
-                last_failure_at=schedule.last_failure_at if schedule else None,
+                last_run_at=last_run_at,
+                last_success_at=last_success_at,
+                last_failure_at=last_failure_at,
                 next_due_at=schedule.next_due_at if schedule else None,
                 is_due=schedule.is_due if schedule else False,
                 is_overdue=schedule.is_overdue if schedule else False,
                 latest_composite_date=latest_composite_by_source.get(source_id),
-                last_job=last_jobs_by_source.get(source_id),
+                last_job=last_job,
             )
         )
 
-    sources.sort(key=lambda item: 0 if item.active else 1)
+    sources.sort(
+        key=lambda item: (0 if item.admin_manageable else 1, 0 if item.active else 1, item.label)
+    )
 
     return IngestionSourcesResponse(
         status="ok" if last_error is None else "unavailable",

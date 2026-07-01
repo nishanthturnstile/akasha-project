@@ -64,7 +64,7 @@ export function useVegetationCycles(fieldId: string) {
       variety: '',
       maturity: '',
       year: new Date().getFullYear(),
-      plantingDate: `${new Date().getFullYear()}-01-01`,
+      plantingDate: '',
       irrigationType: '',
       targetYield: null,
       harvestingDate: '',
@@ -93,9 +93,14 @@ export function useVegetationCycles(fieldId: string) {
       const current = vegCycleStore.get(fieldId);
       vegCycleStore.set(fieldId, {
         ...current,
-        [seasonId]: (current[seasonId] ?? []).map((c) =>
-          c.id === cycleId ? { ...c, [key]: value } : c,
-        ),
+        [seasonId]: (current[seasonId] ?? []).map((c) => {
+          if (c.id !== cycleId) return c;
+          const updated = { ...c, [key]: value };
+          if (key === 'plantingDate' && typeof value === 'string' && c.harvestingDate && value >= c.harvestingDate) {
+            updated.harvestingDate = '';
+          }
+          return updated;
+        }),
       });
     },
     [fieldId],

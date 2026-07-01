@@ -10,6 +10,8 @@ interface DatePickerProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  minDate?: string;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const MONTHS = [
@@ -44,8 +46,15 @@ export function DatePicker({
   placeholder = 'Pick a date',
   disabled = false,
   className,
+  minDate,
+  onOpenChange,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
+
+  const handleOpenChange = React.useCallback((next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  }, [onOpenChange]);
   const [viewDate, setViewDate] = React.useState(() => {
     if (value) {
       const [y, m] = value.split('-');
@@ -124,12 +133,29 @@ export function DatePicker({
     });
   };
 
+  const dayButtonClass = 'h-8 w-8 rounded-md text-sm flex items-center justify-center transition-colors';
+
+  const prevDisabled = React.useMemo(() => {
+    if (!minDate) return false;
+    const prevMonthLastDay = new Date(viewDate.year, viewDate.month, 0);
+    const min = new Date(minDate + 'T00:00:00');
+    return prevMonthLastDay < min;
+  }, [minDate, viewDate]);
+
+  const isDisabled = (day: number) => {
+    if (!minDate) return false;
+    const date = new Date(viewDate.year, viewDate.month, day);
+    const min = new Date(minDate + 'T00:00:00');
+    return date < min;
+  };
+
   const handleSelect = (day: number) => {
+    if (isDisabled(day)) return;
     const month = String(viewDate.month + 1).padStart(2, '0');
     const dayStr = String(day).padStart(2, '0');
     const iso = `${viewDate.year}-${month}-${dayStr}`;
     onChange(iso);
-    setOpen(false);
+    handleOpenChange(false);
   };
 
   const isSelected = (day: number) => {
@@ -154,7 +180,7 @@ export function DatePicker({
         ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => handleOpenChange(!open)}
         className={cn(
           'flex h-9 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-colors',
           'hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -178,8 +204,14 @@ export function DatePicker({
           <div className="flex items-center justify-between mb-3">
             <button
               type="button"
+              disabled={prevDisabled}
               onClick={handlePrevMonth}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              className={cn(
+                'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+                prevDisabled
+                  ? 'cursor-not-allowed text-muted-foreground/30'
+                  : 'hover:bg-accent text-muted-foreground hover:text-foreground',
+              )}
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -229,18 +261,19 @@ export function DatePicker({
               const day = i + 1;
               const selected = isSelected(day);
               const today = isToday(day);
+              const disabled = isDisabled(day);
               return (
                 <button
                   key={day}
                   type="button"
+                  disabled={disabled}
                   onClick={() => handleSelect(day)}
                   className={cn(
-                    'h-8 w-8 rounded-md text-sm flex items-center justify-center transition-colors',
-                    selected
-                      ? 'bg-primary text-primary-foreground font-medium'
-                      : today
-                        ? 'border border-primary/50 text-foreground font-medium'
-                        : 'text-foreground hover:bg-accent',
+                    dayButtonClass,
+                    disabled && 'cursor-not-allowed text-muted-foreground/40',
+                    !disabled && selected && 'bg-primary text-primary-foreground font-medium',
+                    !disabled && !selected && today && 'border border-primary/50 text-foreground font-medium',
+                    !disabled && !selected && !today && 'text-foreground hover:bg-accent',
                   )}
                 >
                   {day}
@@ -254,7 +287,7 @@ export function DatePicker({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
               className="h-7 px-2 text-[12px]"
             >
               Cancel
@@ -265,7 +298,7 @@ export function DatePicker({
                 size="sm"
                 onClick={() => {
                   onChange('');
-                  setOpen(false);
+                  handleOpenChange(false);
                 }}
                 className="h-7 px-2 text-[12px] text-destructive hover:text-destructive"
               >

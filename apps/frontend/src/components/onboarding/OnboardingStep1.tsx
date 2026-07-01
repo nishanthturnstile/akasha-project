@@ -21,6 +21,15 @@ export default function OnboardingStep1() {
   const [endDate, setEndDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [startDateError, setStartDateError] = useState<string | null>(null);
+  const [endDateError, setEndDateError] = useState<string | null>(null);
+
+  const endDateMin = useMemo(() => {
+    if (!startDate) return undefined;
+    const d = new Date(startDate + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }, [startDate]);
 
   const existingSeasonNames = useMemo(() => {
     if (!Array.isArray(seasonsQuery.data)) return new Set<string>();
@@ -41,7 +50,11 @@ export default function OnboardingStep1() {
   const canProceed = !!seasonName && !!startDate && !!endDate && !nameError;
 
   const handleNext = async () => {
-    if (!canProceed) return;
+    let hasError = false;
+    if (!seasonName.trim()) { setNameError('Season name is required'); hasError = true; }
+    if (!startDate) { setStartDateError('Start date is required'); hasError = true; }
+    if (!endDate) { setEndDateError('End date is required'); hasError = true; }
+    if (hasError || !canProceed) return;
     setError(null);
     try {
       const season = await createSeason.mutateAsync({
@@ -69,28 +82,45 @@ export default function OnboardingStep1() {
           <p className="text-sm text-muted-foreground">
             It will help you track everything from sowing to harvest.
           </p>
+          <label className="text-sm">Season name <span className="text-destructive">*</span></label>
           <input
             placeholder="Season name"
             value={seasonName}
-            onChange={(e) => { setSeasonName(e.target.value); setNameError(null); }}
+            onChange={(e) => { setSeasonName(e.target.value); setNameError(null); setStartDateError(null); setEndDateError(null); }}
             className="w-full rounded-md border border-border bg-background px-3 py-2"
           />
           {nameError && (
             <p className="text-sm text-destructive">{nameError}</p>
           )}
           <div className="flex gap-2">
-            <DatePicker
-              value={startDate}
-              onChange={setStartDate}
-              placeholder="Start Date"
-              className="w-full"
-            />
-            <DatePicker
-              value={endDate}
-              onChange={setEndDate}
-              placeholder="End Date"
-              className="w-full"
-            />
+            <div className="flex-1">
+              <label className="text-sm">Start date <span className="text-destructive">*</span></label>
+              <DatePicker
+                value={startDate}
+                onChange={(v) => {
+                  setStartDate(v);
+                  setStartDateError(null);
+                  if (endDate && v >= endDate) { setEndDate(''); setEndDateError(null); }
+                }}
+                placeholder="Start Date"
+                className="w-full"
+                onOpenChange={(open) => { if (open && !seasonName.trim()) setNameError('Season name is required'); }}
+              />
+              {startDateError && <p className="text-sm text-destructive mt-1">{startDateError}</p>}
+            </div>
+            <div className="flex-1">
+              <label className="text-sm">End date <span className="text-destructive">*</span></label>
+              <DatePicker
+                value={endDate}
+                onChange={(v) => { setEndDate(v); setEndDateError(null); }}
+                placeholder="End Date"
+                className="w-full"
+                disabled={!startDate}
+                minDate={endDateMin}
+                onOpenChange={(open) => { if (open && !seasonName.trim()) setNameError('Season name is required'); }}
+              />
+              {endDateError && <p className="text-sm text-destructive mt-1">{endDateError}</p>}
+            </div>
           </div>
           {error && (
             <p className="text-sm text-destructive">{error}</p>

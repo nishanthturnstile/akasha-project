@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -26,21 +26,34 @@ interface Props {
 
 export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const [deselectedFieldIds, setDeselectedFieldIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [startDateError, setStartDateError] = useState<string | null>(null);
+  const [endDateError, setEndDateError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
-  const filledRef = useRef(false);
 
-  const dirty = name.trim() !== '' || endDate !== '' || selectedFieldIds.length > 0;
+  const initialSnapshot = useMemo(() => ({
+    name: '',
+    startDate: '',
+    endDate: '',
+    fieldIds: [] as string[],
+  }), []);
 
-  // Track whether the user has interacted with any field
-  useEffect(() => {
-    if (dirty) filledRef.current = true;
-  }, [dirty]);
+  const dirty = name !== initialSnapshot.name
+    || startDate !== initialSnapshot.startDate
+    || endDate !== initialSnapshot.endDate
+    || JSON.stringify([...selectedFieldIds].sort()) !== JSON.stringify([...initialSnapshot.fieldIds].sort());
+
+  const endDateMin = useMemo(() => {
+    if (!startDate) return undefined;
+    const d = new Date(startDate + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }, [startDate]);
 
   const createSeason = useCreateSeason();
   const fieldsQ = useFields();
@@ -75,6 +88,30 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     });
   };
 
+  const [copyFromSeasonEnabled, setCopyFromSeasonEnabled] = useState(false);
+  const [copySourceSeasonId, setCopySourceSeasonId] = useState<string | null>(null);
+
+  const existingSeasons = useMemo(() => {
+    if (!Array.isArray(seasonsQuery.data)) return [];
+    return seasonsQuery.data;
+  }, [seasonsQuery.data]);
+
+  const copySourceFieldsEmpty = useMemo(() => {
+    if (!copySourceSeasonId) return false;
+    const season = existingSeasons.find((s) => s.id === copySourceSeasonId);
+    if (!season) return true;
+    return season.fieldIds.filter((fi) => fi.isMapped).length === 0;
+  }, [existingSeasons, copySourceSeasonId]);
+
+  const handleCopySeasonChange = (seasonId: string) => {
+    setCopySourceSeasonId(seasonId);
+    const season = existingSeasons.find((s) => s.id === seasonId);
+    if (season) {
+      const mappedFieldIds = season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id);
+      setSelectedFieldIds(mappedFieldIds);
+    }
+  };
+
   const [fieldTab, setFieldTab] = useState<'list' | 'added' | 'removed'>('list');
   const [listSearch, setListSearch] = useState('');
   const [addedSearch, setAddedSearch] = useState('');
@@ -103,15 +140,19 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   const canCreate = name.trim() !== '' && startDate !== '' && endDate !== '' && !nameError;
 
   const handleCancel = useCallback(() => {
-    if (filledRef.current) {
+    if (dirty) {
       setConfirmClose(true);
     } else {
       onOpenChange(false);
     }
-  }, [onOpenChange]);
+  }, [dirty, onOpenChange]);
 
   const handleCreate = async () => {
-    if (!canCreate) return;
+    let hasError = false;
+    if (!name.trim()) { setNameError('Season name is required'); hasError = true; }
+    if (!startDate) { setStartDateError('Start date is required'); hasError = true; }
+    if (!endDate) { setEndDateError('End date is required'); hasError = true; }
+    if (hasError || !canCreate) return;
     setError(null);
     try {
       const created = await createSeason.mutateAsync({
@@ -157,7 +198,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-1 gap-3">
-              <label className="text-sm">Season name</label>
+              <label className="text-sm">Season name <span className="text-destructive">*</span></label>
               <input
                 className="rounded-md border border-border bg-background px-3 py-2"
                 value={ name }
@@ -168,22 +209,72 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm">Start date</label>
+                <label className="text-sm">Start date <span className="text-destructive">*</span></label>
                 <DatePicker
                   value={ startDate }
-                  onChange={ setStartDate }
+                  onChange={ (v) => {
+                    setStartDate(v);
+                    setStartDateError(null);
+                    if (endDate && v >= endDate) { setEndDate(''); setEndDateError(null); }
+                  } }
                   placeholder="Start Date"
+                  onOpenChange={ (open) => { if (open && !name.trim()) setNameError('Season name is required'); } }
                 />
+                { startDateError && <p className="text-sm text-destructive mt-1">{ startDateError }</p> }
               </div>
               <div>
-                <label className="text-sm">End date</label>
+                <label className="text-sm">End date <span className="text-destructive">*</span></label>
                 <DatePicker
                   value={ endDate }
-                  onChange={ setEndDate }
+                  onChange={ (v) => { setEndDate(v); setEndDateError(null); } }
                   placeholder="End Date"
+                  disabled={ !startDate }
+                  minDate={ endDateMin }
+                  onOpenChange={ (open) => { if (open && !name.trim()) setNameError('Season name is required'); } }
                 />
+                { endDateError && <p className="text-sm text-destructive mt-1">{ endDateError }</p> }
               </div>
             </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="copy-fields"
+                checked={ copyFromSeasonEnabled }
+                onChange={ (e) => {
+                  setCopyFromSeasonEnabled(e.target.checked);
+                  if (!e.target.checked) {
+                    setCopySourceSeasonId(null);
+                  }
+                } }
+              />
+              <label htmlFor="copy-fields" className="text-sm cursor-pointer">Copy fields from season</label>
+            </div>
+
+            { copyFromSeasonEnabled && (
+              <div className="grid grid-cols-1 gap-2">
+                <label className="text-sm">Source season</label>
+                { existingSeasons.length > 0 ? (
+                  <>
+                    <select
+                      value={ copySourceSeasonId ?? '' }
+                      onChange={ (e) => handleCopySeasonChange(e.target.value) }
+                      className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="" disabled>Select a season</option>
+                      { existingSeasons.map((s) => (
+                        <option key={ s.id } value={ s.id }>{ s.name }</option>
+                      )) }
+                    </select>
+                    { copySourceSeasonId && copySourceFieldsEmpty && (
+                      <p className="text-sm text-muted-foreground">No fields available in the selected season.</p>
+                    ) }
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No existing seasons to copy from.</p>
+                ) }
+              </div>
+            ) }
 
             { allFields.length > 0 && (
               <div className="grid grid-cols-1 gap-2">
@@ -337,14 +428,14 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
-          <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+          <AlertDialogTitle>Save the changes?</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved changes. Are you sure you want to discard them?
+            All unsaved changes will be lost.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmClose(false)}>Keep editing</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
             <AlertDialogAction onClick={() => onOpenChange(false)}>
-              Discard
+              Yes
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

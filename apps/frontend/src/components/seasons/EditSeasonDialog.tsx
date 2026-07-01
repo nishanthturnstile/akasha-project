@@ -76,6 +76,13 @@ export default function EditSeasonDialog({
       || JSON.stringify([...selectedFieldIds].sort()) !== JSON.stringify([...initialSnapshot.fieldIds].sort())
     : false;
 
+  const endDateMin = useMemo(() => {
+    if (!startDate) return undefined;
+    const d = new Date(startDate + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  }, [startDate]);
+
   const handleCancel = useCallback(() => {
     if (dirty) {
       setConfirmClose(true);
@@ -168,29 +175,36 @@ export default function EditSeasonDialog({
 
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-1 gap-3">
-              <label className="text-sm">Season name</label>
+              <label className="text-sm">Season name <span className="text-destructive">*</span></label>
               <input
                 className="rounded-md border border-border bg-background px-3 py-2"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); setError(null); }}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm">Start date</label>
+                <label className="text-sm">Start date <span className="text-destructive">*</span></label>
                 <DatePicker
                   value={startDate}
-                  onChange={setStartDate}
+                  onChange={(v) => {
+                    setStartDate(v);
+                    if (endDate && v >= endDate) setEndDate('');
+                  }}
                   placeholder="Start Date"
+                  onOpenChange={(open) => { if (open && !name.trim()) setError('Season name is required'); }}
                 />
               </div>
               <div>
-                <label className="text-sm">End date</label>
+                <label className="text-sm">End date <span className="text-destructive">*</span></label>
                 <DatePicker
                   value={endDate}
                   onChange={setEndDate}
                   placeholder="End Date"
+                  disabled={!startDate}
+                  minDate={endDateMin}
+                  onOpenChange={(open) => { if (open && !name.trim()) setError('Season name is required'); }}
                 />
               </div>
             </div>
@@ -356,14 +370,14 @@ export default function EditSeasonDialog({
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
-          <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+          <AlertDialogTitle>Save the changes?</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved changes. Are you sure you want to discard them?
+            All unsaved changes will be lost.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmClose(false)}>Keep editing</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
             <AlertDialogAction onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
-              Discard
+              Yes
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

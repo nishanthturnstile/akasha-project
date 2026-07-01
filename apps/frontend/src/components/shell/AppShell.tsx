@@ -37,7 +37,6 @@ import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/Glob
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
-import { queryClient } from '@/lib/queryClient';
 import { useAccountMe, useLogout, useSeasons, useDeleteSeason, useUpdateSeason, useFields } from '@/lib/queries';
 import {
   MAIN_MONITORING_ROUTE,
@@ -870,8 +869,7 @@ export function AppShell() {
                           // Ignore: the session cookie is cleared server-side and
                           // local state is dropped below regardless.
                         }
-                        queryClient.clear();
-                        navigate('/login', { replace: true });
+                        window.location.href = '/login?loggedOut=1';
                       } }
                       data-testid="account-popover-trigger"
                       aria-label="Sign out"

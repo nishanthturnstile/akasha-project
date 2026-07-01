@@ -19,8 +19,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const returnTo = params.get('returnTo');
+  const justLoggedOut = params.has('loggedOut');
 
-  if (account.isSuccess) {
+  if (account.isSuccess && !justLoggedOut) {
     return <Navigate to={ returnTo || landingRoute(account.data.user.onboardingCompleted) } replace />;
   }
 

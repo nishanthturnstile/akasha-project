@@ -104,6 +104,7 @@ services:
       - "8000"
     volumes:
       - ../../data/seed:/app/data/seed:ro
+      - ../../scripts/data:/app/data/reference:ro
       - ../../data/work/bhoonidhi:/app/data/work/bhoonidhi:ro
       - ../../data/work/ingestion-inbox:/srv/akasha/ingestion-inbox
     depends_on:

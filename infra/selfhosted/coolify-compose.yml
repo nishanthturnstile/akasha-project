@@ -90,6 +90,7 @@ services:
       - /srv/akasha/ingestion:/srv/akasha/ingestion:ro
       - /srv/akasha/ingestion-inbox:/srv/akasha/ingestion-inbox
       - /srv/akasha/data/seed:/app/data/seed:ro
+      - /srv/akasha/data/reference:/app/data/reference:ro
     depends_on:
       postgis:
         condition: service_healthy

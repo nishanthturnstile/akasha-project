@@ -74,9 +74,27 @@ def _format_heads(heads: tuple[str, ...]) -> str:
 
 
 def cmd_db_upgrade(_: argparse.Namespace) -> int:
-    _run_with_migration_lock(lambda: command.upgrade(_alembic_config(), "head"))
+    seed_counts: dict[str, int] = {}
+
+    def upgrade_and_seed() -> None:
+        nonlocal seed_counts
+        command.upgrade(_alembic_config(), "head")
+        seed_counts = _seed_reference_data()
+
+    _run_with_migration_lock(upgrade_and_seed)
     print("app-schema Alembic upgrade complete")
+    print(f"reference data seed complete: {seed_counts}")
     return 0
+
+
+def _seed_reference_data() -> dict[str, int]:
+    from .bulk_creation import generate_all
+
+    try:
+        return generate_all()
+    except FileNotFoundError as exc:
+        print(f"reference data seed skipped: {exc}", file=sys.stderr)
+        return {}
 
 
 def cmd_db_current(_: argparse.Namespace) -> int:

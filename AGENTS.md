@@ -19,6 +19,30 @@ scouting, reports/risk) plus a second imagery source (ISRO Bhoonidhi / ResourceS
 Build only the requested slice/feature; preserve API/data contracts from earlier slices. The
 slice roadmap and per-slice doc scope live in [docs/platform-plan.md](docs/platform-plan.md).
 
+## Multi-root workspace context
+
+This repository is commonly opened in the saved VS Code workspace
+[`../akasha-workspace.code-workspace`](../akasha-workspace.code-workspace) alongside
+[`../akasha-ingestion`](../akasha-ingestion), the standalone Akasha ingestion/catalog/processing
+backend.
+
+When an agent is asked to compare, reuse, or align patterns across Akasha projects:
+
+- First read this file and [`../akasha-ingestion/AGENTS.md`](../akasha-ingestion/AGENTS.md); each
+  repo has different ownership boundaries and runtime assumptions.
+- Treat this repo as the **application/product** reference: FastAPI BFF, React/Vite frontend,
+  farm-management workflows, field/season/operation concepts, auth/team UX, map UI, and ResourceSat
+  product integration.
+- Treat `../akasha-ingestion` as the **standalone ingestion/catalog/processing backend** reference:
+  FastAPI + Celery, Postgres/PostGIS/pgSTAC, MinIO, provider adapters, object storage, processing,
+  jobs, scheduler, source mirroring, and operational runbooks.
+- Do not collapse the two architectures together. This repo remains the multi-service product app
+  with canonical code under `apps/api` and `apps/frontend`; `../akasha-ingestion` remains a separate
+  ingestion platform with its own settings, API envelope, runtime backend model, tests, and commands.
+- Keep edits scoped to the requested root unless the user explicitly asks for a cross-repository
+  change. If touching both roots, validate each root with its own commands and mention both in the
+  final summary.
+
 ## Canonical application tree
 
 This is the most important thing to understand before editing.

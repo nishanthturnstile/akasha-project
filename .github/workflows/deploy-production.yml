@@ -76,8 +76,12 @@ jobs:
           import os
 
           tag = os.environ["IMAGE_TAG"]
+          app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
+          if not app_data_root.startswith("/"):
+              raise SystemExit("APP_DATA_ROOT must be an absolute host path")
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
+          text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY
 

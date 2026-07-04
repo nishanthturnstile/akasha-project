@@ -125,9 +125,13 @@ jobs:
           admin_live = os.environ.get("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED", "true").lower()
           if admin_live not in {"true", "false"}:
               raise SystemExit("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED must be true or false")
+          app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
+          if not app_data_root.startswith("/"):
+              raise SystemExit("APP_DATA_ROOT must be an absolute host path")
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
           text = text.replace("${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}", admin_live)
+          text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY
 

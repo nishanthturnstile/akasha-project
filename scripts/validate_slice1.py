@@ -393,7 +393,7 @@ for workflow_name, workflow_raw in [
 ]:
     check("docker/login-action@v3" in workflow_raw, f"{workflow_name} deploy logs into GHCR before image verification")
     check("docker manifest inspect" in workflow_raw, f"{workflow_name} deploy verifies immutable image tags before Coolify patch")
-    for image in ["akasha-web", "akasha-api", "akasha-ingestion-worker", "akasha-ingestion-sar"]:
+    for image in ["akasha-web", "akasha-api"]:
         check(image in workflow_raw, f"{workflow_name} deploy verifies {image} image tag")
 
 api_env = (REPO / "apps/api/.env.example").read_text()

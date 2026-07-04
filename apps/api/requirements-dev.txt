@@ -9,7 +9,4 @@
 
 # Test runner.
 pytest>=8,<10
-# Required by fastapi.testclient.TestClient (Starlette drives it via httpx).
-# Previously pulled in transitively by the removed EOS provider HTTP client;
-# declared explicitly here now that the provider integration is gone.
-httpx>=0.28,<0.29
+# httpx is a runtime dependency for the ingestion client and is pulled in above.

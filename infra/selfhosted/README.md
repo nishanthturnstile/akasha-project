@@ -222,6 +222,135 @@ The payload should include `sources`, `storage`, and `ingestionLedger`. If
 for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<staging-public-ip>/$p" && echo "$p open" || echo "$p closed_or_filtered"; done
 ```
 
+## Standalone ingestion API private connectivity
+
+Use this only for the app-to-standalone-ingestion analytics bridge. The browser still talks only to
+the Akasha `web` origin; ingestion API, ingestion TiTiler, pgSTAC, Postgres, Redis, and MinIO stay
+private and must not receive Coolify public domains or broad public firewall rules.
+
+### Network and secrets
+
+1. Choose one private path and record it in the environment handoff: same Azure VNet/subnet, VNet
+   peering, WireGuard, or Tailscale. Prefer private DNS such as
+   `ingestion-api.internal.<domain>` over raw IPs when TLS is enabled.
+2. On the ingestion VM, allow the ingestion API listener only from the app VM private IP (or the
+   app subnet/service identity if the private network product requires that). In Azure NSG terms,
+   allow the ingestion API port from `<app-vm-private-ip>/32`; deny internet sources. Do not open
+   ingestion Postgres, MinIO, Redis, pgSTAC, or TiTiler to the app VM unless a separate runbook
+   explicitly requires it.
+3. Configure the app VM/Coolify stack with server-side variables only:
+   ```text
+   INGESTION_API_URL=https://<private-ingestion-dns-or-ip>
+   INGESTION_API_KEY=<Coolify secret; never commit>
+   INGESTION_REQUEST_TIMEOUT_SECONDS=30
+   INGESTION_FIELD_INDEX_SOURCE_ID=sentinel-2-l2a
+   INGESTION_AOI_ID=bangalore_60km_geodesic_aoi
+   INGESTION_FRESHNESS_MAX_AGE_HOURS=
+   INGESTION_READINESS_ENABLED=false
+   INGESTION_FIELD_INDEX_ENABLED=false
+   ```
+4. TLS strategy: prefer private DNS plus a normal TLS certificate or an internal CA trusted by the
+   app container. The minimum acceptable staging posture is private network + ingestion API key +
+   app-VM private-IP allowlist. Do not disable browser-side TLS for the public Akasha web origin.
+5. Keep `INGESTION_API_KEY` out of logs, screenshots, build args, frontend `.env` files, and
+   browser-visible `/api/config` payloads.
+
+### Private smoke from the app VM
+
+Run these from the app VM/container network after setting `INGESTION_API_URL` and
+`INGESTION_API_KEY`. The exact auth header name for the standalone ingestion API is `X-API-Key`.
+
+```bash
+curl -fsS "$INGESTION_API_URL/health"
+curl -fsS -H "X-API-Key: $INGESTION_API_KEY" "$INGESTION_API_URL/api/v1/sources"
+curl -fsS -H "X-API-Key: $INGESTION_API_KEY" \
+  "$INGESTION_API_URL/api/v1/analytics/readiness?sourceId=sentinel-2-l2a&aoiId=bangalore_60km_geodesic_aoi"
+curl -fsS -H "X-API-Key: $INGESTION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d @<approved-field-index-smoke-payload.json> \
+  "$INGESTION_API_URL/api/v1/analytics/field-index"
+```
+
+The field-index payload must use an approved non-secret test field geometry and a date known to be
+preloaded. Do not paste production user field geometry into tickets or chat.
+
+### Browser non-reachability and leak checks
+
+From an operator laptop or any normal browser/client network, verify direct ingestion access fails:
+
+```bash
+curl -k --connect-timeout 5 https://<private-ingestion-dns-or-ip>/health
+```
+
+Expected result is DNS failure, timeout, or connection refusal from outside the private network. In
+browser devtools during Akasha smoke, confirm network requests and response payloads contain only
+same-origin `/api/*` and optional app-domain `/api/pipeline/*` URLs. They must not contain ingestion
+hostnames/IPs, MinIO/S3 URLs, pgSTAC/TiTiler URLs, `INGESTION_API_KEY`, `sig`, `kid`, `exp`, or
+other signed upstream query parameters.
+
+## Ingestion analytics rollout, rollback, and observability
+
+The standalone ingestion analytics bridge is feature-gated. Default to flags off in staging and
+production until private connectivity and readiness smoke pass.
+
+### Rollout checklist
+
+1. **Preflight**: confirm the standalone ingestion tile bridge/readiness work is deployed, the
+   Bangalore 60 km Sentinel-2 preload is fresh, and source/date bridging has no browser-visible
+   ingestion URLs.
+2. **Flags-off deploy**: deploy the app with `INGESTION_READINESS_ENABLED=false` and
+   `INGESTION_FIELD_INDEX_ENABLED=false`. If the optional tile proxy flag exists in that release,
+   keep `INGESTION_PIPELINE_TILE_LAYER_ENABLED=false`.
+3. **App health and native regression**: verify `GET /health`, `GET /api/sources`, ResourceSat/native
+   stats, trend, overlay, point, exports, reports, and risk still work with flags disabled.
+4. **Private ingestion smoke**: from the app VM, call ingestion `/health`, authenticated
+   `/api/v1/sources`, readiness, and the approved known-field field-index smoke using the private
+   URL/API key.
+5. **Enable readiness in staging**: set `INGESTION_READINESS_ENABLED=true`; verify app-domain source
+   and date behavior reports fresh/stale/unavailable status without exposing ingestion URLs.
+6. **Enable stats in staging**: set `INGESTION_FIELD_INDEX_ENABLED=true`; trigger Sentinel-2 NDVI
+   field stats and compare the app-adapted response with the direct ingestion smoke for the same
+   field/date/index.
+7. **Optional tile enablement**: only when the release implements the app-domain tile proxy and the
+   ingestion tile bridge returns a real PNG, set `INGESTION_PIPELINE_TILE_LAYER_ENABLED=true`.
+   Confirm app-domain tile URLs return PNG bytes and are not transparent placeholders.
+8. **Browser leak test**: inspect browser network payloads, console logs, local/session storage, and
+   downloaded JSON for ingestion hostnames, internal service URLs, API keys, and signed URL
+   parameters (`sig`, `kid`, `exp`). Any leak blocks rollout.
+9. **Production promotion**: repeat private smoke and browser leak checks before enabling stats in
+   production. Keep the tile flag off until production PNG smoke passes.
+
+### Rollback
+
+- Disable `INGESTION_FIELD_INDEX_ENABLED` to restore legacy/native statistics behavior. No database
+  rollback is required for proxy records; let them expire naturally.
+- If only XYZ tiles fail, disable `INGESTION_PIPELINE_TILE_LAYER_ENABLED` and keep stats enabled only
+  if field-index smoke remains healthy.
+- If readiness is stale or malformed, disable `INGESTION_READINESS_ENABLED` and
+  `INGESTION_FIELD_INDEX_ENABLED` together so the app does not expose stale Sentinel-2 pipeline
+  dates.
+- Rotate `INGESTION_API_KEY` if there is any suspected exposure, then update both ingestion and app
+  deployment secrets before re-enabling flags.
+
+### Observability expectations
+
+Until a metrics backend is added, use structured app and ingestion logs plus Coolify/host metrics.
+Do not add ad hoc metrics endpoints just for this rollout.
+
+- Generate or preserve a correlation/request id for each app request and pass a redacted
+  `X-Request-ID` to ingestion. The id must not contain user emails, API keys, signed URL fragments,
+  or field geometry.
+- App logs for ingestion calls should include request id, user/team/field identifiers, source id,
+  index, readiness status, upstream HTTP status, duration, retry count, and final app error code.
+  They should not include `INGESTION_API_KEY`, ingestion hostnames in browser-visible errors,
+  signed URL query strings, raw polygons, or upstream internal service URLs.
+- Track counters or log-derived metrics for ingestion call count/latency, timeouts, rate limiting,
+  unavailable reason, stale readiness, circuit-breaker state, proxy hits/rejects, tile status, and
+  tile size buckets when the release has a natural metrics/logging hook.
+- Retry only transient timeouts and 502/503/504 with bounded backoff and the same correlation id.
+  Retry 429 only when `Retry-After` is present and within the configured small bound. Do not retry
+  validation, auth, or contract-mismatch errors.
+
 ## Private database GUI access with DBeaver
 
 Use DBeaver from your workstation and connect through an SSH tunnel. Do **not**

@@ -54,6 +54,7 @@ from .routers.field_group_router import router as field_groups_router
 from .routers.field_router import router as fields_router
 from .routers.observations_router import router as observations_router
 from .routers.operation_router import router as operations_router
+from .routers.pipeline_proxy import router as pipeline_proxy_router
 from .routers.plot_router import router as plots_router
 from .routers.product_router import router as product_router
 from .routers.report_router import router as reports_router
@@ -252,6 +253,9 @@ app.include_router(skeleton_router)
 
 # --- Field Analytics API ---------------------------------------------------
 app.include_router(field_analytics_router)
+
+# --- Pipeline stats/tile proxy API (Phase 5: opaque proxy) -----------------
+app.include_router(pipeline_proxy_router)
 
 # --- Field Exports API -----------------------------------------------------
 app.include_router(field_exports_router)

@@ -6,11 +6,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldTrendPoint, Plot } from '@/types/api';
+import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
 interface IndexPanelProps {
+  className?: string;
   selectedPlot: Plot | null;
   selectedDate: string | null;
   sourceId: string | undefined;
@@ -61,6 +62,7 @@ function indexLabel(index: string): string {
 }
 
 export function IndexPanel({
+  className,
   selectedPlot,
   selectedDate,
   sourceId,
@@ -105,12 +107,13 @@ export function IndexPanel({
 
   const statsResponse = statisticsQ.data;
   const stats = statsResponse?.statistics;
-  const warnings = statsResponse?.metadata.warnings ?? [];
+  const metadata = statsResponse?.metadata;
+  const warnings = metadata?.warnings ?? [];
   const metricsProvisional =
     statsResponse?.metricsProvisional ??
-    statsResponse?.metadata.metricsProvisional ??
+    metadata?.metricsProvisional ??
     sourceMetricsProvisional;
-  const responseMaskMethod = statsResponse?.maskMethod ?? statsResponse?.metadata.maskMethod ?? sourceMaskMethod;
+  const responseMaskMethod = statsResponse?.maskMethod ?? metadata?.maskMethod ?? sourceMaskMethod;
   const maskedPixels = statsResponse?.maskedPixels ?? statsResponse?.pixelCounts.maskedPixels;
   const analyticsCopy = metricsProvisional
     ? 'Akasha provisional-mask analytics'
@@ -118,10 +121,11 @@ export function IndexPanel({
   const enhanced = statsResponse?.enhanced ?? false;
   const resolutionMeters = statsResponse?.resolutionMeters ?? null;
   const provenanceNote = statsResponse?.provenanceNote ?? null;
+  const pipeline = metadata?.pipeline ?? null;
 
   return (
     <section
-      className="glass w-[320px] max-w-[84vw] overflow-hidden opacity-95"
+      className={ cn('glass w-[320px] max-w-[84vw] overflow-hidden opacity-95', className) }
       data-testid="index-panel"
       aria-label="Field analytics"
     >
@@ -218,9 +222,9 @@ export function IndexPanel({
                 selectedDate={ selectedDate }
                 analyticsCopy={ analyticsCopy }
                 fallbackReason={ trendQ.data?.fallbackReason ?? null }
-                formula={ statsResponse?.metadata.formula }
+                formula={ metadata?.formula }
                 bands={
-                  statsResponse?.metadata.bands ?? trendQ.data?.metadata.bands ?? null
+                  metadata?.bands ?? trendQ.data?.metadata.bands ?? null
                 }
                 warnings={ warnings }
                 periodFrom={ trendStart ?? null }
@@ -231,6 +235,7 @@ export function IndexPanel({
                 enhanced={ enhanced }
                 resolutionMeters={ resolutionMeters }
                 provenanceNote={ provenanceNote }
+                pipeline={ pipeline }
               />
             </TabsContent>
 
@@ -407,6 +412,7 @@ interface ChartTabProps {
   enhanced?: boolean;
   resolutionMeters?: number | null;
   provenanceNote?: string | null;
+  pipeline?: FieldStatisticsPipelineMetadata | null;
 }
 
 function ChartTab({
@@ -433,6 +439,7 @@ function ChartTab({
   enhanced = false,
   resolutionMeters,
   provenanceNote,
+  pipeline,
 }: ChartTabProps) {
   const maskMethod = sourceMaskMethod ?? null;
   const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud / masked';
@@ -503,6 +510,8 @@ function ChartTab({
           </>
         ) }
       </div>
+
+      { pipeline && <PipelineProvenance pipeline={ pipeline } /> }
 
       <div data-testid="analytics-chart-section">
         <div className="mb-2 flex items-center justify-between">
@@ -591,6 +600,85 @@ function ChartTab({
           <p key={ warning } className="text-amber-300">{ warning }</p>
         )) }
       </div>
+    </div>
+  );
+}
+
+function valueOrDash(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return String(value);
+}
+
+function freshnessSummary(pipeline: FieldStatisticsPipelineMetadata): string | null {
+  const freshness = pipeline.freshness;
+  if (!freshness) return null;
+  const stale = freshness.stale === true || freshness.status?.toUpperCase().includes('STALE');
+  const label = stale ? 'Stale' : freshness.status ?? 'Fresh';
+  const details = [
+    freshness.latestProcessedSceneDate ? `latest ${freshness.latestProcessedSceneDate}` : null,
+    freshness.staleAfter ? `stale after ${freshness.staleAfter}` : null,
+    freshness.aoiId ? `AOI ${freshness.aoiId}` : null,
+  ].filter(Boolean);
+  return details.length > 0 ? `${label} · ${details.join(' · ')}` : label;
+}
+
+function PipelineProvenance({ pipeline }: { pipeline: FieldStatisticsPipelineMetadata }) {
+  const qualityWarnings = pipeline.quality?.warnings ?? [];
+  const freshnessWarnings = pipeline.freshness?.warnings ?? [];
+  const warnings = [...qualityWarnings, ...freshnessWarnings];
+  const freshness = freshnessSummary(pipeline);
+  const route = pipeline.providerRoute ?? pipeline.source ?? null;
+  const qualityStatus = pipeline.quality?.status ?? pipeline.status ?? null;
+
+  return (
+    <div
+      className="rounded-md border border-primary/20 bg-primary/5 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      data-testid="analytics-pipeline-provenance"
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.14em] text-primary/90">
+            Sentinel-2 pipeline
+          </p>
+          <p className="mt-0.5 text-[13px] font-medium text-foreground">
+            { valueOrDash(route) }
+          </p>
+        </div>
+        { qualityStatus && (
+          <span
+            className="rounded-pill border border-primary/25 bg-background/60 px-2 py-0.5 text-[10px] uppercase text-primary"
+            data-testid="analytics-pipeline-status"
+          >
+            { qualityStatus }
+          </span>
+        ) }
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-[11px] leading-4">
+        <DateField label="Scene" value={ pipeline.selectedSceneDate ?? null } />
+        <DateField label="Requested" value={ pipeline.requestedDate ?? null } />
+      </div>
+
+      { freshness && (
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground" data-testid="analytics-pipeline-freshness">
+          Freshness: { freshness }
+        </p>
+      ) }
+      { pipeline.quality?.reason && (
+        <p className="mt-1 text-[11px] leading-4 text-muted-foreground" data-testid="analytics-pipeline-quality">
+          Quality: { pipeline.quality.reason }
+        </p>
+      ) }
+      { pipeline.cloudMaskOptionsNote && (
+        <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+          { pipeline.cloudMaskOptionsNote }
+        </p>
+      ) }
+      { warnings.map((warning) => (
+        <p key={ warning } className="mt-1 text-[11px] leading-4 text-amber-300" data-testid="analytics-pipeline-warning">
+          { warning }
+        </p>
+      )) }
     </div>
   );
 }

@@ -27,6 +27,7 @@ from fastapi.responses import Response
 from ..aoi import load_aoi_configs, select_default_aoi
 from ..auth import get_current_team
 from ..config import settings
+from ..ingestion_client import IngestionClient, IngestionClientError, ReadinessResponse
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import (
@@ -50,6 +51,7 @@ from ..raster.service import compute_statistics
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
 
 _RATE_BUCKETS: dict[str, list[float]] = {}
+PIPELINE_INDEX = "NDVI"
 
 
 def _basemap_config() -> dict[str, Any]:
@@ -111,7 +113,105 @@ async def get_config() -> dict[str, Any]:
 @router.get("/sources")
 async def get_sources() -> list[dict[str, Any]]:
     """Satellite/product source list derived from the source registry/STAC metadata."""
-    return catalog.list_sources()
+    sources = catalog.list_sources()
+    readiness = await _pipeline_readiness_available(settings.ingestion_field_index_source_id)
+    if readiness is not None:
+        pipeline_source = _pipeline_source_payload(settings.ingestion_field_index_source_id)
+        replaced = False
+        bridged_sources: list[dict[str, Any]] = []
+        for source in sources:
+            if source.get("id") == settings.ingestion_field_index_source_id:
+                bridged_sources.append(pipeline_source)
+                replaced = True
+            else:
+                bridged_sources.append(source)
+        if not replaced:
+            bridged_sources.append(pipeline_source)
+        return bridged_sources
+    if any(source.get("id") == settings.ingestion_field_index_source_id for source in sources):
+        return sources
+    return sources
+
+
+def _pipeline_bridge_enabled(source_id: str) -> bool:
+    return (
+        settings.ingestion_field_index_enabled
+        and settings.ingestion_readiness_enabled
+        and source_id == settings.ingestion_field_index_source_id
+    )
+
+
+def _readiness_has_ndvi_outputs(readiness: ReadinessResponse) -> bool:
+    coverage = readiness.index_coverage.get(PIPELINE_INDEX)
+    return (
+        readiness.status == "AVAILABLE"
+        and coverage is not None
+        and coverage.available
+        and bool(readiness.available_dates)
+    )
+
+
+def _fetch_pipeline_readiness(source_id: str) -> ReadinessResponse | None:
+    if not _pipeline_bridge_enabled(source_id):
+        return None
+    try:
+        return IngestionClient().readiness(source_id=source_id, aoi_id=settings.ingestion_aoi_id)
+    except IngestionClientError:
+        return None
+
+
+async def _pipeline_readiness_available(source_id: str) -> ReadinessResponse | None:
+    readiness = await anyio.to_thread.run_sync(_fetch_pipeline_readiness, source_id)
+    if readiness is None or not _readiness_has_ndvi_outputs(readiness):
+        return None
+    return readiness
+
+
+def _pipeline_source_payload(source_id: str) -> dict[str, Any]:
+    source = catalog.source_payload(source_id)
+    source["supportedIndices"] = [PIPELINE_INDEX]
+    source["displayModes"] = [PIPELINE_INDEX]
+    source["defaultDisplayMode"] = PIPELINE_INDEX
+    source["mapDisplayModes"] = [PIPELINE_INDEX]
+    source["defaultMapDisplayMode"] = PIPELINE_INDEX
+    source["layerGroups"] = [{"label": "Vegetation Indices", "modes": [PIPELINE_INDEX]}]
+    source["availabilityStatus"] = "active"
+    source["analysisLevel"] = "field"
+    source["metricsProvisional"] = True
+    source["pipelineBacked"] = True
+    source["refreshPolicy"] = "Precomputed Sentinel-2 NDVI outputs from the ingestion pipeline."
+    source["limitations"] = [
+        "Sentinel-2 pipeline MVP supports field NDVI statistics only.",
+        "Dates are exposed only while pipeline readiness is fresh for the configured AOI.",
+    ]
+    return source
+
+
+def _pipeline_date_payloads(readiness: ReadinessResponse) -> list[dict[str, Any]]:
+    coverage = readiness.index_coverage.get(PIPELINE_INDEX)
+    coverage_percent = coverage.coverage_percent if coverage else None
+    latest = max(readiness.available_dates)
+    dates = sorted(readiness.available_dates, reverse=True)
+    return [
+        {
+            "acquisitionDate": item.isoformat(),
+            "datetime": f"{item.isoformat()}T00:00:00Z",
+            "usablePixelPercent": coverage_percent,
+            "cloudMaskedPercent": None,
+            "coveragePercent": coverage_percent,
+            "isLatestUsable": item == latest,
+            "metricsProvisional": True,
+            # Pipeline map rendering is a field-clipped overlay image generated from
+            # the requested polygon, not the old full-scene XYZ tile layer. If the
+            # date is exposed by readiness, the field overlay/statistics path is usable.
+            "tileAvailable": True,
+            "unavailableReason": None,
+            "sceneCount": None,
+            "sensorBadge": "S2",
+            "provenanceLabel": "Sentinel-2 pipeline",
+        }
+        for item in dates
+    ]
 
 
 def _filter_source_dates(
@@ -166,6 +266,15 @@ async def get_source_dates(
     lookbackDays: int | None = Query(default=None, ge=1, le=366),
 ) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
+    readiness = await _pipeline_readiness_available(source_id)
+    if readiness is not None:
+        return _filter_source_dates(
+            _pipeline_date_payloads(readiness),
+            start_date=startDate,
+            end_date=endDate,
+            lookback_days=lookbackDays,
+        )
+
     return _filter_source_dates(
         catalog.list_dates(source_id),
         start_date=startDate,

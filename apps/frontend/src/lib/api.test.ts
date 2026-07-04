@@ -23,6 +23,7 @@ import {
   getDates,
   getFieldLeaderboard,
   getFieldRiskSummary,
+  getFieldStatistics,
   getImagerySourceMonitoring,
   getJohnDeereConnection,
   listApiKeys,
@@ -36,6 +37,7 @@ import {
   getSources,
   importPlotsGeoJson,
   markNotificationRead,
+  normalizeAppDomainApiUrl,
   signup,
   uploadDataset,
   updateReportTemplate,
@@ -136,6 +138,87 @@ describe('api client error mapping', () => {
       expect(composeTileTemplate('eos-04-sar-mrs-l2b', '2026-04-26', 'VV_GRAYSCALE')).toBe(
         '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',
       );
+    });
+  });
+
+  describe('pipeline URL safety', () => {
+    it('accepts only app-domain API proxy URLs and strips same-origin hosts', () => {
+      expect(normalizeAppDomainApiUrl('/api/pipeline/tiles/{z}/{x}/{y}.png?proxyId=px_1')).toBe(
+        '/api/pipeline/tiles/{z}/{x}/{y}.png?proxyId=px_1',
+      );
+      expect(
+        normalizeAppDomainApiUrl(
+          `${window.location.origin}/api/pipeline/field-index/stats?proxyId=px_2`,
+        ),
+      ).toBe('/api/pipeline/field-index/stats?proxyId=px_2');
+      expect(normalizeAppDomainApiUrl('https://ingestion.internal/tiles/layer/{z}/{x}/{y}.png')).toBeNull();
+      expect(normalizeAppDomainApiUrl('/api/pipeline/tiles/1/2/3.png?op=tile&exp=1&sig=abc')).toBeNull();
+      expect(normalizeAppDomainApiUrl('/tiles/not-app-domain/{z}/{x}/{y}.png')).toBeNull();
+    });
+
+    it('sanitizes pipeline URLs from field statistics before caching in UI state', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          plotId: 'plot-1',
+          provider: 'native',
+          scope: 'field',
+          indexType: 'NDVI',
+          sourceId: 'sentinel-2-l2a',
+          acquisitionDate: '2026-01-15',
+          cloudMask: { clouds: true, cloudShadows: true, cirrus: true },
+          statistics: {
+            min: 0.12,
+            max: 0.86,
+            mean: 0.54,
+            stddev: 0.08,
+            validPixelPercent: 92.5,
+            cloudMaskedPercent: 4.2,
+            coveragePercent: 100,
+          },
+          pixelCounts: {
+            totalPixels: 3736,
+            nodataPixels: 0,
+            coveragePixels: 3736,
+            maskedPixels: 280,
+            validPixels: 3456,
+          },
+          metadata: {
+            formula: '(NIR-RED)/(NIR+RED)',
+            bands: ['NIR', 'RED'],
+            warnings: [],
+            pipeline: {
+              enabled: true,
+              status: 'AVAILABLE',
+              source: 'sentinel-2-l2a',
+              providerRoute: 'earthsearch:sentinel-2-l2a',
+              selectedSceneDate: '2026-01-13',
+              tileUrl: 'https://ingestion.internal/tiles/layer_1/{z}/{x}/{y}.png?op=tile&exp=1&kid=default&sig=abc',
+              statsUrl: '/api/pipeline/field-index/stats?proxyId=px_1',
+              quality: { status: 'GOOD', reason: 'Field cloud cover within threshold', warnings: [] },
+            },
+          },
+        }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const response = await getFieldStatistics('plot-1', {
+        sourceId: 'sentinel-2-l2a',
+        acquisitionDate: '2026-01-15',
+        indexType: 'NDVI',
+      });
+
+      expect(response.provider).toBe('native');
+      expect(response.scope).toBe('field');
+      expect(response.metadata.pipeline?.tileUrl).toBeUndefined();
+      expect(response.metadata.pipeline?.statsUrl).toBe('/api/pipeline/field-index/stats?proxyId=px_1');
+      const serialized = JSON.stringify(response);
+      expect(serialized).not.toContain('ingestion.internal');
+      expect(serialized).not.toContain('sig=');
+      expect(serialized).not.toContain('kid=');
+      expect(serialized).not.toContain('exp=');
+      expect(serialized).not.toContain('op=tile');
     });
   });
 

@@ -24,6 +24,16 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_optional_int(name: str) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 def _get_bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -37,11 +47,7 @@ def _local_cors_allowed_origins() -> list[str]:
         if port and port not in ports:
             ports.append(port)
 
-    return [
-        f"http://{host}:{port}"
-        for host in ("localhost", "127.0.0.1")
-        for port in ports
-    ]
+    return [f"http://{host}:{port}" for host in ("localhost", "127.0.0.1") for port in ports]
 
 
 @dataclass
@@ -181,9 +187,7 @@ class Settings:
     # REQ-016: BFF may only read redacted scheduler snapshots/summaries through
     # explicit config, never raw provider archives or unrestricted job directories.
     scheduler_jobs_dir: str = field(
-        default_factory=lambda: _get(
-            "SCHEDULER_JOBS_DIR", "/srv/akasha/ingestion/scheduler/jobs"
-        )
+        default_factory=lambda: _get("SCHEDULER_JOBS_DIR", "/srv/akasha/ingestion/scheduler/jobs")
     )
     """Read-only mount path for per-job scheduler artifact directories.
     Set SCHEDULER_JOBS_DIR to override. Endpoints remain unavailable if the
@@ -200,9 +204,7 @@ class Settings:
     the file does not exist."""
 
     ingestion_job_inbox_dir: str = field(
-        default_factory=lambda: _get(
-            "INGESTION_JOB_INBOX_DIR", "/srv/akasha/ingestion-inbox"
-        )
+        default_factory=lambda: _get("INGESTION_JOB_INBOX_DIR", "/srv/akasha/ingestion-inbox")
     )
     """Write-only handoff directory for admin-triggered ingestion job requests.
     Set INGESTION_JOB_INBOX_DIR to override. Trigger endpoint returns
@@ -212,6 +214,39 @@ class Settings:
         default_factory=lambda: _get_bool("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED", False)
     )
     """Gate for non-dry-run admin ingestion triggers. Disabled by default."""
+
+    # Standalone ingestion analytics client. Server-side only; never exposed to
+    # the browser or frontend build.
+    ingestion_api_url: str = field(default_factory=lambda: _get("INGESTION_API_URL", ""))
+    ingestion_api_key: str = field(default_factory=lambda: _get("INGESTION_API_KEY", ""))
+    ingestion_request_timeout_seconds: int = field(
+        default_factory=lambda: _get_int("INGESTION_REQUEST_TIMEOUT_SECONDS", 30)
+    )
+    ingestion_field_index_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_FIELD_INDEX_ENABLED", False)
+    )
+    ingestion_field_index_source_id: str = field(
+        default_factory=lambda: _get("INGESTION_FIELD_INDEX_SOURCE_ID", "sentinel-2-l2a")
+    )
+    ingestion_readiness_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_READINESS_ENABLED", False)
+    )
+    ingestion_freshness_max_age_hours: int | None = field(
+        default_factory=lambda: _get_optional_int("INGESTION_FRESHNESS_MAX_AGE_HOURS")
+    )
+    ingestion_aoi_id: str = field(
+        default_factory=lambda: _get("INGESTION_AOI_ID", "bangalore_60km_geodesic_aoi")
+    )
+    # Optional XYZ tile layer proxy (Phase 5). Off until the ingestion tile
+    # bridge and upstream signed TTL are validated for interactive sessions.
+    ingestion_pipeline_tile_layer_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_PIPELINE_TILE_LAYER_ENABLED", False)
+    )
+    # TTL (seconds) for opaque stats proxy records. Tile proxy records are
+    # additionally capped to the upstream signed ``exp`` when present.
+    ingestion_pipeline_proxy_ttl_seconds: int = field(
+        default_factory=lambda: _get_int("INGESTION_PIPELINE_PROXY_TTL_SECONDS", 3600)
+    )
 
     @property
     def cors_allowed_origins(self) -> list[str]:

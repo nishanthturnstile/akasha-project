@@ -5,22 +5,50 @@ import { Button } from '@/components/ui/button';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
-import FieldAnalyticsPanel from '@/components/analytics/FieldAnalyticsPanel';
-import { useConfig, useDeleteField, useFields, useUpdateField } from '@/lib/queries';
+import { IndexPanel } from '@/components/scaffold/IndexPanel';
+import { selectDefaultDate } from '@/lib/selectDefaultDate';
+import { useConfig, useDates, useDeleteField, useFields, useSources, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
 import { useSeasonContext } from '@/state/seasonContext';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions } from '@/types/api';
+import type { CloudMaskOptions, Source } from '@/types/api';
 
 function formatAreaHa(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return `${value.toFixed(1)} ha`;
 }
 
+function maskOptionsForSource(source: Source | null | undefined): Array<keyof CloudMaskOptions> {
+  return source?.availableMaskOptions ?? ['clouds', 'cloudShadows', 'cirrus'];
+}
+
+function sanitizeCloudMaskForSource(
+  value: CloudMaskOptions,
+  source: Source | null | undefined,
+): CloudMaskOptions {
+  const available = new Set(maskOptionsForSource(source));
+  return {
+    clouds: available.has('clouds') ? value.clouds : false,
+    cloudShadows: available.has('cloudShadows') ? value.cloudShadows : false,
+    cirrus: available.has('cirrus') ? value.cirrus : false,
+  };
+}
+
+function defaultDisplayModeForSource(source: Source | null | undefined, fallback: string): string {
+  return (
+    source?.defaultMapDisplayMode ??
+    source?.defaultDisplayMode ??
+    source?.mapDisplayModes?.[0] ??
+    source?.displayModes?.[0] ??
+    fallback
+  );
+}
+
 export default function FieldAnalyticsPage() {
-  const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, overlaysVisible, mapFullscreen } = useMapView();
+  const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, selectedDate: dateOverride, displayMode, overlaysVisible, mapFullscreen } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
+  const sourcesQ = useSources();
   const updateField = useUpdateField();
   const deleteField = useDeleteField();
   const { seasonId } = useSeasonContext();
@@ -37,8 +65,30 @@ export default function FieldAnalyticsPage() {
     return (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(seasonId));
   }, [fieldsQ.data, seasonId]);
 
-  const effectiveSourceId = activeSourceId ?? undefined;
-  const supportedIndices = configQ.data?.supportedIndices ?? ['NDVI'];
+  const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
+  const selectedSource = useMemo(
+    () => sourcesQ.data?.find((source) => source.id === effectiveSourceId) ?? null,
+    [sourcesQ.data, effectiveSourceId],
+  );
+  const datesQ = useDates(effectiveSourceId);
+  const selectedDate = useMemo(() => {
+    if (!datesQ.data || !configQ.data) return null;
+    if (dateOverride && datesQ.data.some((entry) => entry.acquisitionDate === dateOverride)) {
+      return dateOverride;
+    }
+    return selectDefaultDate(datesQ.data, configQ.data.usablePixelThresholdPercent, {
+      sourceKind: selectedSource?.kind,
+    })?.acquisitionDate ?? null;
+  }, [configQ.data, dateOverride, datesQ.data, selectedSource?.kind]);
+  const supportedIndices = selectedSource?.supportedIndices ?? configQ.data?.supportedIndices ?? ['NDVI'];
+  const activeDisplayMode = displayMode ?? defaultDisplayModeForSource(
+    selectedSource,
+    configQ.data?.defaultIndex ?? 'NDVI',
+  );
+  const effectiveCloudMask = sanitizeCloudMaskForSource(
+    cloudMask as CloudMaskOptions,
+    selectedSource,
+  );
 
   const navigate = useNavigate();
 
@@ -110,12 +160,17 @@ export default function FieldAnalyticsPage() {
 
       {/* Analytics panel card — hidden when mapFullscreen is active */}
       {selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="min-h-0 flex-[7] rounded-md border border-border bg-background">
-          <FieldAnalyticsPanel
-            field={selectedField}
+        <div className="min-h-0 flex-[7] overflow-hidden rounded-md border border-border bg-background">
+          <IndexPanel
+            className="h-full w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
+            selectedPlot={selectedField}
+            selectedDate={selectedDate}
             sourceId={effectiveSourceId}
-            indices={supportedIndices}
-            cloudMask={cloudMask as CloudMaskOptions}
+            displayMode={activeDisplayMode}
+            supportedIndices={supportedIndices}
+            cloudMask={effectiveCloudMask}
+            sourceMaskMethod={selectedSource?.maskMethod ?? null}
+            sourceMetricsProvisional={selectedSource?.metricsProvisional ?? false}
             periodFrom={periodFrom}
             periodTo={periodTo}
           />

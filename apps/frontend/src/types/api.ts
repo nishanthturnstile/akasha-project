@@ -111,6 +111,8 @@ export interface Source {
   analysisLevel?: SourceAnalysisLevel;
   availabilityStatus?: SourceAvailabilityStatus;
   gatedReason?: string | null;
+  /** True when this source is served by the ingestion pipeline (XYZ index tiles + field stats). */
+  pipelineBacked?: boolean;
 }
 
 export interface MonitoringFailure {
@@ -682,6 +684,68 @@ export interface PixelCounts {
   validPixels: number;
 }
 
+export interface PipelineSelectionMetadata {
+  windowDays?: number | null;
+  rule?: string | null;
+  validPixelCount?: number | null;
+  [key: string]: unknown;
+}
+
+export interface PipelineResolutionMetadata {
+  nativeMeters?: number | null;
+  processingMeters?: number | null;
+  displayMeters?: number | null;
+  [key: string]: unknown;
+}
+
+export interface PipelineQualityMetadata {
+  status?: string | null;
+  reason?: string | null;
+  warnings?: string[];
+  [key: string]: unknown;
+}
+
+export interface PipelineFreshnessMetadata {
+  status?: string | null;
+  stale?: boolean | null;
+  aoiId?: string | null;
+  latestProcessedSceneDate?: string | null;
+  staleAfter?: string | null;
+  reason?: string | null;
+  warnings?: string[];
+  [key: string]: unknown;
+}
+
+export interface PipelineClassStatistic {
+  class?: string | null;
+  valueRange?: [number, number] | number[] | null;
+  areaSqM?: number | null;
+  areaPercentage?: number | null;
+  [key: string]: unknown;
+}
+
+export interface FieldStatisticsPipelineMetadata {
+  enabled?: boolean;
+  status?: string | null;
+  source?: string | null;
+  providerRoute?: string | null;
+  requestedDate?: string | null;
+  selectedSceneDate?: string | null;
+  tileUrl?: string;
+  statsUrl?: string;
+  selection?: PipelineSelectionMetadata;
+  resolution?: PipelineResolutionMetadata;
+  quality?: PipelineQualityMetadata;
+  freshness?: PipelineFreshnessMetadata;
+  versions?: Record<string, unknown>;
+  classStatistics?: PipelineClassStatistic[];
+  pixelCountsBasis?: string | null;
+  cloudMaskedPercentBasis?: string | null;
+  coveragePercentBasis?: string | null;
+  cloudMaskOptionsNote?: string | null;
+  [key: string]: unknown;
+}
+
 export interface FieldStatisticsRequest {
   sourceId: string;
   acquisitionDate?: string | null;
@@ -722,6 +786,7 @@ export interface FieldStatisticsResponse {
     areaHa?: number | null;
     vertices?: number | null;
     warnings?: string[];
+    pipeline?: FieldStatisticsPipelineMetadata;
     [key: string]: unknown;
   };
 }

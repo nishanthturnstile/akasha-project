@@ -157,9 +157,7 @@ class Season(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
-    can_delete: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("true")
-    )
+    can_delete: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
 
 class User(UuidPkMixin, TimestampMixin, Base):
@@ -455,7 +453,10 @@ class VegetationCycle(UuidPkMixin, TimestampMixin, Base):
     __tablename__ = "vegetation_cycles"
     __table_args__ = (
         UniqueConstraint(
-            "field_id", "season_id", "year", "crop_id",
+            "field_id",
+            "season_id",
+            "year",
+            "crop_id",
             name="vegetation_cycles_unique_per_field_season_year_crop",
         ),
         {"schema": AKASHA_SCHEMA},
@@ -719,6 +720,52 @@ class Variety(Base):
     maturity_options: Mapped[list[Any] | None] = mapped_column(JSONB)
 
 
+class PipelineProxyRecord(Base):
+    """Server-side proxy record backing opaque app-domain pipeline URLs.
+
+    The browser only ever receives the opaque ``proxy_id``; ingestion signed
+    URL material (host, ``sig``/``kid``/``exp``, ``queryId``/``layerId``) is
+    stored here server-side and never returned in browser-visible JSON. Records
+    are persisted in Postgres so any BFF worker can resolve a proxy request.
+    """
+
+    __tablename__ = "pipeline_proxy_records"
+    __table_args__ = (
+        CheckConstraint(
+            "operation IN ('stats', 'tile')",
+            name="pipeline_proxy_records_operation_chk",
+        ),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    proxy_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    operation: Mapped[str] = mapped_column(Text, nullable=False)
+    # Ingestion signed URL material; server-side only, never browser-visible.
+    upstream_url: Mapped[str] = mapped_column(Text, nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.teams.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    field_id: Mapped[str] = mapped_column(Text, nullable=False)
+    source_id: Mapped[str] = mapped_column(Text, nullable=False)
+    index_type: Mapped[str] = mapped_column(Text, nullable=False)
+    query_id: Mapped[str | None] = mapped_column(Text)
+    layer_id: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    last_accessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 Index("plots_geometry_gix", Plot.geometry, postgresql_using="gist")
 Index("plots_created_at_idx", Plot.created_at.desc())
 Index("plots_status_idx", Plot.status)
@@ -770,3 +817,9 @@ Index("varieties_crop_id_idx", Variety.crop_id)
 Index("vegetation_cycles_field_idx", VegetationCycle.field_id)
 Index("vegetation_cycles_season_idx", VegetationCycle.season_id)
 Index("vegetation_cycles_user_idx", VegetationCycle.user_id)
+Index(
+    "pipeline_proxy_records_user_team_idx",
+    PipelineProxyRecord.user_id,
+    PipelineProxyRecord.team_id,
+)
+Index("pipeline_proxy_records_expires_idx", PipelineProxyRecord.expires_at)

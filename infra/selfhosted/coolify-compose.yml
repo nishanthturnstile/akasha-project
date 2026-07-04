@@ -1,7 +1,10 @@
 # Akasha self-hosted Coolify Compose stack.
 #
-# Runtime target: staging/production Linux hosts managed by Coolify.
+# Runtime target: akasha-control staging/production Linux hosts managed by Coolify.
 # Source of truth: prebuilt images + environment variables, not local builds.
+# Host-persistent app data uses APP_DATA_ROOT (recommended: /data/akasha on
+# akasha-control). Keep provider execution and bulk ingestion data on the
+# standalone akasha-staging ingestion stack, not in this product app stack.
 # Public exposure rule: only `web` gets a Coolify FQDN. All other services stay
 # private on the Compose network and must not receive host `ports:` mappings.
 
@@ -62,14 +65,16 @@ services:
       RATE_LIMIT_INDEX_PER_MINUTE: "${RATE_LIMIT_INDEX_PER_MINUTE:-30}"
       SOURCE_FRESHNESS_STALE_DAYS: "${SOURCE_FRESHNESS_STALE_DAYS:-45}"
       MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1048576}"
-      BHOONIDHI_DIAGNOSTICS_ENABLED: "${BHOONIDHI_DIAGNOSTICS_ENABLED:-false}"
-      BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
-      BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
-      BHOONIDHI_API_BASE: "${BHOONIDHI_API_BASE:-https://bhoonidhi-api.nrsc.gov.in}"
-      BHOONIDHI_DOWNLOAD_ROOT: "${BHOONIDHI_DOWNLOAD_ROOT:-/srv/akasha/bhoonidhi-diagnostics}"
-      BHOONIDHI_DOWNLOAD_TIMEOUT_SECONDS: "${BHOONIDHI_DOWNLOAD_TIMEOUT_SECONDS:-300}"
-      BHOONIDHI_MAX_DOWNLOAD_BYTES: "${BHOONIDHI_MAX_DOWNLOAD_BYTES:-5368709120}"
-      BHOONIDHI_LEDGER_PATH: "${BHOONIDHI_LEDGER_PATH:-/srv/akasha/ingestion/ledger.sqlite}"
+      BHOONIDHI_DIAGNOSTICS_ENABLED: "false"
+      INGESTION_API_URL: "${INGESTION_API_URL:-}"
+      INGESTION_API_KEY: "${INGESTION_API_KEY:-}"
+      INGESTION_REQUEST_TIMEOUT_SECONDS: "${INGESTION_REQUEST_TIMEOUT_SECONDS:-30}"
+      INGESTION_FIELD_INDEX_ENABLED: "${INGESTION_FIELD_INDEX_ENABLED:-false}"
+      INGESTION_FIELD_INDEX_SOURCE_ID: "${INGESTION_FIELD_INDEX_SOURCE_ID:-sentinel-2-l2a}"
+      INGESTION_READINESS_ENABLED: "${INGESTION_READINESS_ENABLED:-false}"
+      INGESTION_FRESHNESS_MAX_AGE_HOURS: "${INGESTION_FRESHNESS_MAX_AGE_HOURS:-}"
+      INGESTION_AOI_ID: "${INGESTION_AOI_ID:-bangalore_60km_geodesic_aoi}"
+      INGESTION_PIPELINE_TILE_LAYER_ENABLED: "${INGESTION_PIPELINE_TILE_LAYER_ENABLED:-false}"
       CORS_ALLOWED_ORIGINS: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN must be set to the exact public web origin}"
       AUTH_MODE: "${AUTH_MODE:-enabled}"
       AUTH_ALLOW_DISABLED: "${AUTH_ALLOW_DISABLED:-false}"
@@ -81,15 +86,13 @@ services:
       AUTH_REMEMBER_TTL_DAYS: "${AUTH_REMEMBER_TTL_DAYS:-30}"
       AUTH_LOGIN_RATE_LIMIT_PER_MINUTE: "${AUTH_LOGIN_RATE_LIMIT_PER_MINUTE:-10}"
       AUTH_SIGNUP_RATE_LIMIT_PER_HOUR: "${AUTH_SIGNUP_RATE_LIMIT_PER_HOUR:-20}"
-      INGESTION_JOB_INBOX_DIR: "/srv/akasha/ingestion-inbox"
-      ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}"
+      INGESTION_JOB_INBOX_DIR: ""
+      ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "false"
     expose:
       - "8000"
     volumes:
-      - /srv/akasha/bhoonidhi-diagnostics:/srv/akasha/bhoonidhi-diagnostics
-      - /srv/akasha/ingestion:/srv/akasha/ingestion:ro
-      - /srv/akasha/ingestion-inbox:/srv/akasha/ingestion-inbox
-      - /srv/akasha/data/seed:/app/data/seed:ro
+      - "${APP_DATA_ROOT:-/data/akasha}/data/seed:/app/data/seed:ro"
+      - "${APP_DATA_ROOT:-/data/akasha}/data/reference:/app/data/reference:ro"
     depends_on:
       postgis:
         condition: service_healthy
@@ -170,7 +173,7 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       POSTGRES_DB: "${POSTGRES_DB}"
     volumes:
-      - /srv/akasha/postgis:/var/lib/postgresql/data
+      - "${APP_DATA_ROOT:-/data/akasha}/postgis:/var/lib/postgresql/data"
     expose:
       - "5432"
     healthcheck:
@@ -189,7 +192,7 @@ services:
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
       MINIO_BROWSER: "off"
     volumes:
-      - /srv/akasha/minio:/data
+      - "${APP_DATA_ROOT:-/data/akasha}/minio:/data"
     expose:
       - "9000"
       - "9001"
@@ -200,66 +203,3 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
-
-  ingestion-worker:
-    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-ingestion-worker:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
-    pull_policy: always
-    environment:
-      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD_URLENCODED}@postgis:5432/${POSTGRES_DB}"
-      STAC_API_URL: "http://stac-api:8080"
-      S3_ENDPOINT_URL: "http://minio:9000"
-      S3_ACCESS_KEY: "${MINIO_ROOT_USER}"
-      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
-      S3_REGION: "${AWS_REGION:-us-east-1}"
-      AKASHA_COG_BUCKET: "${AKASHA_COG_BUCKET:-akasha-cogs}"
-      AKASHA_COLLECTION_ID: "${AKASHA_COLLECTION_ID:-resourcesat-2a-liss3-boa}"
-      SEED_DATA_DIR: "/app/data/seed"
-      AOI_CONFIG_PATH: "${AOI_CONFIG_PATH:-/app/data/seed/bangalore-60km-aoi.geojson}"
-      AOI_CONFIG_DIR: "${AOI_CONFIG_DIR:-}"
-      BHOONIDHI_API_BASE: "${BHOONIDHI_API_BASE:-https://bhoonidhi-api.nrsc.gov.in}"
-      BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
-      BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
-      BHOONIDHI_SEARCH_RPS: "${BHOONIDHI_SEARCH_RPS:-3}"
-      BHOONIDHI_DOWNLOAD_CONCURRENCY: "${BHOONIDHI_DOWNLOAD_CONCURRENCY:-3}"
-      BHOONIDHI_MAX_DOWNLOADS_PER_SYNC: "${BHOONIDHI_MAX_DOWNLOADS_PER_SYNC:-3}"
-      BHOONIDHI_RAW_ROOT: "${BHOONIDHI_RAW_ROOT:-/srv/akasha/data/raw/bhoonidhi}"
-      BHOONIDHI_TEMP_ROOT: "${BHOONIDHI_TEMP_ROOT:-/srv/akasha/data/work/bhoonidhi}"
-      BHOONIDHI_LEDGER_PATH: "${BHOONIDHI_LEDGER_PATH:-/srv/akasha/ingestion/ledger.sqlite}"
-    volumes:
-      - /srv/akasha/data/raw:/app/data/raw
-      - /srv/akasha/data/work:/app/data/work
-      - /srv/akasha/data/raw:/srv/akasha/data/raw
-      - /srv/akasha/data/work:/srv/akasha/data/work
-      - /srv/akasha/ingestion:/srv/akasha/ingestion
-      - /srv/akasha/data/seed/rasters:/app/data/seed/rasters
-    depends_on:
-      postgis:
-        condition: service_healthy
-      minio:
-        condition: service_started
-    healthcheck:
-      disable: true
-    restart: "no"
-
-  ingestion-sar:
-    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-akasha-techcatalyst}/akasha-ingestion-sar:${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}"
-    pull_policy: always
-    platform: linux/amd64
-    environment:
-      PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      SNAP_USER_DIR: "/snap-cache"
-      SNAP_CACHE_SIZE: "${SNAP_CACHE_SIZE:-8G}"
-      SNAP_PARALLELISM: "${SNAP_PARALLELISM:-4}"
-      JAVA_TOOL_OPTIONS: "-Xmx${SNAP_JAVA_MAX_HEAP:-12g}"
-      AKASHA_S1_DEM_SOURCE: "${AKASHA_S1_DEM_SOURCE:-Copernicus 30m Global DEM}"
-      AKASHA_S1_FALLBACK_DEM_SOURCE: "${AKASHA_S1_FALLBACK_DEM_SOURCE:-SRTM 1Sec HGT}"
-      AKASHA_S1_TARGET_CRS: "${AKASHA_S1_TARGET_CRS:-EPSG:4326}"
-      AKASHA_S1_PIXEL_SPACING_METERS: "${AKASHA_S1_PIXEL_SPACING_METERS:-10}"
-      AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
-      AKASHA_S1_VH_RESCALE: "${AKASHA_S1_VH_RESCALE:--30,-5}"
-    volumes:
-      - /srv/akasha/data:/app/data
-      - /srv/akasha/snap-cache:/snap-cache
-    healthcheck:
-      disable: true
-    restart: "no"

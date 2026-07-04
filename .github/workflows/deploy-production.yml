@@ -20,6 +20,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: akasha-techcatalyst
   COMPOSE_TEMPLATE: infra/selfhosted/coolify-compose.yml
+  RENDERED_COMPOSE: .akasha-coolify-compose.yml
   # Opt JavaScript actions into Node.js 24 ahead of the June 2026 runner default.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -62,7 +63,7 @@ jobs:
       - name: Verify immutable image tags exist
         run: |
           set -euo pipefail
-          for image in akasha-web akasha-api akasha-ingestion-worker akasha-ingestion-sar; do
+          for image in akasha-web akasha-api; do
             ref="${REGISTRY}/${IMAGE_NAMESPACE}/${image}:${IMAGE_TAG}"
             echo "Checking ${ref}"
             docker manifest inspect "${ref}" >/dev/null
@@ -77,7 +78,7 @@ jobs:
           tag = os.environ["IMAGE_TAG"]
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
-          Path("/tmp/akasha-coolify-compose.yml").write_text(text)
+          Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY
 
       - name: Patch Coolify service stack
@@ -91,7 +92,7 @@ jobs:
           api_url = os.environ["COOLIFY_API_URL"].rstrip("/")
           service_uuid = os.environ["COOLIFY_SERVICE_UUID"]
           token = os.environ["COOLIFY_TOKEN"]
-          compose = open("/tmp/akasha-coolify-compose.yml", "rb").read()
+          compose = open(os.environ["RENDERED_COMPOSE"], "rb").read()
           payload = json.dumps(
               {
                   "docker_compose_raw": base64.b64encode(compose).decode(),

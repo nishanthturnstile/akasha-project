@@ -49,3 +49,6 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# ---- Generated outputs / presentations ----
+outputs/

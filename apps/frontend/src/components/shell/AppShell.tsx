@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   CalendarRange,
+  Check,
   ChevronDown,
   ChevronsLeft,
   Clock,
@@ -244,10 +245,20 @@ export function AppShell() {
   );
 
   // Auto-select the last-viewed field for the current season on initial load
+  // and when switching between seasons.
   useEffect(() => {
     const fields = fieldsQ.data;
     if (!fields || fields.length === 0 || !effectiveSeasonId) return;
-    if (view.selectedPlotId) return;
+
+    // If there is a currently selected field, verify it belongs to the current
+    // season. If the user switched to a season that has no fields, clear the
+    // stale selection so no polygon from another season lingers on the map.
+    if (view.selectedPlotId) {
+      const selectedField = fields.find((f) => f.id === view.selectedPlotId);
+      const belongsToCurrentSeason = selectedField && selectedField.seasonIds?.includes(effectiveSeasonId);
+      if (belongsToCurrentSeason) return;
+      view.clearSelectedPlot();
+    }
 
     const savedFields = getLastFieldPerSeason();
     const savedFieldId = savedFields[effectiveSeasonId];
@@ -265,6 +276,9 @@ export function AppShell() {
         view.setSelectedPlotId(firstField.id);
         view.setFocusNonce(Date.now());
         setTimeout(() => setGlobalViewOpen(false), 0);
+      } else {
+        // Season has no fields — keep Global View open to show the empty state
+        setTimeout(() => setGlobalViewOpen(true), 0);
       }
     }
   }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId, view]);
@@ -508,16 +522,31 @@ export function AppShell() {
                   ) : filteredSeasons.length === 0 ? (
                     <Card className="border-border/60 bg-card/90 shadow-sm">
                       <CardContent>
-                        <p className="text-sm font-medium text-foreground">
-                          No { seasonTab } seasons yet
-                        </p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          { seasonTab === 'active'
-                            ? 'Create a new season to get started.'
-                            : seasonTab === 'planned'
-                              ? 'Schedule a future season with a start date beyond today.'
-                              : 'Seasons with an end date in the past will appear here.' }
-                        </p>
+                        {seasonTab === 'active' ? (
+                          <div className="flex flex-col items-center gap-3 text-center">
+                            <p className="text-sm text-muted-foreground">
+                              <button
+                                type="button"
+                                onClick={ () => { setSeasonSheetOpen(false); setCreateSeasonOpen(true); } }
+                                className="inline font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+                              >
+                                Create
+                              </button>
+                              {' an active season to receive up-to-date data.'}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-sm font-medium text-foreground">
+                              No { seasonTab } seasons yet
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              { seasonTab === 'planned'
+                                ? 'Schedule a future season with a start date beyond today.'
+                                : 'Seasons with an end date in the past will appear here.' }
+                            </p>
+                          </>
+                        )}
                       </CardContent>
                     </Card>
                   ) : (
@@ -525,6 +554,10 @@ export function AppShell() {
                       { filteredSeasons.map((season) => {
                         const seasonFields = (fieldsQ.data ?? []).filter((f) =>
                           f.seasonIds?.includes(season.id),
+                        );
+                        const totalArea = seasonFields.reduce(
+                          (sum, f) => sum + (typeof f.areaHa === 'number' ? f.areaHa : 0),
+                          0,
                         );
                         const isCurrent = effectiveSeasonId === season.id;
                         return (
@@ -547,7 +580,8 @@ export function AppShell() {
                               }
                               setCurrentSeasonId(season.id);
                               setSeasonSheetOpen(false);
-                              setGlobalViewOpen(false);
+                              const seasonHasFields = fields.some((f) => f.seasonIds?.includes(season.id));
+                              setGlobalViewOpen(!seasonHasFields);
                               if (savedField) {
                                 navigate(`/monitoring/field-analytics/field/${savedField.id}`);
                               } else {
@@ -561,9 +595,7 @@ export function AppShell() {
                                   { season.name }
                                 </CardTitle>
                                 { isCurrent && (
-                                  <span className="text-[10px] font-medium uppercase text-primary tracking-wider">
-                                    Active
-                                  </span>
+                                  <Check className="size-5 text-primary" strokeWidth={2.5} aria-label="Active season" />
                                 ) }
                               </div>
                               <div className="mt-2 flex gap-2">
@@ -612,6 +644,12 @@ export function AppShell() {
                                     Delete
                                   </button>
                                 </div>
+                              </div>
+                              <div className="mt-1 flex items-center gap-2 text-sm">
+                                <span className="text-muted-foreground">Total area:</span>
+                                <span className="font-semibold text-foreground tabular-nums">
+                                  {seasonFields.length === 0 ? '0.00' : totalArea.toFixed(2)} ha
+                                </span>
                               </div>
                               { seasonFields.length === 0 && (
                                 <button

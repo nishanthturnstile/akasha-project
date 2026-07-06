@@ -1,4 +1,4 @@
-import { FileDown, MapPin, MoreVertical, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { MapPin, MoreVertical, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useDeleteField, useFields, useSeasons, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
-import type { Field } from '@/types/api';
+import type { Field, GeoJsonPosition, PlotGeometry } from '@/types/api';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 
 interface Props {
@@ -62,53 +62,110 @@ function FieldMenu({
         <MoreVertical className="size-4" strokeWidth={1.75} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded-md border border-border bg-popover py-1 shadow-e2">
+        <div className="absolute right-0 top-full z-50 mt-1 min-w-[130px] whitespace-nowrap rounded-md border border-border bg-popover py-1 shadow-e2">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(field); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+            className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
           >
-            <Pencil className="size-3.5" strokeWidth={1.75} />
             Edit
           </button>
           {isPinned ? (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setOpen(false); onUnpin(field); }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
             >
-              <MapPin className="size-3.5" strokeWidth={1.75} />
               Unpin
             </button>
           ) : (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setOpen(false); onPin(field); }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
             >
-              <MapPin className="size-3.5" strokeWidth={1.75} />
               Pin Field
             </button>
           )}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setOpen(false); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+            className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
           >
-            <FileDown className="size-3.5" strokeWidth={1.75} />
             Export Contours
           </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(field); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent/40 transition-colors duration-fast"
+            className="flex w-full items-center px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent/40 transition-colors duration-fast"
           >
-            <Trash2 className="size-3.5" strokeWidth={1.75} />
             Delete
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+function extractRings(geometry: PlotGeometry): GeoJsonPosition[][] {
+  if (geometry.type === 'Polygon') return [geometry.coordinates[0] ?? []];
+  if (geometry.type === 'MultiPolygon') return geometry.coordinates.map((poly) => poly[0] ?? []);
+  return [];
+}
+
+function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry; size?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !geometry) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rings = extractRings(geometry);
+    if (rings.length === 0) return;
+
+    const lngs = rings.flat().map((p) => p[0]);
+    const lats = rings.flat().map((p) => p[1]);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+
+    const pad = 4;
+    const drawSize = size - pad * 2;
+    const geoW = maxLng - minLng || 1;
+    const geoH = maxLat - minLat || 1;
+    const scale = Math.min(drawSize / geoW, drawSize / geoH);
+    const cx = (maxLng + minLng) / 2;
+    const cy = (maxLat + minLat) / 2;
+
+    ctx.clearRect(0, 0, size, size);
+
+    for (const ring of rings) {
+      ctx.beginPath();
+      for (let i = 0; i < ring.length; i++) {
+        const x = pad + (ring[i][0] - cx) * scale + drawSize / 2;
+        const y = pad + (cy - ring[i][1]) * scale + drawSize / 2;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.fill();
+    }
+  }, [geometry, size]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={size}
+      className="size-12 shrink-0 rounded-md border border-border/60 bg-card"
+      aria-hidden="true"
+    />
   );
 }
 
@@ -121,6 +178,7 @@ function FieldCard({
   isPinned,
   onPin,
   onUnpin,
+  seasonId,
 }: {
   field: Field;
   onEdit: (field: Field) => void;
@@ -130,32 +188,39 @@ function FieldCard({
   isPinned: boolean;
   onPin: (field: Field) => void;
   onUnpin: (field: Field) => void;
+  seasonId?: string | null;
 }) {
+  const currentCycle = field.vegetationData?.find((v) => v.seasonId === seasonId);
+  const cropLabel = currentCycle?.cropName ?? 'Unknown crop';
   return (
     <div
       className={ cn(
-        'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-fast',
+        'grid cursor-pointer grid-cols-[52px_1fr_auto] gap-x-3 rounded-lg border border-border/70 px-4 py-4 transition-colors duration-fast',
         selected
-          ? 'border-primary border-2 bg-primary/5'
-          : 'border-border/70 bg-card/35 hover:bg-accent/10',
+          ? 'border-l-[3px] border-l-primary bg-primary/5'
+          : 'bg-card/35 hover:bg-accent/10',
       ) }
       onClick={ () => onSelect?.(field) }
       role="button"
       tabIndex={ 0 }
       onKeyDown={ (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(field); } } }
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium text-foreground">
-            {isPinned && <MapPin className="mr-1 inline size-3.5 text-primary" strokeWidth={1.75} />}
-            {field.name}
-          </p>
-          <p className="shrink-0 text-xs text-muted-foreground tnum">
-            {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
-          </p>
-        </div>
+      <div className="row-span-2 self-center">
+        <FieldThumbnail geometry={field.geometry} size={52} />
       </div>
-      <FieldMenu field={field} onEdit={onEdit} onDelete={onDelete} isPinned={isPinned} onPin={onPin} onUnpin={onUnpin} />
+
+      <p className="min-w-0 self-center truncate text-base font-semibold text-foreground">
+        {isPinned && <MapPin className="mr-1 inline size-3.5 text-primary" strokeWidth={1.75} />}
+        {field.name}
+      </p>
+      <div className="self-center justify-self-end">
+        <FieldMenu field={field} onEdit={onEdit} onDelete={onDelete} isPinned={isPinned} onPin={onPin} onUnpin={onUnpin} />
+      </div>
+
+      <span className="self-center truncate text-xs text-muted-foreground">{cropLabel}</span>
+      <span className="self-center justify-self-end text-xs text-muted-foreground tnum">
+        {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
+      </span>
     </div>
   );
 }
@@ -201,7 +266,6 @@ function setPinnedFieldsForSeason(seasonId: string, fieldIds: string[]) {
 
 const EMPTY_CTA_BUTTONS = [
   { label: 'Add Field', icon: Plus, action: 'add-field' as const },
-  { label: 'Browse Map', icon: Search, action: 'browse-map' as const },
 ];
 
 export default function GlobalViewPanel({ onClose, seasonId }: Props) {
@@ -362,7 +426,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
                           navigate(seasonId ? `/monitoring/field-create?seasonId=${seasonId}` : '/monitoring/field-create');
                         }
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors duration-fast"
+                      className="inline-flex items-center gap-1.5 rounded-md border-2 border-dashed border-primary/40 bg-primary/[0.08] px-5 py-2.5 text-sm font-medium text-primary hover:bg-primary/[0.15] transition-colors duration-fast"
                     >
                       <btn.icon className="size-3.5" strokeWidth={1.75} />
                       {btn.label}
@@ -377,6 +441,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
                   <FieldCard
                   key={field.id}
                   field={field}
+                  seasonId={seasonId}
                   selected={field.id === selectedPlotId}
                   isPinned={pinnedFieldIds.includes(field.id)}
                   onPin={handlePin}

@@ -18,6 +18,7 @@ from ..api_models import CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
 from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
+from ..ingestion_client import fetch_signed_ingestion_binary, request_field_index
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
@@ -448,6 +449,49 @@ def _index_overlay_response(
     return body, content_type, headers
 
 
+def _pipeline_index_overlay_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+) -> tuple[bytes, str, dict[str, str]]:
+    result = request_field_index(
+        settings,
+        geometry=plot["geometry"],
+        field_id=plot_id,
+        index_type=index_type,
+        acquisition_date=acquisition_date,
+        max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+    )
+    if result.get("status") != "AVAILABLE" or not result.get("overlayUrl"):
+        raise bad_request(
+            "Standalone ingestion overlay is unavailable for this field/date.",
+            code="INGESTION_OVERLAY_UNAVAILABLE",
+            sourceId=source_id,
+            acquisitionDate=acquisition_date,
+            reason=result.get("reason"),
+        )
+    body, content_type, upstream_headers = fetch_signed_ingestion_binary(
+        settings,
+        str(result["overlayUrl"]),
+    )
+    headers: dict[str, str] = {}
+    for name in (
+        "X-Akasha-Overlay-Corners",
+        "X-Akasha-Overlay-Stretch",
+    ):
+        if upstream_headers.get(name):
+            headers[name] = upstream_headers[name]
+    headers["X-Akasha-Resolved-Source"] = source_id
+    headers["X-Akasha-Resolved-Resolution"] = str(
+        (result.get("resolution") or {}).get("displayMeters") or 10
+    )
+    headers["X-Akasha-Enhanced"] = "false"
+    return body, content_type, headers
+
+
 def _point_row_col(read: Any, lng: float, lat: float) -> tuple[int, int]:
     transform = getattr(read, "window_transform", None)
     crs = getattr(read, "crs", None)
@@ -620,14 +664,24 @@ async def get_field_index_overlay(
 ) -> Response:
     plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(index_type)
-    body, content_type, headers = await _run_blocking(
-        _index_overlay_response,
-        plot=plot,
-        source_id=sourceId,
-        acquisition_date=acquisitionDate,
-        index_type=normalized_index,
-        prefer_high_res=preferHighRes,
-    )
+    if sourceId == catalog.SENTINEL_2_SOURCE_ID and settings.ingestion_field_index_enabled:
+        body, content_type, headers = await _run_blocking(
+            _pipeline_index_overlay_response,
+            plot_id=plot_id,
+            plot=plot,
+            source_id=sourceId,
+            acquisition_date=acquisitionDate,
+            index_type=normalized_index,
+        )
+    else:
+        body, content_type, headers = await _run_blocking(
+            _index_overlay_response,
+            plot=plot,
+            source_id=sourceId,
+            acquisition_date=acquisitionDate,
+            index_type=normalized_index,
+            prefer_high_res=preferHighRes,
+        )
     return Response(content=body, media_type=content_type, headers=headers)
 
 

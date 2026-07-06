@@ -222,6 +222,25 @@ class Settings:
     )
     """Gate for non-dry-run admin ingestion triggers. Disabled by default."""
 
+    # Standalone ingestion API bridge. These are server-to-server settings only;
+    # never expose the API key or private ingestion URL to browser JavaScript.
+    ingestion_api_url: str = field(default_factory=lambda: _get("INGESTION_API_URL", ""))
+    ingestion_api_key: str = field(default_factory=lambda: _get("INGESTION_API_KEY", ""))
+    ingestion_request_timeout_seconds: int = field(
+        default_factory=lambda: _get_int("INGESTION_REQUEST_TIMEOUT_SECONDS", 30)
+    )
+    ingestion_field_index_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_FIELD_INDEX_ENABLED", False)
+    )
+    ingestion_readiness_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_READINESS_ENABLED", False)
+    )
+    ingestion_aoi_id: str = field(
+        default_factory=lambda: _get(
+            "INGESTION_AOI_ID", "bangalore_60km_geodesic_aoi"
+        )
+    )
+
     @property
     def cors_allowed_origins(self) -> list[str]:
         """Comma-separated origins. Supports CORS_ALLOWED_ORIGINS (doc name)

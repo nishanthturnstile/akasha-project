@@ -14,6 +14,7 @@ Minimal product surface needed to verify the raster proof path end-to-end:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from datetime import date, timedelta
@@ -27,6 +28,7 @@ from fastapi.responses import Response
 from ..aoi import load_aoi_configs, select_default_aoi
 from ..auth import get_current_team
 from ..config import settings
+from ..ingestion_client import get_readiness, is_ingestion_configured
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import (
@@ -50,6 +52,43 @@ from ..raster.service import compute_statistics
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
 
 _RATE_BUCKETS: dict[str, list[float]] = {}
+logger = logging.getLogger("akasha.api.product")
+
+
+def _is_pipeline_source(source_id: str) -> bool:
+    return source_id == catalog.SENTINEL_2_SOURCE_ID
+
+
+def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
+    if source_id != catalog.SENTINEL_2_SOURCE_ID:
+        return None
+    if not is_ingestion_configured(settings):
+        return None
+    payload = catalog.source_payload(source_id)
+    index_modes = [mode for mode in payload["displayModes"] if mode in payload["supportedIndices"]]
+    payload.update(
+        {
+            "pipelineBacked": True,
+            "analysisLevel": "field",
+            "displayModes": index_modes,
+            "defaultDisplayMode": "NDVI",
+            "mapDisplayModes": index_modes,
+            "defaultMapDisplayMode": "NDVI",
+            "layerGroups": [
+                {
+                    "label": "Vegetation Indices",
+                    "modes": [
+                        mode for mode in ("NDVI", "NDRE", "MSAVI") if mode in index_modes
+                    ],
+                },
+                {"label": "Moisture Indices", "modes": [m for m in ("NDMI",) if m in index_modes]},
+            ],
+            "tileRouteMode": "field-overlay",
+            "refreshPolicy": "Standalone ingestion pipeline via Earth Search Sentinel-2 L2A.",
+            "resolutionMeters": 10,
+        }
+    )
+    return payload
 
 
 def _basemap_config() -> dict[str, Any]:
@@ -111,7 +150,50 @@ async def get_config() -> dict[str, Any]:
 @router.get("/sources")
 async def get_sources() -> list[dict[str, Any]]:
     """Satellite/product source list derived from the source registry/STAC metadata."""
-    return catalog.list_sources()
+    sources = catalog.list_sources()
+    source_ids = {source["id"] for source in sources}
+    if settings.ingestion_readiness_enabled:
+        sentinel = _pipeline_source_payload(catalog.SENTINEL_2_SOURCE_ID)
+        if sentinel and sentinel["id"] not in source_ids:
+            sources.append(sentinel)
+    return sources
+
+
+def _pipeline_dates(source_id: str) -> list[dict[str, Any]] | None:
+    if not settings.ingestion_readiness_enabled or not _is_pipeline_source(source_id):
+        return None
+    try:
+        readiness = get_readiness(
+            settings,
+            source_id=source_id,
+            aoi_id=settings.ingestion_aoi_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ingestion readiness unavailable for %s: %s", source_id, type(exc).__name__)
+        return None
+    if not readiness:
+        return []
+    dates = [str(value) for value in readiness.get("availableDates") or []]
+    index_coverage = readiness.get("indexCoverage") or {}
+    ndvi_coverage = index_coverage.get("NDVI") or {}
+    newest = max(dates) if dates else None
+    return [
+        {
+            "acquisitionDate": value,
+            "datetime": f"{value}T00:00:00Z",
+            "usablePixelPercent": None,
+            "cloudMaskedPercent": None,
+            "coveragePercent": ndvi_coverage.get("coveragePercent"),
+            "isLatestUsable": value == newest,
+            "metricsProvisional": False,
+            "tileAvailable": True,
+            "sceneCount": 1,
+            "sensor": "S2",
+            "provenanceLabel": "Sentinel-2 · 10 m",
+            "resolvedSourceId": source_id,
+        }
+        for value in sorted(dates, reverse=True)
+    ]
 
 
 def _filter_source_dates(
@@ -166,6 +248,14 @@ async def get_source_dates(
     lookbackDays: int | None = Query(default=None, ge=1, le=366),
 ) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
+    pipeline_dates = _pipeline_dates(source_id)
+    if pipeline_dates is not None:
+        return _filter_source_dates(
+            pipeline_dates,
+            start_date=startDate,
+            end_date=endDate,
+            lookback_days=lookbackDays,
+        )
     return _filter_source_dates(
         catalog.list_dates(source_id),
         start_date=startDate,

@@ -31,17 +31,27 @@ def _get_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
+def _ingestion_signed_url_allowed_prefix() -> str:
+    return (_get("INGESTION_SIGNED_URL_ALLOWED_PREFIX") or _get("INGESTION_API_URL", "")).rstrip(
+        "/"
+    )
+
+
+def _ingestion_signed_url_fetch_prefix() -> str:
+    return (
+        _get("INGESTION_SIGNED_URL_FETCH_PREFIX")
+        or _get("INGESTION_SIGNED_URL_ALLOWED_PREFIX")
+        or _get("INGESTION_API_URL", "")
+    ).rstrip("/")
+
+
 def _local_cors_allowed_origins() -> list[str]:
     ports: list[str] = []
     for port in (_get("FRONTEND_PORT", "5173"), _get("WEB_PORT", "8080")):
         if port and port not in ports:
             ports.append(port)
 
-    return [
-        f"http://{host}:{port}"
-        for host in ("localhost", "127.0.0.1")
-        for port in ports
-    ]
+    return [f"http://{host}:{port}" for host in ("localhost", "127.0.0.1") for port in ports]
 
 
 @dataclass
@@ -190,9 +200,7 @@ class Settings:
     # REQ-016: BFF may only read redacted scheduler snapshots/summaries through
     # explicit config, never raw provider archives or unrestricted job directories.
     scheduler_jobs_dir: str = field(
-        default_factory=lambda: _get(
-            "SCHEDULER_JOBS_DIR", "/srv/akasha/ingestion/scheduler/jobs"
-        )
+        default_factory=lambda: _get("SCHEDULER_JOBS_DIR", "/srv/akasha/ingestion/scheduler/jobs")
     )
     """Read-only mount path for per-job scheduler artifact directories.
     Set SCHEDULER_JOBS_DIR to override. Endpoints remain unavailable if the
@@ -209,9 +217,7 @@ class Settings:
     the file does not exist."""
 
     ingestion_job_inbox_dir: str = field(
-        default_factory=lambda: _get(
-            "INGESTION_JOB_INBOX_DIR", "/srv/akasha/ingestion-inbox"
-        )
+        default_factory=lambda: _get("INGESTION_JOB_INBOX_DIR", "/srv/akasha/ingestion-inbox")
     )
     """Write-only handoff directory for admin-triggered ingestion job requests.
     Set INGESTION_JOB_INBOX_DIR to override. Trigger endpoint returns
@@ -236,9 +242,16 @@ class Settings:
         default_factory=lambda: _get_bool("INGESTION_READINESS_ENABLED", False)
     )
     ingestion_aoi_id: str = field(
-        default_factory=lambda: _get(
-            "INGESTION_AOI_ID", "bangalore_60km_geodesic_aoi"
-        )
+        default_factory=lambda: _get("INGESTION_AOI_ID", "bangalore_60km_geodesic_aoi")
+    )
+    ingestion_signed_url_allowed_prefix: str = field(
+        default_factory=_ingestion_signed_url_allowed_prefix
+    )
+    ingestion_signed_url_fetch_prefix: str = field(
+        default_factory=_ingestion_signed_url_fetch_prefix
+    )
+    ingestion_trend_max_dates: int = field(
+        default_factory=lambda: _get_int("INGESTION_TREND_MAX_DATES", 12)
     )
 
     @property

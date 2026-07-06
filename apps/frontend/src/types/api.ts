@@ -26,6 +26,7 @@ export interface BasemapConfig {
 
 export interface AppConfig {
   appName: string;
+  defaultSourceId: string;
   aoi: AoiConfig;
   aois?: AoiConfig[];
   /** Backward-compatible field. Esri basemaps are configured through `basemap`. */
@@ -92,6 +93,7 @@ export interface Source {
   id: string;
   label: string;
   provider: string;
+  pipelineBacked?: boolean;
   kind?: SourceKind;
   displayModes?: string[];
   defaultDisplayMode?: string;
@@ -729,7 +731,7 @@ export interface FieldStatisticsRequest {
 
 export interface FieldStatisticsResponse {
   plotId: string;
-  provider: 'native';
+  provider: 'native' | 'pipeline';
   scope: 'field';
   indexType: string;
   sourceId: string;
@@ -814,8 +816,8 @@ export interface FieldTrendPoint {
 
 export interface FieldTrendResponse {
   plotId: string;
-  provider: 'native';
-  scope: 'native_fallback';
+  provider: 'native' | 'pipeline';
+  scope: 'native_fallback' | 'pipeline';
   sourceId: string;
   indexType: string;
   startDate: string;

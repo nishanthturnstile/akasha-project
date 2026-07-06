@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "name": "local-sentinel-2-smoke-field",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Synthetic Bangalore Sentinel-2 smoke field",
+        "description": "Non-secret synthetic polygon for local remote-ingestion smoke checks; not customer or production geometry.",
+        "sourceId": "sentinel-2-l2a",
+        "indexType": "NDVI",
+        "smokeDate": "2026-03-20",
+        "aoiId": "bangalore_60km_geodesic_aoi"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [77.5940, 12.9710],
+            [77.5960, 12.9710],
+            [77.5960, 12.9730],
+            [77.5940, 12.9730],
+            [77.5940, 12.9710]
+          ]
+        ]
+      }
+    }
+  ]
+}

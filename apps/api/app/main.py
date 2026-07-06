@@ -37,6 +37,7 @@ from starlette.types import ExceptionHandler
 
 from . import skeleton
 from .config import settings
+from .ingestion_client import is_ingestion_configured
 from .ingestion_jobs import router as ingestion_jobs_router
 from .raster.errors import (
     AkashaError,
@@ -139,6 +140,9 @@ def _health_payload() -> dict[str, Any]:
         "sliceName": skeleton.SLICE_NAME,
         "version": APP_VERSION,
         "env": settings.app_env,
+        "ingestionConfigured": is_ingestion_configured(settings),
+        "ingestionReadinessEnabled": settings.ingestion_readiness_enabled,
+        "ingestionFieldIndexEnabled": settings.ingestion_field_index_enabled,
     }
 
 

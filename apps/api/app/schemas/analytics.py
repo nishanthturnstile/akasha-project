@@ -22,7 +22,7 @@ class FieldStatisticsRequest(ApiModel):
 
 class FieldStatisticsResponse(ApiModel):
     plot_id: str
-    provider: Literal["native"] = "native"
+    provider: Literal["native", "pipeline"] = "native"
     scope: Literal["field"] = "field"
     index_type: str
     source_id: str

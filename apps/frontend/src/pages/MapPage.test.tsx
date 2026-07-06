@@ -8,6 +8,10 @@ import { MapViewProvider } from '@/state/mapViewContext';
 import type { MapViewState } from '@/state/mapViewState';
 import type { FieldStatisticsResponse, FieldTrendResponse, ObservationCandidate, Plot, SceneDate } from '@/types/api';
 
+const coordinateReadoutState = vi.hoisted(() => ({
+  lookups: [] as Array<((point: { lng: number; lat: number }) => Promise<unknown>) | undefined>,
+}));
+
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: ({
     basemap,
@@ -36,7 +40,35 @@ vi.mock('@/components/map/MapLayerManager', () => ({
   ),
 }));
 
-function renderMapPage(initialState?: Partial<MapViewState>) {
+vi.mock('@/components/map/CoordinateReadout', () => ({
+  CoordinateReadout: ({
+    indexLookup,
+  }: {
+    indexLookup?: (point: { lng: number; lat: number }) => Promise<unknown>;
+  }) => {
+    coordinateReadoutState.lookups.push(indexLookup);
+    return (
+      <button
+        type="button"
+        data-testid="coordinate-readout-mock"
+        data-index-lookup={ String(Boolean(indexLookup)) }
+        onClick={ () => {
+          void indexLookup?.({ lng: 77.5946, lat: 12.9716 });
+        } }
+      >
+        Coordinate readout
+      </button>
+    );
+  },
+}));
+
+type MapPageProps = {
+  hidePlotToolbar?: boolean;
+  simplifiedMapControls?: boolean;
+  topLeftCoords?: boolean;
+};
+
+function renderMapPage(initialState?: Partial<MapViewState>, props: MapPageProps = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -46,7 +78,7 @@ function renderMapPage(initialState?: Partial<MapViewState>) {
       <QueryClientProvider client={ queryClient }>
         <TooltipProvider>
           <MapViewProvider initialState={ { overlaysVisible: true, ...initialState } }>
-            <MapPage />
+            <MapPage { ...props } />
           </MapViewProvider>
         </TooltipProvider>
       </QueryClientProvider>
@@ -170,6 +202,7 @@ class ResizeObserverMock {
 }
 
 afterEach(() => {
+  coordinateReadoutState.lookups.length = 0;
   window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -177,6 +210,7 @@ afterEach(() => {
 
 function stubAkashaFetch({
   resourcesatDates = [makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true })],
+  sentinelDates = [makeDate('2026-03-20', { isLatestUsable: true, metricsProvisional: false })],
   liss4Dates = [makeDate('2026-01-15', { isLatestUsable: true, metricsProvisional: true })],
   sarDates = [
     makeDate('2026-04-26', {
@@ -189,14 +223,17 @@ function stubAkashaFetch({
   plots = [],
   fieldStatistics = makeFieldStatistics(),
   fieldTrend = makeFieldTrend(),
+  defaultSourceId = 'resourcesat-2a-liss3-boa',
   bestCandidates,
 }: {
   resourcesatDates?: SceneDate[];
+  sentinelDates?: SceneDate[];
   liss4Dates?: SceneDate[];
   sarDates?: SceneDate[];
   plots?: Plot[];
   fieldStatistics?: FieldStatisticsResponse;
   fieldTrend?: FieldTrendResponse;
+  defaultSourceId?: string;
   /** When provided, /api/observations/best returns these candidates (best-mode tests). */
   bestCandidates?: ObservationCandidate[];
 } = {}) {
@@ -225,6 +262,7 @@ function stubAkashaFetch({
               bounds: [74, 8, 81, 14],
             },
             basemapStyleUrl: '',
+            defaultSourceId,
             basemap: {
               provider: 'esri',
               style: 'arcgis/imagery',
@@ -238,6 +276,7 @@ function stubAkashaFetch({
             usablePixelThresholdPercent: 70,
             supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
             defaultIndex: 'NDVI',
+            adminIngestionLiveTriggerEnabled: false,
           }),
         );
       }
@@ -256,6 +295,19 @@ function stubAkashaFetch({
               mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
               defaultMapDisplayMode: 'NDVI',
               attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
+            },
+            {
+              id: 'sentinel-2-l2a',
+              label: 'Sentinel-2 L2A',
+              provider: 'pipeline',
+              pipelineBacked: true,
+              kind: 'optical',
+              supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              displayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              defaultDisplayMode: 'NDVI',
+              mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              defaultMapDisplayMode: 'NDVI',
+              attribution: 'Sentinel-2 via Akasha ingestion pipeline',
             },
             {
               id: 'resourcesat-2a-liss4-mx70-l2',
@@ -335,8 +387,28 @@ function stubAkashaFetch({
         });
       }
 
+      if (path.startsWith('/api/fields/plot-1/indices/point')) {
+        return Promise.resolve(
+          jsonResponse({
+            plotId: 'plot-1',
+            sourceId: 'sentinel-2-l2a',
+            acquisitionDate: '2026-03-20',
+            indexType: 'NDVI',
+            lng: 77.5946,
+            lat: 12.9716,
+            value: 0.44,
+            masked: false,
+            maskClass: null,
+          }),
+        );
+      }
+
       if (path.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')) {
         return Promise.resolve(jsonResponse(resourcesatDates));
+      }
+
+      if (path.startsWith('/api/sources/sentinel-2-l2a/dates')) {
+        return Promise.resolve(jsonResponse(sentinelDates));
       }
 
       if (path.startsWith('/api/sources/resourcesat-2a-liss4-mx70-l2/dates')) {
@@ -370,6 +442,80 @@ function stubAkashaFetch({
     }),
   );
 }
+
+describe('MapPage source defaults', () => {
+  it('uses config.defaultSourceId when no persisted active source exists', async () => {
+    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a' });
+
+    renderMapPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain('Sentinel-2 L2A');
+    });
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/sources/sentinel-2-l2a/dates')),
+    ).toBe(true);
+  });
+
+  it('keeps a persisted active source ahead of config.defaultSourceId', async () => {
+    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a' });
+
+    renderMapPage({ activeSourceId: 'resourcesat-2a-liss3-boa' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
+        'ResourceSat-2A LISS-3 BOA',
+      );
+    });
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+    ).toBe(true);
+  });
+});
+
+describe('MapPage pipeline point lookup gating', () => {
+  it('does not wire hover point lookup for pipeline-backed Sentinel sources', async () => {
+    stubAkashaFetch({
+      defaultSourceId: 'sentinel-2-l2a',
+      plots: [FIELD_PLOT],
+      fieldStatistics: makeFieldStatistics({
+        provider: 'pipeline',
+        sourceId: 'sentinel-2-l2a',
+        acquisitionDate: '2026-03-20',
+      }),
+      fieldTrend: makeFieldTrend({
+        provider: 'pipeline',
+        scope: 'pipeline',
+        sourceId: 'sentinel-2-l2a',
+        endDate: '2026-03-20',
+      }),
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1' }, { topLeftCoords: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain('Sentinel-2 L2A');
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'false',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('coordinate-readout-mock'));
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+    expect(calls.some(([input]) => String(input).includes('/indices/point'))).toBe(false);
+  });
+});
 
 describe('MapPage native source behavior', () => {
   it('shows the empty map state before a field is selected', async () => {

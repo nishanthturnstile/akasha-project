@@ -220,6 +220,39 @@ is_placeholder_or_empty() {
   [[ -z "$value" || "$value" == CHANGE_ME* || "$value" == \<* ]]
 }
 
+env_key_exists() {
+  local key="$1"
+  local file="$2"
+  [[ -f "$file" ]] && grep -q "^${key}=" "$file"
+}
+
+ensure_env_value_if_missing() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+  local current_value
+  current_value="$(read_env_value "$key" "$file")"
+  if [[ -n "$current_value" ]]; then
+    return
+  fi
+  if ! env_key_exists "$key" "$file"; then
+    upsert_env_value "$key" "$value" "$file"
+  fi
+}
+
+ensure_ingestion_bridge_env() {
+  ensure_env_value_if_missing DEFAULT_SOURCE_ID "resourcesat-2a-liss3-boa" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_API_URL "" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_API_KEY "" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_REQUEST_TIMEOUT_SECONDS "30" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_FIELD_INDEX_ENABLED "false" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_READINESS_ENABLED "false" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_AOI_ID "bangalore_60km_geodesic_aoi" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_SIGNED_URL_ALLOWED_PREFIX "" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_SIGNED_URL_FETCH_PREFIX "" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_TREND_MAX_DATES "12" "$ENV_FILE"
+}
+
 gateway_health_ok() {
   local port="$1"
   [[ "$(curl -fsS --max-time 2 "http://localhost:${port}/health" 2>/dev/null || true)" == "ok" ]]
@@ -279,6 +312,7 @@ ensure_docker_env() {
     if [[ -z "$(read_env_value AUTH_ALLOW_SIGNUP "$ENV_FILE")" ]]; then
       upsert_env_value AUTH_ALLOW_SIGNUP "true" "$ENV_FILE"
     fi
+    ensure_ingestion_bridge_env
     return
   fi
 
@@ -319,6 +353,7 @@ AKASHA_S1_TARGET_CRS=EPSG:4326
 AKASHA_S1_PIXEL_SPACING_METERS=10
 AKASHA_S1_VH_RESCALE=-30,-5
 EOF
+  ensure_ingestion_bridge_env
 }
 
 ensure_frontend_env() {

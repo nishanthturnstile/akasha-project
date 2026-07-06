@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
@@ -8,7 +8,8 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { MapControls } from '@/components/map/MapControls';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { polygonAreaMeters } from '@/lib/measure';
-import { useConfig, useCreateField } from '@/lib/queries';
+import { getField } from '@/lib/api';
+import { useConfig, useCreateField, useUpdateField } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 
 import type maplibregl from 'maplibre-gl';
@@ -20,7 +21,7 @@ function toLngLatRing(ring: GeoJsonPosition[]): [number, number][] {
 }
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
-const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
+const ONBOARDING_FIELD_KEY = 'akasha.onboarding.fieldId';
 
 // Zoom in closer than the AOI overview default so users can draw a field boundary
 // straight away without manually zooming.
@@ -28,12 +29,21 @@ const ONBOARDING_DRAW_ZOOM = 18;
 
 /**
  * Onboarding field-create screen: full-screen modal with the map and draw controls.
- * Creates a Field via the Field API linked to the onboarding season.
+ *
+ * Two modes:
+ *   - Create (no query param): draws a new field, POST /api/fields
+ *   - Edit (?fieldId=xxx): loads existing field, PATCH /api/fields/{fieldId}
+ *
+ * Stores/updates the single field ID in sessionStorage so Step2 can show it.
  */
 export default function OnboardingFieldCreate() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const configQ = useConfig();
   const createFieldMutation = useCreateField();
+  const updateFieldMutation = useUpdateField();
+
+  const editingFieldId = searchParams.get('fieldId');
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
@@ -42,8 +52,31 @@ export default function OnboardingFieldCreate() {
   const [fieldName, setFieldName] = useState('');
   const [drawResetKey] = useState(0);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [initialised, setInitialised] = useState(false);
 
   const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
+
+  // Load existing field data when in edit mode
+  useEffect(() => {
+    if (initialised || !editingFieldId) return;
+    let cancelled = false;
+    getField(editingFieldId)
+      .then((field) => {
+        if (cancelled) return;
+        setFieldName(field.name);
+        if (field.geometry) {
+          setDraftGeometry(field.geometry);
+        }
+        setInitialised(true);
+      })
+      .catch(() => {
+        // fall through — user can draw from scratch
+      });
+    return () => { cancelled = true; };
+  }, [editingFieldId, initialised]);
+
+  const isEditing = !!editingFieldId;
+  const isPending = createFieldMutation.isPending || updateFieldMutation.isPending;
 
   const requestMapTool = useCallback((owner: MapToolOwner): boolean => {
     setActiveMapTool((current) => {
@@ -124,25 +157,26 @@ export default function OnboardingFieldCreate() {
         return;
       }
       const areaMeters = polygonAreaMeters(toLngLatRing(polygon.coordinates[0] ?? []));
-      const created = await createFieldMutation.mutateAsync({
+      const payload = {
         name: fieldName.trim() || 'Field',
         geometry: {
-          type: 'Polygon',
+          type: 'Polygon' as const,
           coordinates: polygon.coordinates,
         },
         areaHa: areaMeters / 10000,
         seasonIds: [seasonId],
-      });
-      // Persist field ID in sessionStorage so Step2 can show it
-      const existing = (() => {
-        try {
-          const raw = sessionStorage.getItem(ONBOARDING_FIELDS_KEY);
-          return raw ? (JSON.parse(raw) as string[]) : [];
-        } catch {
-          return [];
-        }
-      })();
-      sessionStorage.setItem(ONBOARDING_FIELDS_KEY, JSON.stringify([...existing, created.id]));
+      };
+
+      if (isEditing) {
+        await updateFieldMutation.mutateAsync({
+          fieldId: editingFieldId,
+          payload,
+        });
+        sessionStorage.setItem(ONBOARDING_FIELD_KEY, editingFieldId);
+      } else {
+        const created = await createFieldMutation.mutateAsync(payload);
+        sessionStorage.setItem(ONBOARDING_FIELD_KEY, created.id);
+      }
       navigate('/onboarding/step2');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save field';
@@ -154,7 +188,7 @@ export default function OnboardingFieldCreate() {
     <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
       {/* Top bar */ }
       <div className="glass z-50 flex items-center justify-center px-4 py-3 relative">
-        <h2 className="font-display text-lg font-semibold">Add field</h2>
+        <h2 className="font-display text-lg font-semibold">{ isEditing ? 'Edit field' : 'Add field' }</h2>
         <button aria-label="Close" onClick={ handleClose } className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground">
           <X className="size-5" strokeWidth={ 1.75 } />
         </button>
@@ -232,8 +266,8 @@ export default function OnboardingFieldCreate() {
               />
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={ handleClose }>Cancel</Button>
-                <Button variant="primary" onClick={ saveField } disabled={ !draftGeometry || createFieldMutation.isPending }>
-                  { createFieldMutation.isPending ? 'Saving…' : 'Save' }
+                <Button variant="primary" onClick={ saveField } disabled={ !draftGeometry || isPending }>
+                  { isPending ? 'Saving…' : isEditing ? 'Update' : 'Save' }
                 </Button>
               </div>
             </div>
@@ -242,7 +276,7 @@ export default function OnboardingFieldCreate() {
 
         {/* Bottom center hint */ }
         <div className="absolute left-1/2 bottom-24 z-40 -translate-x-1/2">
-          <div className="glass rounded-full px-4 py-2 text-sm">Put a dot on the map to start drawing</div>
+          <div className="glass rounded-full px-4 py-2 text-sm">{ isEditing ? 'Edit your field boundary on the map' : 'Put a dot on the map to start drawing' }</div>
         </div>
 
         {/* Error toast */ }
@@ -251,8 +285,6 @@ export default function OnboardingFieldCreate() {
             { saveError }
           </div>
         ) }
-
-        {/* Bottom action bar removed — buttons are in the field name card */ }
       </div>
     </div>
   );

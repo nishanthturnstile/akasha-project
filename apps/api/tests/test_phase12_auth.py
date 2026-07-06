@@ -9,7 +9,7 @@ import pytest
 from app.auth import CurrentUser, TeamMembership, get_current_user
 from app.config import settings
 from app.main import app
-from app.repositories import auth_repo
+from app.repositories import auth_repo, crops_repo
 from app.routers import account_router as account
 from app.routers import auth_router as auth_routes
 from fastapi.testclient import TestClient
@@ -359,6 +359,7 @@ def test_signup_creates_user_team_session_and_returns_onboarding_state(monkeypat
         "create_session",
         lambda **kwargs: created_sessions.append(kwargs),
     )
+    monkeypatch.setattr(crops_repo, "ensure_reference_data", lambda: None)
 
     response = client.post(
         "/api/auth/signup",

@@ -11,6 +11,7 @@ interface DatePickerProps {
   disabled?: boolean;
   className?: string;
   minDate?: string;
+  maxDate?: string;
   onOpenChange?: (open: boolean) => void;
 }
 
@@ -47,6 +48,7 @@ export function DatePicker({
   disabled = false,
   className,
   minDate,
+  maxDate,
   onOpenChange,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
@@ -142,11 +144,24 @@ export function DatePicker({
     return prevMonthLastDay < min;
   }, [minDate, viewDate]);
 
+  const nextDisabled = React.useMemo(() => {
+    if (!maxDate) return false;
+    const nextMonthFirstDay = new Date(viewDate.year, viewDate.month + 1, 1);
+    const max = new Date(maxDate + 'T00:00:00');
+    return nextMonthFirstDay > max;
+  }, [maxDate, viewDate]);
+
   const isDisabled = (day: number) => {
-    if (!minDate) return false;
     const date = new Date(viewDate.year, viewDate.month, day);
-    const min = new Date(minDate + 'T00:00:00');
-    return date < min;
+    if (minDate) {
+      const min = new Date(minDate + 'T00:00:00');
+      if (date < min) return true;
+    }
+    if (maxDate) {
+      const max = new Date(maxDate + 'T00:00:00');
+      if (date > max) return true;
+    }
+    return false;
   };
 
   const handleSelect = (day: number) => {
@@ -220,8 +235,14 @@ export function DatePicker({
             </span>
             <button
               type="button"
+              disabled={nextDisabled}
               onClick={handleNextMonth}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              className={cn(
+                'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+                nextDisabled
+                  ? 'cursor-not-allowed text-muted-foreground/30'
+                  : 'hover:bg-accent text-muted-foreground hover:text-foreground',
+              )}
             >
               <ChevronRight className="size-4" />
             </button>

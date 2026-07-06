@@ -27,7 +27,7 @@ from ..auth import (
 )
 from ..config import settings
 from ..raster.errors import AkashaError, bad_request
-from ..repositories import auth_repo
+from ..repositories import auth_repo, crops_repo
 from ..schemas.auth import (
     AccountMe,
     LoginPayload,
@@ -264,6 +264,7 @@ async def signup(payload: SignupPayload, request: Request, response: Response) -
         team_id=memberships[0]["id"],
         remember=False,
     )
+    crops_repo.ensure_reference_data()
     current = CurrentUser(
         id=created["userId"],
         email=email,

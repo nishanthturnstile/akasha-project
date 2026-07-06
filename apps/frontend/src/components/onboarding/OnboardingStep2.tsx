@@ -2,31 +2,21 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
-import { useFields } from '@/lib/queries';
 
-const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
+const ONBOARDING_FIELD_KEY = 'akasha.onboarding.fieldId';
 
 /**
- * Onboarding step 2 – add multiple fields linked to the created season.
- * Reads seasonId from sessionStorage and passes it when creating fields.
+ * Onboarding step 2 – draw a single field linked to the created season.
+ * If no field exists yet, user draws one. If a field already exists,
+ * user can edit it or proceed to the next step.
  */
 export default function OnboardingStep2() {
   const navigate = useNavigate();
-  const fieldsQ = useFields();
 
-  const savedFieldIds = (() => {
-    try {
-      const raw = sessionStorage.getItem(ONBOARDING_FIELDS_KEY);
-      return raw ? (JSON.parse(raw) as string[]) : [];
-    } catch {
-      return [];
-    }
-  })();
+  const savedFieldId = sessionStorage.getItem(ONBOARDING_FIELD_KEY);
 
-  const savedFields =
-    fieldsQ.data?.filter((f) => savedFieldIds.includes(f.id)) ?? [];
-
-  const handleAddField = () => navigate('/onboarding/field-create');
+  const handleDrawField = () => navigate('/onboarding/field-create');
+  const handleEditField = () => navigate(`/onboarding/field-create?fieldId=${encodeURIComponent(savedFieldId!)}`);
   const handleBack = () => navigate('/onboarding/step1');
   const handleNext = () => navigate('/onboarding/step3');
 
@@ -36,40 +26,29 @@ export default function OnboardingStep2() {
 
       <Card className="w-full max-w-md shrink-0">
         <CardHeader>
-          <CardTitle>Let's add your fields</CardTitle>
+          <CardTitle>Let's add your field</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Draw one or more fields. All fields will be linked to the season you just created.
+            Draw your field boundary. It will be linked to the season you just created.
           </p>
-
-          {savedFields.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Saved fields ({savedFields.length})</p>
-              {savedFields.map((field) => (
-                <div
-                  key={field.id}
-                  className="flex items-center justify-between rounded-md border border-border bg-card/50 px-3 py-2"
-                >
-                  <span className="text-sm">{field.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
 
           <div className="flex justify-between gap-2">
             <Button variant="secondary" onClick={handleBack}>
               Back
             </Button>
-            <Button variant="primary" onClick={handleAddField}>
-              Add field
-            </Button>
+            {savedFieldId ? (
+              <Button variant="primary" onClick={handleEditField}>
+                Edit field
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={handleDrawField}>
+                Draw field
+              </Button>
+            )}
           </div>
 
-          {savedFields.length > 0 && (
+          {savedFieldId && (
             <Button variant="primary" onClick={handleNext} className="w-full">
               Next
             </Button>

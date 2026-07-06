@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import exists, select
 
 from ..db import session_scope
 from ..models import Crop, IrrigationType, SeedingType, TillageType, Variety
+
+logger = logging.getLogger(__name__)
 
 
 def list_irrigation_types() -> list[dict]:
@@ -98,3 +102,16 @@ def list_varieties(crop_id: int, skip: int = 0, limit: int = 100) -> tuple[list[
             }
             for r in rows
         ], total
+
+
+def ensure_reference_data() -> None:
+    from ..bulk_creation import generate_all
+
+    with session_scope() as session:
+        has_crops = session.query(Crop).first() is not None
+        if has_crops:
+            return
+    logger.info("Reference data tables are empty — seeding crops, varieties, etc.")
+    counts = generate_all()
+    if counts:
+        logger.info("Seeded reference data: %s", counts)

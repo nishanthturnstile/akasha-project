@@ -64,6 +64,7 @@ import {
   refreshSession,
   completeOnboarding,
   updatePlot,
+  getSeason,
   listSeasons,
   createSeason,
   updateSeason,
@@ -713,6 +714,14 @@ export function useExportFieldReportCsv() {
 // --------------------------------------------------------------------------
 // Seasons hooks
 // --------------------------------------------------------------------------
+export function useSeason(seasonId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.season(seasonId ?? '__skip__'),
+    queryFn: () => getSeason(seasonId!),
+    enabled: !!seasonId,
+  });
+}
+
 export function useSeasons() {
   return useQuery({ queryKey: queryKeys.seasons, queryFn: listSeasons });
 }

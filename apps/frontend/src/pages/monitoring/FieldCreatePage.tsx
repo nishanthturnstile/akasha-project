@@ -24,6 +24,17 @@ function toLngLatRing(ring: GeoJsonPosition[]): [number, number][] {
 }
 
 const DRAW_ZOOM = 18;
+const IMAGERY_RETURN_PARAMS = ['source', 'scene', 'from', 'to', 'layer'] as const;
+
+function returnImagerySearch(searchParams: URLSearchParams): string {
+  const params = new URLSearchParams();
+  for (const key of IMAGERY_RETURN_PARAMS) {
+    const value = searchParams.get(key);
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
 
 export default function FieldCreatePage() {
   const navigate = useNavigate();
@@ -134,7 +145,7 @@ export default function FieldCreatePage() {
         seasonIds: [selectedSeasonId],
       });
       queryClient.setQueryData<Field[]>(queryKeys.fields, (old) => [...(old ?? []), created]);
-      navigate(`/monitoring/field-analytics/field/${created.id}`);
+      navigate(`/monitoring/field-analytics/field/${created.id}${returnImagerySearch(searchParams)}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save field';
       setSaveError(message);

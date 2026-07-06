@@ -5,7 +5,7 @@ import {
     Routes,
     useLocation,
 } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { useMapUrlState } from '@/hooks/useMapUrlState';
 import { MapViewProvider } from '@/state/mapViewContext';
@@ -82,6 +82,10 @@ function renderHarness(initialEntry: string) {
         </MapViewProvider>,
     );
 }
+
+afterEach(() => {
+    window.localStorage.clear();
+});
 
 describe('useMapUrlState', () => {
     it('hydrates reducer state from the route param + query string on mount', () => {

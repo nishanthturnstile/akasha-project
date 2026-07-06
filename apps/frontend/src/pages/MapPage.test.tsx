@@ -170,6 +170,7 @@ class ResizeObserverMock {
 }
 
 afterEach(() => {
+  window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });

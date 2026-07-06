@@ -337,7 +337,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     bestMode,
   } = view;
 
-  const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
+  const effectiveSourceId = useMemo(() => {
+    if (!sourcesQ.data?.length) return activeSourceId;
+    if (activeSourceId && sourcesQ.data.some((source) => source.id === activeSourceId)) {
+      return activeSourceId;
+    }
+    return sourcesQ.data[0]?.id;
+  }, [activeSourceId, sourcesQ.data]);
   const datesQ = useDates(effectiveSourceId, { enabled: !bestMode });
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),

@@ -1,5 +1,5 @@
 import { Map as MapIcon, Pencil } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
@@ -18,7 +18,7 @@ function formatAreaHa(value: number | null | undefined): string {
 }
 
 export default function FieldAnalyticsPage() {
-  const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, overlaysVisible, mapFullscreen } = useMapView();
+  const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, selectedDate, displayMode, overlaysVisible, mapFullscreen } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
   const updateField = useUpdateField();
@@ -41,6 +41,17 @@ export default function FieldAnalyticsPage() {
   const supportedIndices = configQ.data?.supportedIndices ?? ['NDVI'];
 
   const navigate = useNavigate();
+  const navigateWithImageryState = useCallback((path: string) => {
+    const [pathname, query = ''] = path.split('?');
+    const params = new URLSearchParams(query);
+    if (activeSourceId && !params.has('source')) params.set('source', activeSourceId);
+    if (selectedDate && !params.has('scene')) params.set('scene', selectedDate);
+    if (periodFrom && !params.has('from')) params.set('from', periodFrom);
+    if (periodTo && !params.has('to')) params.set('to', periodTo);
+    if (displayMode && !params.has('layer')) params.set('layer', displayMode);
+    const search = params.toString();
+    navigate(search ? `${pathname}?${search}` : pathname);
+  }, [activeSourceId, displayMode, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 min-h-0">
@@ -95,7 +106,7 @@ export default function FieldAnalyticsPage() {
         <div className="flex items-center gap-2 px-4 py-3">
           <AddFieldDropdown
             fields={seasonFields}
-            onNavigate={navigate}
+            onNavigate={navigateWithImageryState}
             onSelectField={ (fieldId) => { setSelectedPlotId(fieldId); setFocusNonce(Date.now()); } }
             defaultSeasonId={ seasonId }
           />

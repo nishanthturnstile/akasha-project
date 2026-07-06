@@ -4,25 +4,45 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
-import { useCreateSeason, useSeasons } from '@/lib/queries';
+import { useCreateSeason, useSeason, useSeasons, useUpdateSeason } from '@/lib/queries';
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 
 /**
- * Onboarding step 1 – create first season.
- * Calls the Create Season API and stores the returned seasonId in sessionStorage.
+ * Onboarding step 1 – create or edit the first season.
+ * If a seasonId already exists in sessionStorage (e.g. when navigating back
+ * from step 2), the form loads the saved data and updates it on save.
  */
 export default function OnboardingStep1() {
   const navigate = useNavigate();
   const createSeason = useCreateSeason();
+  const updateSeason = useUpdateSeason();
   const seasonsQuery = useSeasons();
+
+  const existingSeasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
+  const seasonQuery = useSeason(existingSeasonId);
+
+  const currentYear = new Date().getFullYear();
+  const defaultStartDate = `${currentYear}-01-01`;
+  const defaultEndDate = `${currentYear}-12-31`;
+
   const [seasonName, setSeasonName] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(defaultStartDate);
+  const [endDate, setEndDate] = useState(defaultEndDate);
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [startDateError, setStartDateError] = useState<string | null>(null);
   const [endDateError, setEndDateError] = useState<string | null>(null);
+  const [synced, setSynced] = useState(false);
+
+  if (seasonQuery.data && !synced) {
+    setSynced(true);
+    setSeasonName(seasonQuery.data.name);
+    setStartDate(seasonQuery.data.startDate ?? defaultStartDate);
+    setEndDate(seasonQuery.data.endDate ?? defaultEndDate);
+  }
+
+  const isEditing = !!existingSeasonId;
 
   const endDateMin = useMemo(() => {
     if (!startDate) return undefined;
@@ -33,8 +53,12 @@ export default function OnboardingStep1() {
 
   const existingSeasonNames = useMemo(() => {
     if (!Array.isArray(seasonsQuery.data)) return new Set<string>();
-    return new Set(seasonsQuery.data.map((s) => s.name.toLowerCase().trim()));
-  }, [seasonsQuery.data]);
+    return new Set(
+      seasonsQuery.data
+        .filter((s) => !isEditing || s.id !== existingSeasonId)
+        .map((s) => s.name.toLowerCase().trim()),
+    );
+  }, [seasonsQuery.data, isEditing, existingSeasonId]);
 
   useEffect(() => {
     const trimmed = seasonName.trim();
@@ -49,6 +73,8 @@ export default function OnboardingStep1() {
 
   const canProceed = !!seasonName && !!startDate && !!endDate && !nameError;
 
+  const isPending = createSeason.isPending || updateSeason.isPending;
+
   const handleNext = async () => {
     let hasError = false;
     if (!seasonName.trim()) { setNameError('Season name is required'); hasError = true; }
@@ -57,15 +83,26 @@ export default function OnboardingStep1() {
     if (hasError || !canProceed) return;
     setError(null);
     try {
-      const season = await createSeason.mutateAsync({
-        name: seasonName.trim(),
-        startDate: startDate || null,
-        endDate: endDate || null,
-      });
-      sessionStorage.setItem(ONBOARDING_SEASON_KEY, season.id);
+      if (isEditing) {
+        await updateSeason.mutateAsync({
+          seasonId: existingSeasonId,
+          payload: {
+            name: seasonName.trim(),
+            startDate: startDate || null,
+            endDate: endDate || null,
+          },
+        });
+      } else {
+        const season = await createSeason.mutateAsync({
+          name: seasonName.trim(),
+          startDate: startDate || null,
+          endDate: endDate || null,
+        });
+        sessionStorage.setItem(ONBOARDING_SEASON_KEY, season.id);
+      }
       navigate('/onboarding/step2');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create season';
+      const message = err instanceof Error ? err.message : 'Failed to save season';
       setError(message);
     }
   };
@@ -127,11 +164,11 @@ export default function OnboardingStep1() {
           )}
           <Button
             variant="primary"
-            disabled={!canProceed || createSeason.isPending}
+            disabled={!canProceed || isPending}
             onClick={handleNext}
             className="w-full"
           >
-            {createSeason.isPending ? 'Creating…' : 'Next'}
+            {isPending ? 'Saving…' : 'Next'}
           </Button>
         </CardContent>
       </Card>

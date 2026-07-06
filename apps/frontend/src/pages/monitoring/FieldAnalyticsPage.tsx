@@ -6,7 +6,9 @@ import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
 import FieldAnalyticsPanel from '@/components/analytics/FieldAnalyticsPanel';
-import { useConfig, useDeleteField, useFields, useUpdateField } from '@/lib/queries';
+import { useConfig, useDates, useDeleteField, useFields, useSources, useUpdateField } from '@/lib/queries';
+import { selectDefaultDate } from '@/lib/selectDefaultDate';
+import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import { useMapView } from '@/state/useMapView';
 import { useSeasonContext } from '@/state/seasonContext';
 import { cn } from '@/lib/utils';
@@ -21,6 +23,7 @@ export default function FieldAnalyticsPage() {
   const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, selectedDate, displayMode, overlaysVisible, mapFullscreen } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
+  const sourcesQ = useSources();
   const updateField = useUpdateField();
   const deleteField = useDeleteField();
   const { seasonId } = useSeasonContext();
@@ -37,21 +40,42 @@ export default function FieldAnalyticsPage() {
     return (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(seasonId));
   }, [fieldsQ.data, seasonId]);
 
-  const effectiveSourceId = activeSourceId ?? undefined;
-  const supportedIndices = configQ.data?.supportedIndices ?? ['NDVI'];
+  const effectiveSourceId = useMemo(
+    () => selectEffectiveSourceId({
+      activeSourceId,
+      defaultSourceId: configQ.data?.defaultSourceId,
+      sources: sourcesQ.data,
+    }),
+    [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
+  );
+  const selectedSource = useMemo(
+    () => sourcesQ.data?.find((source) => source.id === effectiveSourceId),
+    [effectiveSourceId, sourcesQ.data],
+  );
+  const datesQ = useDates(effectiveSourceId);
+  const effectiveSelectedDate = useMemo(() => {
+    if (!datesQ.data || !configQ.data) return selectedDate ?? null;
+    if (selectedDate && datesQ.data.some((d) => d.acquisitionDate === selectedDate)) {
+      return selectedDate;
+    }
+    return selectDefaultDate(datesQ.data, configQ.data.usablePixelThresholdPercent, {
+      sourceKind: selectedSource?.kind,
+    })?.acquisitionDate ?? null;
+  }, [configQ.data, datesQ.data, selectedDate, selectedSource?.kind]);
+  const supportedIndices = selectedSource?.supportedIndices ?? configQ.data?.supportedIndices ?? ['NDVI'];
 
   const navigate = useNavigate();
   const navigateWithImageryState = useCallback((path: string) => {
     const [pathname, query = ''] = path.split('?');
     const params = new URLSearchParams(query);
-    if (activeSourceId && !params.has('source')) params.set('source', activeSourceId);
+    if (effectiveSourceId && !params.has('source')) params.set('source', effectiveSourceId);
     if (selectedDate && !params.has('scene')) params.set('scene', selectedDate);
     if (periodFrom && !params.has('from')) params.set('from', periodFrom);
     if (periodTo && !params.has('to')) params.set('to', periodTo);
     if (displayMode && !params.has('layer')) params.set('layer', displayMode);
     const search = params.toString();
     navigate(search ? `${pathname}?${search}` : pathname);
-  }, [activeSourceId, displayMode, navigate, periodFrom, periodTo, selectedDate]);
+  }, [displayMode, effectiveSourceId, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 min-h-0">
@@ -126,6 +150,8 @@ export default function FieldAnalyticsPage() {
             field={ selectedField }
             sourceId={ effectiveSourceId }
             indices={ supportedIndices }
+            selectedDate={ effectiveSelectedDate }
+            displayMode={ displayMode }
             cloudMask={ cloudMask as CloudMaskOptions }
             periodFrom={ periodFrom }
             periodTo={ periodTo }

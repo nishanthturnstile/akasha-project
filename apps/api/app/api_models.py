@@ -45,8 +45,8 @@ class FieldTrendPoint(ApiModel):
 
 class FieldTrendResponse(ApiModel):
     plot_id: str
-    provider: Literal["native"] = "native"
-    scope: Literal["native_fallback"] = "native_fallback"
+    provider: Literal["native", "pipeline"] = "native"
+    scope: Literal["native_fallback", "pipeline"] = "native_fallback"
     source_id: str
     index_type: str
     start_date: date

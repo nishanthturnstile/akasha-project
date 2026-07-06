@@ -18,10 +18,23 @@ from ..api_models import CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
 from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
-from ..ingestion_client import fetch_signed_ingestion_binary, request_field_index
+from ..ingestion_adapters import field_index_to_statistics_response, field_index_to_trend_point
+from ..ingestion_client import (
+    fetch_signed_ingestion_binary,
+    get_readiness,
+    request_field_index,
+    request_field_index_point,
+)
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
-from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
+from ..raster.errors import (
+    AkashaError,
+    bad_request,
+    index_timeout,
+    not_found,
+    plots_backend_unavailable,
+    upstream_error,
+)
 from ..raster.geo_validate import validate_polygon
 from ..raster.indices import DEFAULT_INDEX, get_index
 from ..raster.models import IndexStatisticsModel, PixelCounts
@@ -46,8 +59,6 @@ router = APIRouter(
 )
 
 MAX_TREND_DAYS = 365
-
-
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -99,6 +110,247 @@ def _validate_cloud_cover(value: float | None) -> None:
 
 def _normalize_index(index_type: str | None) -> str:
     return (index_type or DEFAULT_INDEX).strip().upper()
+
+
+def _uses_pipeline(source_id: str) -> bool:
+    return source_id == catalog.SENTINEL_2_SOURCE_ID and settings.ingestion_field_index_enabled
+
+
+def _pipeline_trend_max_dates() -> int:
+    return max(1, settings.ingestion_trend_max_dates)
+
+
+def _pipeline_trend_timeout_budget() -> float:
+    return max(5.0, min(float(settings.index_request_timeout_seconds), 45.0))
+
+
+def _pipeline_per_date_timeout(max_dates: int) -> float:
+    budget = _pipeline_trend_timeout_budget()
+    return max(1.0, min(float(settings.ingestion_request_timeout_seconds), budget / max_dates))
+
+
+def _readiness_dates(
+    *,
+    source_id: str,
+    timeout_seconds: float | None = None,
+) -> list[date]:
+    try:
+        readiness = get_readiness(
+            settings,
+            source_id=source_id,
+            aoi_id=settings.ingestion_aoi_id,
+            timeout_seconds=timeout_seconds,
+        )
+    except AkashaError as exc:
+        if exc.code == "INGESTION_API_UNCONFIGURED":
+            raise upstream_error(
+                "Standalone ingestion readiness is not configured.",
+                code="INGESTION_READINESS_UNAVAILABLE",
+                sourceId=source_id,
+            ) from exc
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise upstream_error(
+            "Standalone ingestion readiness is unreachable.",
+            code="INGESTION_API_UNREACHABLE",
+            sourceId=source_id,
+        ) from exc
+    if not readiness:
+        raise upstream_error(
+            "Standalone ingestion readiness is unavailable.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
+
+    parsed_dates: list[date] = []
+    for value in readiness.get("availableDates") or []:
+        try:
+            parsed_dates.append(date.fromisoformat(str(value)))
+        except ValueError:
+            continue
+    if not parsed_dates:
+        raise upstream_error(
+            "Standalone ingestion readiness has no available dates.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
+    return sorted(set(parsed_dates))
+
+
+def _pipeline_acquisition_date(
+    *,
+    source_id: str,
+    requested_date: str | None,
+    timeout_seconds: float | None = None,
+) -> str:
+    if requested_date:
+        return requested_date
+    return _readiness_dates(source_id=source_id, timeout_seconds=timeout_seconds)[-1].isoformat()
+
+
+def _pipeline_statistics_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str | None,
+    index_type: str,
+    cloud_mask: CloudMaskOptions,
+) -> FieldStatisticsResponse:
+    selected_date = _pipeline_acquisition_date(
+        source_id=source_id,
+        requested_date=acquisition_date,
+        timeout_seconds=min(float(settings.ingestion_request_timeout_seconds), 5.0),
+    )
+    result = request_field_index(
+        settings,
+        geometry=plot["geometry"],
+        field_id=plot_id,
+        index_type=index_type,
+        acquisition_date=selected_date,
+        max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+    )
+    return field_index_to_statistics_response(
+        result,
+        plot_id=plot_id,
+        source_id=source_id,
+        index_type=index_type,
+        cloud_mask=cloud_mask,
+    )
+
+
+def _provisional_trend_point(requested_date: date, reason: str) -> FieldTrendPoint:
+    return FieldTrendPoint(
+        acquisition_date=requested_date,
+        metrics_provisional=True,
+        unavailable_reason=reason,
+    )
+
+
+def _pipeline_trend_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    index_type: str,
+    date_start: date,
+    date_end: date,
+    cloud_mask: CloudMaskOptions,
+    max_cloud_cover_in_aoi: float | None = None,
+) -> FieldTrendResponse:
+    supported = catalog.supported_indices(source_id)
+    if index_type not in supported:
+        raise bad_request(
+            f"Unsupported index '{index_type}' for source '{source_id}'.",
+            code="UNSUPPORTED_INDEX",
+            sourceId=source_id,
+            indexType=index_type,
+            supported=supported,
+        )
+
+    max_dates = _pipeline_trend_max_dates()
+    per_date_timeout = _pipeline_per_date_timeout(max_dates)
+    readiness_dates = _readiness_dates(source_id=source_id, timeout_seconds=per_date_timeout)
+    window_dates = [value for value in readiness_dates if date_start <= value <= date_end]
+    selected_dates = window_dates[-max_dates:]
+    if not selected_dates:
+        raise upstream_error(
+            "Standalone ingestion readiness has no dates in the requested range.",
+            code="INGESTION_TREND_UNAVAILABLE",
+            sourceId=source_id,
+            startDate=date_start.isoformat(),
+            endDate=date_end.isoformat(),
+        )
+
+    points_by_date: dict[date, FieldTrendPoint] = {}
+    for requested_date in selected_dates:
+        try:
+            result = request_field_index(
+                settings,
+                geometry=plot["geometry"],
+                field_id=plot_id,
+                index_type=index_type,
+                acquisition_date=requested_date.isoformat(),
+                max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+                timeout_seconds=per_date_timeout,
+            )
+            point = field_index_to_trend_point(result)
+            points_by_date.setdefault(point.acquisition_date, point)
+        except AkashaError as exc:
+            reason = str(exc.details.get("reason") or exc.message)
+            points_by_date.setdefault(
+                requested_date,
+                _provisional_trend_point(requested_date, reason),
+            )
+        except Exception:  # noqa: BLE001
+            points_by_date.setdefault(
+                requested_date,
+                _provisional_trend_point(
+                    requested_date,
+                    "Standalone ingestion field-index request failed.",
+                ),
+            )
+
+    points = [points_by_date[key] for key in sorted(points_by_date)]
+    if not points:
+        raise upstream_error(
+            "Standalone ingestion trend is unavailable.",
+            code="INGESTION_TREND_UNAVAILABLE",
+            sourceId=source_id,
+        )
+
+    index_def = get_index(index_type)
+    return FieldTrendResponse(
+        plot_id=plot_id,
+        provider="pipeline",
+        scope="pipeline",
+        source_id=source_id,
+        index_type=index_type,
+        start_date=date_start,
+        end_date=date_end,
+        points=points,
+        metadata={
+            "provider": "pipeline",
+            "scope": "pipeline",
+            "formula": index_def.formula,
+            "spectralRoles": list(index_def.required_roles),
+            "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
+            "rangeLimitDays": MAX_TREND_DAYS,
+            "maxCloudCoverInAoi": max_cloud_cover_in_aoi,
+            "maxDates": max_dates,
+            "perDateTimeoutSeconds": per_date_timeout,
+            "sideEffect": "field-index requests create ingestion query records and tile layers.",
+        },
+    )
+
+
+def _pipeline_point_response(
+    *,
+    plot_id: str,
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+    lng: float,
+    lat: float,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    source = result.get("source") if isinstance(result.get("source"), dict) else {}
+    return {
+        "plotId": plot_id,
+        "sourceId": source_id,
+        "acquisitionDate": acquisition_date,
+        "indexType": index_type,
+        "lng": float(result.get("lng", lng)),
+        "lat": float(result.get("lat", lat)),
+        "value": result.get("value"),
+        "masked": bool(result.get("masked", result.get("value") is None)),
+        "maskClass": result.get("maskClass"),
+        "resolvedSourceId": source_id,
+        "resolutionMeters": source.get("resolutionMeters") or source.get("displayMeters") or 10,
+        "enhanced": False,
+        "basisDate": None,
+        "provenanceNote": "Standalone ingestion pipeline point lookup.",
+    }
 
 
 def _field_statistics(
@@ -437,9 +689,7 @@ def _index_overlay_response(
     # Fallback (no georeferencing metadata, e.g. synthetic tests): native render.
     footprint_corners = getattr(read, "footprint_corners", None)
     if footprint_corners:
-        headers["X-Akasha-Overlay-Corners"] = json.dumps(
-            footprint_corners, separators=(",", ":")
-        )
+        headers["X-Akasha-Overlay-Corners"] = json.dumps(footprint_corners, separators=(",", ":"))
     body, content_type = tiles.render_field_index_overlay_png(
         index_type=index_type,
         index_values=values,
@@ -584,6 +834,26 @@ async def post_field_index_statistics(
     plot = await _get_field_or_404(plot_id, user.id)
     index_type = _normalize_index(payload.index_type)
 
+    if _uses_pipeline(payload.source_id):
+        try:
+            return await asyncio.wait_for(
+                _run_blocking(
+                    _pipeline_statistics_response,
+                    plot_id=plot_id,
+                    plot=plot,
+                    source_id=payload.source_id,
+                    acquisition_date=payload.acquisition_date,
+                    index_type=index_type,
+                    cloud_mask=payload.cloud_mask,
+                ),
+                timeout=settings.index_request_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Pipeline index-statistics request exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+                timeoutSeconds=settings.index_request_timeout_seconds,
+            ) from exc
+
     def _compute() -> FieldStatisticsResponse:
         return _field_statistics(
             plot_id=plot_id,
@@ -601,8 +871,6 @@ async def post_field_index_statistics(
             timeout=settings.index_request_timeout_seconds,
         )
     except TimeoutError as exc:
-        from ..raster.errors import index_timeout
-
         raise index_timeout(
             "Index-statistics request exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
             timeoutSeconds=settings.index_request_timeout_seconds,
@@ -639,6 +907,28 @@ async def get_field_analytics_trend(
         cloud_shadows=cloudShadows,
         cirrus=cirrus,
     )
+    if _uses_pipeline(sourceId):
+        try:
+            return await asyncio.wait_for(
+                _run_blocking(
+                    _pipeline_trend_response,
+                    plot_id=plot_id,
+                    plot=plot,
+                    source_id=sourceId,
+                    index_type=index_type,
+                    date_start=date_start,
+                    date_end=date_end,
+                    cloud_mask=cloud_mask,
+                    max_cloud_cover_in_aoi=maxCloudCoverInAoi,
+                ),
+                timeout=_pipeline_trend_timeout_budget(),
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Pipeline trend request exceeded its bounded timeout.",
+                timeoutSeconds=_pipeline_trend_timeout_budget(),
+            ) from exc
+
     return await _run_blocking(
         _native_trend_response,
         plot_id=plot_id,
@@ -698,6 +988,37 @@ async def get_field_index_point(
 ) -> dict[str, Any]:
     plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(indexType)
+    if _uses_pipeline(sourceId):
+        try:
+            result = await asyncio.wait_for(
+                _run_blocking(
+                    request_field_index_point,
+                    settings,
+                    geometry=plot["geometry"],
+                    field_id=plot_id,
+                    source_id=sourceId,
+                    index_type=normalized_index,
+                    acquisition_date=acquisitionDate,
+                    lng=lng,
+                    lat=lat,
+                    max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+                ),
+                timeout=settings.index_request_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Pipeline point lookup exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+                timeoutSeconds=settings.index_request_timeout_seconds,
+            ) from exc
+        return _pipeline_point_response(
+            plot_id=plot_id,
+            source_id=sourceId,
+            acquisition_date=acquisitionDate,
+            index_type=normalized_index,
+            lng=lng,
+            lat=lat,
+            result=result,
+        )
     return await _run_blocking(
         _field_index_point_response,
         plot_id=plot_id,

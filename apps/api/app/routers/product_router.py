@@ -32,6 +32,7 @@ from ..ingestion_client import get_readiness, is_ingestion_configured
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import (
+    AkashaError,
     bad_request,
     index_timeout,
     mosaic_tiles_unavailable,
@@ -59,10 +60,24 @@ def _is_pipeline_source(source_id: str) -> bool:
     return source_id == catalog.SENTINEL_2_SOURCE_ID
 
 
+def _pipeline_bridge_enabled() -> bool:
+    """The Sentinel pipeline bridge is only usable when all three prerequisites hold together.
+
+    Advertising a pipeline-backed source (or resolving pipeline dates) while field-index is
+    disabled would leave analytics silently on the native ResourceSat path (REQ-012/REQ-009),
+    so the bridge must be gated as an all-or-nothing set.
+    """
+    return (
+        settings.ingestion_readiness_enabled
+        and settings.ingestion_field_index_enabled
+        and is_ingestion_configured(settings)
+    )
+
+
 def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
     if source_id != catalog.SENTINEL_2_SOURCE_ID:
         return None
-    if not is_ingestion_configured(settings):
+    if not _pipeline_bridge_enabled():
         return None
     payload = catalog.source_payload(source_id)
     index_modes = [mode for mode in payload["displayModes"] if mode in payload["supportedIndices"]]
@@ -77,9 +92,7 @@ def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
             "layerGroups": [
                 {
                     "label": "Vegetation Indices",
-                    "modes": [
-                        mode for mode in ("NDVI", "NDRE", "MSAVI") if mode in index_modes
-                    ],
+                    "modes": [mode for mode in ("NDVI", "NDRE", "MSAVI") if mode in index_modes],
                 },
                 {"label": "Moisture Indices", "modes": [m for m in ("NDMI",) if m in index_modes]},
             ],
@@ -141,6 +154,7 @@ async def get_config() -> dict[str, Any]:
         "usablePixelThresholdPercent": settings.usable_pixel_threshold_percent,
         "supportedIndices": SUPPORTED_INDICES,
         "defaultIndex": DEFAULT_INDEX,
+        "defaultSourceId": settings.default_source_id,
         "indexFieldsKind": "global-optical-defaults",
         "indexAvailabilitySource": "/api/sources",
         "adminIngestionLiveTriggerEnabled": settings.admin_ingestion_live_trigger_enabled,
@@ -152,7 +166,7 @@ async def get_sources() -> list[dict[str, Any]]:
     """Satellite/product source list derived from the source registry/STAC metadata."""
     sources = catalog.list_sources()
     source_ids = {source["id"] for source in sources}
-    if settings.ingestion_readiness_enabled:
+    if _pipeline_bridge_enabled():
         sentinel = _pipeline_source_payload(catalog.SENTINEL_2_SOURCE_ID)
         if sentinel and sentinel["id"] not in source_ids:
             sources.append(sentinel)
@@ -160,7 +174,7 @@ async def get_sources() -> list[dict[str, Any]]:
 
 
 def _pipeline_dates(source_id: str) -> list[dict[str, Any]] | None:
-    if not settings.ingestion_readiness_enabled or not _is_pipeline_source(source_id):
+    if not _is_pipeline_source(source_id) or not _pipeline_bridge_enabled():
         return None
     try:
         readiness = get_readiness(
@@ -168,12 +182,35 @@ def _pipeline_dates(source_id: str) -> list[dict[str, Any]] | None:
             source_id=source_id,
             aoi_id=settings.ingestion_aoi_id,
         )
+    except AkashaError as exc:
+        logger.warning("ingestion readiness unavailable for %s", source_id)
+        if exc.code == "INGESTION_API_UNCONFIGURED":
+            raise upstream_error(
+                "Standalone ingestion readiness is not configured.",
+                code="INGESTION_READINESS_UNAVAILABLE",
+                sourceId=source_id,
+            ) from exc
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("ingestion readiness unavailable for %s: %s", source_id, type(exc).__name__)
-        return None
+        raise upstream_error(
+            "Standalone ingestion readiness is unreachable.",
+            code="INGESTION_API_UNREACHABLE",
+            sourceId=source_id,
+        ) from exc
     if not readiness:
-        return []
+        raise upstream_error(
+            "Standalone ingestion readiness is unavailable.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
     dates = [str(value) for value in readiness.get("availableDates") or []]
+    if not dates:
+        raise upstream_error(
+            "Standalone ingestion readiness has no available dates.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
     index_coverage = readiness.get("indexCoverage") or {}
     ndvi_coverage = index_coverage.get("NDVI") or {}
     newest = max(dates) if dates else None

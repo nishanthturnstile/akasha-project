@@ -76,6 +76,15 @@ backend/API/data services in Docker, runs the React/Vite frontend locally for
 hot reload, and keeps the browser contract exactly like production:
 same-origin `/api/*` and `/tiles/*` through the gateway.
 
+### Local Sentinel-2 remote ingestion mode
+
+Developers who need Sentinel-2 field analytics without copying COGs locally can run the
+product app against the deployed ingestion pipeline over an SSH tunnel. Keep the browser
+on the local app origin only; the ingestion API key and signed ingestion URLs stay
+server-side in the FastAPI BFF. See
+[`docs/developer-setup-guide.md#5-local-sentinel-2-remote-ingestion-mode`](docs/developer-setup-guide.md#5-local-sentinel-2-remote-ingestion-mode)
+for the tunnel, `.env`, smoke, and leak-check steps.
+
 For regular feature work, the most comfortable setup is two terminals:
 
 ```bash

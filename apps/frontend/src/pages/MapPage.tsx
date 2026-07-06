@@ -17,6 +17,7 @@ import {
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
+import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
@@ -337,13 +338,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     bestMode,
   } = view;
 
-  const effectiveSourceId = useMemo(() => {
-    if (!sourcesQ.data?.length) return activeSourceId;
-    if (activeSourceId && sourcesQ.data.some((source) => source.id === activeSourceId)) {
-      return activeSourceId;
-    }
-    return sourcesQ.data[0]?.id;
-  }, [activeSourceId, sourcesQ.data]);
+  const effectiveSourceId = useMemo(
+    () => selectEffectiveSourceId({
+      activeSourceId,
+      defaultSourceId: configQ.data?.defaultSourceId,
+      sources: sourcesQ.data,
+    }),
+    [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
+  );
   const datesQ = useDates(effectiveSourceId, { enabled: !bestMode });
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
@@ -514,6 +516,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     [sourcesQ.data, requestSourceId],
   );
   const displaySource = bestMode ? requestSource : selectedSource;
+  const pipelinePointLookupDisabled = Boolean(requestSource?.pipelineBacked);
 
   const sourceDisplayModes = displaySource?.displayModes ?? ['FCC'];
   const sourceMapDisplayModes = mapDisplayModesForSource(displaySource);
@@ -672,6 +675,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
 
   const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
     if (!isIndexLayer || !selectedPlot || !selectedDate || !requestSourceId) return null;
+    if (pipelinePointLookupDisabled) return null;
     return getFieldIndexPoint(selectedPlot.id, {
       sourceId: requestSourceId,
       acquisitionDate: selectedDate,
@@ -680,7 +684,15 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       lat,
       preferHighRes,
     });
-  }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode, preferHighRes]);
+  }, [
+    isIndexLayer,
+    selectedPlot,
+    selectedDate,
+    requestSourceId,
+    pipelinePointLookupDisabled,
+    selectedDisplayMode,
+    preferHighRes,
+  ]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -981,7 +993,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         <div className="absolute left-4 top-4 z-toolbar">
           <CoordinateReadout
             map={ map }
-            indexLookup={ isIndexLayer && selectedPlot && selectedDate && requestSourceId ? indexLookup : undefined }
+            indexLookup={
+              isIndexLayer && selectedPlot && selectedDate && requestSourceId && !pipelinePointLookupDisabled
+                ? indexLookup
+                : undefined
+            }
           />
         </div>
       ) }

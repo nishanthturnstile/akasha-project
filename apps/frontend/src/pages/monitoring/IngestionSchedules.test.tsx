@@ -96,6 +96,7 @@ const schedulePayload: IngestionScheduleResponse = {
 function appConfigPayload(liveTriggerEnabled = false): AppConfig {
   return {
     appName: 'Akasha',
+    defaultSourceId: 'resourcesat-2a-liss3-boa',
     aoi: {
       id: 'bangalore-60km',
       name: 'Bangalore 60 km',

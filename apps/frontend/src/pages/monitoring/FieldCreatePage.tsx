@@ -156,7 +156,7 @@ export default function FieldCreatePage() {
     <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
       <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } />
 
-      {/* Top bar */}
+      {/* Top bar */ }
       <div className="glass z-50 flex items-center justify-center px-4 py-3 relative">
         <button
           aria-label="Back"
@@ -168,7 +168,7 @@ export default function FieldCreatePage() {
         <h2 className="font-display text-lg font-semibold">Add field</h2>
       </div>
 
-      {/* Season selector bar — hidden when a season is pre-selected from context */}
+      {/* Season selector bar — hidden when a season is pre-selected from context */ }
       { !preselectedSeasonId && (
         <div className="z-50 flex flex-col border-b border-border/60 bg-background/95">
           <div className="flex items-center gap-3 px-4 py-2">
@@ -213,7 +213,7 @@ export default function FieldCreatePage() {
         </div>
       ) }
 
-      {/* Map area */}
+      {/* Map area */ }
       <div className="relative flex-1">
         <MapLayerManager
           basemap={ basemapResolution.basemapConfig! }
@@ -247,7 +247,7 @@ export default function FieldCreatePage() {
           onPolygonComplete={ (geometry) => setDraftGeometry(geometry) }
         />
 
-        {/* Left controls */}
+        {/* Left controls */ }
         <div className="absolute left-4 top-20 z-toolbar flex flex-col items-start gap-3">
           <MapControls
             map={ map }
@@ -271,7 +271,7 @@ export default function FieldCreatePage() {
           </div>
         </div>
 
-        {/* Field name card when geometry is ready */}
+        {/* Field name card when geometry is ready */ }
         { draftGeometry && (
           <div className="absolute left-1/2 top-24 z-40 -translate-x-1/2 w-72">
             <div className="rounded-lg border border-border bg-card p-4 shadow-lg space-y-3">
@@ -298,14 +298,14 @@ export default function FieldCreatePage() {
           </div>
         ) }
 
-        {/* Bottom center hint */}
+        {/* Bottom center hint */ }
         { !draftGeometry && (
           <div className="absolute left-1/2 bottom-24 z-40 -translate-x-1/2">
             <div className="glass rounded-full px-4 py-2 text-sm">Put a dot on the map to start drawing</div>
           </div>
         ) }
 
-        {/* Error toast */}
+        {/* Error toast */ }
         { saveError && (
           <div className="absolute left-1/2 bottom-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
             { saveError }

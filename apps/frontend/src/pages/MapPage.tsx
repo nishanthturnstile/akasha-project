@@ -938,7 +938,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         onSelectSource={ view.setSource }
         onSelectDate={ view.setDate }
         onToggleLayers={ view.toggleLayers }
-      />  }
+      /> }
 
       { overlaysVisible && (
         <input
@@ -975,7 +975,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
             onDeleteSelectedField={ () => void deleteSelectedField() }
             selectedFieldName={ selectedPlot?.name }
           /> }
-      </div>  ) }
+        </div>) }
 
       { overlaysVisible && topLeftCoords && (
         <div className="absolute left-4 top-4 z-toolbar">
@@ -1015,7 +1015,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           collapsed={ view.layerBarCollapsed }
           onCollapsedChange={ view.setLayerBarCollapsed }
         />
-      </div>  }
+      </div> }
 
       {/* Left: legend + navigation map controls (zoom / compass / locate / fullscreen),
         * stacked in a single bottom-left column so they never overlap each other.
@@ -1051,30 +1051,30 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         </div>
       ) }
 
-      {/* Bottom: temporal filmstrip — always visible */}
+      {/* Bottom: temporal filmstrip — always visible */ }
       <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
         <div id="timeline-bar" className="min-w-0 flex-1">
           <TimelineBar
-          dates={ activeTimelineDates }
-          selectedDate={ selectedDate }
-          onSelect={ bestMode ? handleBestDateSelect : view.setDate }
-          sourceKind={ bestMode ? undefined : activeSourceKind }
-          sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
-          loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
-          error={
-            bestMode
-              ? (bestObsQ.isError ? messageFor(bestObsQ.error) : null)
-              : (datesQ.isError ? messageFor(datesQ.error) : null)
-          }
-          onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
-          marginalNote={ bestMode ? null : marginalNote }
-          nearestPassNote={ bestMode ? null : nearestPassNote }
-          onPrefetchDate={ undefined }
-          periodFrom={ periodFrom }
-          periodTo={ periodTo }
-          onPeriodChange={ view.setPeriod }
-          bestMode={ bestMode }
-          onBestModeChange={ view.setBestMode }
+            dates={ activeTimelineDates }
+            selectedDate={ selectedDate }
+            onSelect={ bestMode ? handleBestDateSelect : view.setDate }
+            sourceKind={ bestMode ? undefined : activeSourceKind }
+            sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
+            loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
+            error={
+              bestMode
+                ? (bestObsQ.isError ? messageFor(bestObsQ.error) : null)
+                : (datesQ.isError ? messageFor(datesQ.error) : null)
+            }
+            onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
+            marginalNote={ bestMode ? null : marginalNote }
+            nearestPassNote={ bestMode ? null : nearestPassNote }
+            onPrefetchDate={ undefined }
+            periodFrom={ periodFrom }
+            periodTo={ periodTo }
+            onPeriodChange={ view.setPeriod }
+            bestMode={ bestMode }
+            onBestModeChange={ view.setBestMode }
           />
         </div>
 
@@ -1099,17 +1099,17 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       </div>
 
       <AlertDialogRoot
-        open={!!deleteFieldTarget}
-        onOpenChange={(open) => { if (!open) setDeleteFieldTarget(null); }}
+        open={ !!deleteFieldTarget }
+        onOpenChange={ (open) => { if (!open) setDeleteFieldTarget(null); } }
       >
         <AlertDialogContent>
           <AlertDialogTitle>Delete field?</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete "{deleteFieldTarget?.name}"? This action cannot be undone.
+            Are you sure you want to delete "{ deleteFieldTarget?.name }"? This action cannot be undone.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => {
+            <AlertDialogAction onClick={ async () => {
               if (!deleteFieldTarget) return;
               try {
                 await deleteFieldTarget.onConfirm();
@@ -1117,7 +1117,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
                 // error handled by query state
               }
               setDeleteFieldTarget(null);
-            }}>
+            } }>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

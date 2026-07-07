@@ -516,7 +516,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     [sourcesQ.data, requestSourceId],
   );
   const displaySource = bestMode ? requestSource : selectedSource;
-  const pipelinePointLookupDisabled = Boolean(requestSource?.pipelineBacked);
 
   const sourceDisplayModes = displaySource?.displayModes ?? ['FCC'];
   const sourceMapDisplayModes = mapDisplayModesForSource(displaySource);
@@ -675,7 +674,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
 
   const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
     if (!isIndexLayer || !selectedPlot || !selectedDate || !requestSourceId) return null;
-    if (pipelinePointLookupDisabled) return null;
     return getFieldIndexPoint(selectedPlot.id, {
       sourceId: requestSourceId,
       acquisitionDate: selectedDate,
@@ -689,7 +687,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     selectedPlot,
     selectedDate,
     requestSourceId,
-    pipelinePointLookupDisabled,
     selectedDisplayMode,
     preferHighRes,
   ]);
@@ -994,7 +991,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           <CoordinateReadout
             map={ map }
             indexLookup={
-              isIndexLayer && selectedPlot && selectedDate && requestSourceId && !pipelinePointLookupDisabled
+              isIndexLayer && selectedPlot && selectedDate && requestSourceId
                 ? indexLookup
                 : undefined
             }

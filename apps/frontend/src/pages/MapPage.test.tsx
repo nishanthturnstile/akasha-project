@@ -481,8 +481,8 @@ describe('MapPage source defaults', () => {
   });
 });
 
-describe('MapPage pipeline point lookup gating', () => {
-  it('does not wire hover point lookup for pipeline-backed Sentinel sources', async () => {
+describe('MapPage pipeline point lookup', () => {
+  it('wires hover point lookup for pipeline-backed Sentinel sources', async () => {
     stubAkashaFetch({
       defaultSourceId: 'sentinel-2-l2a',
       plots: [FIELD_PLOT],
@@ -504,16 +504,18 @@ describe('MapPage pipeline point lookup gating', () => {
     await waitFor(() => {
       expect(screen.getByTestId('layer-source-trigger').textContent).toContain('Sentinel-2 L2A');
       expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
-        'false',
+        'true',
       );
     });
 
     fireEvent.click(screen.getByTestId('coordinate-readout-mock'));
 
-    const calls = (globalThis.fetch as unknown as {
-      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
-    }).mock.calls;
-    expect(calls.some(([input]) => String(input).includes('/indices/point'))).toBe(false);
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      expect(calls.some(([input]) => String(input).includes('/indices/point'))).toBe(true);
+    });
   });
 });
 

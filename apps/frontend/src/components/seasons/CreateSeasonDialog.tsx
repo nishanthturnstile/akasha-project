@@ -53,6 +53,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const endDateRef = useRef<DatePickerHandle>(null);
 
   const initialSnapshot = useMemo(() => ({
     name: '',

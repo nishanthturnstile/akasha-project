@@ -47,11 +47,14 @@ export default function OnboardingStep1() {
 
   const predefinedMap = useMemo(() => {
     const map = new Map<string, NonNullable<typeof predefinedQ.data>[number]>();
-    for (const s of predefinedQ.data ?? []) {
-      map.set(s.seasonName, s);
+    const data = predefinedQ.data;
+    if (Array.isArray(data)) {
+      for (const s of data) {
+        map.set(s.seasonName, s);
+      }
     }
     return map;
-  }, [predefinedQ.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [predefinedQ]);
 
   const isEditing = !!existingSeasonId;
   const isCustom = selectedKey === CUSTOM;
@@ -187,7 +190,7 @@ export default function OnboardingStep1() {
               <Select value={ selectedKey } onValueChange={ handleSelect } open={ dropdownOpen } onOpenChange={ setDropdownOpen }>
                 <SelectTrigger className="sr-only" />
                 <SelectContent>
-                  { (predefinedQ.data ?? []).map((s) => (
+                  { Array.isArray(predefinedQ.data) && predefinedQ.data.map((s) => (
                     <SelectItem key={ s.id } value={ s.seasonName }>{ s.seasonName }</SelectItem>
                   )) }
                   <SelectItem value={ CUSTOM }>Custom</SelectItem>

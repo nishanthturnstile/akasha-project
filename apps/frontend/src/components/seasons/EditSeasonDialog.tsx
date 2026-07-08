@@ -64,8 +64,11 @@ export default function EditSeasonDialog({
 
   const predefinedMap = useMemo(() => {
     const map = new Map<string, NonNullable<typeof predefinedQ.data>[number]>();
-    for (const s of predefinedQ.data ?? []) {
-      map.set(s.seasonName, s);
+    const data = predefinedQ.data;
+    if (Array.isArray(data)) {
+      for (const s of data) {
+        map.set(s.seasonName, s);
+      }
     }
     return map;
   }, [predefinedQ]);

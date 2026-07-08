@@ -353,6 +353,7 @@ def delete_season(
                 if not existing:
                     session.add(
                         VegetationCycle(
+                            user_id=vc.user_id,
                             field_id=vc.field_id,
                             season_id=dest_id,
                             year=vc.year,

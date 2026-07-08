@@ -97,7 +97,9 @@ class FakeSeasonStore:
         row["updatedAt"] = self._now()
         return self._public(row)
 
-    def delete_season(self, season_id: str, user_id: str) -> bool:
+    def delete_season(
+        self, season_id: str, user_id: str, move_fields_to_season_id: str | None = None,
+    ) -> bool:
         row = self.rows.get(season_id)
         if row is None or row["userId"] != user_id:
             return False

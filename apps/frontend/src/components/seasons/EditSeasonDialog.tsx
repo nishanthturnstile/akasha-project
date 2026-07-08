@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { ChevronDown, Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -57,13 +57,18 @@ export default function EditSeasonDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const predefinedQ = usePredefinedSeasons();
 
+  const [fieldTab, setFieldTab] = useState<'list' | 'added' | 'removed'>('list');
+  const [listSearch, setListSearch] = useState('');
+  const [addedSearch, setAddedSearch] = useState('');
+  const [removedSearch, setRemovedSearch] = useState('');
+
   const predefinedMap = useMemo(() => {
     const map = new Map<string, NonNullable<typeof predefinedQ.data>[number]>();
     for (const s of predefinedQ.data ?? []) {
       map.set(s.seasonName, s);
     }
     return map;
-  }, [predefinedQ.data]);
+  }, [predefinedQ]);
 
   const isCustom = selectedKey === CUSTOM;
 
@@ -77,20 +82,22 @@ export default function EditSeasonDialog({
   useEffect(() => {
     if (!open) return;
     const fieldIds = season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id);
-    setName(season.name);
-    setStartDate(season.startDate ?? '');
-    setEndDate(season.endDate ?? '');
-    setSelectedFieldIds(fieldIds);
-    setError(null);
-    setConfirmClose(false);
-    const has = predefinedMap.has(season.name);
-    setSelectedKey(has ? season.name : CUSTOM);
-    setCustomNameDraft(has ? '' : season.name);
-    setDropdownOpen(false);
-    setFieldTab('list');
-    setListSearch('');
-    setAddedSearch('');
-    setRemovedSearch('');
+    startTransition(() => {
+      setName(season.name);
+      setStartDate(season.startDate ?? '');
+      setEndDate(season.endDate ?? '');
+      setSelectedFieldIds(fieldIds);
+      setError(null);
+      setConfirmClose(false);
+      const has = predefinedMap.has(season.name);
+      setSelectedKey(has ? season.name : CUSTOM);
+      setCustomNameDraft(has ? '' : season.name);
+      setDropdownOpen(false);
+      setFieldTab('list');
+      setListSearch('');
+      setAddedSearch('');
+      setRemovedSearch('');
+    });
   }, [open, season, seasonFieldIds, predefinedMap]);
 
   useEffect(() => {
@@ -153,11 +160,6 @@ export default function EditSeasonDialog({
       onOpenChange(false);
     }
   }, [dirty, onOpenChange]);
-
-  const [fieldTab, setFieldTab] = useState<'list' | 'added' | 'removed'>('list');
-  const [listSearch, setListSearch] = useState('');
-  const [addedSearch, setAddedSearch] = useState('');
-  const [removedSearch, setRemovedSearch] = useState('');
 
   const removedFieldIds = useMemo(
     () => seasonFieldIds.filter((id) => !selectedFieldIds.includes(id)),

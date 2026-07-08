@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { ChevronDown, Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DatePicker, type DatePickerHandle } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -84,7 +84,11 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
       map.set(s.seasonName, s);
     }
     return map;
-  }, [predefinedQ.data]);
+  }, [predefinedQ]);
+
+  const [copyFromSeasonEnabled, setCopyFromSeasonEnabled] = useState(false);
+  const [copySourceSeasonId, setCopySourceSeasonId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const isCustom = selectedKey === CUSTOM;
 
@@ -95,21 +99,23 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
   useEffect(() => {
     if (!open) return;
-    setName('');
-    setStartDate('');
-    setEndDate('');
-    setSelectedFieldIds([]);
-    setError(null);
-    setNameError(null);
-    setStartDateError(null);
-    setEndDateError(null);
-    setSelectedKey(INITIAL);
-    setCustomNameDraft('');
-    setDropdownOpen(false);
-    setCopyFromSeasonEnabled(false);
-    setCopySourceSeasonId(null);
-    setSearch('');
-    setConfirmClose(false);
+    startTransition(() => {
+      setName('');
+      setStartDate('');
+      setEndDate('');
+      setSelectedFieldIds([]);
+      setError(null);
+      setNameError(null);
+      setStartDateError(null);
+      setEndDateError(null);
+      setSelectedKey(INITIAL);
+      setCustomNameDraft('');
+      setDropdownOpen(false);
+      setCopyFromSeasonEnabled(false);
+      setCopySourceSeasonId(null);
+      setSearch('');
+      setConfirmClose(false);
+    });
   }, [open]);
 
   useEffect(() => {
@@ -167,9 +173,6 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     return () => clearTimeout(id);
   }, [isCustom]);
 
-  const [copyFromSeasonEnabled, setCopyFromSeasonEnabled] = useState(false);
-  const [copySourceSeasonId, setCopySourceSeasonId] = useState<string | null>(null);
-
   const existingSeasons = useMemo(() => {
     if (!Array.isArray(seasonsQuery.data)) return [];
     return seasonsQuery.data;
@@ -190,8 +193,6 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
       setSelectedFieldIds(mappedFieldIds);
     }
   };
-
-  const [search, setSearch] = useState('');
 
   const filteredAllFields = useMemo(() => {
     if (!search.trim()) return allFields;

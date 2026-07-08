@@ -1,11 +1,18 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, Search, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from '@/components/ui/select';
+import { usePredefinedSeasons } from '@/lib/queries';
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -16,6 +23,8 @@ import {
   AlertDialogFooter,
 } from '@/components/ui/alert-dialog';
 import type { Field, Season } from '@/types/api';
+
+const CUSTOM = '__custom__';
 
 interface Props {
   season: Season;
@@ -42,6 +51,21 @@ export default function EditSeasonDialog({
   const [endDate, setEndDate] = useState(season.endDate ?? '');
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string>(CUSTOM);
+  const [customNameDraft, setCustomNameDraft] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const predefinedQ = usePredefinedSeasons();
+
+  const predefinedMap = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof predefinedQ.data>[number]>();
+    for (const s of predefinedQ.data ?? []) {
+      map.set(s.seasonName, s);
+    }
+    return map;
+  }, [predefinedQ.data]);
+
+  const isCustom = selectedKey === CUSTOM;
 
   const seasonFieldIds = useMemo(
     () => season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id),
@@ -49,32 +73,71 @@ export default function EditSeasonDialog({
   );
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
 
+  // Reset form to season props when dialog opens
   useEffect(() => {
-    setSelectedFieldIds(seasonFieldIds);
-  }, [seasonFieldIds]);
-
-  const [initialSnapshot, setInitialSnapshot] = useState<{ name: string; startDate: string; endDate: string; fieldIds: string[] } | null>(null);
+    if (!open) return;
+    const fieldIds = season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id);
+    setName(season.name);
+    setStartDate(season.startDate ?? '');
+    setEndDate(season.endDate ?? '');
+    setSelectedFieldIds(fieldIds);
+    setError(null);
+    setConfirmClose(false);
+    const has = predefinedMap.has(season.name);
+    setSelectedKey(has ? season.name : CUSTOM);
+    setCustomNameDraft(has ? '' : season.name);
+    setDropdownOpen(false);
+    setFieldTab('list');
+    setListSearch('');
+    setAddedSearch('');
+    setRemovedSearch('');
+  }, [open, season, seasonFieldIds, predefinedMap]);
 
   useEffect(() => {
-    if (open && !initialSnapshot) {
-      setInitialSnapshot({
-        name: season.name,
-        startDate: season.startDate ?? '',
-        endDate: season.endDate ?? '',
-        fieldIds: seasonFieldIds,
+    if (!isCustom) return;
+    const id = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => clearTimeout(id);
+  }, [isCustom]);
+
+  const handleSeasonSelect = (key: string) => {
+    if (isCustom && key !== CUSTOM) {
+      setCustomNameDraft(name);
+    }
+    setSelectedKey(key);
+    setError(null);
+    if (key === CUSTOM) {
+      setName(customNameDraft);
+      const y = new Date().getFullYear();
+      setStartDate(`${y}-01-01`);
+      setEndDate(`${y}-12-31`);
+    } else if (key !== CUSTOM) {
+      const p = predefinedMap.get(key);
+      setName(key);
+      if (p?.periodStartDate) setStartDate(p.periodStartDate);
+      if (p?.periodEndDate) setEndDate(p.periodEndDate);
+    }
+    setDropdownOpen(false);
+
+    if (key === CUSTOM) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
       });
     }
-    if (!open) {
-      setInitialSnapshot(null);
-    }
-  }, [open, season.name, season.startDate, season.endDate, seasonFieldIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
 
-  const dirty = initialSnapshot
-    ? name !== initialSnapshot.name
-      || startDate !== initialSnapshot.startDate
-      || endDate !== initialSnapshot.endDate
-      || JSON.stringify([...selectedFieldIds].sort()) !== JSON.stringify([...initialSnapshot.fieldIds].sort())
-    : false;
+  const initialSnapshot = useMemo(() => ({
+    name: season.name,
+    startDate: season.startDate ?? '',
+    endDate: season.endDate ?? '',
+    fieldIds: seasonFieldIds,
+  }), [season.name, season.startDate, season.endDate, seasonFieldIds]);
+
+  const dirty = name !== initialSnapshot.name
+    || startDate !== initialSnapshot.startDate
+    || endDate !== initialSnapshot.endDate
+    || JSON.stringify([...selectedFieldIds].sort()) !== JSON.stringify([...initialSnapshot.fieldIds].sort());
 
   const endDateMin = useMemo(() => {
     if (!startDate) return undefined;
@@ -168,7 +231,7 @@ export default function EditSeasonDialog({
                 Update season details or select the fields that belong to it.
               </p>
             </div>
-            <button aria-label="Close" onClick={handleCancel} className="rounded-md p-1 text-muted-foreground hover:bg-accent/40">
+            <button aria-label="Close" onClick={handleCancel} className="rounded-md p-1 text-muted-foreground hover:bg-accent/40 cursor-pointer">
               <X className="size-4" />
             </button>
           </div>
@@ -176,11 +239,45 @@ export default function EditSeasonDialog({
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-1 gap-3">
               <label className="text-sm">Season name <span className="text-destructive">*</span></label>
-              <input
-                className="rounded-md border border-border bg-background px-3 py-2"
-                value={name}
-                onChange={(e) => { setName(e.target.value); setError(null); }}
-              />
+              <div className="relative">
+                <Select value={ selectedKey } onValueChange={ handleSeasonSelect } open={ dropdownOpen } onOpenChange={ setDropdownOpen }>
+                  <SelectTrigger className="sr-only" />
+                  <SelectContent>
+                    { (predefinedQ.data ?? []).map((s) => (
+                      <SelectItem key={ s.id } value={ s.seasonName }>{ s.seasonName }</SelectItem>
+                    )) }
+                    <SelectItem value={ CUSTOM }>Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                { isCustom ? (
+                  <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                    <input
+                      ref={ inputRef }
+                      value={ name }
+                      autoFocus
+                      onChange={ (e) => { setName(e.target.value); setError(null); } }
+                      placeholder="Enter season name"
+                      className="flex-1 bg-transparent outline-none text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={ () => setDropdownOpen(true) }
+                      className="flex cursor-pointer items-center"
+                    >
+                      <ChevronDown className="size-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="flex h-10 w-full cursor-pointer items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background hover:bg-accent/40 focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+                    onClick={ () => setDropdownOpen(true) }
+                  >
+                    <span>{ name }</span>
+                    <ChevronDown className="size-4 text-muted-foreground" />
+                  </div>
+                ) }
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -188,6 +285,7 @@ export default function EditSeasonDialog({
                 <label className="text-sm">Start date <span className="text-destructive">*</span></label>
                 <DatePicker
                   value={startDate}
+                  disabled={!isCustom}
                   onChange={(v) => {
                     setStartDate(v);
                     if (endDate && v >= endDate) setEndDate('');
@@ -200,9 +298,9 @@ export default function EditSeasonDialog({
                 <label className="text-sm">End date <span className="text-destructive">*</span></label>
                 <DatePicker
                   value={endDate}
+                  disabled={!isCustom || !startDate}
                   onChange={setEndDate}
                   placeholder="End Date"
-                  disabled={!startDate}
                   minDate={endDateMin}
                   onOpenChange={(open) => { if (open && !name.trim()) setError('Season name is required'); }}
                 />
@@ -375,8 +473,8 @@ export default function EditSeasonDialog({
             All unsaved changes will be lost.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
+            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
+            <AlertDialogAction className="cursor-pointer" onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
               Yes
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -290,7 +290,11 @@ def update_season(
         )
 
 
-def delete_season(season_id: str, user_id: str | None = None) -> bool:
+def delete_season(
+    season_id: str,
+    user_id: str | None = None,
+    move_fields_to_season_id: str | None = None,
+) -> bool:
     with session_scope() as session:
         season = session.get(Season, _uuid(season_id))
         if season is None:
@@ -310,6 +314,25 @@ def delete_season(season_id: str, user_id: str | None = None) -> bool:
                 409,
                 {"seasonId": season_id},
             )
+
+        if move_fields_to_season_id:
+            dest_id = _uuid(move_fields_to_season_id)
+            field_seasons = (
+                session.query(FieldSeason)
+                .filter(FieldSeason.season_id == season.season_id)
+                .all()
+            )
+            for fs in field_seasons:
+                existing = (
+                    session.query(FieldSeason)
+                    .filter(
+                        FieldSeason.field_id == fs.field_id,
+                        FieldSeason.season_id == dest_id,
+                    )
+                    .first()
+                )
+                if not existing:
+                    session.add(FieldSeason(field_id=fs.field_id, season_id=dest_id))
 
         session.delete(season)
         session.flush()

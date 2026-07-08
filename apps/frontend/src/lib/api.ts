@@ -54,6 +54,7 @@ import type {
   PlotGeometry,
   PlotImportResponse,
   PlotUpdatePayload,
+  PredefinedSeason,
   SceneDate,
   Source,
   Season,
@@ -386,6 +387,9 @@ export const getBestObservations = (params: BestObservationsParams = {}): Promis
 };
 export const getCrops = (): Promise<Crop[]> => request<Crop[]>('/api/crops');
 
+export const getPredefinedSeasons = (): Promise<PredefinedSeason[]> =>
+  request<PredefinedSeason[]>('/api/predefined-seasons');
+
 export const getIrrigationTypes = (): Promise<IrrigationType[]> =>
   request<IrrigationType[]>('/api/irrigation-types');
 
@@ -431,8 +435,13 @@ export const getSeason = (seasonId: string): Promise<Season> =>
 export const updateSeason = (seasonId: string, payload: SeasonUpdatePayload): Promise<Season> =>
   request<Season>(`/api/seasons/${encodeURIComponent(seasonId)}`, { method: 'PATCH', body: payload });
 
-export const deleteSeason = (seasonId: string): Promise<void> =>
-  request<void>(`/api/seasons/${encodeURIComponent(seasonId)}`, { method: 'DELETE' });
+export const deleteSeason = (seasonId: string, moveFieldsToSeasonId?: string): Promise<void> => {
+  let path = `/api/seasons/${encodeURIComponent(seasonId)}`;
+  if (moveFieldsToSeasonId) {
+    path += `?moveFieldsToSeasonId=${encodeURIComponent(moveFieldsToSeasonId)}`;
+  }
+  return request<void>(path, { method: 'DELETE' });
+};
 
 // --------------------------------------------------------------------------
 // Fields API

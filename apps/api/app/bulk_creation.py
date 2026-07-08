@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
-from app.models import Crop, IrrigationType, SeedingType, TillageType, Variety
+from app.models import Crop, IrrigationType, PredefinedSeason, SeedingType, TillageType, Variety
 
 DEFAULT_DATA_DIR = Path("/app/data/reference")
 
@@ -191,6 +192,69 @@ def generate_varieties(session: Session) -> int:
     return count
 
 
+def _mmdd_to_date(mmdd: str) -> date:
+    """Convert 'MM-DD' to date using current year (determined later)."""
+    parts = mmdd.split("-")
+    return date(date.today().year, int(parts[0]), int(parts[1]))
+
+
+def _resolve_year(mmdd: str, base_year: int, period_start_month: int, wraps: bool) -> date:
+    """Convert 'MM-DD' to a full date. If the season wraps to the next year
+    (end month < start month), dates whose month is before *period_start_month*
+    belong to the *next* year."""
+    parts = mmdd.split("-")
+    month = int(parts[0])
+    day = int(parts[1])
+    year = base_year if not (wraps and month < period_start_month) else base_year + 1
+    return date(year, month, day)
+
+
+def generate_predefined_seasons(session: Session) -> int:
+    data = _load_json("predefined-seasons.json")
+    existing = {name for (name,) in session.query(PredefinedSeason.season_name).all()}
+    count = 0
+    for item in data:
+        if item["season_name"] in existing:
+            continue
+
+        ps_mmdd = item.get("period_start_date")
+        pe_mmdd = item.get("period_end_date")
+        if not ps_mmdd or not pe_mmdd:
+            continue
+
+        ps_month = int(ps_mmdd.split("-")[0])
+        pe_month = int(pe_mmdd.split("-")[0])
+        wraps = pe_month < ps_month
+        base_year = date.today().year
+
+        period_start = date(base_year, ps_month, int(ps_mmdd.split("-")[1]))
+        period_end = _resolve_year(pe_mmdd, base_year, ps_month, wraps)
+
+        def _resolve(v, _by=base_year, _ps=ps_month, _w=wraps):
+            return _resolve_year(v, _by, _ps, _w) if v else None
+
+        sowing_start = _resolve(item.get("sowing_start_date"))
+        sowing_end = _resolve(item.get("sowing_end_date"))
+        harvesting_start = _resolve(item.get("harvesting_start_date"))
+        harvesting_end = _resolve(item.get("harvesting_end_date"))
+
+        session.add(
+            PredefinedSeason(
+                season_name=item["season_name"],
+                period_start_date=period_start,
+                period_end_date=period_end,
+                sowing_start_date=sowing_start,
+                sowing_end_date=sowing_end,
+                harvesting_start_date=harvesting_start,
+                harvesting_end_date=harvesting_end,
+                main_water_source=item.get("main_water_source"),
+            )
+        )
+        existing.add(item["season_name"])
+        count += 1
+    return count
+
+
 def generate_all() -> dict[str, int]:
     counts: dict[str, int] = {}
     with session_scope() as s:
@@ -203,4 +267,6 @@ def generate_all() -> dict[str, int]:
         counts["crops"] = generate_crops(s)
     with session_scope() as s:
         counts["varieties"] = generate_varieties(s)
+    with session_scope() as s:
+        counts["predefined_seasons"] = generate_predefined_seasons(s)
     return counts

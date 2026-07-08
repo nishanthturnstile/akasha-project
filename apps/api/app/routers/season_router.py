@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import traceback
 from typing import Any
 
 import anyio
@@ -45,7 +46,7 @@ async def _run_blocking(func, *args, **kwargs):
     except AkashaError:
         raise
     except Exception as exc:
-        logger.warning("seasons backend unavailable: %s", type(exc).__name__)
+        logger.error("seasons backend error: %s\n%s", exc, traceback.format_exc())
         raise seasons_backend_unavailable(
             "Season storage is not available in this environment."
         ) from exc

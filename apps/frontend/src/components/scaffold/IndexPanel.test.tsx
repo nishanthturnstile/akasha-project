@@ -78,7 +78,7 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.queryByTestId('index-panel-tabs')).toBeNull();
     });
 
-    it('renders three tabs with Crop info active by default when a field is selected', () => {
+    it('renders three tabs with Crop info active by default — shows 3 cards', () => {
         renderPanel(
             <IndexPanel
                 selectedPlot={ plot }
@@ -101,13 +101,10 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         );
         expect(screen.getByTestId('index-panel-content-crop-info')).toBeTruthy();
 
-        // All six Crop info placeholder cards are present on the default tab.
+        // All three Crop info cards are present on the default tab.
         expect(screen.getByTestId('crop-info-card-crop-rotation')).toBeTruthy();
-        expect(screen.getByTestId('crop-info-card-sown-area')).toBeTruthy();
-        expect(screen.getByTestId('crop-info-card-management-guide')).toBeTruthy();
         expect(screen.getByTestId('crop-info-card-growth-stages')).toBeTruthy();
         expect(screen.getByTestId('crop-info-card-current-risks')).toBeTruthy();
-        expect(screen.getByTestId('crop-info-card-ndvi-split')).toBeTruthy();
     });
 
     it('switches to the Chart tab and exposes the index selector and trend chart', () => {

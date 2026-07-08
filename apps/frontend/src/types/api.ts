@@ -78,6 +78,18 @@ export interface PaginatedVarieties {
   pages: number;
 }
 
+export interface PredefinedSeason {
+  id: number;
+  seasonName: string;
+  periodStartDate: string | null;
+  periodEndDate: string | null;
+  sowingStartDate: string | null;
+  sowingEndDate: string | null;
+  harvestingStartDate: string | null;
+  harvestingEndDate: string | null;
+  mainWaterSource: string | null;
+}
+
 export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
 export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
 export type SourceAvailabilityStatus = 'active' | 'gated';

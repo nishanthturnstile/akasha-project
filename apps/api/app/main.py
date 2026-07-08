@@ -56,6 +56,7 @@ from .routers.observations_router import router as observations_router
 from .routers.operation_router import router as operations_router
 from .routers.pipeline_proxy import router as pipeline_proxy_router
 from .routers.plot_router import router as plots_router
+from .routers.predefined_seasons_router import router as predefined_seasons_router
 from .routers.product_router import router as product_router
 from .routers.report_router import router as reports_router
 from .routers.risk_router import router as risk_router
@@ -268,6 +269,7 @@ app.include_router(risk_router)
 
 # --- Reference / Lookup Data API -----------------------------------------
 app.include_router(crops_router)
+app.include_router(predefined_seasons_router)
 
 # --- Auth/Team/Admin/Notifications API ------------------------------------
 app.include_router(auth_router)

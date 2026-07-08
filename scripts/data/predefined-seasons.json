@@ -1,0 +1,32 @@
+[
+  {
+    "season_name": "Kharif",
+    "period_start_date": "06-01",
+    "period_end_date": "10-31",
+    "sowing_start_date": "06-01",
+    "sowing_end_date": "07-31",
+    "harvesting_start_date": "09-01",
+    "harvesting_end_date": "10-31",
+    "main_water_source": "Southwest Monsoon"
+  },
+  {
+    "season_name": "Rabi",
+    "period_start_date": "10-01",
+    "period_end_date": "04-30",
+    "sowing_start_date": "10-01",
+    "sowing_end_date": "12-31",
+    "harvesting_start_date": "03-01",
+    "harvesting_end_date": "04-30",
+    "main_water_source": "Residual moisture and irrigation"
+  },
+  {
+    "season_name": "Zaid",
+    "period_start_date": "03-01",
+    "period_end_date": "07-31",
+    "sowing_start_date": "02-01",
+    "sowing_end_date": "03-31",
+    "harvesting_start_date": "06-01",
+    "harvesting_end_date": "07-31",
+    "main_water_source": "Irrigation"
+  }
+]

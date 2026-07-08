@@ -1,11 +1,18 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Search, X } from 'lucide-react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DatePicker, type DatePickerHandle } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useCreateSeason, useFields, useSeasons } from '@/lib/queries';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useCreateSeason, useFields, usePredefinedSeasons, useSeasons } from '@/lib/queries';
 import type { Season } from '@/types/api';
 import {
   AlertDialogAction,
@@ -16,6 +23,9 @@ import {
   AlertDialogTitle,
   AlertDialogFooter,
 } from '@/components/ui/alert-dialog';
+
+const CUSTOM = '__custom__';
+const INITIAL = '__initial__';
 
 interface Props {
   open: boolean;
@@ -39,17 +49,18 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   const [startDateError, setStartDateError] = useState<string | null>(null);
   const [endDateError, setEndDateError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string>(INITIAL);
+  const [customNameDraft, setCustomNameDraft] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const endDateRef = useRef<DatePickerHandle>(null);
 
-  const initialSnapshot = useMemo(() => {
-    const y = new Date().getFullYear();
-    return {
-      name: '',
-      startDate: `${y}-01-01`,
-      endDate: `${y}-12-31`,
-      fieldIds: [] as string[],
-    };
-  }, []);
+  const initialSnapshot = useMemo(() => ({
+    name: '',
+    startDate: '',
+    endDate: '',
+    fieldIds: [] as string[],
+  }), []);
 
   const dirty = name !== initialSnapshot.name
     || startDate !== initialSnapshot.startDate
@@ -66,11 +77,50 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   const createSeason = useCreateSeason();
   const fieldsQ = useFields();
   const seasonsQuery = useSeasons();
+  const predefinedQ = usePredefinedSeasons();
+
+  const predefinedMap = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof predefinedQ.data>[number]>();
+    const data = predefinedQ.data;
+    if (Array.isArray(data)) {
+      for (const s of data) {
+        map.set(s.seasonName, s);
+      }
+    }
+    return map;
+  }, [predefinedQ]);
+
+  const [copyFromSeasonEnabled, setCopyFromSeasonEnabled] = useState(false);
+  const [copySourceSeasonId, setCopySourceSeasonId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const isCustom = selectedKey === CUSTOM;
 
   const existingSeasonNames = useMemo(() => {
     if (!Array.isArray(seasonsQuery.data)) return new Set<string>();
     return new Set(seasonsQuery.data.map((s) => s.name.toLowerCase().trim()));
   }, [seasonsQuery.data]);
+
+  useEffect(() => {
+    if (!open) return;
+    startTransition(() => {
+      setName('');
+      setStartDate('');
+      setEndDate('');
+      setSelectedFieldIds([]);
+      setError(null);
+      setNameError(null);
+      setStartDateError(null);
+      setEndDateError(null);
+      setSelectedKey(INITIAL);
+      setCustomNameDraft('');
+      setDropdownOpen(false);
+      setCopyFromSeasonEnabled(false);
+      setCopySourceSeasonId(null);
+      setSearch('');
+      setConfirmClose(false);
+    });
+  }, [open]);
 
   useEffect(() => {
     const trimmed = name.trim();
@@ -91,8 +141,41 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     );
   };
 
-  const [copyFromSeasonEnabled, setCopyFromSeasonEnabled] = useState(false);
-  const [copySourceSeasonId, setCopySourceSeasonId] = useState<string | null>(null);
+  const handleSeasonSelect = (key: string) => {
+    if (isCustom && key !== CUSTOM) {
+      setCustomNameDraft(name);
+    }
+    setSelectedKey(key);
+    setNameError(null);
+    setStartDateError(null);
+    setEndDateError(null);
+    if (key === CUSTOM) {
+      setName(customNameDraft);
+      const y = new Date().getFullYear();
+      setStartDate(`${y}-01-01`);
+      setEndDate(`${y}-12-31`);
+    } else if (key !== INITIAL) {
+      const p = predefinedMap.get(key);
+      setName(key);
+      if (p?.periodStartDate) setStartDate(p.periodStartDate);
+      if (p?.periodEndDate) setEndDate(p.periodEndDate);
+    }
+    setDropdownOpen(false);
+
+    if (key === CUSTOM) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!isCustom) return;
+    const id = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => clearTimeout(id);
+  }, [isCustom]);
 
   const existingSeasons = useMemo(() => {
     if (!Array.isArray(seasonsQuery.data)) return [];
@@ -115,15 +198,13 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     }
   };
 
-  const [search, setSearch] = useState('');
-
   const filteredAllFields = useMemo(() => {
     if (!search.trim()) return allFields;
     const q = search.trim().toLocaleLowerCase();
     return allFields.filter((f) => f.name.toLocaleLowerCase().includes(q));
   }, [allFields, search]);
 
-  const canCreate = name.trim() !== '' && startDate !== '' && endDate !== '' && !nameError;
+  const canCreate = name.trim() !== '' && startDate !== '' && endDate !== '' && !nameError && selectedKey !== INITIAL;
 
   const handleCancel = useCallback(() => {
     if (dirty) {
@@ -173,7 +254,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
           </VisuallyHidden>
 
           <div className="relative border-b border-border/60 px-4 py-4">
-            <button aria-label="Close" onClick={handleCancel} className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-accent/40">
+            <button aria-label="Close" onClick={handleCancel} className="absolute right-3 top-3 cursor-pointer rounded-md p-1 text-muted-foreground hover:bg-accent/40">
               <X className="size-4" />
             </button>
             <h3 className="text-center text-base font-display font-bold">Create season</h3>
@@ -185,11 +266,47 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-1 gap-3">
               <label className="text-sm">Season name <span className="text-destructive">*</span></label>
-              <input
-                className="rounded-md border border-border bg-background px-3 py-2"
-                value={ name }
-                onChange={ (e) => { setName(e.target.value); setNameError(null); } }
-              />
+              <div className="relative">
+                <Select value={ selectedKey } onValueChange={ handleSeasonSelect } open={ dropdownOpen } onOpenChange={ setDropdownOpen }>
+                  <SelectTrigger className="sr-only" />
+                  <SelectContent>
+                    { Array.isArray(predefinedQ.data) && predefinedQ.data.map((s) => (
+                      <SelectItem key={ s.id } value={ s.seasonName }>{ s.seasonName }</SelectItem>
+                    )) }
+                    <SelectItem value={ CUSTOM }>Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                { isCustom ? (
+                  <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                    <input
+                      ref={ inputRef }
+                      value={ name }
+                      autoFocus
+                      onChange={ (e) => { setName(e.target.value); setNameError(null); } }
+                      placeholder="Enter season name"
+                      className="flex-1 bg-transparent outline-none text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={ () => setDropdownOpen(true) }
+                      className="flex cursor-pointer items-center"
+                    >
+                      <ChevronDown className="size-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="flex h-10 w-full cursor-pointer items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background hover:bg-accent/40 focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+                    onClick={ () => setDropdownOpen(true) }
+                  >
+                    <span className={ selectedKey === INITIAL ? 'text-muted-foreground' : '' }>
+                      { selectedKey === INITIAL ? 'Choose season' : name }
+                    </span>
+                    <ChevronDown className="size-4 text-muted-foreground" />
+                  </div>
+                ) }
+              </div>
               { nameError && <p className="text-sm text-destructive">{ nameError }</p> }
             </div>
 
@@ -198,6 +315,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
                 <label className="text-sm">Start date <span className="text-destructive">*</span></label>
                 <DatePicker
                   value={ startDate }
+                  disabled={ !isCustom }
                   onChange={ (v) => {
                     setStartDate(v);
                     setStartDateError(null);
@@ -217,9 +335,9 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
                 <DatePicker
                   ref={endDateRef}
                   value={ endDate }
+                  disabled={ !isCustom || !startDate }
                   onChange={ (v) => { setEndDate(v); setEndDateError(null); } }
                   placeholder="End Date"
-                  disabled={ !startDate }
                   minDate={ endDateMin }
                   onOpenChange={ (open) => { if (open && !name.trim()) setNameError('Season name is required'); } }
                 />
@@ -245,18 +363,18 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
             { copyFromSeasonEnabled && (
               <div className="grid grid-cols-1 gap-2">
                 <label className="text-sm">Source season</label>
-                { existingSeasons.length > 0 ? (
+                  { existingSeasons.length > 0 ? (
                   <>
-                    <select
-                      value={ copySourceSeasonId ?? '' }
-                      onChange={ (e) => handleCopySeasonChange(e.target.value) }
-                      className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="" disabled>Select a season</option>
-                      { existingSeasons.map((s) => (
-                        <option key={ s.id } value={ s.id }>{ s.name }</option>
-                      )) }
-                    </select>
+                    <Select value={ copySourceSeasonId ?? '' } onValueChange={ handleCopySeasonChange }>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Select a season" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        { existingSeasons.map((s) => (
+                          <SelectItem key={ s.id } value={ s.id }>{ s.name }</SelectItem>
+                        )) }
+                      </SelectContent>
+                    </Select>
                     { copySourceSeasonId && copySourceFieldsEmpty && (
                       <p className="text-sm text-muted-foreground">No fields available in the selected season.</p>
                     ) }
@@ -339,8 +457,8 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
             All unsaved changes will be lost.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
-            <AlertDialogAction onClick={() => onOpenChange(false)}>
+            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
+            <AlertDialogAction className="cursor-pointer" onClick={() => onOpenChange(false)}>
               Yes
             </AlertDialogAction>
           </AlertDialogFooter>

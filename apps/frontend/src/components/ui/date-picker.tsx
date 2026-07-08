@@ -209,7 +209,7 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
         disabled={disabled}
         onClick={() => handleOpenChange(!open)}
         className={cn(
-          'flex h-9 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-colors',
+          'flex h-9 w-full cursor-pointer items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-colors',
           'hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           disabled && 'cursor-not-allowed opacity-50',
           !value && 'text-muted-foreground',

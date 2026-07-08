@@ -10,7 +10,6 @@ import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import { useConfig, useDates, useDeleteField, useFields, useSources, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
 import { useSeasonContext } from '@/state/seasonContext';
-import { cn } from '@/lib/utils';
 import type { CloudMaskOptions, Source } from '@/types/api';
 
 function formatAreaHa(value: number | null | undefined): string {
@@ -93,9 +92,9 @@ export default function FieldAnalyticsPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4 min-h-0">
+    <div className="h-full overflow-y-auto space-y-4 p-4">
       {overlaysVisible && (
-      <div className="shrink-0 flex items-stretch rounded-md border border-border bg-background">
+      <div className="flex items-stretch rounded-md border border-border bg-background">
         <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">
           <button
             type="button"
@@ -153,16 +152,16 @@ export default function FieldAnalyticsPage() {
       </div>
       )}
 
-      {/* Map card — flex-1 when fullscreen/global, flex-[13] when analytics visible */}
-      <div className={cn('min-h-0 rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'flex-[13]' : 'flex-1')}>
+      {/* Map card */}
+      <div className="h-[50vh] min-h-[300px] rounded-md border border-border overflow-hidden">
         <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords />
       </div>
 
-      {/* Analytics panel card — hidden when mapFullscreen is active */}
+      {/* Analytics panel */}
       {selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="min-h-0 flex-[7] overflow-hidden rounded-md border border-border bg-background">
+        <div className="rounded-md border border-border bg-background">
           <IndexPanel
-            className="h-full w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
+            className="w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
             selectedPlot={selectedField}
             selectedDate={selectedDate}
             sourceId={effectiveSourceId}
@@ -173,6 +172,7 @@ export default function FieldAnalyticsPage() {
             sourceMetricsProvisional={selectedSource?.metricsProvisional ?? false}
             periodFrom={periodFrom}
             periodTo={periodTo}
+            vegetationData={selectedField?.vegetationData}
           />
         </div>
       )}

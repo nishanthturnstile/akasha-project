@@ -1,9 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { DatePicker } from '@/components/ui/date-picker';
+import { DatePicker, type DatePickerHandle } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useCreateSeason, useFields, useSeasons } from '@/lib/queries';
 import type { Season } from '@/types/api';
@@ -25,21 +25,31 @@ interface Props {
 
 export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(() => {
+    const y = new Date().getFullYear();
+    return `${y}-01-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const y = new Date().getFullYear();
+    return `${y}-12-31`;
+  });
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [startDateError, setStartDateError] = useState<string | null>(null);
   const [endDateError, setEndDateError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const endDateRef = useRef<DatePickerHandle>(null);
 
-  const initialSnapshot = useMemo(() => ({
-    name: '',
-    startDate: '',
-    endDate: '',
-    fieldIds: [] as string[],
-  }), []);
+  const initialSnapshot = useMemo(() => {
+    const y = new Date().getFullYear();
+    return {
+      name: '',
+      startDate: `${y}-01-01`,
+      endDate: `${y}-12-31`,
+      fieldIds: [] as string[],
+    };
+  }, []);
 
   const dirty = name !== initialSnapshot.name
     || startDate !== initialSnapshot.startDate
@@ -191,7 +201,11 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
                   onChange={ (v) => {
                     setStartDate(v);
                     setStartDateError(null);
-                    if (endDate && v >= endDate) { setEndDate(''); setEndDateError(null); }
+                    setEndDate('');
+                    setEndDateError(null);
+                    const [y, m] = v.split('-');
+                    endDateRef.current?.setViewDate(Number(y), Number(m) - 1);
+                    endDateRef.current?.open();
                   } }
                   placeholder="Start Date"
                   onOpenChange={ (open) => { if (open && !name.trim()) setNameError('Season name is required'); } }
@@ -201,6 +215,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
               <div>
                 <label className="text-sm">End date <span className="text-destructive">*</span></label>
                 <DatePicker
+                  ref={endDateRef}
                   value={ endDate }
                   onChange={ (v) => { setEndDate(v); setEndDateError(null); } }
                   placeholder="End Date"

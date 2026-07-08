@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { DatePicker } from '@/components/ui/date-picker';
+import { DatePicker, type DatePickerHandle } from '@/components/ui/date-picker';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
 import { useCreateSeason, useSeason, useSeasons, useUpdateSeason } from '@/lib/queries';
 
@@ -27,13 +27,20 @@ export default function OnboardingStep1() {
   const defaultEndDate = `${currentYear}-12-31`;
 
   const [seasonName, setSeasonName] = useState('');
-  const [startDate, setStartDate] = useState(defaultStartDate);
-  const [endDate, setEndDate] = useState(defaultEndDate);
+  const [startDate, setStartDate] = useState(() => {
+    const y = new Date().getFullYear();
+    return `${y}-01-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const y = new Date().getFullYear();
+    return `${y}-12-31`;
+  });
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [startDateError, setStartDateError] = useState<string | null>(null);
   const [endDateError, setEndDateError] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
+  const endDateRef = useRef<DatePickerHandle>(null);
 
   if (seasonQuery.data && !synced) {
     setSynced(true);
@@ -137,7 +144,11 @@ export default function OnboardingStep1() {
                 onChange={(v) => {
                   setStartDate(v);
                   setStartDateError(null);
-                  if (endDate && v >= endDate) { setEndDate(''); setEndDateError(null); }
+                  setEndDate('');
+                  setEndDateError(null);
+                  const [y, m] = v.split('-');
+                  endDateRef.current?.setViewDate(Number(y), Number(m) - 1);
+                  endDateRef.current?.open();
                 }}
                 placeholder="Start Date"
                 className="w-full"
@@ -148,6 +159,7 @@ export default function OnboardingStep1() {
             <div className="flex-1">
               <label className="text-sm">End date <span className="text-destructive">*</span></label>
               <DatePicker
+                ref={endDateRef}
                 value={endDate}
                 onChange={(v) => { setEndDate(v); setEndDateError(null); }}
                 placeholder="End Date"

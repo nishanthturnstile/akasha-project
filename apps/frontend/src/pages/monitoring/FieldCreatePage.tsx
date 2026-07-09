@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, Circle, Loader2, Minus, MoreVertical, Plus, Square, Trash2, Undo2, X } from 'lucide-react';
+import { ArrowLeft, Circle, Loader2, Minus, MoreVertical, Plus, Scissors, Square, Trash2, Undo2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
@@ -20,8 +20,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { polygonAreaMeters } from '@/lib/measure';
-import { useConfig, useCreateField, useSeasons, queryKeys } from '@/lib/queries';
+import { useConfig, useCreateField, useFields, useSeasons, queryKeys } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
+import lineIntersect from '@turf/line-intersect';
 import type maplibregl from 'maplibre-gl';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import type { Field, GeoJsonPosition, PlotGeometry } from '@/types/api';
@@ -43,6 +44,82 @@ function nextTempId(): string {
 
 function toLngLatRing(ring: GeoJsonPosition[]): [number, number][] {
   return ring.map(([lng, lat]) => [lng, lat]);
+}
+
+function findEdgeIndex(p: [number, number], ring: GeoJsonPosition[]): number {
+  let bestEdge = -1;
+  let bestDist = 1e-6;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const ax = ring[i][0], ay = ring[i][1];
+    const bx = ring[i + 1][0], by = ring[i + 1][1];
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) continue;
+    const t = Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / len2));
+    const px = ax + t * dx, py = ay + t * dy;
+    const dist = Math.hypot(p[0] - px, p[1] - py);
+    if (dist < bestDist) { bestDist = dist; bestEdge = i; }
+  }
+  return bestEdge;
+}
+
+function splitPolygonByLine(
+  polygonCoords: GeoJsonPosition[][],
+  lineCoords: [number, number][],
+): { ring1: GeoJsonPosition[][]; ring2: GeoJsonPosition[][] } | null {
+  const intersections = lineIntersect(
+    { type: 'LineString', coordinates: polygonCoords[0] },
+    { type: 'LineString', coordinates: lineCoords },
+  );
+  console.log('[splitPolygonByLine] intersections found:', intersections.features.length);
+  if (intersections.features.length < 2) {
+    return null;
+  }
+
+  const pts: [number, number][] = [];
+  for (const f of intersections.features) {
+    const c = f.geometry.coordinates as [number, number];
+    if (!pts.some((p) => Math.abs(p[0] - c[0]) < 1e-8 && Math.abs(p[1] - c[1]) < 1e-8)) {
+      pts.push(c);
+    }
+    if (pts.length === 2) break;
+  }
+  if (pts.length < 2) return null;
+
+  const [A, B] = pts;
+  const ring = polygonCoords[0];
+  const edgeA = findEdgeIndex(A, ring);
+  const edgeB = findEdgeIndex(B, ring);
+  if (edgeA < 0 || edgeB < 0 || edgeA === edgeB) return null;
+
+  const advance = (i: number) => (i + 1) % (ring.length - 1);
+
+  // Ring 1: walk from edgeA to edgeB, including ring[edgeB]
+  const ring1Coords: GeoJsonPosition[] = [A];
+  let idx = advance(edgeA);
+  for (;;) {
+    ring1Coords.push(ring[idx]);
+    if (idx === edgeB) break;
+    idx = advance(idx);
+  }
+  ring1Coords.push(B);
+  ring1Coords.push(A);
+
+  // Ring 2: walk from edgeB to edgeA, including ring[edgeA]
+  const ring2Coords: GeoJsonPosition[] = [B];
+  idx = advance(edgeB);
+  for (;;) {
+    ring2Coords.push(ring[idx]);
+    if (idx === edgeA) break;
+    idx = advance(idx);
+  }
+  ring2Coords.push(A);
+  ring2Coords.push(B);
+
+  return {
+    ring1: [ring1Coords],
+    ring2: [ring2Coords],
+  };
 }
 
 const DRAW_ZOOM = 18;
@@ -74,9 +151,12 @@ export default function FieldCreatePage() {
   const [deleteAlertField, setDeleteAlertField] = useState<PendingField | null>(null);
   const [editingPendingField, setEditingPendingField] = useState<PendingField | null>(null);
   const nextFieldNumRef = useRef(0);
+  const [cutMode, setCutMode] = useState(false);
   const drawInstanceRef = useRef<TerraDraw | null>(null);
   const featureToPendingRef = useRef(new Map<string, string>());
+  const pendingFieldsRef = useRef<PendingField[]>([]);
 
+  const fieldsQ = useFields();
   const allSeasons = useMemo(() => seasonsQ.data ?? [], [seasonsQ.data]);
 
   const requestMapTool = useCallback((owner: MapToolOwner): boolean => {
@@ -114,6 +194,74 @@ export default function FieldCreatePage() {
     if (featureId) {
       featureToPendingRef.current.set(featureId, pendingId);
     }
+  }, []);
+
+  const handleTrimComplete = useCallback((lineCoords: [number, number][]) => {
+    console.log('[trim] handleTrimComplete called, lineCoords count:', lineCoords.length);
+    console.log('[trim] featureToPendingRef entries:', [...featureToPendingRef.current.entries()]);
+    console.log('[trim] pendingFieldsRef.current:', pendingFieldsRef.current);
+
+    const draw = drawInstanceRef.current;
+    if (!draw) {
+      console.log('[trim] draw not available');
+      return;
+    }
+
+    // Find which pending field the cut line intersects
+    const oldFeatureEntry = [...featureToPendingRef.current.entries()]
+      .find(([, pendingId]) => pendingFieldsRef.current.some((f) => f.id === pendingId));
+
+    if (!oldFeatureEntry) {
+      console.log('[trim] no matching feature in featureToPendingRef');
+      return;
+    }
+
+    const [oldFeatureId, oldPendingId] = oldFeatureEntry;
+    console.log('[trim] found target featureId:', oldFeatureId, 'pendingId:', oldPendingId);
+
+    const target = pendingFieldsRef.current.find((f) => f.id === oldPendingId);
+    if (!target || target.geometry.type !== 'Polygon') {
+      console.log('[trim] target not found or not a polygon');
+      return;
+    }
+
+    console.log('[trim] target geometry coords count:', target.geometry.coordinates[0]?.length);
+
+    const result = splitPolygonByLine(target.geometry.coordinates, lineCoords);
+    if (!result) {
+      console.log('[trim] splitPolygonByLine returned null — no valid split');
+      return;
+    }
+    console.log('[trim] split succeeded, ring1 coords:', result.ring1[0]?.length, 'ring2 coords:', result.ring2[0]?.length);
+
+    // Compare areas, keep the larger half as the trimmed field
+    const area1 = polygonAreaMeters(toLngLatRing(result.ring1[0] ?? []));
+    const area2 = polygonAreaMeters(toLngLatRing(result.ring2[0] ?? []));
+    const trimmedGeo: PlotGeometry = area1 >= area2
+      ? { type: 'Polygon', coordinates: result.ring1 }
+      : { type: 'Polygon', coordinates: result.ring2 };
+
+    // Remove old TerraDraw feature
+    try { draw.removeFeatures([oldFeatureId]); } catch { /* ignore */ }
+    featureToPendingRef.current.delete(oldFeatureId);
+
+    // Add trimmed feature (reuses the same pending field ID)
+    const results = draw.addFeatures([{
+      type: 'Feature',
+      geometry: trimmedGeo as GeoJSONStoreGeometries,
+      properties: { mode: 'polygon' },
+    }]);
+    const newId = results[0]?.id;
+    if (newId) {
+      featureToPendingRef.current.set(String(newId), oldPendingId);
+    }
+
+    // Update pending field geometry in-place (same name, trimmed shape)
+    setPendingFields((prev) => prev.map((f) =>
+      f.id === oldPendingId ? { ...f, geometry: trimmedGeo } : f
+    ));
+
+    setCutMode(false);
   }, []);
 
   const removePendingField = useCallback((id: string) => {
@@ -161,6 +309,25 @@ export default function FieldCreatePage() {
     map.on('click', handleClick);
     return () => { map.off('click', handleClick); };
   }, [map, fieldMode, requestMapTool]);
+
+  // Keep ref in sync with state for use inside callbacks
+  useEffect(() => {
+    pendingFieldsRef.current = pendingFields;
+  }, [pendingFields]);
+
+  // Auto-name new fields based on existing season fields
+  useEffect(() => {
+    const seasonFields = (fieldsQ.data ?? []).filter(
+      (f) => f.seasonIds?.includes(selectedSeasonId ?? ''),
+    );
+    let maxNum = -1;
+    for (const f of seasonFields) {
+      if (f.name === 'Field') { maxNum = Math.max(maxNum, 0); continue; }
+      const m = f.name.match(/^Field (\d+)$/);
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+    }
+    nextFieldNumRef.current = maxNum + 1;
+  }, [selectedSeasonId, fieldsQ.data]);
 
   const basemapResolution = useMemo(() => {
     if (!configQ.data) return { basemapConfig: null, basemapError: null };
@@ -307,6 +474,8 @@ export default function FieldCreatePage() {
             enableVertexDrag={ true }
             onDrawReady={ handleDrawReady }
             onGeometryChange={ handleGeometryChange }
+            cutMode={ cutMode }
+            onCutLineComplete={ handleTrimComplete }
           />
 
           {/* Left controls — vertically centered */}
@@ -350,18 +519,15 @@ export default function FieldCreatePage() {
                     <button
                       type="button"
                       onClick={ () => {
+                      if (cutMode) { setCutMode(false); }
                       setShapeMode('polygon');
-                      const draw = drawInstanceRef.current;
-                      if (draw) {
-                        draw.setMode('polygon');
-                      }
                       if (map && typeof map.getCanvas === 'function') {
                         map.getCanvas().style.cursor = 'crosshair';
                       }
                     } }
                       className={ cn(
                         'flex h-11 w-11 shrink-0 items-center justify-center transition-colors duration-fast',
-                        shapeMode === 'polygon'
+                        !cutMode && shapeMode === 'polygon'
                           ? 'bg-primary/15 text-primary'
                           : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground',
                       ) }
@@ -369,7 +535,7 @@ export default function FieldCreatePage() {
                       <Square className="size-6" strokeWidth={ 1.75 } />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Draw polygon</TooltipContent>
+                  <TooltipContent side="bottom">{ cutMode ? 'Exit cut mode' : 'Draw polygon' }</TooltipContent>
                 </Tooltip>
                 <div className="h-full w-px shrink-0 bg-border opacity-0 transition-opacity duration-fast group-hover:opacity-100" />
                 <Tooltip>
@@ -377,18 +543,15 @@ export default function FieldCreatePage() {
                     <button
                       type="button"
                       onClick={ () => {
+                      if (cutMode) { setCutMode(false); }
                       setShapeMode('circle');
-                      const draw = drawInstanceRef.current;
-                      if (draw) {
-                        draw.setMode('circle');
-                      }
                       if (map && typeof map.getCanvas === 'function') {
                         map.getCanvas().style.cursor = 'crosshair';
                       }
                     } }
                       className={ cn(
                         'flex h-11 w-11 shrink-0 items-center justify-center transition-colors duration-fast',
-                        shapeMode === 'circle'
+                        !cutMode && shapeMode === 'circle'
                           ? 'bg-primary/15 text-primary'
                           : 'text-foreground/80 opacity-0 transition-opacity duration-fast group-hover:opacity-100',
                       ) }
@@ -396,13 +559,30 @@ export default function FieldCreatePage() {
                       <Circle className="size-6" strokeWidth={ 1.75 } />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Draw circle</TooltipContent>
+                  <TooltipContent side="bottom">{ cutMode ? 'Exit cut mode' : 'Draw circle' }</TooltipContent>
                 </Tooltip>
               </div>
             </div>
 
-            {/* Action card: remove last + undo */}
+            {/* Action card: cut + remove last + undo */}
             <div className="glass flex flex-col overflow-hidden rounded-md p-0" role="group" aria-label="Actions">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Trim field (disabled)"
+                    onClick={ () => {} }
+                    className="flex h-11 w-11 items-center justify-center opacity-30 cursor-not-allowed text-foreground/80"
+                    disabled={ true }
+                  >
+                    <Scissors className="size-6" strokeWidth={ 1.75 } />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  Trim field (disabled)
+                </TooltipContent>
+              </Tooltip>
+              <div className="h-px w-full bg-border" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button

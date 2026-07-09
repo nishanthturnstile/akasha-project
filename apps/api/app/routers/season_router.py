@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import functools
 import logging
+import traceback
 from typing import Any
 
 import anyio
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
 from ..auth import CurrentTeam, CurrentUser, get_current_team, get_current_user, require_role
@@ -45,7 +46,7 @@ async def _run_blocking(func, *args, **kwargs):
     except AkashaError:
         raise
     except Exception as exc:
-        logger.warning("seasons backend unavailable: %s", type(exc).__name__)
+        logger.error("seasons backend error: %s\n%s", exc, traceback.format_exc())
         raise seasons_backend_unavailable(
             "Season storage is not available in this environment."
         ) from exc
@@ -136,10 +137,13 @@ async def update_season(
 @router.delete("/seasons/{season_id}", status_code=204)
 async def delete_season(
     season_id: str,
+    move_fields_to_season_id: str | None = Query(None, alias="moveFieldsToSeasonId"),
     user: CurrentUser = Depends(get_current_user),
     team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
 ) -> Response:
-    deleted = await _run_blocking(seasons_repo.delete_season, season_id, user.id)
+    deleted = await _run_blocking(
+        seasons_repo.delete_season, season_id, user.id, move_fields_to_season_id,
+    )
     if not deleted:
         raise not_found("Season not found.", code="SEASON_NOT_FOUND", seasonId=season_id)
     return Response(status_code=204)

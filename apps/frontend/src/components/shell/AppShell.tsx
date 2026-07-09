@@ -20,15 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogRoot,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import DeleteSeasonDialog from '@/components/seasons/DeleteSeasonDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,7 +30,7 @@ import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/Glob
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
-import { useAccountMe, useLogout, useSeasons, useDeleteSeason, useUpdateSeason, useFields } from '@/lib/queries';
+import { useAccountMe, useLogout, useSeasons, useUpdateSeason, useFields } from '@/lib/queries';
 import {
   MAIN_MONITORING_ROUTE,
   productNavigation,
@@ -150,7 +142,6 @@ export function AppShell() {
   };
 
   const seasonsQ = useSeasons();
-  const deleteSeason = useDeleteSeason();
   const updateSeason = useUpdateSeason();
   const fieldsQ = useFields();
 
@@ -234,11 +225,6 @@ export function AppShell() {
   const editSeasonTarget = useMemo(
     () => (editSeasonId ? sortedSeasons.find((s) => s.id === editSeasonId) ?? null : null),
     [editSeasonId, sortedSeasons],
-  );
-
-  const deletingSeason = useMemo(
-    () => (deletingSeasonId ? sortedSeasons.find((s) => s.id === deletingSeasonId) ?? null : null),
-    [deletingSeasonId, sortedSeasons],
   );
 
   const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
@@ -471,7 +457,7 @@ export function AppShell() {
               aria-label="Season selector"
               onClick={ () => { setSeasonSheetOpen(true); if (currentSeason) setSeasonTab(seasonTabFor(currentSeason)); } }
               className={ cn(
-                'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
                 'border-primary bg-primary/10 text-foreground',
                 railCollapsed && 'justify-center px-0',
               ) }
@@ -502,7 +488,7 @@ export function AppShell() {
                         type="button"
                         onClick={ () => setSeasonTab(tab) }
                         className={ cn(
-                          'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast',
+                          'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast cursor-pointer',
                           seasonTab === tab
                             ? 'bg-primary text-primary-foreground'
                             : 'border border-border bg-card text-foreground hover:bg-accent/40',
@@ -631,7 +617,7 @@ export function AppShell() {
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                    className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40 cursor-pointer"
                                     onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
                                   >
                                     Edit
@@ -644,7 +630,7 @@ export function AppShell() {
                                       "rounded-md border px-3 py-1.5 text-sm",
                                       !season.canDelete
                                         ? "border-dashed text-muted-foreground cursor-not-allowed"
-                                        : "border-border text-foreground hover:bg-accent/40"
+                                        : "border-border text-foreground hover:bg-accent/40 cursor-pointer"
                                     ) }
                                     onClick={ (e) => { e.stopPropagation(); if (season.canDelete) setDeletingSeasonId(season.id); } }
                                   >
@@ -668,7 +654,7 @@ export function AppShell() {
                                     setGlobalViewMode(false);
                                     navigate(`/monitoring/field-create?seasonId=${season.id}`);
                                   } }
-                                  className="mt-2 w-full rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+                                  className="mt-2 w-full cursor-pointer rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
                                 >
                                   + Add field
                                 </button>
@@ -954,28 +940,11 @@ export function AppShell() {
         </aside>
       </div>
 
-      <AlertDialogRoot open={ !!deletingSeasonId } onOpenChange={ (open) => { if (!open) setDeletingSeasonId(null); } }>
-        <AlertDialogContent>
-          <AlertDialogTitle>Delete season?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to delete "{ deletingSeason?.name }"? This action cannot be undone.
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={ async () => {
-              if (!deletingSeasonId) return;
-              try {
-                await deleteSeason.mutateAsync(deletingSeasonId);
-              } catch {
-                // error handled by query state
-              }
-              setDeletingSeasonId(null);
-            } }>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialogRoot>
+      <DeleteSeasonDialog
+        open={ !!deletingSeasonId }
+        onOpenChange={ (open) => { if (!open) setDeletingSeasonId(null); } }
+        deletingSeasonId={ deletingSeasonId }
+      />
     </TooltipProvider>
   );
 }

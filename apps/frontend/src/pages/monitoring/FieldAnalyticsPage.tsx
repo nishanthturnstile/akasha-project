@@ -2,7 +2,6 @@ import { Map as MapIcon, Pencil } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
@@ -92,9 +91,9 @@ export default function FieldAnalyticsPage() {
   }, [fieldsQ.data, seasonId]);
 
   return (
-    <div className="flex flex-col h-full gap-4 p-4 overflow-y-auto">
+    <div className="h-full overflow-y-auto space-y-4 p-4">
       {overlaysVisible && (
-      <div className="flex items-stretch rounded-md border border-border bg-background shrink-0">
+      <div className="flex items-stretch rounded-md border border-border bg-background">
         <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">
           <button
             type="button"
@@ -153,13 +152,13 @@ export default function FieldAnalyticsPage() {
       )}
 
       {/* Map card */}
-      <div className={cn('rounded-md border border-border overflow-hidden', overlaysVisible ? 'h-[50vh] min-h-[300px]' : 'flex-1 min-h-0')}>
+      <div className="h-[50vh] min-h-[300px] rounded-md border border-border overflow-hidden">
         <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords />
       </div>
 
       {/* Analytics panel */}
       {selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="rounded-md border border-border bg-background shrink-0">
+        <div className="rounded-md border border-border bg-background">
           <IndexPanel
             className="w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
             selectedPlot={selectedField}

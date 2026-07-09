@@ -720,6 +720,24 @@ class Variety(Base):
     maturity_options: Mapped[list[Any] | None] = mapped_column(JSONB)
 
 
+class PredefinedSeason(Base):
+    __tablename__ = "predefined_seasons"
+    __table_args__ = (
+        UniqueConstraint("season_name", name="predefined_seasons_name_key"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    season_name: Mapped[str] = mapped_column(Text, nullable=False)
+    period_start_date: Mapped[date | None] = mapped_column(Date)
+    period_end_date: Mapped[date | None] = mapped_column(Date)
+    sowing_start_date: Mapped[date | None] = mapped_column(Date)
+    sowing_end_date: Mapped[date | None] = mapped_column(Date)
+    harvesting_start_date: Mapped[date | None] = mapped_column(Date)
+    harvesting_end_date: Mapped[date | None] = mapped_column(Date)
+    main_water_source: Mapped[str | None] = mapped_column(Text)
+
+
 class PipelineProxyRecord(Base):
     """Server-side proxy record backing opaque app-domain pipeline URLs.
 

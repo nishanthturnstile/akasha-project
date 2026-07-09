@@ -4,6 +4,11 @@ import { CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+export interface DatePickerHandle {
+  open: () => void;
+  setViewDate: (year: number, month: number) => void;
+}
+
 interface DatePickerProps {
   value: string;
   onChange: (value: string) => void;
@@ -41,7 +46,7 @@ function formatDate(isoDate: string): string {
   });
 }
 
-export function DatePicker({
+export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(function DatePicker({
   value,
   onChange,
   placeholder = 'Pick a date',
@@ -50,13 +55,14 @@ export function DatePicker({
   minDate,
   maxDate,
   onOpenChange,
-}: DatePickerProps) {
+}, ref) {
   const [open, setOpen] = React.useState(false);
 
   const handleOpenChange = React.useCallback((next: boolean) => {
     setOpen(next);
     onOpenChange?.(next);
   }, [onOpenChange]);
+
   const [viewDate, setViewDate] = React.useState(() => {
     if (value) {
       const [y, m] = value.split('-');
@@ -65,6 +71,12 @@ export function DatePicker({
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
+
+  React.useImperativeHandle(ref, () => ({
+    open: () => handleOpenChange(true),
+    setViewDate: (year: number, month: number) => setViewDate({ year, month }),
+  }), [handleOpenChange]);
+
   const wrapperRef = React.useRef<HTMLDivElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const calendarRef = React.useRef<HTMLDivElement>(null);
@@ -197,7 +209,7 @@ export function DatePicker({
         disabled={disabled}
         onClick={() => handleOpenChange(!open)}
         className={cn(
-          'flex h-9 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-colors',
+          'flex h-9 w-full cursor-pointer items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-colors',
           'hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           disabled && 'cursor-not-allowed opacity-50',
           !value && 'text-muted-foreground',
@@ -331,4 +343,4 @@ export function DatePicker({
       , document.body) as React.ReactNode) : null}
     </div>
   );
-}
+});

@@ -313,7 +313,7 @@ function resolveDisplayMode(
   return availableModes.find((mode) => mode.toUpperCase() === normalized) ?? fallback;
 }
 
-export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLeftCoords }: { hidePlotToolbar?: boolean; simplifiedMapControls?: boolean; topLeftCoords?: boolean } = {}) {
+export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLeftCoords, showFullscreen }: { hidePlotToolbar?: boolean; simplifiedMapControls?: boolean; topLeftCoords?: boolean; showFullscreen?: boolean } = {}) {
   useMapUrlState();
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -1079,7 +1079,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           />
         </div>
 
-        { overlaysVisible && (
+        { overlaysVisible && showFullscreen && (
           /* Fullscreen card — same height as timeline bar */
           <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
             <button

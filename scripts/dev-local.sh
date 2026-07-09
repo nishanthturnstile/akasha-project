@@ -27,6 +27,7 @@ Optional env vars:
   WEB_PORT                         Host port for the Docker gateway when .env is created (default: 8080).
   FRONTEND_PORT                    Preferred Vite dev-server port when .env is created (default: 5173).
   VITE_ESRI_API_KEY                Esri basemap key copied into generated local env files.
+  INGESTION_SSH_TUNNEL_ENABLED     auto|true|false; best-effort local tunnel for staging ingestion (default: auto).
 EOF
   exit 0
 fi
@@ -251,6 +252,98 @@ ensure_ingestion_bridge_env() {
   ensure_env_value_if_missing INGESTION_SIGNED_URL_ALLOWED_PREFIX "" "$ENV_FILE"
   ensure_env_value_if_missing INGESTION_SIGNED_URL_FETCH_PREFIX "" "$ENV_FILE"
   ensure_env_value_if_missing INGESTION_TREND_MAX_DATES "12" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_SSH_TUNNEL_ENABLED "auto" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_SSH_TUNNEL_TARGET "akasha-control" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_SSH_TUNNEL_LOCAL_PORT "18081" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_SSH_TUNNEL_REMOTE_HOST "10.10.2.4" "$ENV_FILE"
+  ensure_env_value_if_missing INGESTION_SSH_TUNNEL_REMOTE_PORT "18080" "$ENV_FILE"
+}
+
+configured_ingestion_url_port() {
+  local api_url="$1"
+  API_URL="$api_url" python - <<'PY'
+import os
+from urllib.parse import urlparse
+
+url = os.environ.get("API_URL", "").strip()
+if not url:
+    raise SystemExit(0)
+parsed = urlparse(url)
+host = (parsed.hostname or "").lower()
+if host not in {"host.docker.internal", "localhost", "127.0.0.1"}:
+    raise SystemExit(0)
+if parsed.port:
+    print(parsed.port)
+PY
+}
+
+ingestion_health_environment() {
+  local port="$1"
+  local payload
+  payload="$(curl -fsS --max-time 2 "http://localhost:${port}/health" 2>/dev/null || true)"
+  HEALTH_JSON="$payload" python - <<'PY' 2>/dev/null || true
+import json
+import os
+import sys
+
+try:
+    payload = json.loads(os.environ.get("HEALTH_JSON", ""))
+except Exception:
+    raise SystemExit(0)
+data = payload.get("data") if isinstance(payload, dict) else None
+if isinstance(data, dict):
+    print(str(data.get("environment") or ""))
+PY
+}
+
+maybe_start_ingestion_ssh_tunnel() {
+  local enabled api_url local_port remote_host remote_port target environment
+  enabled="$(read_env_value INGESTION_SSH_TUNNEL_ENABLED "$ENV_FILE")"
+  enabled="${enabled:-auto}"
+  case "${enabled,,}" in
+    0|false|no|off|disabled) return ;;
+  esac
+
+  api_url="$(read_env_value INGESTION_API_URL "$ENV_FILE")"
+  [[ -n "$api_url" ]] || return
+
+  local_port="$(read_env_value INGESTION_SSH_TUNNEL_LOCAL_PORT "$ENV_FILE")"
+  local_port="${local_port:-$(configured_ingestion_url_port "$api_url")}"
+  [[ "$local_port" =~ ^[0-9]+$ ]] || return
+
+  remote_host="$(read_env_value INGESTION_SSH_TUNNEL_REMOTE_HOST "$ENV_FILE")"
+  remote_host="${remote_host:-10.10.2.4}"
+  remote_port="$(read_env_value INGESTION_SSH_TUNNEL_REMOTE_PORT "$ENV_FILE")"
+  remote_port="${remote_port:-18080}"
+  target="$(read_env_value INGESTION_SSH_TUNNEL_TARGET "$ENV_FILE")"
+  target="${target:-akasha-control}"
+
+  if port_is_listening "$local_port"; then
+    environment="$(ingestion_health_environment "$local_port")"
+    if [[ "$environment" == "staging" ]]; then
+      log "Ingestion SSH tunnel already appears healthy on localhost:$local_port"
+    else
+      warn "INGESTION_API_URL points at localhost:$local_port, but that port is already in use. Leaving it untouched; ingestion requests will use the existing listener."
+    fi
+    return
+  fi
+
+  if ! command -v ssh >/dev/null 2>&1; then
+    warn "ssh is not available; skipping optional ingestion SSH tunnel. The app will still start."
+    return
+  fi
+
+  log "Starting optional ingestion SSH tunnel on localhost:$local_port"
+  if ssh -f -N \
+    -o BatchMode=yes \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 \
+    -L "127.0.0.1:${local_port}:${remote_host}:${remote_port}" \
+    "$target" >/dev/null 2>&1; then
+    log "Ingestion SSH tunnel started on localhost:$local_port"
+  else
+    warn "Could not start optional ingestion SSH tunnel. The app will still start; ingestion-backed sources will show unreachable until the tunnel/API is available."
+  fi
 }
 
 gateway_health_ok() {
@@ -442,6 +535,7 @@ if [[ "$START_BACKEND" == true ]]; then
   ensure_web_port_available
 fi
 ensure_frontend_env
+maybe_start_ingestion_ssh_tunnel
 if [[ "$START_BACKEND" == true ]]; then
   GATEWAY_URL="$(start_backend | tee /dev/stderr | tail -n 1)"
 else

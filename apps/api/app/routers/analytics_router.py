@@ -47,7 +47,12 @@ from ..raster.service import (
 )
 from ..raster.statistics_core import MASK_NODATA_CLASS, correct_reflectance, evaluate_index_values
 from ..repositories import fields_repo
-from ..routers.product_router import _enforce_index_rate_limit
+from ..routers.product_router import (
+    _enforce_index_rate_limit,
+    _is_pipeline_source,
+    _pipeline_bridge_enabled,
+    _requires_ingestion_pipeline,
+)
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
 
 logger = logging.getLogger("akasha.api.field_analytics")
@@ -113,7 +118,22 @@ def _normalize_index(index_type: str | None) -> str:
 
 
 def _uses_pipeline(source_id: str) -> bool:
-    return source_id == catalog.SENTINEL_2_SOURCE_ID and settings.ingestion_field_index_enabled
+    return _requires_ingestion_pipeline(source_id) or (
+        _is_pipeline_source(source_id) and _pipeline_bridge_enabled()
+    )
+
+
+def _ensure_pipeline_index_supported(source_id: str, index_type: str) -> None:
+    supported = catalog.supported_indices(source_id)
+    if index_type in supported:
+        return
+    raise bad_request(
+        f"Unsupported index '{index_type}' for source '{source_id}'.",
+        code="UNSUPPORTED_INDEX",
+        sourceId=source_id,
+        indexType=index_type,
+        supported=supported,
+    )
 
 
 def _pipeline_trend_max_dates() -> int:
@@ -197,6 +217,7 @@ def _pipeline_statistics_response(
     index_type: str,
     cloud_mask: CloudMaskOptions,
 ) -> FieldStatisticsResponse:
+    _ensure_pipeline_index_supported(source_id, index_type)
     selected_date = _pipeline_acquisition_date(
         source_id=source_id,
         requested_date=acquisition_date,
@@ -206,6 +227,7 @@ def _pipeline_statistics_response(
         settings,
         geometry=plot["geometry"],
         field_id=plot_id,
+        source_id=source_id,
         index_type=index_type,
         acquisition_date=selected_date,
         max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
@@ -238,15 +260,7 @@ def _pipeline_trend_response(
     cloud_mask: CloudMaskOptions,
     max_cloud_cover_in_aoi: float | None = None,
 ) -> FieldTrendResponse:
-    supported = catalog.supported_indices(source_id)
-    if index_type not in supported:
-        raise bad_request(
-            f"Unsupported index '{index_type}' for source '{source_id}'.",
-            code="UNSUPPORTED_INDEX",
-            sourceId=source_id,
-            indexType=index_type,
-            supported=supported,
-        )
+    _ensure_pipeline_index_supported(source_id, index_type)
 
     max_dates = _pipeline_trend_max_dates()
     per_date_timeout = _pipeline_per_date_timeout(max_dates)
@@ -269,6 +283,7 @@ def _pipeline_trend_response(
                 settings,
                 geometry=plot["geometry"],
                 field_id=plot_id,
+                source_id=source_id,
                 index_type=index_type,
                 acquisition_date=requested_date.isoformat(),
                 max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
@@ -707,10 +722,12 @@ def _pipeline_index_overlay_response(
     acquisition_date: str,
     index_type: str,
 ) -> tuple[bytes, str, dict[str, str]]:
+    _ensure_pipeline_index_supported(source_id, index_type)
     result = request_field_index(
         settings,
         geometry=plot["geometry"],
         field_id=plot_id,
+        source_id=source_id,
         index_type=index_type,
         acquisition_date=acquisition_date,
         max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
@@ -954,7 +971,7 @@ async def get_field_index_overlay(
 ) -> Response:
     plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(index_type)
-    if sourceId == catalog.SENTINEL_2_SOURCE_ID and settings.ingestion_field_index_enabled:
+    if _uses_pipeline(sourceId):
         body, content_type, headers = await _run_blocking(
             _pipeline_index_overlay_response,
             plot_id=plot_id,
@@ -989,6 +1006,7 @@ async def get_field_index_point(
     plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(indexType)
     if _uses_pipeline(sourceId):
+        _ensure_pipeline_index_supported(sourceId, normalized_index)
         try:
             result = await asyncio.wait_for(
                 _run_blocking(

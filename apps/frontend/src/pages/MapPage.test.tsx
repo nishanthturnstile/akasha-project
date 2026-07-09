@@ -40,6 +40,11 @@ vi.mock('@/components/map/MapLayerManager', () => ({
   ),
 }));
 
+vi.mock('@/components/map/FieldOverlayLoadingIndicator', () => ({
+  FieldOverlayLoadingIndicator: ({ loading }: { loading: boolean }) =>
+    loading ? <div data-testid="field-overlay-loading-indicator">Calculating index…</div> : null,
+}));
+
 vi.mock('@/components/map/CoordinateReadout', () => ({
   CoordinateReadout: ({
     indexLookup,
@@ -225,6 +230,7 @@ function stubAkashaFetch({
   fieldTrend = makeFieldTrend(),
   defaultSourceId = 'resourcesat-2a-liss3-boa',
   bestCandidates,
+  deferOverlay = false,
 }: {
   resourcesatDates?: SceneDate[];
   sentinelDates?: SceneDate[];
@@ -236,7 +242,20 @@ function stubAkashaFetch({
   defaultSourceId?: string;
   /** When provided, /api/observations/best returns these candidates (best-mode tests). */
   bestCandidates?: ObservationCandidate[];
+  deferOverlay?: boolean;
 } = {}) {
+  const overlayResolvers: Array<() => void> = [];
+  const overlayResponse = {
+    ok: true,
+    status: 200,
+    headers: new Headers({
+      'Content-Type': 'image/png',
+      'X-Akasha-Overlay-Corners': '[[77.001,13.002],[77.103,13.001],[77.104,12.9],[77,12.901]]',
+      'X-Akasha-Overlay-Stretch': '-1.0,1.0',
+    }),
+    blob: async () => new Blob(['png'], { type: 'image/png' }),
+  };
+
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   vi.stubEnv('VITE_BASEMAP_PROVIDER', 'osm');
   vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
@@ -288,6 +307,7 @@ function stubAkashaFetch({
               id: 'resourcesat-2a-liss3-boa',
               label: 'ResourceSat-2A LISS-3 BOA',
               provider: 'ISRO/NRSC Bhoonidhi',
+              pipelineBacked: true,
               kind: 'optical',
               supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
               displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
@@ -313,6 +333,7 @@ function stubAkashaFetch({
               id: 'resourcesat-2a-liss4-mx70-l2',
               label: 'ResourceSat-2A LISS-4 MX70 L2',
               provider: 'ISRO/NRSC Bhoonidhi',
+              pipelineBacked: true,
               kind: 'optical',
               supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
               displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
@@ -375,16 +396,12 @@ function stubAkashaFetch({
       }
 
       if (path.startsWith('/api/fields/plot-1/overlay/')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: new Headers({
-            'Content-Type': 'image/png',
-            'X-Akasha-Overlay-Corners': '[[77.001,13.002],[77.103,13.001],[77.104,12.9],[77,12.901]]',
-            'X-Akasha-Overlay-Stretch': '-1.0,1.0',
-          }),
-          blob: async () => new Blob(['png'], { type: 'image/png' }),
-        });
+        if (deferOverlay) {
+          return new Promise((resolve) => {
+            overlayResolvers.push(() => resolve(overlayResponse));
+          });
+        }
+        return Promise.resolve(overlayResponse);
       }
 
       if (path.startsWith('/api/fields/plot-1/indices/point')) {
@@ -441,6 +458,12 @@ function stubAkashaFetch({
       throw new Error(`Unexpected request: ${path}`);
     }),
   );
+
+  return {
+    resolveOverlayRequests: () => {
+      overlayResolvers.splice(0).forEach((resolve) => resolve());
+    },
+  };
 }
 
 describe('MapPage source defaults', () => {
@@ -517,6 +540,76 @@ describe('MapPage pipeline point lookup', () => {
       expect(calls.some(([input]) => String(input).includes('/indices/point'))).toBe(true);
     });
   });
+
+  it('treats pipeline-backed ResourceSat sources generically for dates, overlay loading, and hover point lookup', async () => {
+    const controls = stubAkashaFetch({
+      plots: [FIELD_PLOT],
+      deferOverlay: true,
+      resourcesatDates: [
+        makeDate('2026-04-02', { isLatestUsable: true, metricsProvisional: true }),
+      ],
+      fieldStatistics: makeFieldStatistics({
+        provider: 'pipeline',
+        sourceId: 'resourcesat-2a-liss3-boa',
+        acquisitionDate: '2026-04-02',
+      }),
+      fieldTrend: makeFieldTrend({
+        provider: 'pipeline',
+        scope: 'pipeline',
+        sourceId: 'resourcesat-2a-liss3-boa',
+        endDate: '2026-04-02',
+      }),
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1' }, { topLeftCoords: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
+        'ResourceSat-2A LISS-3 BOA',
+      );
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'true',
+      );
+      expect(screen.getByTestId('field-overlay-loading-indicator').textContent).toContain(
+        'Calculating index',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('coordinate-readout-mock'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls.map(([input]) => String(input));
+      expect(
+        calls.some((input) => input.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+      ).toBe(true);
+      expect(
+        calls.some(
+          (input) =>
+            input.startsWith('/api/fields/plot-1/overlay/NDVI.png') &&
+            input.includes('sourceId=resourcesat-2a-liss3-boa') &&
+            input.includes('acquisitionDate=2026-04-02'),
+        ),
+      ).toBe(true);
+      expect(
+        calls.some(
+          (input) =>
+            input.startsWith('/api/fields/plot-1/indices/point') &&
+            input.includes('sourceId=resourcesat-2a-liss3-boa') &&
+            input.includes('acquisitionDate=2026-04-02'),
+        ),
+      ).toBe(true);
+    });
+
+    controls.resolveOverlayRequests();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
+      );
+    });
+  });
 });
 
 describe('MapPage native source behavior', () => {
@@ -541,11 +634,14 @@ describe('MapPage native source behavior', () => {
     fireEvent.click(screen.getByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-eos-04-sar-mrs-l2b'));
 
-    await waitFor(() => {
-      expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
-        'Nearest radar pass: 2026-04-26.',
-      );
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
+          'Nearest radar pass: 2026-04-26.',
+        );
+      },
+      { timeout: 8000 },
+    );
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
         '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',

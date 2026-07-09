@@ -228,8 +228,9 @@ class Settings:
     )
     """Gate for non-dry-run admin ingestion triggers. Disabled by default."""
 
-    # Standalone ingestion API bridge. These are server-to-server settings only;
-    # never expose the API key or private ingestion URL to browser JavaScript.
+    # Standalone ingestion API bridge for pipeline-backed Sentinel/ResourceSat analytics.
+    # These are server-to-server settings only; never expose the API key or private
+    # ingestion URL to browser JavaScript.
     ingestion_api_url: str = field(default_factory=lambda: _get("INGESTION_API_URL", ""))
     ingestion_api_key: str = field(default_factory=lambda: _get("INGESTION_API_KEY", ""))
     ingestion_request_timeout_seconds: int = field(

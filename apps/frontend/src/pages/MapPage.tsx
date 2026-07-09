@@ -23,6 +23,7 @@ import type { SatelliteScene } from '@/lib/satelliteLayer';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryLayerHelpers';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
+import { FieldOverlayLoadingIndicator } from '@/components/map/FieldOverlayLoadingIndicator';
 import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
 import { MeasureTool } from '@/components/map/MeasureTool';
@@ -632,10 +633,12 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode]);
 
   const [indexOverlay, setIndexOverlay] = useState<IndexOverlay | null>(null);
+  const [indexOverlayLoading, setIndexOverlayLoading] = useState(false);
 
   useEffect(() => {
     let disposed = false;
     if (!requestedIndexOverlay) {
+      setIndexOverlayLoading(false);
       setIndexOverlay((current) => {
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
         return null;
@@ -646,6 +649,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
       return null;
     });
+    setIndexOverlayLoading(true);
     void getFieldIndexOverlayImage(
       requestedIndexOverlay.plotId,
       {
@@ -660,12 +664,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
         return;
       }
+      setIndexOverlayLoading(false);
       setIndexOverlay((current) => {
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
         return overlay;
       });
     }).catch(() => {
-      if (!disposed) setIndexOverlay(null);
+      if (!disposed) {
+        setIndexOverlayLoading(false);
+        setIndexOverlay(null);
+      }
     });
     return () => {
       disposed = true;
@@ -877,6 +885,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         visible={ visible }
         onBasemapError={ setBasemapRuntimeError }
         onMapReady={ setMap }
+      />
+      <FieldOverlayLoadingIndicator
+        loading={ overlaysVisible && isIndexLayer && indexOverlayLoading }
+        map={ map }
+        plot={ selectedPlot }
       />
       <FieldBoundaryLayer
         map={ map }
@@ -1093,7 +1106,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
 
         { overlaysVisible && (
           /* Fullscreen card — same height as timeline bar */
-          <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
+          <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-(--timeline-height)">
             <button
               type="button"
               aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }

@@ -98,6 +98,7 @@ def request_field_index(
     *,
     geometry: dict[str, Any],
     field_id: str,
+    source_id: str,
     index_type: str,
     acquisition_date: str,
     max_cloud_percentage: float = 20.0,
@@ -105,6 +106,7 @@ def request_field_index(
 ) -> dict[str, Any]:
     payload = {
         "geometry": geometry,
+        "sourceId": source_id,
         "crs": "EPSG:4326",
         "index": index_type,
         "date": acquisition_date,
@@ -223,6 +225,7 @@ def request_field_index_point(
             settings,
             geometry=geometry,
             field_id=field_id,
+            source_id=source_id,
             index_type=index_type,
             acquisition_date=acquisition_date,
             max_cloud_percentage=max_cloud_percentage,

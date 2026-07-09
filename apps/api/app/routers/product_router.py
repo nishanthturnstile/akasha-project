@@ -14,6 +14,7 @@ Minimal product surface needed to verify the raster proof path end-to-end:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from datetime import date, timedelta
@@ -27,10 +28,11 @@ from fastapi.responses import Response
 from ..aoi import load_aoi_configs, select_default_aoi
 from ..auth import get_current_team
 from ..config import settings
-from ..ingestion_client import IngestionClient, IngestionClientError, ReadinessResponse
+from ..ingestion_client import get_readiness, is_ingestion_configured
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import (
+    AkashaError,
     bad_request,
     index_timeout,
     mosaic_tiles_unavailable,
@@ -51,7 +53,81 @@ from ..raster.service import compute_statistics
 router = APIRouter(prefix="/api", tags=["product"], dependencies=[Depends(get_current_team)])
 
 _RATE_BUCKETS: dict[str, list[float]] = {}
-PIPELINE_INDEX = "NDVI"
+logger = logging.getLogger("akasha.api.product")
+
+_PIPELINE_SOURCE_IDS = frozenset(
+    {catalog.SENTINEL_2_SOURCE_ID, *catalog.RESOURCESAT_BOA_SOURCE_IDS}
+)
+
+
+def _is_pipeline_source(source_id: str) -> bool:
+    return source_id in _PIPELINE_SOURCE_IDS
+
+
+def _requires_ingestion_pipeline(source_id: str) -> bool:
+    """Sources whose product-app native raster path has been cut over to ingestion."""
+    return source_id in catalog.RESOURCESAT_BOA_SOURCE_IDS
+
+
+def _pipeline_bridge_enabled() -> bool:
+    """The Sentinel pipeline bridge is only usable when all three prerequisites hold together.
+
+    Advertising a pipeline-backed source (or resolving pipeline dates) while field-index is
+    disabled would leave analytics silently on the native ResourceSat path (REQ-012/REQ-009),
+    so the bridge must be gated as an all-or-nothing set.
+    """
+    return (
+        settings.ingestion_readiness_enabled
+        and settings.ingestion_field_index_enabled
+        and is_ingestion_configured(settings)
+    )
+
+
+def _pipeline_index_modes(payload: dict[str, Any]) -> list[str]:
+    modes = payload.get("mapDisplayModes") or payload.get("displayModes") or []
+    supported = set(payload.get("supportedIndices") or [])
+    return [str(mode) for mode in modes if mode in supported]
+
+
+def _pipeline_layer_groups(payload: dict[str, Any], index_modes: list[str]) -> list[dict[str, Any]]:
+    allowed = set(index_modes)
+    groups: list[dict[str, Any]] = []
+    for group in payload.get("layerGroups") or []:
+        if not isinstance(group, dict):
+            continue
+        modes = [mode for mode in group.get("modes") or [] if mode in allowed]
+        if modes:
+            groups.append({"label": str(group.get("label") or "Indices"), "modes": modes})
+    if groups:
+        return groups
+    return [{"label": "Vegetation Indices", "modes": index_modes}]
+
+
+def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
+    if not _is_pipeline_source(source_id):
+        return None
+    if not _requires_ingestion_pipeline(source_id) and not _pipeline_bridge_enabled():
+        return None
+    payload = catalog.source_payload(source_id)
+    index_modes = _pipeline_index_modes(payload)
+    configured_default_mode = str(payload.get("defaultMapDisplayMode") or "")
+    default_mode = (
+        configured_default_mode if configured_default_mode in index_modes else index_modes[0]
+    )
+    payload.update(
+        {
+            "pipelineBacked": True,
+            "displayModes": index_modes,
+            "defaultDisplayMode": default_mode,
+            "mapDisplayModes": index_modes,
+            "defaultMapDisplayMode": default_mode,
+            "layerGroups": _pipeline_layer_groups(payload, index_modes),
+            "tileRouteMode": "field-overlay",
+            "refreshPolicy": payload.get("refreshPolicy") or "Standalone ingestion pipeline.",
+            "resolutionMeters": payload.get("resolutionMeters") or 10,
+        }
+    )
+    return payload
 
 
 def _basemap_config() -> dict[str, Any]:
@@ -104,6 +180,7 @@ async def get_config() -> dict[str, Any]:
         "usablePixelThresholdPercent": settings.usable_pixel_threshold_percent,
         "supportedIndices": SUPPORTED_INDICES,
         "defaultIndex": DEFAULT_INDEX,
+        "defaultSourceId": settings.default_source_id,
         "indexFieldsKind": "global-optical-defaults",
         "indexAvailabilitySource": "/api/sources",
         "adminIngestionLiveTriggerEnabled": settings.admin_ingestion_live_trigger_enabled,
@@ -114,104 +191,98 @@ async def get_config() -> dict[str, Any]:
 async def get_sources() -> list[dict[str, Any]]:
     """Satellite/product source list derived from the source registry/STAC metadata."""
     sources = catalog.list_sources()
-    readiness = await _pipeline_readiness_available(settings.ingestion_field_index_source_id)
-    if readiness is not None:
-        pipeline_source = _pipeline_source_payload(settings.ingestion_field_index_source_id)
-        replaced = False
-        bridged_sources: list[dict[str, Any]] = []
-        for source in sources:
-            if source.get("id") == settings.ingestion_field_index_source_id:
-                bridged_sources.append(pipeline_source)
-                replaced = True
-            else:
-                bridged_sources.append(source)
-        if not replaced:
-            bridged_sources.append(pipeline_source)
-        return bridged_sources
-    if any(source.get("id") == settings.ingestion_field_index_source_id for source in sources):
-        return sources
-    return sources
+    replaced: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for source in sources:
+        source_id = str(source["id"])
+        replaced.append(_pipeline_source_payload(source_id) or source)
+        seen.add(source_id)
+    for source_id in sorted(_PIPELINE_SOURCE_IDS - seen):
+        payload = _pipeline_source_payload(source_id)
+        if payload:
+            replaced.append(payload)
+    return replaced
 
 
-def _pipeline_bridge_enabled(source_id: str) -> bool:
-    return (
-        settings.ingestion_field_index_enabled
-        and settings.ingestion_readiness_enabled
-        and source_id == settings.ingestion_field_index_source_id
-    )
-
-
-def _readiness_has_ndvi_outputs(readiness: ReadinessResponse) -> bool:
-    coverage = readiness.index_coverage.get(PIPELINE_INDEX)
-    return (
-        readiness.status == "AVAILABLE"
-        and coverage is not None
-        and coverage.available
-        and bool(readiness.available_dates)
-    )
-
-
-def _fetch_pipeline_readiness(source_id: str) -> ReadinessResponse | None:
-    if not _pipeline_bridge_enabled(source_id):
+def _pipeline_dates(source_id: str) -> list[dict[str, Any]] | None:
+    if not _is_pipeline_source(source_id):
+        return None
+    if not _requires_ingestion_pipeline(source_id) and not _pipeline_bridge_enabled():
         return None
     try:
-        return IngestionClient().readiness(source_id=source_id, aoi_id=settings.ingestion_aoi_id)
-    except IngestionClientError:
-        return None
-
-
-async def _pipeline_readiness_available(source_id: str) -> ReadinessResponse | None:
-    readiness = await anyio.to_thread.run_sync(_fetch_pipeline_readiness, source_id)
-    if readiness is None or not _readiness_has_ndvi_outputs(readiness):
-        return None
-    return readiness
-
-
-def _pipeline_source_payload(source_id: str) -> dict[str, Any]:
+        readiness = get_readiness(
+            settings,
+            source_id=source_id,
+            aoi_id=settings.ingestion_aoi_id,
+        )
+    except AkashaError as exc:
+        logger.warning("ingestion readiness unavailable for %s", source_id)
+        if exc.code == "INGESTION_API_UNCONFIGURED":
+            raise upstream_error(
+                "Standalone ingestion readiness is not configured.",
+                code="INGESTION_READINESS_UNAVAILABLE",
+                sourceId=source_id,
+            ) from exc
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ingestion readiness unavailable for %s: %s", source_id, type(exc).__name__)
+        raise upstream_error(
+            "Standalone ingestion readiness is unreachable.",
+            code="INGESTION_API_UNREACHABLE",
+            sourceId=source_id,
+        ) from exc
+    if not readiness:
+        raise upstream_error(
+            "Standalone ingestion readiness is unavailable.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
+    dates = [str(value) for value in readiness.get("availableDates") or []]
+    if not dates:
+        raise upstream_error(
+            "Standalone ingestion readiness has no available dates.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
     source = catalog.source_payload(source_id)
-    source["supportedIndices"] = [PIPELINE_INDEX]
-    source["displayModes"] = [PIPELINE_INDEX]
-    source["defaultDisplayMode"] = PIPELINE_INDEX
-    source["mapDisplayModes"] = [PIPELINE_INDEX]
-    source["defaultMapDisplayMode"] = PIPELINE_INDEX
-    source["layerGroups"] = [{"label": "Vegetation Indices", "modes": [PIPELINE_INDEX]}]
-    source["availabilityStatus"] = "active"
-    source["analysisLevel"] = "field"
-    source["metricsProvisional"] = True
-    source["pipelineBacked"] = True
-    source["refreshPolicy"] = "Precomputed Sentinel-2 NDVI outputs from the ingestion pipeline."
-    source["limitations"] = [
-        "Sentinel-2 pipeline MVP supports field NDVI statistics only.",
-        "Dates are exposed only while pipeline readiness is fresh for the configured AOI.",
-    ]
-    return source
-
-
-def _pipeline_date_payloads(readiness: ReadinessResponse) -> list[dict[str, Any]]:
-    coverage = readiness.index_coverage.get(PIPELINE_INDEX)
-    coverage_percent = coverage.coverage_percent if coverage else None
-    latest = max(readiness.available_dates)
-    dates = sorted(readiness.available_dates, reverse=True)
+    index_coverage = readiness.get("indexCoverage") or {}
+    ndvi_coverage = index_coverage.get("NDVI") or index_coverage.get("ndvi") or {}
+    newest = max(dates) if dates else None
+    resolution = source.get("resolutionMeters") or 10
+    sensor = _sensor_label(source_id)
+    provenance_label = (
+        f"{sensor} · {resolution:g} m" if isinstance(resolution, (int, float)) else sensor
+    )
     return [
         {
-            "acquisitionDate": item.isoformat(),
-            "datetime": f"{item.isoformat()}T00:00:00Z",
-            "usablePixelPercent": coverage_percent,
+            "acquisitionDate": value,
+            "datetime": f"{value}T00:00:00Z",
+            "usablePixelPercent": None,
             "cloudMaskedPercent": None,
-            "coveragePercent": coverage_percent,
-            "isLatestUsable": item == latest,
-            "metricsProvisional": True,
-            # Pipeline map rendering is a field-clipped overlay image generated from
-            # the requested polygon, not the old full-scene XYZ tile layer. If the
-            # date is exposed by readiness, the field overlay/statistics path is usable.
+            "coveragePercent": ndvi_coverage.get("coveragePercent"),
+            "isLatestUsable": value == newest,
+            "metricsProvisional": bool(source.get("metricsProvisional", False)),
             "tileAvailable": True,
-            "unavailableReason": None,
-            "sceneCount": None,
-            "sensorBadge": "S2",
-            "provenanceLabel": "Sentinel-2 pipeline",
+            "sceneCount": 1,
+            "sensor": sensor,
+            "provenanceLabel": provenance_label,
+            "resolvedSourceId": source_id,
+            "resolutionMeters": resolution,
         }
-        for item in dates
+        for value in sorted(dates, reverse=True)
     ]
+
+
+def _sensor_label(source_id: str) -> str:
+    if source_id == catalog.SENTINEL_2_SOURCE_ID:
+        return "S2"
+    if source_id == catalog.RESOURCESAT_LISS4_SOURCE_ID:
+        return "LISS-4"
+    if source_id == catalog.RESOURCESAT_AWIFS_SOURCE_ID:
+        return "AWiFS"
+    if source_id == catalog.RESOURCESAT_LISS3_SOURCE_ID:
+        return "LISS-3"
+    return source_id
 
 
 def _filter_source_dates(
@@ -266,15 +337,14 @@ async def get_source_dates(
     lookbackDays: int | None = Query(default=None, ge=1, le=366),
 ) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
-    readiness = await _pipeline_readiness_available(source_id)
-    if readiness is not None:
+    pipeline_dates = _pipeline_dates(source_id)
+    if pipeline_dates is not None:
         return _filter_source_dates(
-            _pipeline_date_payloads(readiness),
+            pipeline_dates,
             start_date=startDate,
             end_date=endDate,
             lookback_days=lookbackDays,
         )
-
     return _filter_source_dates(
         catalog.list_dates(source_id),
         start_date=startDate,
@@ -287,6 +357,36 @@ async def get_source_dates(
 async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     """Default source/date/layer metadata + same-origin tile template."""
     source_id = sourceId or settings.default_source_id or catalog.COLLECTION_ID
+    if _requires_ingestion_pipeline(source_id):
+        source = _pipeline_source_payload(source_id) or catalog.source_payload(source_id)
+        dates = _pipeline_dates(source_id) or []
+        date = next((d for d in dates if d["isLatestUsable"]), dates[0])
+        acquisition_date = date["acquisitionDate"]
+        display_mode = str(source["defaultDisplayMode"])
+        return {
+            "sourceId": source_id,
+            "acquisitionDate": acquisition_date,
+            "displayMode": display_mode,
+            "displayModes": source["displayModes"],
+            "defaultDisplayMode": source["defaultDisplayMode"],
+            "mapDisplayModes": source.get("mapDisplayModes", source["displayModes"]),
+            "defaultMapDisplayMode": source.get("defaultMapDisplayMode", display_mode),
+            "kind": source["kind"],
+            "tileUrlTemplate": None,
+            "bounds": None,
+            "minzoom": 8,
+            "maxzoom": 14,
+            "attribution": source["attribution"],
+            "sceneCount": date.get("sceneCount"),
+            "usablePixelPercent": date.get("usablePixelPercent"),
+            "cloudMaskedPercent": date.get("cloudMaskedPercent"),
+            "coveragePercent": date.get("coveragePercent"),
+            "metricsProvisional": bool(date.get("metricsProvisional", False)),
+            "tileAvailable": False,
+            "unavailableReason": None,
+            "tileRouteMode": "field-overlay",
+            "pipelineBacked": True,
+        }
     source = catalog.get_source(source_id)
     dates = catalog.list_dates(source_id)
     selectable_dates = [d for d in dates if bool(d.get("tileAvailable", True))]
@@ -600,6 +700,14 @@ async def _render_index_tile(
 @router.get("/tiles/{source_id}/{acquisition_date}/rgb/{z}/{x}/{y}.png")
 async def get_rgb_tile(source_id: str, acquisition_date: str, z: int, x: int, y: int) -> Response:
     """Legacy same-origin RGB tile route preserved for Sentinel-2 compatibility."""
+    if _requires_ingestion_pipeline(source_id):
+        raise upstream_error(
+            "ResourceSat display tiles are served by standalone ingestion overlays, "
+            "not app storage.",
+            code="INGESTION_TILE_UNAVAILABLE",
+            sourceId=source_id,
+            acquisitionDate=acquisition_date,
+        )
     return await _render_rgb_tile(source_id, acquisition_date, z, x, y)
 
 
@@ -608,6 +716,15 @@ async def get_display_mode_tile(
     source_id: str, acquisition_date: str, display_mode: str, z: int, x: int, y: int
 ) -> Response:
     """Display-mode-aware same-origin tile route."""
+    if _requires_ingestion_pipeline(source_id):
+        raise upstream_error(
+            "ResourceSat display tiles are served by standalone ingestion overlays, "
+            "not app storage.",
+            code="INGESTION_TILE_UNAVAILABLE",
+            sourceId=source_id,
+            acquisitionDate=acquisition_date,
+            displayMode=display_mode,
+        )
     source = catalog.get_source(source_id)
     normalized_mode = display_mode.upper()
     if normalized_mode not in source["displayModes"]:
@@ -645,6 +762,12 @@ async def post_index_statistics(
     geometry = payload.geometry.model_dump()
     if not payload.sourceId:
         raise bad_request("sourceId is required.", code="MISSING_SOURCE")
+    if _requires_ingestion_pipeline(payload.sourceId):
+        raise upstream_error(
+            "ResourceSat statistics are served through standalone ingestion field analytics.",
+            code="INGESTION_FIELD_INDEX_REQUIRED",
+            sourceId=payload.sourceId,
+        )
     _enforce_index_rate_limit(request)
 
     def _compute() -> dict[str, Any]:

@@ -199,7 +199,187 @@ AUTH_ALLOW_SIGNUP=true
 
 Hosted/staging/production environments keep sign-up closed unless intentionally enabled.
 
-## 5. Recommended daily workflow: backend and frontend separately
+## 5. Local Sentinel-2 remote ingestion mode
+
+Use this opt-in mode when you want the local product app to use the deployed ingestion
+pipeline for Sentinel-2 NDVI field analytics instead of local ResourceSat COGs. The
+browser still talks only to the local app (`/api/*` through the local gateway or Vite
+proxy). The local FastAPI BFF calls ingestion server-to-server through an SSH tunnel,
+fetches any signed ingestion resources itself, and returns only app-domain responses to
+the browser.
+
+Security rules for this mode:
+
+- Never commit a real `INGESTION_API_KEY`; use `CHANGE_ME` in examples and obtain the
+  real value through the approved secret channel.
+- Put the key only in `infra/docker/.env`. Do not put it in `apps/frontend/.env`, any
+  `VITE_*` variable, screenshots, logs, tickets, or docs.
+- Signed ingestion URLs and signing query parameters (`sig`, `kid`, `exp`, `op`) must
+  never appear in browser-visible responses.
+- Production and normal local defaults remain ResourceSat
+  (`DEFAULT_SOURCE_ID=resourcesat-2a-liss3-boa`) unless this local opt-in is set.
+
+Related background: [staging ingestion developer guide](staging-ingestion-developer-guide.md),
+[data ingestion and satellite rules](data-ingestion-and-satellite-rules.md),
+[engineering guardrails](engineering-dos-donts.md), and
+[self-hosted deployment guide](../infra/selfhosted/README.md).
+
+### 5.1 Open the SSH tunnel
+
+Run the tunnel in its own Git Bash, WSL, macOS, or Linux terminal and keep it open while
+using the bridge. On Windows, prefer **Git Bash** or WSL; PowerShell is not the supported
+shell for these Bash helpers.
+
+```bash
+bash scripts/local-ingestion-tunnel.sh --ssh-host akasha-control
+```
+
+Equivalent environment-variable form:
+
+```bash
+AKASHA_INGESTION_SSH_HOST=akasha-control bash scripts/local-ingestion-tunnel.sh
+```
+
+Use your approved SSH host or `user@host` alias if it differs from `akasha-control`. The
+helper opens this tunnel and prints the matching non-secret `.env` values:
+
+```text
+127.0.0.1:18081 -> 10.10.2.4:18080
+```
+
+Fallback raw SSH command, useful for debugging the helper:
+
+```bash
+ssh -N -L 127.0.0.1:18081:10.10.2.4:18080 akasha-control
+```
+
+The helper intentionally does **not** print `INGESTION_API_KEY`.
+
+### 5.2 Set the local server-side `.env` values
+
+Edit `infra/docker/.env` before starting or recreating the backend. These keys match the
+local Docker env template and are consumed by the `api` container:
+
+```env
+DEFAULT_SOURCE_ID=sentinel-2-l2a
+INGESTION_API_URL=http://host.docker.internal:18081
+INGESTION_API_KEY=CHANGE_ME
+INGESTION_READINESS_ENABLED=true
+INGESTION_FIELD_INDEX_ENABLED=true
+INGESTION_AOI_ID=bangalore_60km_geodesic_aoi
+INGESTION_SIGNED_URL_ALLOWED_PREFIX=http://10.10.2.4:18080
+INGESTION_SIGNED_URL_FETCH_PREFIX=http://host.docker.internal:18081
+INGESTION_TREND_MAX_DATES=12
+```
+
+Replace only `INGESTION_API_KEY=CHANGE_ME` with the real key in your ignored local
+`infra/docker/.env`. The signed URL allowed prefix must match the deployed ingestion
+`AKASHA_PUBLIC_BASE_URL` exactly enough for BFF allow-list validation; the fetch prefix is
+the Docker-container route back to your local tunnel.
+
+For the local Sentinel-2-first workflow, these values are required **together**:
+
+- `DEFAULT_SOURCE_ID=sentinel-2-l2a`
+- `INGESTION_READINESS_ENABLED=true`
+- `INGESTION_FIELD_INDEX_ENABLED=true`
+- configured `INGESTION_API_URL`, `INGESTION_API_KEY`,
+  `INGESTION_SIGNED_URL_ALLOWED_PREFIX`, and `INGESTION_SIGNED_URL_FETCH_PREFIX`
+
+If readiness is omitted or disabled, Sentinel-2 is hidden from `/api/sources` and the
+frontend chooses another effective source. If field-index is omitted or disabled,
+statistics, trend, and overlay requests silently fall back to the native ResourceSat path,
+which fails on a fresh checkout without local ResourceSat COGs.
+
+### 5.3 Start the local app
+
+With the tunnel terminal still open, start the app in the usual way:
+
+```bash
+make dev
+```
+
+Or run the daily split flow:
+
+```bash
+make backend
+make frontend
+```
+
+If you changed `infra/docker/.env` while the backend was already running, restart the
+backend so the `api` container receives the new variables:
+
+```bash
+make down
+make backend
+make frontend
+```
+
+Then sign up or log in through the printed local frontend URL. The browser should continue
+to use the local Vite/gateway origin only.
+
+### 5.4 Smoke checks
+
+Run the bridge preflight inside the API container. It checks non-secret config,
+`INGESTION_API_URL/health`, and authenticated Sentinel-2 readiness for
+`INGESTION_AOI_ID` while redacting the key and signed URLs:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml exec -T api \
+  python -m app.cli ingestion-check
+```
+
+Check the app health booleans through the local gateway. They must be present and should be
+`true` for this mode; the response must not include URLs or keys:
+
+```bash
+WEB_PORT="$(awk -F= '$1 == "WEB_PORT" { print $2; exit }' infra/docker/.env)"
+curl -fsS "http://localhost:${WEB_PORT:-8080}/health"
+curl -fsS "http://localhost:${WEB_PORT:-8080}/api/health"
+```
+
+Look for:
+
+```json
+{
+  "ingestionConfigured": true,
+  "ingestionReadinessEnabled": true,
+  "ingestionFieldIndexEnabled": true
+}
+```
+
+Manual end-to-end checks require the live tunnel, a valid server-side key, and a local
+logged-in user, so they are not part of automated docs validation:
+
+1. Open the local app and confirm Sentinel-2 is the selected/default source.
+2. Confirm `GET /api/sources/sentinel-2-l2a/dates` returns remote readiness dates,
+   including the known-good smoke date `2026-03-20` when available.
+3. Create or import the non-secret example field in
+   [`reference/local-sentinel-2-smoke-field.geojson`](reference/local-sentinel-2-smoke-field.geojson).
+4. Confirm the field overlay request returns `200 image/png`:
+   `/api/fields/{fieldId}/overlay/NDVI.png?sourceId=sentinel-2-l2a&acquisitionDate=2026-03-20`.
+5. Confirm field statistics and trend responses for the same field/source/date return
+   `provider: "pipeline"`.
+6. Confirm the UI shows Sentinel-2 10 m NDVI for the field analytics view.
+
+### 5.5 Browser leak-check
+
+In browser DevTools, open the **Network** panel, enable **Preserve log**, and filter to
+Fetch/XHR. Reload the local app and perform the Sentinel-2 date, overlay, statistics, and
+trend actions above. The analytics flow must show only same-origin local app `/api/*`
+requests. There must be **no** requests, response bodies, query strings, or copied URLs
+containing:
+
+- the ingestion host or IP, including `10.10.2.4`;
+- `host.docker.internal`;
+- signed URL parameters such as `sig`, `kid`, `exp`, or `op`;
+- `INGESTION_API_KEY` or any API-key value;
+- MinIO, STAC/pgSTAC, TiTiler, object-storage, or raw COG URLs.
+
+If any of those appear in the browser network log, stop using the mode and treat it as a
+security bug. The BFF must fetch signed ingestion resources server-side and return only
+local app-domain `/api/*` responses.
+
+## 6. Recommended daily workflow: backend and frontend separately
 
 Use two terminals.
 
@@ -241,7 +421,7 @@ bash scripts/dev-local.sh --frontend-only
 
 This starts only Vite and verifies the backend gateway is reachable first.
 
-## 6. Hot reload behavior
+## 7. Hot reload behavior
 
 ### Backend hot reload
 
@@ -285,7 +465,7 @@ hot reload through Vite. The browser usually updates automatically.
 
 Some changes still require rebuild/restart. See the next section.
 
-## 7. When to rebuild or restart
+## 8. When to rebuild or restart
 
 ### Backend source code only
 
@@ -364,7 +544,7 @@ make dev
 
 `make reset` deletes local PostGIS/MinIO volumes.
 
-## 8. Schema changes with SQLAlchemy + Alembic
+## 9. Schema changes with SQLAlchemy + Alembic
 
 API-owned app tables are defined in:
 
@@ -470,7 +650,7 @@ The API image runs app-schema migrations on startup for the current single-repli
 
 Before moving to multiple API replicas, migrate to a dedicated single-run migrator/pre-deploy job and let API startup only verify schema state.
 
-## 9. Common commands
+## 10. Common commands
 
 ```bash
 make help             # list developer commands
@@ -521,7 +701,7 @@ AKASHA_SMOKE_LOGIN=1 make smoke BASE_URL="http://localhost:${WEB_PORT:-8080}"
 Without `--login`/`AKASHA_SMOKE_LOGIN=1`, authenticated local stacks return `401` for product endpoints such as `/api/config`.
 Raster tile/statistic checks can still report `BLOCKED` until real ResourceSat composite COGs are present in MinIO; that is expected for a metadata-only local seed.
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### Docker engine is not reachable
 
@@ -596,7 +776,7 @@ make backend-rebuild
 
 For best Docker Desktop performance, consider cloning the repo inside WSL2's Linux filesystem instead of under `/mnt/c`.
 
-## 11. Cleanup guidance
+## 12. Cleanup guidance
 
 Use these when the local environment gets confusing:
 
@@ -613,7 +793,7 @@ Ignored local files you can safely recreate:
 - `apps/frontend/.env`
 - Docker volumes created by the local compose stack
 
-## 12. Command verification notes
+## 13. Command verification notes
 
 Last checked on Windows/Git Bash on 2026-06-17 with Git 2.54, Docker Compose v5.1, Node 24, Corepack 0.34, and GNU Make 4.4:
 
@@ -631,7 +811,7 @@ The following commands are intentionally state-changing and should not be used a
 - `make db-revision MSG="..."` creates a new Alembic migration file.
 - `make db-merge-heads MSG="..."` creates an Alembic merge revision.
 
-## 13. Quick start summary
+## 14. Quick start summary
 
 For a new developer:
 

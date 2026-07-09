@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, VegetationCycleResponse } from '@/types/api';
+import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
@@ -125,6 +125,7 @@ export function IndexPanel({
   const resolutionMeters = statsResponse?.resolutionMeters ?? null;
   const provenanceNote = statsResponse?.provenanceNote ?? null;
   const pipeline = metadata?.pipeline ?? null;
+  const sarSupport = statsResponse?.sarSupport ?? null;
 
   return (
     <section
@@ -239,6 +240,7 @@ export function IndexPanel({
                 resolutionMeters={ resolutionMeters }
                 provenanceNote={ provenanceNote }
                 pipeline={ pipeline }
+                sarSupport={ sarSupport }
               />
             </TabsContent>
 
@@ -365,13 +367,13 @@ function CropInfoTab({
         </div>
 
         <div className="relative py-2">
-          <div className="absolute left-[7px] right-[7px] top-[11px] h-[2px] bg-border" />
+          <div className="absolute left-1.75 right-1.75 top-2.75 h-0.5 bg-border" />
           <div className="relative flex justify-between">
             { STAGE_LABELS.map((label, i) => (
               <div key={ label } className="flex flex-col items-center gap-1">
                 <div
                   className={ cn(
-                    'relative z-10 size-[14px] rounded-full border-2',
+                    'relative z-10 size-3.5 rounded-full border-2',
                     i === 0
                       ? 'border-primary bg-primary'
                       : 'border-border bg-background',
@@ -455,6 +457,7 @@ interface ChartTabProps {
   resolutionMeters?: number | null;
   provenanceNote?: string | null;
   pipeline?: FieldStatisticsPipelineMetadata | null;
+  sarSupport?: SarSupport | null;
 }
 
 function ChartTab({
@@ -482,6 +485,7 @@ function ChartTab({
   resolutionMeters,
   provenanceNote,
   pipeline,
+  sarSupport,
 }: ChartTabProps) {
   const maskMethod = sourceMaskMethod ?? null;
   const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud / masked';
@@ -526,6 +530,20 @@ function ChartTab({
           >
             <Zap className="size-3 shrink-0" strokeWidth={ 1.75 } />
             Enhanced { resolutionMeters != null ? `${resolutionMeters} m` : '' } (LISS-4)
+          </div>
+        ) }
+
+        { sarSupport?.cloudGap && (
+          <div
+            className="mb-2 flex items-start gap-1.5 rounded-md border border-info/30 bg-info/10 px-2 py-1.5 text-[11px] leading-4 text-info"
+            data-testid="analytics-sar-support"
+          >
+            <Info className="mt-0.5 size-3 shrink-0" strokeWidth={ 1.75 } />
+            <span>
+              { sarSupport.available
+                ? `EOS-04 SAR support available (${sarSupport.confidence} confidence${sarSupport.daysFromOpticalDate != null ? `, ${Math.abs(sarSupport.daysFromOpticalDate)} day offset` : ''}).`
+                : `EOS-04 SAR support unavailable: ${sarSupport.reason ?? sarSupport.status}.` }
+            </span>
           </div>
         ) }
 

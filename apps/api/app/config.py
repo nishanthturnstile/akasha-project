@@ -41,6 +41,20 @@ def _get_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
+def _ingestion_signed_url_allowed_prefix() -> str:
+    return (_get("INGESTION_SIGNED_URL_ALLOWED_PREFIX") or _get("INGESTION_API_URL", "")).rstrip(
+        "/"
+    )
+
+
+def _ingestion_signed_url_fetch_prefix() -> str:
+    return (
+        _get("INGESTION_SIGNED_URL_FETCH_PREFIX")
+        or _get("INGESTION_SIGNED_URL_ALLOWED_PREFIX")
+        or _get("INGESTION_API_URL", "")
+    ).rstrip("/")
+
+
 def _local_cors_allowed_origins() -> list[str]:
     ports: list[str] = []
     for port in (_get("FRONTEND_PORT", "5173"), _get("WEB_PORT", "8080")):
@@ -151,6 +165,15 @@ class Settings:
         default_factory=lambda: _get_int("AKASHA_BEST_RESOLUTION_WINDOW_DAYS", 12)
     )
 
+    # SAR support for cloudy optical field analytics. This does not fabricate
+    # optical indices; it only finds/reads nearby EOS-04 backscatter as context.
+    sar_support_window_days: int = field(
+        default_factory=lambda: _get_int("AKASHA_SAR_SUPPORT_WINDOW_DAYS", 7)
+    )
+    sar_support_cloud_threshold_percent: int = field(
+        default_factory=lambda: _get_int("AKASHA_SAR_SUPPORT_CLOUD_THRESHOLD_PERCENT", 20)
+    )
+
     # Phase 12 auth/team foundations. AUTH_MODE=disabled requires explicit local opt-in.
     auth_mode: str = field(default_factory=lambda: _get("AUTH_MODE", "disabled"))
     auth_allow_disabled: bool = field(
@@ -215,8 +238,9 @@ class Settings:
     )
     """Gate for non-dry-run admin ingestion triggers. Disabled by default."""
 
-    # Standalone ingestion analytics client. Server-side only; never exposed to
-    # the browser or frontend build.
+    # Standalone ingestion API bridge for pipeline-backed Sentinel/ResourceSat analytics.
+    # These are server-to-server settings only; never expose the API key or private
+    # ingestion URL to browser JavaScript.
     ingestion_api_url: str = field(default_factory=lambda: _get("INGESTION_API_URL", ""))
     ingestion_api_key: str = field(default_factory=lambda: _get("INGESTION_API_KEY", ""))
     ingestion_request_timeout_seconds: int = field(
@@ -236,6 +260,15 @@ class Settings:
     )
     ingestion_aoi_id: str = field(
         default_factory=lambda: _get("INGESTION_AOI_ID", "bangalore_60km_geodesic_aoi")
+    )
+    ingestion_signed_url_allowed_prefix: str = field(
+        default_factory=_ingestion_signed_url_allowed_prefix
+    )
+    ingestion_signed_url_fetch_prefix: str = field(
+        default_factory=_ingestion_signed_url_fetch_prefix
+    )
+    ingestion_trend_max_dates: int = field(
+        default_factory=lambda: _get_int("INGESTION_TREND_MAX_DATES", 12)
     )
     # Optional XYZ tile layer proxy (Phase 5). Off until the ingestion tile
     # bridge and upstream signed TTL are validated for interactive sessions.

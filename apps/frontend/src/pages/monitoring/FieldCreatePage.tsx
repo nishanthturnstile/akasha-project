@@ -123,6 +123,17 @@ function splitPolygonByLine(
 }
 
 const DRAW_ZOOM = 18;
+const IMAGERY_RETURN_PARAMS = ['source', 'scene', 'from', 'to', 'layer'] as const;
+
+function returnImagerySearch(searchParams: URLSearchParams): string {
+  const params = new URLSearchParams();
+  for (const key of IMAGERY_RETURN_PARAMS) {
+    const value = searchParams.get(key);
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
 
 export default function FieldCreatePage() {
   const navigate = useNavigate();
@@ -292,7 +303,7 @@ export default function FieldCreatePage() {
       }
 
       queryClient.setQueryData<Field[]>(queryKeys.fields, (old) => [...(old ?? []), ...createdFields]);
-      navigate(`/monitoring/field-analytics/field/${createdFields[0].id}`);
+      navigate(`/monitoring/field-analytics/field/${createdFields[0].id}${returnImagerySearch(searchParams)}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save fields';
       setBatchError(message);
@@ -366,11 +377,11 @@ export default function FieldCreatePage() {
     if (pendingFields.length > 0) {
       setLeaveAlertOpen(true);
     } else {
-      navigate('/monitoring/field-analytics');
+      navigate(`/monitoring/field-analytics${returnImagerySearch(searchParams)}`);
     }
   };
 
-  const confirmLeave = () => navigate('/monitoring/field-analytics');
+  const confirmLeave = () => navigate(`/monitoring/field-analytics${returnImagerySearch(searchParams)}`);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
@@ -512,7 +523,7 @@ export default function FieldCreatePage() {
             </div>
 
             {/* Shape toggle card — expands on hover */}
-            <div className="group glass flex w-11 flex-col overflow-hidden rounded-md p-0 transition-all duration-fast hover:w-[89px]" role="group" aria-label="Shape">
+            <div className="group glass flex w-11 flex-col overflow-hidden rounded-md p-0 transition-all duration-fast hover:w-22.25" role="group" aria-label="Shape">
               <div className="flex">
                 <Tooltip delayDuration={ 600 }>
                   <TooltipTrigger asChild>
@@ -684,7 +695,7 @@ export default function FieldCreatePage() {
                           <MoreVertical className="size-4" strokeWidth={ 1.75 } />
                         </button>
                         { menuOpen && (
-                          <div className="absolute right-0 top-full z-50 mt-1 min-w-[130px] whitespace-nowrap rounded-md border border-border bg-popover py-1 shadow-e2">
+                          <div className="absolute right-0 top-full z-50 mt-1 min-w-32.5 whitespace-nowrap rounded-md border border-border bg-popover py-1 shadow-e2">
                             <button
                               type="button"
                               onClick={ (e) => { e.stopPropagation(); setMenuOpenId(null); setEditingPendingField(pf); } }

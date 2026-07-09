@@ -6,8 +6,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 AKASHA_IMAGES = (
     "akasha-web",
     "akasha-api",
-    "akasha-ingestion-worker",
-    "akasha-ingestion-sar",
 )
 DEPLOY_WORKFLOWS = ("deploy-staging.yml", "deploy-production.yml")
 
@@ -119,14 +117,15 @@ def test_production_deploy_uses_service_patch_instant_deploy_without_generic_dep
 
 
 def test_selfhosted_env_documents_admin_ingestion_live_trigger_gate():
-    """The deploy env template must include the manual live-sync gate used by the API."""
+    """The app-only deploy template must keep provider triggers disabled."""
     env = _text("infra/selfhosted/env.example")
     compose = _text("infra/selfhosted/coolify-compose.yml")
 
-    assert "INGESTION_JOB_INBOX_DIR=/srv/akasha/ingestion-inbox" in env
+    assert "INGESTION_JOB_INBOX_DIR=/srv/akasha/ingestion-inbox" not in env
+    assert "/srv/akasha/ingestion-inbox" not in compose
     assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false" in env
     assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED" in compose
-    assert "${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}" in compose
+    assert 'ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "false"' in compose
 
 
 def test_ingestion_image_packages_eos04_prepare_script():
@@ -134,3 +133,13 @@ def test_ingestion_image_packages_eos04_prepare_script():
     dockerfile = _text("services/ingestion/Dockerfile")
 
     assert "prepare_eos04_sar_mrs_l2b_cogs.py" in dockerfile
+
+
+def test_staging_validator_checks_internal_stac_and_titiler_services():
+    """Post-deploy staging validation must include catalog and tile internals."""
+    validator = _text("scripts/validate_selfhosted_staging_bhoonidhi.py")
+
+    assert "for service in web api stac-api titiler" in validator
+    assert "for service in web api stac-api titiler postgis minio" in validator
+    assert "http://stac-api:8080/collections" in validator
+    assert "http://titiler:8000/healthz" in validator

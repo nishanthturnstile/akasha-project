@@ -49,3 +49,7 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# ---- Generated outputs / presentations ----
+outputs/
+test_reports/local-ui-smoke-*/

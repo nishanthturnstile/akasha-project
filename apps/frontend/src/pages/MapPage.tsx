@@ -17,11 +17,13 @@ import {
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
+import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryLayerHelpers';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
+import { FieldOverlayLoadingIndicator } from '@/components/map/FieldOverlayLoadingIndicator';
 import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
 import { MeasureTool } from '@/components/map/MeasureTool';
@@ -337,7 +339,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     bestMode,
   } = view;
 
-  const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
+  const effectiveSourceId = useMemo(
+    () => selectEffectiveSourceId({
+      activeSourceId,
+      defaultSourceId: configQ.data?.defaultSourceId,
+      sources: sourcesQ.data,
+    }),
+    [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
+  );
   const datesQ = useDates(effectiveSourceId, { enabled: !bestMode });
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
@@ -535,11 +544,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   // index ONLY inside the field via a clipped overlay image.
   const isIndexLayer = (displaySource?.supportedIndices ?? []).includes(selectedDisplayMode);
 
-  // Pipeline-backed sources (ingestion NDVI) render a field-clipped overlay image
-  // (served by the BFF from the pipeline), like native index sources — not full-scene
-  // tiles. The flag only suppresses native per-pixel point lookups (no pipeline endpoint).
-  const isPipelineSource = Boolean(displaySource?.pipelineBacked);
-
   const scene = useMemo<SatelliteScene | null>(() => {
     if (!selectedDate || !requestSourceId) return null;
     // Index layers render via the field-clipped overlay, not a full-scene raster.
@@ -629,10 +633,12 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode]);
 
   const [indexOverlay, setIndexOverlay] = useState<IndexOverlay | null>(null);
+  const [indexOverlayLoading, setIndexOverlayLoading] = useState(false);
 
   useEffect(() => {
     let disposed = false;
     if (!requestedIndexOverlay) {
+      setIndexOverlayLoading(false);
       setIndexOverlay((current) => {
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
         return null;
@@ -643,6 +649,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
       return null;
     });
+    setIndexOverlayLoading(true);
     void getFieldIndexOverlayImage(
       requestedIndexOverlay.plotId,
       {
@@ -657,12 +664,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
         return;
       }
+      setIndexOverlayLoading(false);
       setIndexOverlay((current) => {
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
         return overlay;
       });
     }).catch(() => {
-      if (!disposed) setIndexOverlay(null);
+      if (!disposed) {
+        setIndexOverlayLoading(false);
+        setIndexOverlay(null);
+      }
     });
     return () => {
       disposed = true;
@@ -671,8 +682,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
 
   const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
     if (!isIndexLayer || !selectedPlot || !selectedDate || !requestSourceId) return null;
-    // Pipeline sources have no native per-pixel point endpoint; skip the hover readout.
-    if (isPipelineSource) return null;
     return getFieldIndexPoint(selectedPlot.id, {
       sourceId: requestSourceId,
       acquisitionDate: selectedDate,
@@ -681,7 +690,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       lat,
       preferHighRes,
     });
-  }, [isIndexLayer, isPipelineSource, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode, preferHighRes]);
+  }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode, preferHighRes]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -869,6 +878,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         visible={ visible }
         onBasemapError={ setBasemapRuntimeError }
         onMapReady={ setMap }
+      />
+      <FieldOverlayLoadingIndicator
+        loading={ overlaysVisible && isIndexLayer && indexOverlayLoading }
+        map={ map }
+        plot={ selectedPlot }
       />
       <FieldBoundaryLayer
         map={ map }

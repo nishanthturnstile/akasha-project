@@ -28,9 +28,17 @@ const sourcesPayload: IngestionSourcesResponse = {
             label: 'ResourceSat-2A LISS-3 BOA',
             provider: 'ISRO/NRSC Bhoonidhi',
             kind: 'optical',
+            availabilityStatus: 'active',
             active: true,
+            adminManageable: true,
+            syncEnabled: true,
             gatedReason: null,
             aoiId: 'bangalore-60km',
+            scheduleState: 'routine',
+            scheduleEnabled: true,
+            productExposure: 'product_active',
+            validationState: 'validation_passed',
+            capabilities: ['search_enabled', 'download_enabled'],
             cadenceDays: 7,
             lastRunAt: '2026-06-20T01:00:00Z',
             lastSuccessAt: '2026-06-20T01:30:00Z',
@@ -57,9 +65,17 @@ const sourcesPayload: IngestionSourcesResponse = {
             label: 'ResourceSat-2A LISS-4 MX70 L2',
             provider: 'ISRO/NRSC Bhoonidhi',
             kind: 'optical',
+            availabilityStatus: 'active',
             active: true,
+            adminManageable: true,
+            syncEnabled: true,
             gatedReason: null,
             aoiId: 'bangalore-60km',
+            scheduleState: 'routine',
+            scheduleEnabled: true,
+            productExposure: 'product_active',
+            validationState: 'validation_passed',
+            capabilities: ['search_enabled', 'download_enabled'],
             cadenceDays: 7,
             lastRunAt: '2026-06-19T01:00:00Z',
             lastSuccessAt: null,
@@ -86,9 +102,55 @@ const sourcesPayload: IngestionSourcesResponse = {
             label: 'EOS-04 SAR MRS L2B',
             provider: 'ISRO/NRSC Bhoonidhi',
             kind: 'sar',
+            availabilityStatus: 'gated',
             active: false,
-            gatedReason: 'EOS-04 SAR backscatter is not validated for product exposure.',
+            adminManageable: true,
+            syncEnabled: true,
+            gatedReason: 'EOS-04 is validated for backend SAR-assisted cloudy optical analytics; it is not a directly selectable optical index layer.',
+            aoiId: 'bangalore-60km',
+            scheduleState: 'manual_only',
+            scheduleEnabled: false,
+            productExposure: 'background_only',
+            validationState: 'validation_passed',
+            capabilities: ['search_enabled', 'download_enabled', 'prepare_enabled', 'validate_enabled'],
+            cadenceDays: 10,
+            lastRunAt: '2026-06-30T05:39:28Z',
+            lastSuccessAt: '2026-06-30T05:45:00Z',
+            lastFailureAt: null,
+            nextDueAt: null,
+            isDue: false,
+            isOverdue: false,
+            latestCompositeDate: null,
+            lastJob: {
+                jobId: 'job_20260630T053928Z_eos04',
+                state: 'succeeded',
+                runAt: '2026-06-30T05:45:00Z',
+                foundCount: 10,
+                selectedCount: 1,
+                downloadedCount: 1,
+                rejectedCount: null,
+                windowStart: '2026-05-17T00:00:00Z',
+                windowEnd: '2026-06-30T00:00:00Z',
+                failureKind: null,
+                message: null,
+            },
+        },
+        {
+            sourceId: 'eos-06-ocm-lac-ndvi-8day-360m',
+            label: 'EOS-06 OCM-LAC NDVI 8-day 360m',
+            provider: 'ISRO/NRSC Bhoonidhi',
+            kind: 'context',
+            availabilityStatus: 'gated',
+            active: false,
+            adminManageable: false,
+            syncEnabled: false,
+            gatedReason: 'No validated EOS-06 NDVI context COG has been ingested.',
             aoiId: null,
+            scheduleState: 'disabled',
+            scheduleEnabled: false,
+            productExposure: 'hidden',
+            validationState: 'unvalidated',
+            capabilities: [],
             cadenceDays: null,
             lastRunAt: null,
             lastSuccessAt: null,
@@ -114,6 +176,23 @@ const productsPayload: IngestionSourceProductsResponse = {
             status: 'downloaded',
             bytes: 1048576,
             updatedAt: '2026-06-20T01:30:00Z',
+            error: null,
+        },
+    ],
+};
+
+const eos04ProductsPayload: IngestionSourceProductsResponse = {
+    status: 'ok',
+    generatedAt: '2026-06-30T06:00:00Z',
+    sourceId: 'eos-04-sar-mrs-l2b',
+    products: [
+        {
+            productId: 'EOS04_SAR_MRS_L2B_20260622',
+            sceneKey: 'eos-04-sar-mrs-l2b:eos-04:MRS:2026-06-22T00:35:37Z',
+            acquisitionDate: '2026-06-22',
+            status: 'downloaded',
+            bytes: 1366884,
+            updatedAt: '2026-06-30T05:45:00Z',
             error: null,
         },
     ],
@@ -177,6 +256,9 @@ function renderPage({
         }
         if (path.includes('/api/monitoring/ingestion-sources/resourcesat-2a-liss3-boa/products')) {
             return Promise.resolve(jsonResponse(products));
+        }
+        if (path.includes('/api/monitoring/ingestion-sources/eos-04-sar-mrs-l2b/products')) {
+            return Promise.resolve(jsonResponse(eos04ProductsPayload));
         }
         if (path.includes('/api/monitoring/ingestion-jobs/trigger') && init?.method === 'POST') {
             return Promise.resolve(jsonResponse(triggerResponse, triggerStatus));
@@ -306,16 +388,47 @@ describe('AdminIngestionSources', () => {
         );
     });
 
-    it('shows gated satellites in a muted not-yet-active section', async () => {
-        renderPage();
+    it('keeps backend-only EOS-04 in the managed satellite section with sync and history', async () => {
+        const fetchMock = renderPage();
 
         await screen.findByText('EOS-04 SAR MRS L2B');
-        const gatedSection = screen.getByLabelText('Not yet active satellites');
+        const managedSection = screen.getByLabelText('Admin-managed satellites');
 
-        expect(within(gatedSection).getByText('EOS-04 SAR MRS L2B')).toBeTruthy();
-        expect(within(gatedSection).getByText('Not yet active')).toBeTruthy();
+        expect(within(managedSection).getByText('EOS-04 SAR MRS L2B')).toBeTruthy();
+        expect(within(managedSection).getByText('Backend support')).toBeTruthy();
+        expect(screen.getByRole('button', { name: /Sync now EOS-04 SAR MRS L2B/ })).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: /Expand EOS-04 SAR MRS L2B/ }));
+
+        expect(await screen.findByText('EOS04_SAR_MRS_L2B_20260622')).toBeTruthy();
+        expect(screen.getByText('2026-06-30 05:39')).toBeTruthy();
+        expect(screen.getByText(/manual only/)).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: /Sync now EOS-04 SAR MRS L2B/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm sync' }));
+
+        await waitFor(() => expect(screen.getByText('Submitted')).toBeTruthy());
+        const triggerCall = fetchMock.mock.calls.find((call) =>
+            String(call[0]).includes('/api/monitoring/ingestion-jobs/trigger'),
+        );
+        expect(JSON.parse(String(triggerCall?.[1]?.body))).toMatchObject({
+            sourceId: 'eos-04-sar-mrs-l2b',
+            aoiId: 'bangalore-60km',
+            dryRun: false,
+            confirmLive: true,
+        });
+    });
+
+    it('shows unvalidated satellites in a registered not-sync-enabled section', async () => {
+        renderPage();
+
+        await screen.findByText('EOS-06 OCM-LAC NDVI 8-day 360m');
+        const registeredSection = screen.getByLabelText('Registered satellites not sync-enabled');
+
+        expect(within(registeredSection).getByText('EOS-06 OCM-LAC NDVI 8-day 360m')).toBeTruthy();
+        expect(within(registeredSection).getByText('Not sync-enabled')).toBeTruthy();
         expect(
-            within(gatedSection).getByText('EOS-04 SAR backscatter is not validated for product exposure.'),
+            within(registeredSection).getByText('No validated EOS-06 NDVI context COG has been ingested.'),
         ).toBeTruthy();
     });
 });

@@ -60,6 +60,34 @@ class StatisticsMetadata(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class SarBandStatistics(BaseModel):
+    name: str
+    min: float | None = None
+    max: float | None = None
+    mean: float | None = None
+    stddev: float | None = None
+    validPixelPercent: float = 0.0
+
+
+class SarSupport(BaseModel):
+    available: bool = False
+    status: str = "unavailable"
+    sourceId: str = "eos-04-sar-mrs-l2b"
+    acquisitionDate: str | None = None
+    daysFromOpticalDate: int | None = None
+    windowDays: int = 7
+    cloudGap: bool = False
+    opticalCloudMaskedPercent: float | None = None
+    opticalMaskedPixels: int | None = None
+    polarizations: list[str] = Field(default_factory=list)
+    coveragePercent: float | None = None
+    confidence: str = "none"
+    reason: str | None = None
+    bands: list[SarBandStatistics] = Field(default_factory=list)
+    wetnessSignal: str = "not_assessed"
+    changeSignal: str = "not_assessed"
+
+
 class StatisticsResponse(BaseModel):
     indexType: str
     sourceId: str
@@ -67,3 +95,4 @@ class StatisticsResponse(BaseModel):
     statistics: IndexStatisticsModel
     pixelCounts: PixelCounts
     metadata: StatisticsMetadata
+    sarSupport: SarSupport | None = None

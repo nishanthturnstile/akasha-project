@@ -138,11 +138,12 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
 }
 
 /**
- * Persist the selected field across reloads and module navigations so weather,
- * VRA, analytics, and risk pages remain usable when opened directly. Only the
- * field id is persisted; all server data stays in TanStack Query.
+ * Persist lightweight view selections across reloads and module navigations so
+ * field analytics reopens on the same field and imagery source. Only client-side
+ * IDs are persisted; all server data stays in TanStack Query.
  */
 const SELECTED_PLOT_STORAGE_KEY = 'akasha.selectedPlotId';
+const ACTIVE_SOURCE_STORAGE_KEY = 'akasha.activeSourceId';
 
 function readPersistedPlotId(): string | null {
     if (typeof window === 'undefined') return null;
@@ -150,6 +151,15 @@ function readPersistedPlotId(): string | null {
         return window.localStorage.getItem(SELECTED_PLOT_STORAGE_KEY) || null;
     } catch {
         return null;
+    }
+}
+
+function readPersistedSourceId(): string | undefined {
+    if (typeof window === 'undefined') return undefined;
+    try {
+        return window.localStorage.getItem(ACTIVE_SOURCE_STORAGE_KEY) || undefined;
+    } catch {
+        return undefined;
     }
 }
 
@@ -166,6 +176,19 @@ function writePersistedPlotId(plotId: string | null): void {
     }
 }
 
+function writePersistedSourceId(sourceId: string | undefined): void {
+    if (typeof window === 'undefined') return;
+    try {
+        if (sourceId) {
+            window.localStorage.setItem(ACTIVE_SOURCE_STORAGE_KEY, sourceId);
+        } else {
+            window.localStorage.removeItem(ACTIVE_SOURCE_STORAGE_KEY);
+        }
+    } catch {
+        /* storage unavailable (private mode / quota) — selection stays in-memory only */
+    }
+}
+
 export function MapViewProvider({
     children,
     initialState,
@@ -175,6 +198,7 @@ export function MapViewProvider({
 }) {
     const [state, dispatch] = useReducer(reducer, {
         ...initialMapViewState,
+        activeSourceId: readPersistedSourceId(),
         selectedPlotId: readPersistedPlotId(),
         ...initialState,
     });
@@ -182,6 +206,10 @@ export function MapViewProvider({
     useEffect(() => {
         writePersistedPlotId(state.selectedPlotId);
     }, [state.selectedPlotId]);
+
+    useEffect(() => {
+        writePersistedSourceId(state.activeSourceId);
+    }, [state.activeSourceId]);
 
     const value = useMemo<MapViewContextValue>(
         () => ({

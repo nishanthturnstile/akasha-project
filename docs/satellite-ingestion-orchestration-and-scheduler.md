@@ -111,10 +111,10 @@ adapter and a validation profile), not rewriting scheduling, monitoring, or prod
 | Locks | [services/ingestion/akasha_ingest/scheduler_locks.py](../services/ingestion/akasha_ingest/scheduler_locks.py) | Global + per-source/AOI file locks, PID/TTL stale-lock reclaim, **legacy Bhoonidhi lock-path compatibility**. |
 | Validation profiles | [services/ingestion/akasha_ingest/validation_profiles.py](../services/ingestion/akasha_ingest/validation_profiles.py) | `optical_composite`, `optical_scene`, `sar_backscatter`, `precomputed_context`, `archive_only`, `visual_only` + LISS-3 invariant constants. |
 | Worker CLI | [services/ingestion/worker.py](../services/ingestion/worker.py) | `schedule-plan`, `schedule-due-sources`, `schedule-source`, `verify-raster-product`, `verify-composite`, and the `bhoonidhi-*` compatibility commands. |
-| BFF admin monitoring | [apps/api/app/ingestion_jobs.py](../apps/api/app/ingestion_jobs.py) | Same-origin `/api/monitoring/*` endpoints for ingestion schedules, jobs, job details, and events. They are owner/admin-gated and return **redacted, opaque** snapshots only. |
+| BFF admin monitoring | [apps/api/app/ingestion_jobs.py](../apps/api/app/ingestion_jobs.py) | Same-origin `/api/monitoring/*` endpoints for ingestion schedules, jobs, job details, events, and satellite-source summaries. They are owner/admin-gated and return **redacted, opaque** snapshots only. Admin source visibility is separate from map-layer/product exposure. |
 | Source monitoring | [apps/api/app/source_monitoring.py](../apps/api/app/source_monitoring.py) | Admin/operator source scheduler health: latest scheduler job + due/overdue status. Product Monitoring remains crop/field oriented. |
 | Best-observation | [apps/api/app/raster/catalog_resolver.py](../apps/api/app/raster/catalog_resolver.py) | `resolve_best_observation()` ranks validated sources per date (Phase 11). |
-| Admin ingestion UI | `apps/frontend/src/pages/monitoring/*` | Internal owner/admin pages at `/admin/ingestion`, `/admin/ingestion/jobs`, `/admin/ingestion/jobs/:jobId`, and `/admin/ingestion/schedules`. |
+| Admin ingestion UI | `apps/frontend/src/pages/monitoring/*` | Internal owner/admin pages at `/admin/ingestion`, `/admin/ingestion/jobs`, `/admin/ingestion/jobs/:jobId`, and `/admin/ingestion/schedules`. It manages data ingestion, including backend-only sources such as EOS-04 SAR, and does not imply the source is selectable on the map. |
 | Deployment | [infra/selfhosted/systemd/](../infra/selfhosted/systemd/) | `akasha-ingestion-scheduler.{timer,service,sh}`, `ingestion-scheduler.env.example`, installer. |
 | Staging wrapper | [scripts/staging_ingestion_job.py](../scripts/staging_ingestion_job.py) | Operator entry point: `trigger`, `job-inspect`, `job-artifact`, `schedule-plan`, `schedule-next`. |
 
@@ -162,6 +162,23 @@ The registry **rejects contradictory rows at load time** (`_validate_row()`), e.
 `commercial_blocked + order_enabled`, `archive_only + routine cadence`,
 `background_only + product_active`, or an executable row with no `catalogSlug`. This is enforced by
 [tests/test_satellite_catalog_registry.py](../tests/test_satellite_catalog_registry.py).
+
+### Admin management versus map/product exposure
+
+`/admin/ingestion` is an operator console, not a map layer selector. A source can be
+**admin-manageable** even when it is not **map-active**:
+
+- `availabilityStatus=active` / `productExposure=product_active` means users may select the source
+  in product/map workflows where supported.
+- `productExposure=background_only` means the source can be searched, downloaded, validated, and
+  monitored behind the scenes, but must not appear as a user-selectable optical/index layer.
+- `scheduleState=manual_only` means no timer owns the source; owner/admin users may submit bounded
+  manual sync requests from `/admin/ingestion` when the row has an AOI plus search/download
+  capabilities. The request is still routed through the staging inbox/wrapper and shared locks.
+
+EOS-04 SAR-MRS L2B is the canonical example: it is validated for backend SAR-assisted cloudy
+optical analytics (`productExposure=background_only`, `scheduleState=manual_only`) while remaining
+`availabilityStatus=gated` for the map/source selector because SAR is not an optical index layer.
 
 ---
 
@@ -292,6 +309,11 @@ duplicate STAC items, and lock contention.
 | `scheduler_active` | Scheduler owns real jobs. |
 | `manual_only` | Operators trigger via the staging CLI; no timer owns it. |
 
+`manual_only` sources with an AOI and search/download capabilities can also be triggered through the
+owner/admin `/admin/ingestion` console. This is still a bounded manual path: the API writes an inbox
+request, the host dispatcher invokes the staging wrapper, and the same source/AOI locks prevent
+double-runs.
+
 ### Canary sequence
 
 1. Install the scheduler in `dry_run`; verify redacted snapshots + `schedule-plan`.
@@ -325,7 +347,8 @@ default — proven by [tests/test_provider_adapter_contract.py](../tests/test_pr
 | `resourcesat-2a-liss3-boa` (LISS-3) | `routine` | **`product_active`** | `scheduler_active` | MVP production default (FCC display). |
 | `resourcesat-2a-liss4-mx70-l2` (LISS-4) | `routine` | **`product_active`** | `scheduler_active` | High-res field enhancement. |
 | `resourcesat-2a-awifs-boa` (AWiFS) | `routine` | **`product_active`** | `scheduler_active` | Regional coarse (56 m); `validation_passed` with a 60% regional coverage threshold (prior 95% gate failed at 62.98%). `analysisLevel` stays regional so the best-observation resolver keeps it out of small-field decisions. |
-| Sentinel-2/-1, Landsat-8/9, MODIS, EOS-04/06, NISAR, IRS-1C, Cartosat-3, Planet/SkySat/SuperView/etc., NAIP | `disabled` / `manual_only` | `hidden` / `reference_only` | — | Scaffolded rows with explicit `readinessReasons`. |
+| `eos-04-sar-mrs-l2b` (EOS-04 SAR MRS L2B) | `manual_only` | **`background_only`** | `manual_only` | Validated backend SAR support for cloudy optical analytics; admin-syncable, not a selectable optical/index map layer. |
+| Sentinel-2/-1, Landsat-8/9, MODIS, EOS-06, NISAR, IRS-1C, Cartosat-3, Planet/SkySat/SuperView/etc., NAIP | `disabled` / `manual_only` | `hidden` / `reference_only` | — | Scaffolded rows with explicit `readinessReasons`; not admin-syncable until source-specific gates pass. |
 
 ### Build status by layer
 

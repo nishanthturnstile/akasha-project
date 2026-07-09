@@ -1,5 +1,5 @@
 import { Map as MapIcon, Pencil } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,7 @@ import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
+import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import { useConfig, useDates, useDeleteField, useFields, useSources, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
 import { useSeasonContext } from '@/state/seasonContext';
@@ -46,7 +47,20 @@ function defaultDisplayModeForSource(source: Source | null | undefined, fallback
 
 export default function FieldAnalyticsPage() {
   const navigate = useNavigate();
-  const { selectedPlotId, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, selectedDate: dateOverride, displayMode, overlaysVisible, mapFullscreen } = useMapView();
+  const {
+    selectedPlotId,
+    setSelectedPlotId,
+    setFocusNonce,
+    clearSelectedPlot,
+    cloudMask,
+    periodFrom,
+    periodTo,
+    activeSourceId,
+    selectedDate: dateOverride,
+    displayMode,
+    overlaysVisible,
+    mapFullscreen,
+  } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -61,7 +75,14 @@ export default function FieldAnalyticsPage() {
     return fieldsQ.data.find((f) => f.id === selectedPlotId) ?? null;
   }, [fieldsQ.data, selectedPlotId]);
 
-  const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
+  const effectiveSourceId = useMemo(
+    () => selectEffectiveSourceId({
+      activeSourceId,
+      defaultSourceId: configQ.data?.defaultSourceId,
+      sources: sourcesQ.data,
+    }),
+    [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
+  );
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((source) => source.id === effectiveSourceId) ?? null,
     [sourcesQ.data, effectiveSourceId],
@@ -90,6 +111,18 @@ export default function FieldAnalyticsPage() {
     if (!fieldsQ.data || !seasonId) return fieldsQ.data ?? [];
     return fieldsQ.data.filter((f) => f.seasonIds?.includes(seasonId)) ?? [];
   }, [fieldsQ.data, seasonId]);
+
+  const navigateWithImageryState = useCallback((path: string) => {
+    const [pathname, query = ''] = path.split('?');
+    const params = new URLSearchParams(query);
+    if (effectiveSourceId && !params.has('source')) params.set('source', effectiveSourceId);
+    if (selectedDate && !params.has('scene')) params.set('scene', selectedDate);
+    if (periodFrom && !params.has('from')) params.set('from', periodFrom);
+    if (periodTo && !params.has('to')) params.set('to', periodTo);
+    if (displayMode && !params.has('layer')) params.set('layer', displayMode);
+    const search = params.toString();
+    navigate(search ? `${pathname}?${search}` : pathname);
+  }, [displayMode, effectiveSourceId, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
     <div className="h-full flex flex-col gap-4 p-4 min-h-0">
@@ -144,7 +177,11 @@ export default function FieldAnalyticsPage() {
         <div className="flex items-center gap-2 px-4 py-3">
           <AddFieldDropdown
             fields={ seasonFields }
-            onNavigate={ navigate }
+            onNavigate={ navigateWithImageryState }
+            onSelectField={ (fieldId) => {
+              setSelectedPlotId(fieldId);
+              setFocusNonce(Date.now());
+            } }
             defaultSeasonId={ seasonId }
             testId="analytics-add-field"
           />
@@ -153,7 +190,7 @@ export default function FieldAnalyticsPage() {
       )}
 
       {/* Map card */}
-      <div className={cn('rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'h-[50vh] min-h-[300px]' : 'flex-1 min-h-0')}>
+      <div className={cn('rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'h-[50vh] min-h-75' : 'flex-1 min-h-0')}>
         <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords showFullscreen />
       </div>
 

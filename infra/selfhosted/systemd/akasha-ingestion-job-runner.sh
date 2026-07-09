@@ -265,7 +265,7 @@ preflight() {
   discover_compose || { update_status failed 2 preflight "compose file not found; set AKASHA_COMPOSE_FILE"; exit 2; }
   grep -q "ingestion-worker" "${compose_file}" || { update_status failed 2 preflight "compose file does not include ingestion-worker"; exit 2; }
   compose_has_bhoonidhi_env || { update_status failed 2 preflight "compose file does not expose Bhoonidhi credentials to ingestion-worker"; exit 2; }
-  csv_contains "${AKASHA_INGESTION_ALLOWED_SOURCES:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}" "${source_id}" || {
+  csv_contains "${AKASHA_INGESTION_ALLOWED_SOURCES:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa,eos-04-sar-mrs-l2b}" "${source_id}" || {
     update_status failed 2 validation "source is not allowed"
     exit 2
   }
@@ -361,6 +361,40 @@ doctor() {
   command -v docker >/dev/null 2>&1 || { echo "docker: missing"; exit 1; }
   mkdir -p "${JOB_ROOT}" "${RAW_ROOT}" "${TEMP_ROOT}" "$(dirname "${LEDGER_PATH}")"
   [[ -w "${JOB_ROOT}" ]] || { echo "job root not writable: ${JOB_ROOT}"; exit 1; }
+  cd "${compose_dir}"
+  for service in web api stac-api titiler postgis minio; do
+    local service_id
+    service_id="$(docker compose "${compose_args[@]}" -f "${compose_file}" ps -q "${service}")"
+    [[ -n "${service_id}" ]] || { echo "${service}: missing"; exit 1; }
+    local service_status
+    service_status="$(
+      docker inspect "${service_id}" \
+        --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}'
+    )"
+    [[ "${service_status}" == "healthy" || "${service_status}" == "running" ]] || {
+      echo "${service}: ${service_status}"
+      exit 1
+    }
+    echo "${service}=${service_status}"
+  done
+  api_id="$(docker compose "${compose_args[@]}" -f "${compose_file}" ps -q api)"
+  docker exec "${api_id}" python - <<'PY'
+import json
+import urllib.request
+
+checks = {
+    "stac-api catalog": "http://stac-api:8080/collections",
+    "titiler health": "http://titiler:8000/healthz",
+}
+for name, url in checks.items():
+  with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
+    body = response.read()
+    if response.status != 200:
+      raise SystemExit(f"{name}: HTTP {response.status}")
+    if name.startswith("stac-api"):
+      json.loads(body.decode("utf-8"))
+    print(f"{name}=ok")
+PY
   echo "job_root=${JOB_ROOT}"
   echo "pull_policy=${AKASHA_SYNC_PULL_POLICY:-never}"
 }

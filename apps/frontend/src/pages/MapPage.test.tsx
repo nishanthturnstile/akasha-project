@@ -8,6 +8,10 @@ import { MapViewProvider } from '@/state/mapViewContext';
 import type { MapViewState } from '@/state/mapViewState';
 import type { FieldStatisticsResponse, FieldTrendResponse, ObservationCandidate, Plot, SceneDate } from '@/types/api';
 
+const coordinateReadoutState = vi.hoisted(() => ({
+  lookups: [] as Array<((point: { lng: number; lat: number }) => Promise<unknown>) | undefined>,
+}));
+
 vi.mock('@/components/map/MapLayerManager', () => ({
   MapLayerManager: ({
     basemap,
@@ -36,7 +40,40 @@ vi.mock('@/components/map/MapLayerManager', () => ({
   ),
 }));
 
-function renderMapPage(initialState?: Partial<MapViewState>) {
+vi.mock('@/components/map/FieldOverlayLoadingIndicator', () => ({
+  FieldOverlayLoadingIndicator: ({ loading }: { loading: boolean }) =>
+    loading ? <div data-testid="field-overlay-loading-indicator">Calculating index…</div> : null,
+}));
+
+vi.mock('@/components/map/CoordinateReadout', () => ({
+  CoordinateReadout: ({
+    indexLookup,
+  }: {
+    indexLookup?: (point: { lng: number; lat: number }) => Promise<unknown>;
+  }) => {
+    coordinateReadoutState.lookups.push(indexLookup);
+    return (
+      <button
+        type="button"
+        data-testid="coordinate-readout-mock"
+        data-index-lookup={ String(Boolean(indexLookup)) }
+        onClick={ () => {
+          void indexLookup?.({ lng: 77.5946, lat: 12.9716 });
+        } }
+      >
+        Coordinate readout
+      </button>
+    );
+  },
+}));
+
+type MapPageProps = {
+  hidePlotToolbar?: boolean;
+  simplifiedMapControls?: boolean;
+  topLeftCoords?: boolean;
+};
+
+function renderMapPage(initialState?: Partial<MapViewState>, props: MapPageProps = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -46,7 +83,7 @@ function renderMapPage(initialState?: Partial<MapViewState>) {
       <QueryClientProvider client={ queryClient }>
         <TooltipProvider>
           <MapViewProvider initialState={ { overlaysVisible: true, ...initialState } }>
-            <MapPage />
+            <MapPage { ...props } />
           </MapViewProvider>
         </TooltipProvider>
       </QueryClientProvider>
@@ -170,12 +207,15 @@ class ResizeObserverMock {
 }
 
 afterEach(() => {
+  coordinateReadoutState.lookups.length = 0;
+  window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
 
 function stubAkashaFetch({
   resourcesatDates = [makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true })],
+  sentinelDates = [makeDate('2026-03-20', { isLatestUsable: true, metricsProvisional: false })],
   liss4Dates = [makeDate('2026-01-15', { isLatestUsable: true, metricsProvisional: true })],
   sarDates = [
     makeDate('2026-04-26', {
@@ -188,17 +228,34 @@ function stubAkashaFetch({
   plots = [],
   fieldStatistics = makeFieldStatistics(),
   fieldTrend = makeFieldTrend(),
+  defaultSourceId = 'resourcesat-2a-liss3-boa',
   bestCandidates,
+  deferOverlay = false,
 }: {
   resourcesatDates?: SceneDate[];
+  sentinelDates?: SceneDate[];
   liss4Dates?: SceneDate[];
   sarDates?: SceneDate[];
   plots?: Plot[];
   fieldStatistics?: FieldStatisticsResponse;
   fieldTrend?: FieldTrendResponse;
+  defaultSourceId?: string;
   /** When provided, /api/observations/best returns these candidates (best-mode tests). */
   bestCandidates?: ObservationCandidate[];
+  deferOverlay?: boolean;
 } = {}) {
+  const overlayResolvers: Array<() => void> = [];
+  const overlayResponse = {
+    ok: true,
+    status: 200,
+    headers: new Headers({
+      'Content-Type': 'image/png',
+      'X-Akasha-Overlay-Corners': '[[77.001,13.002],[77.103,13.001],[77.104,12.9],[77,12.901]]',
+      'X-Akasha-Overlay-Stretch': '-1.0,1.0',
+    }),
+    blob: async () => new Blob(['png'], { type: 'image/png' }),
+  };
+
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   vi.stubEnv('VITE_BASEMAP_PROVIDER', 'osm');
   vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
@@ -224,6 +281,7 @@ function stubAkashaFetch({
               bounds: [74, 8, 81, 14],
             },
             basemapStyleUrl: '',
+            defaultSourceId,
             basemap: {
               provider: 'esri',
               style: 'arcgis/imagery',
@@ -237,6 +295,7 @@ function stubAkashaFetch({
             usablePixelThresholdPercent: 70,
             supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
             defaultIndex: 'NDVI',
+            adminIngestionLiveTriggerEnabled: false,
           }),
         );
       }
@@ -248,6 +307,7 @@ function stubAkashaFetch({
               id: 'resourcesat-2a-liss3-boa',
               label: 'ResourceSat-2A LISS-3 BOA',
               provider: 'ISRO/NRSC Bhoonidhi',
+              pipelineBacked: true,
               kind: 'optical',
               supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
               displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
@@ -257,9 +317,23 @@ function stubAkashaFetch({
               attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
             },
             {
+              id: 'sentinel-2-l2a',
+              label: 'Sentinel-2 L2A',
+              provider: 'pipeline',
+              pipelineBacked: true,
+              kind: 'optical',
+              supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              displayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              defaultDisplayMode: 'NDVI',
+              mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              defaultMapDisplayMode: 'NDVI',
+              attribution: 'Sentinel-2 via Akasha ingestion pipeline',
+            },
+            {
               id: 'resourcesat-2a-liss4-mx70-l2',
               label: 'ResourceSat-2A LISS-4 MX70 L2',
               provider: 'ISRO/NRSC Bhoonidhi',
+              pipelineBacked: true,
               kind: 'optical',
               supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
               displayModes: ['FCC', 'NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
@@ -322,20 +396,36 @@ function stubAkashaFetch({
       }
 
       if (path.startsWith('/api/fields/plot-1/overlay/')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          headers: new Headers({
-            'Content-Type': 'image/png',
-            'X-Akasha-Overlay-Corners': '[[77.001,13.002],[77.103,13.001],[77.104,12.9],[77,12.901]]',
-            'X-Akasha-Overlay-Stretch': '-1.0,1.0',
+        if (deferOverlay) {
+          return new Promise((resolve) => {
+            overlayResolvers.push(() => resolve(overlayResponse));
+          });
+        }
+        return Promise.resolve(overlayResponse);
+      }
+
+      if (path.startsWith('/api/fields/plot-1/indices/point')) {
+        return Promise.resolve(
+          jsonResponse({
+            plotId: 'plot-1',
+            sourceId: 'sentinel-2-l2a',
+            acquisitionDate: '2026-03-20',
+            indexType: 'NDVI',
+            lng: 77.5946,
+            lat: 12.9716,
+            value: 0.44,
+            masked: false,
+            maskClass: null,
           }),
-          blob: async () => new Blob(['png'], { type: 'image/png' }),
-        });
+        );
       }
 
       if (path.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')) {
         return Promise.resolve(jsonResponse(resourcesatDates));
+      }
+
+      if (path.startsWith('/api/sources/sentinel-2-l2a/dates')) {
+        return Promise.resolve(jsonResponse(sentinelDates));
       }
 
       if (path.startsWith('/api/sources/resourcesat-2a-liss4-mx70-l2/dates')) {
@@ -368,7 +458,159 @@ function stubAkashaFetch({
       throw new Error(`Unexpected request: ${path}`);
     }),
   );
+
+  return {
+    resolveOverlayRequests: () => {
+      overlayResolvers.splice(0).forEach((resolve) => resolve());
+    },
+  };
 }
+
+describe('MapPage source defaults', () => {
+  it('uses config.defaultSourceId when no persisted active source exists', async () => {
+    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a' });
+
+    renderMapPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain('Sentinel-2 L2A');
+    });
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/sources/sentinel-2-l2a/dates')),
+    ).toBe(true);
+  });
+
+  it('keeps a persisted active source ahead of config.defaultSourceId', async () => {
+    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a' });
+
+    renderMapPage({ activeSourceId: 'resourcesat-2a-liss3-boa' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
+        'ResourceSat-2A LISS-3 BOA',
+      );
+    });
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+    expect(
+      calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+    ).toBe(true);
+  });
+});
+
+describe('MapPage pipeline point lookup', () => {
+  it('wires hover point lookup for pipeline-backed Sentinel sources', async () => {
+    stubAkashaFetch({
+      defaultSourceId: 'sentinel-2-l2a',
+      plots: [FIELD_PLOT],
+      fieldStatistics: makeFieldStatistics({
+        provider: 'pipeline',
+        sourceId: 'sentinel-2-l2a',
+        acquisitionDate: '2026-03-20',
+      }),
+      fieldTrend: makeFieldTrend({
+        provider: 'pipeline',
+        scope: 'pipeline',
+        sourceId: 'sentinel-2-l2a',
+        endDate: '2026-03-20',
+      }),
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1' }, { topLeftCoords: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain('Sentinel-2 L2A');
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'true',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('coordinate-readout-mock'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      expect(calls.some(([input]) => String(input).includes('/indices/point'))).toBe(true);
+    });
+  });
+
+  it('treats pipeline-backed ResourceSat sources generically for dates, overlay loading, and hover point lookup', async () => {
+    const controls = stubAkashaFetch({
+      plots: [FIELD_PLOT],
+      deferOverlay: true,
+      resourcesatDates: [
+        makeDate('2026-04-02', { isLatestUsable: true, metricsProvisional: true }),
+      ],
+      fieldStatistics: makeFieldStatistics({
+        provider: 'pipeline',
+        sourceId: 'resourcesat-2a-liss3-boa',
+        acquisitionDate: '2026-04-02',
+      }),
+      fieldTrend: makeFieldTrend({
+        provider: 'pipeline',
+        scope: 'pipeline',
+        sourceId: 'resourcesat-2a-liss3-boa',
+        endDate: '2026-04-02',
+      }),
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1' }, { topLeftCoords: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
+        'ResourceSat-2A LISS-3 BOA',
+      );
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'true',
+      );
+      expect(screen.getByTestId('field-overlay-loading-indicator').textContent).toContain(
+        'Calculating index',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('coordinate-readout-mock'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls.map(([input]) => String(input));
+      expect(
+        calls.some((input) => input.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+      ).toBe(true);
+      expect(
+        calls.some(
+          (input) =>
+            input.startsWith('/api/fields/plot-1/overlay/NDVI.png') &&
+            input.includes('sourceId=resourcesat-2a-liss3-boa') &&
+            input.includes('acquisitionDate=2026-04-02'),
+        ),
+      ).toBe(true);
+      expect(
+        calls.some(
+          (input) =>
+            input.startsWith('/api/fields/plot-1/indices/point') &&
+            input.includes('sourceId=resourcesat-2a-liss3-boa') &&
+            input.includes('acquisitionDate=2026-04-02'),
+        ),
+      ).toBe(true);
+    });
+
+    controls.resolveOverlayRequests();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
+      );
+    });
+  });
+});
 
 describe('MapPage native source behavior', () => {
   it('shows the empty map state before a field is selected', async () => {
@@ -392,11 +634,14 @@ describe('MapPage native source behavior', () => {
     fireEvent.click(screen.getByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-eos-04-sar-mrs-l2b'));
 
-    await waitFor(() => {
-      expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
-        'Nearest radar pass: 2026-04-26.',
-      );
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
+          'Nearest radar pass: 2026-04-26.',
+        );
+      },
+      { timeout: 8000 },
+    );
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
         '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',

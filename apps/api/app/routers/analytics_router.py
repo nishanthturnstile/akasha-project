@@ -15,21 +15,26 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
 from ..api_models import CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
-from ..auth import CurrentTeam, CurrentUser, get_current_team, get_current_user
+from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
+from ..ingestion_adapters import field_index_to_statistics_response, field_index_to_trend_point
 from ..ingestion_client import (
-    FieldIndexAvailableResponse,
-    FieldIndexRequest,
-    FieldIndexUnavailableResponse,
-    IngestionClient,
-    IngestionClientError,
-    ReadinessResponse,
+    fetch_signed_ingestion_binary,
+    get_readiness,
+    request_field_index,
+    request_field_index_point,
 )
-from ..ingestion_field_index_adapter import adapt_field_index_to_statistics
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
-from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
+from ..raster.errors import (
+    AkashaError,
+    bad_request,
+    index_timeout,
+    not_found,
+    plots_backend_unavailable,
+    upstream_error,
+)
 from ..raster.geo_validate import validate_polygon
 from ..raster.indices import DEFAULT_INDEX, get_index
 from ..raster.models import IndexStatisticsModel, PixelCounts
@@ -42,12 +47,12 @@ from ..raster.service import (
 )
 from ..raster.statistics_core import MASK_NODATA_CLASS, correct_reflectance, evaluate_index_values
 from ..repositories import fields_repo
-from ..repositories import pipeline_proxy_repo as proxy_repo
-from ..routers.pipeline_proxy import (
-    STATS_PROXY_URL_TEMPLATE,
-    TILE_PROXY_URL_TEMPLATE,
+from ..routers.product_router import (
+    _enforce_index_rate_limit,
+    _is_pipeline_source,
+    _pipeline_bridge_enabled,
+    _requires_ingestion_pipeline,
 )
-from ..routers.product_router import _enforce_index_rate_limit
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
 
 logger = logging.getLogger("akasha.api.field_analytics")
@@ -112,6 +117,257 @@ def _normalize_index(index_type: str | None) -> str:
     return (index_type or DEFAULT_INDEX).strip().upper()
 
 
+def _uses_pipeline(source_id: str) -> bool:
+    return _requires_ingestion_pipeline(source_id) or (
+        _is_pipeline_source(source_id) and _pipeline_bridge_enabled()
+    )
+
+
+def _ensure_pipeline_index_supported(source_id: str, index_type: str) -> None:
+    supported = catalog.supported_indices(source_id)
+    if index_type in supported:
+        return
+    raise bad_request(
+        f"Unsupported index '{index_type}' for source '{source_id}'.",
+        code="UNSUPPORTED_INDEX",
+        sourceId=source_id,
+        indexType=index_type,
+        supported=supported,
+    )
+
+
+def _pipeline_trend_max_dates() -> int:
+    return max(1, settings.ingestion_trend_max_dates)
+
+
+def _pipeline_trend_timeout_budget() -> float:
+    return max(5.0, min(float(settings.index_request_timeout_seconds), 45.0))
+
+
+def _pipeline_per_date_timeout(max_dates: int) -> float:
+    budget = _pipeline_trend_timeout_budget()
+    return max(1.0, min(float(settings.ingestion_request_timeout_seconds), budget / max_dates))
+
+
+def _readiness_dates(
+    *,
+    source_id: str,
+    timeout_seconds: float | None = None,
+) -> list[date]:
+    try:
+        readiness = get_readiness(
+            settings,
+            source_id=source_id,
+            aoi_id=settings.ingestion_aoi_id,
+            timeout_seconds=timeout_seconds,
+        )
+    except AkashaError as exc:
+        if exc.code == "INGESTION_API_UNCONFIGURED":
+            raise upstream_error(
+                "Standalone ingestion readiness is not configured.",
+                code="INGESTION_READINESS_UNAVAILABLE",
+                sourceId=source_id,
+            ) from exc
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise upstream_error(
+            "Standalone ingestion readiness is unreachable.",
+            code="INGESTION_API_UNREACHABLE",
+            sourceId=source_id,
+        ) from exc
+    if not readiness:
+        raise upstream_error(
+            "Standalone ingestion readiness is unavailable.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
+
+    parsed_dates: list[date] = []
+    for value in readiness.get("availableDates") or []:
+        try:
+            parsed_dates.append(date.fromisoformat(str(value)))
+        except ValueError:
+            continue
+    if not parsed_dates:
+        raise upstream_error(
+            "Standalone ingestion readiness has no available dates.",
+            code="INGESTION_READINESS_UNAVAILABLE",
+            sourceId=source_id,
+        )
+    return sorted(set(parsed_dates))
+
+
+def _pipeline_acquisition_date(
+    *,
+    source_id: str,
+    requested_date: str | None,
+    timeout_seconds: float | None = None,
+) -> str:
+    if requested_date:
+        return requested_date
+    return _readiness_dates(source_id=source_id, timeout_seconds=timeout_seconds)[-1].isoformat()
+
+
+def _pipeline_statistics_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str | None,
+    index_type: str,
+    cloud_mask: CloudMaskOptions,
+) -> FieldStatisticsResponse:
+    _ensure_pipeline_index_supported(source_id, index_type)
+    selected_date = _pipeline_acquisition_date(
+        source_id=source_id,
+        requested_date=acquisition_date,
+        timeout_seconds=min(float(settings.ingestion_request_timeout_seconds), 5.0),
+    )
+    result = request_field_index(
+        settings,
+        geometry=plot["geometry"],
+        field_id=plot_id,
+        source_id=source_id,
+        index_type=index_type,
+        acquisition_date=selected_date,
+        max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+    )
+    return field_index_to_statistics_response(
+        result,
+        plot_id=plot_id,
+        source_id=source_id,
+        index_type=index_type,
+        cloud_mask=cloud_mask,
+    )
+
+
+def _provisional_trend_point(requested_date: date, reason: str) -> FieldTrendPoint:
+    return FieldTrendPoint(
+        acquisition_date=requested_date,
+        metrics_provisional=True,
+        unavailable_reason=reason,
+    )
+
+
+def _pipeline_trend_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    index_type: str,
+    date_start: date,
+    date_end: date,
+    cloud_mask: CloudMaskOptions,
+    max_cloud_cover_in_aoi: float | None = None,
+) -> FieldTrendResponse:
+    _ensure_pipeline_index_supported(source_id, index_type)
+
+    max_dates = _pipeline_trend_max_dates()
+    per_date_timeout = _pipeline_per_date_timeout(max_dates)
+    readiness_dates = _readiness_dates(source_id=source_id, timeout_seconds=per_date_timeout)
+    window_dates = [value for value in readiness_dates if date_start <= value <= date_end]
+    selected_dates = window_dates[-max_dates:]
+    if not selected_dates:
+        raise upstream_error(
+            "Standalone ingestion readiness has no dates in the requested range.",
+            code="INGESTION_TREND_UNAVAILABLE",
+            sourceId=source_id,
+            startDate=date_start.isoformat(),
+            endDate=date_end.isoformat(),
+        )
+
+    points_by_date: dict[date, FieldTrendPoint] = {}
+    for requested_date in selected_dates:
+        try:
+            result = request_field_index(
+                settings,
+                geometry=plot["geometry"],
+                field_id=plot_id,
+                source_id=source_id,
+                index_type=index_type,
+                acquisition_date=requested_date.isoformat(),
+                max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+                timeout_seconds=per_date_timeout,
+            )
+            point = field_index_to_trend_point(result)
+            points_by_date.setdefault(point.acquisition_date, point)
+        except AkashaError as exc:
+            reason = str(exc.details.get("reason") or exc.message)
+            points_by_date.setdefault(
+                requested_date,
+                _provisional_trend_point(requested_date, reason),
+            )
+        except Exception:  # noqa: BLE001
+            points_by_date.setdefault(
+                requested_date,
+                _provisional_trend_point(
+                    requested_date,
+                    "Standalone ingestion field-index request failed.",
+                ),
+            )
+
+    points = [points_by_date[key] for key in sorted(points_by_date)]
+    if not points:
+        raise upstream_error(
+            "Standalone ingestion trend is unavailable.",
+            code="INGESTION_TREND_UNAVAILABLE",
+            sourceId=source_id,
+        )
+
+    index_def = get_index(index_type)
+    return FieldTrendResponse(
+        plot_id=plot_id,
+        provider="pipeline",
+        scope="pipeline",
+        source_id=source_id,
+        index_type=index_type,
+        start_date=date_start,
+        end_date=date_end,
+        points=points,
+        metadata={
+            "provider": "pipeline",
+            "scope": "pipeline",
+            "formula": index_def.formula,
+            "spectralRoles": list(index_def.required_roles),
+            "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
+            "rangeLimitDays": MAX_TREND_DAYS,
+            "maxCloudCoverInAoi": max_cloud_cover_in_aoi,
+            "maxDates": max_dates,
+            "perDateTimeoutSeconds": per_date_timeout,
+            "sideEffect": "field-index requests create ingestion query records and tile layers.",
+        },
+    )
+
+
+def _pipeline_point_response(
+    *,
+    plot_id: str,
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+    lng: float,
+    lat: float,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    source = result.get("source") if isinstance(result.get("source"), dict) else {}
+    return {
+        "plotId": plot_id,
+        "sourceId": source_id,
+        "acquisitionDate": acquisition_date,
+        "indexType": index_type,
+        "lng": float(result.get("lng", lng)),
+        "lat": float(result.get("lat", lat)),
+        "value": result.get("value"),
+        "masked": bool(result.get("masked", result.get("value") is None)),
+        "maskClass": result.get("maskClass"),
+        "resolvedSourceId": source_id,
+        "resolutionMeters": source.get("resolutionMeters") or source.get("displayMeters") or 10,
+        "enhanced": False,
+        "basisDate": None,
+        "provenanceNote": "Standalone ingestion pipeline point lookup.",
+    }
+
+
 def _field_statistics(
     *,
     plot_id: str,
@@ -161,6 +417,7 @@ def _field_statistics(
         statistics=IndexStatisticsModel(**computed["statistics"]),
         pixel_counts=PixelCounts(**computed["pixelCounts"]),
         metadata=metadata,
+        sar_support=computed.get("sarSupport"),
         resolved_source_id=resolution.source_id,
         resolution_meters=resolution.resolution_meters,
         enhanced=resolution.enhanced,
@@ -457,6 +714,51 @@ def _index_overlay_response(
     return body, content_type, headers
 
 
+def _pipeline_index_overlay_response(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    acquisition_date: str,
+    index_type: str,
+) -> tuple[bytes, str, dict[str, str]]:
+    _ensure_pipeline_index_supported(source_id, index_type)
+    result = request_field_index(
+        settings,
+        geometry=plot["geometry"],
+        field_id=plot_id,
+        source_id=source_id,
+        index_type=index_type,
+        acquisition_date=acquisition_date,
+        max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+    )
+    if result.get("status") != "AVAILABLE" or not result.get("overlayUrl"):
+        raise bad_request(
+            "Standalone ingestion overlay is unavailable for this field/date.",
+            code="INGESTION_OVERLAY_UNAVAILABLE",
+            sourceId=source_id,
+            acquisitionDate=acquisition_date,
+            reason=result.get("reason"),
+        )
+    body, content_type, upstream_headers = fetch_signed_ingestion_binary(
+        settings,
+        str(result["overlayUrl"]),
+    )
+    headers: dict[str, str] = {}
+    for name in (
+        "X-Akasha-Overlay-Corners",
+        "X-Akasha-Overlay-Stretch",
+    ):
+        if upstream_headers.get(name):
+            headers[name] = upstream_headers[name]
+    headers["X-Akasha-Resolved-Source"] = source_id
+    headers["X-Akasha-Resolved-Resolution"] = str(
+        (result.get("resolution") or {}).get("displayMeters") or 10
+    )
+    headers["X-Akasha-Enhanced"] = "false"
+    return body, content_type, headers
+
+
 def _point_row_col(read: Any, lng: float, lat: float) -> tuple[int, int]:
     transform = getattr(read, "window_transform", None)
     crs = getattr(read, "crs", None)
@@ -534,349 +836,6 @@ def _field_index_point_response(
     return {**base, "value": value, "masked": is_masked, "maskClass": mask_class}
 
 
-PIPELINE_INDEX = "NDVI"
-# MVP: ingestion receives a bounded cloud policy; per-class toggles are echoed
-# only (see adapter cloudMaskOptionsNote). 20% matches the pinned contract example.
-PIPELINE_DEFAULT_MAX_CLOUD_PERCENTAGE = 20
-
-
-def _pipeline_stats_enabled(source_id: str, index_type: str) -> bool:
-    """Feature gate for the ingestion-backed Sentinel-2 NDVI stats branch."""
-
-    return (
-        settings.ingestion_field_index_enabled
-        and source_id == settings.ingestion_field_index_source_id
-        and index_type == PIPELINE_INDEX
-    )
-
-
-async def _run_ingestion(func, *args, **kwargs):
-    """Run a synchronous ingestion client call off the event loop.
-
-    ``IngestionClientError`` carries an already-sanitized code/message/status and
-    is re-raised as the standard ``AkashaError`` so it flows through the app error
-    handler. Native fallback is intentionally *not* used here: when the pipeline
-    flag is on we surface pipeline errors instead of silently degrading.
-    """
-
-    call = functools.partial(func, *args, **kwargs)
-    try:
-        return await anyio.to_thread.run_sync(call)
-    except IngestionClientError as exc:
-        raise AkashaError(exc.code, exc.message, exc.status_code, exc.details) from exc
-
-
-def _pipeline_geometry(plot: dict[str, Any]) -> dict[str, Any]:
-    geometry = plot.get("geometry")
-    if not isinstance(geometry, dict):
-        from ..raster.errors import invalid_geometry
-
-        raise invalid_geometry(
-            "Field geometry must be a Polygon or MultiPolygon for pipeline statistics.",
-            geometryType=None,
-        )
-    # Reuse the shared guardrail: type, non-empty, topological validity, vertex
-    # and geodesic-area limits. Preserves both Polygon and MultiPolygon support.
-    validate_polygon(
-        geometry,
-        max_area_ha=settings.max_polygon_area_ha,
-        max_vertices=settings.max_polygon_vertices,
-    )
-    return geometry
-
-
-def _readiness_details(source_id: str, readiness: ReadinessResponse | None) -> dict[str, Any]:
-    details: dict[str, Any] = {"sourceId": source_id, "aoiId": settings.ingestion_aoi_id}
-    if readiness is not None:
-        if readiness.latest_processed_scene_date is not None:
-            details["latestProcessedSceneDate"] = readiness.latest_processed_scene_date.isoformat()
-        if readiness.stale_after is not None:
-            details["staleAfter"] = readiness.stale_after.isoformat()
-    return details
-
-
-def _enforce_readiness(source_id: str, readiness: ReadinessResponse) -> None:
-    if readiness.status == "STALE":
-        raise AkashaError(
-            "PIPELINE_STALE",
-            "Sentinel-2 pipeline preload is stale for Bangalore 60 km.",
-            503,
-            {**_readiness_details(source_id, readiness), "retryable": True},
-        )
-    if readiness.status == "UNAVAILABLE":
-        raise AkashaError(
-            "PIPELINE_OUTPUT_UNAVAILABLE",
-            "No precomputed Sentinel-2 NDVI output is available for this AOI.",
-            404,
-            {**_readiness_details(source_id, readiness), "retryable": False},
-        )
-    coverage = readiness.index_coverage.get(PIPELINE_INDEX)
-    if coverage is None or not coverage.available or not readiness.available_dates:
-        raise AkashaError(
-            "PIPELINE_OUTPUT_UNAVAILABLE",
-            "No precomputed Sentinel-2 NDVI output is available for this AOI.",
-            404,
-            {**_readiness_details(source_id, readiness), "retryable": False},
-        )
-
-
-def _freshness_metadata(readiness: ReadinessResponse | None) -> dict[str, Any] | None:
-    if readiness is None:
-        return None
-    freshness: dict[str, Any] = {"status": readiness.status, "aoiId": readiness.aoi_id}
-    if readiness.latest_processed_scene_date is not None:
-        freshness["latestProcessedSceneDate"] = readiness.latest_processed_scene_date.isoformat()
-    if readiness.stale_after is not None:
-        freshness["staleAfter"] = readiness.stale_after.isoformat()
-    return freshness
-
-
-def _resolve_pipeline_date(
-    acquisition_date: str | None, readiness: ReadinessResponse | None
-) -> date:
-    if acquisition_date:
-        try:
-            return date.fromisoformat(acquisition_date)
-        except ValueError as exc:
-            raise bad_request(
-                "acquisitionDate must be an ISO date (YYYY-MM-DD).",
-                code="INVALID_DATE",
-                acquisitionDate=acquisition_date,
-            ) from exc
-    if readiness is not None and readiness.available_dates:
-        return max(readiness.available_dates)
-    return datetime.now(UTC).date()
-
-
-def _pipeline_unavailable_error(
-    response: FieldIndexUnavailableResponse, source_id: str, requested_date: date
-) -> AkashaError:
-    return AkashaError(
-        "PIPELINE_OUTPUT_UNAVAILABLE",
-        "No precomputed Sentinel-2 NDVI output is available for this field and date.",
-        404,
-        {
-            "sourceId": source_id,
-            "indexType": response.index,
-            "requestedDate": requested_date.isoformat(),
-            "reason": response.reason,
-            "searchedSources": list(response.searched_sources),
-            "retryable": False,
-        },
-    )
-
-
-async def _build_pipeline_proxy_urls(
-    *,
-    response: FieldIndexAvailableResponse,
-    plot_id: str,
-    source_id: str,
-    index_type: str,
-    user: CurrentUser,
-    team: CurrentTeam,
-) -> tuple[str | None, str | None]:
-    """Persist DB-backed proxy records and return opaque app-domain URLs.
-
-    Ingestion signed ``statsUrl``/``tileUrl`` (and ``queryId``/``layerId``) are
-    stored server-side only; the browser receives opaque ``proxyId`` URLs. Proxy
-    persistence is best-effort: if the proxy store is unavailable we omit the
-    optional URLs rather than failing the whole statistics response. The tile
-    proxy is only minted when ``INGESTION_PIPELINE_TILE_LAYER_ENABLED`` is set.
-    """
-
-    team_id = team.id if team else user.current_team_id
-    if not team_id:
-        return None, None
-
-    ttl = max(1, int(settings.ingestion_pipeline_proxy_ttl_seconds))
-    now = datetime.now(UTC)
-
-    def _capped_expiry(upstream_url: str) -> datetime | None:
-        """Cap the proxy TTL to the upstream signed ``exp``.
-
-        The upstream signed URL must carry a parseable expiry; otherwise the
-        app cannot prove the opaque proxy will expire no later than the
-        ingestion signature it wraps, so it fails closed and omits the proxy.
-        """
-
-        expires_at = now + timedelta(seconds=ttl)
-        upstream_exp = _parse_signed_exp(upstream_url)
-        if upstream_exp is None:
-            return None
-        if upstream_exp <= now:
-            return None
-        if upstream_exp < expires_at:
-            expires_at = upstream_exp
-        return expires_at
-
-    async def _create(operation: str, upstream_url: str, expires_at: datetime) -> str | None:
-        try:
-            return await anyio.to_thread.run_sync(
-                functools.partial(
-                    proxy_repo.create_proxy_record,
-                    operation=operation,
-                    upstream_url=upstream_url,
-                    user_id=str(user.id),
-                    team_id=str(team_id),
-                    field_id=plot_id,
-                    source_id=source_id,
-                    index_type=index_type,
-                    expires_at=expires_at,
-                    query_id=response.query_id,
-                    layer_id=response.layer_id,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("pipeline proxy record not persisted: %s", type(exc).__name__)
-            return None
-
-    stats_proxy_url: str | None = None
-    if response.stats_url:
-        expires_at = _capped_expiry(response.stats_url)
-        if expires_at is not None:
-            proxy_id = await _create("stats", response.stats_url, expires_at)
-            if proxy_id:
-                stats_proxy_url = STATS_PROXY_URL_TEMPLATE.format(proxy_id=proxy_id)
-
-    tile_proxy_url: str | None = None
-    if settings.ingestion_pipeline_tile_layer_enabled and response.tile_url:
-        expires_at = _capped_expiry(response.tile_url)
-        if expires_at is not None:
-            proxy_id = await _create("tile", response.tile_url, expires_at)
-            if proxy_id:
-                tile_proxy_url = TILE_PROXY_URL_TEMPLATE.format(proxy_id=proxy_id)
-
-    return stats_proxy_url, tile_proxy_url
-
-
-def _parse_signed_exp(url: str) -> datetime | None:
-    """Extract a signed ``exp`` epoch-seconds query parameter, if present."""
-
-    from urllib.parse import parse_qs, urlparse
-
-    try:
-        query = urlparse(url).query
-    except (TypeError, ValueError):
-        return None
-    values = parse_qs(query).get("exp")
-    if not values:
-        return None
-    try:
-        return datetime.fromtimestamp(int(values[0]), tz=UTC)
-    except (TypeError, ValueError, OverflowError, OSError):
-        return None
-
-
-async def _pipeline_field_statistics(
-    *,
-    plot_id: str,
-    plot: dict[str, Any],
-    payload: FieldStatisticsRequest,
-    request: Request,
-    user: CurrentUser,
-    team: CurrentTeam,
-) -> FieldStatisticsResponse:
-    client = IngestionClient()
-    request_id = request.headers.get("X-Request-ID")
-
-    # Readiness is mandatory whenever the Sentinel-2 NDVI pipeline stats branch is
-    # taken: the plan requires field-index calls only when readiness is AVAILABLE
-    # with NDVI coverage and available dates. We never call ingestion without it,
-    # regardless of INGESTION_READINESS_ENABLED (that flag gates the separate
-    # product source/date bridge, not this hard stats gate).
-    readiness = await _run_ingestion(
-        client.readiness, source_id=payload.source_id, request_id=request_id
-    )
-    _enforce_readiness(payload.source_id, readiness)
-
-    requested_date = _resolve_pipeline_date(payload.acquisition_date, readiness)
-    geometry = _pipeline_geometry(plot)
-    field_request = FieldIndexRequest(
-        geometry=geometry,
-        crs="EPSG:4326",
-        index=PIPELINE_INDEX,
-        date=requested_date,
-        fallback_policy="nearest_valid_scene",
-        max_cloud_percentage=PIPELINE_DEFAULT_MAX_CLOUD_PERCENTAGE,
-        field_id=plot_id,
-    )
-    response = await _run_ingestion(client.field_index, field_request, request_id=request_id)
-    if isinstance(response, FieldIndexUnavailableResponse):
-        raise _pipeline_unavailable_error(response, payload.source_id, requested_date)
-
-    assert isinstance(response, FieldIndexAvailableResponse)
-    stats_proxy_url, tile_proxy_url = await _build_pipeline_proxy_urls(
-        response=response,
-        plot_id=plot_id,
-        source_id=payload.source_id,
-        index_type=PIPELINE_INDEX,
-        user=user,
-        team=team,
-    )
-    return adapt_field_index_to_statistics(
-        plot_id=plot_id,
-        response=response,
-        cloud_mask=payload.cloud_mask,
-        requested_date=requested_date,
-        expected_source_id=settings.ingestion_field_index_source_id,
-        expected_index=PIPELINE_INDEX,
-        stats_proxy_url=stats_proxy_url,
-        tile_proxy_url=tile_proxy_url,
-        freshness=_freshness_metadata(readiness),
-    )
-
-
-async def _pipeline_field_overlay(
-    *,
-    plot_id: str,
-    plot: dict[str, Any],
-    source_id: str,
-    acquisition_date: str,
-    request: Request,
-) -> tuple[bytes, str, dict[str, str]]:
-    """Render a field-clipped NDVI overlay via the ingestion pipeline.
-
-    Mirrors ``_pipeline_field_statistics`` selection: readiness is enforced, then
-    ingestion computes/clips the overlay to the field polygon and returns a signed
-    overlay URL, which the BFF fetches server-side and returns as an app-domain
-    image (with georeferencing corners). No full-scene tiles are rendered.
-    """
-
-    client = IngestionClient()
-    request_id = request.headers.get("X-Request-ID")
-    readiness = await _run_ingestion(
-        client.readiness, source_id=source_id, request_id=request_id
-    )
-    _enforce_readiness(source_id, readiness)
-    requested_date = _resolve_pipeline_date(acquisition_date, readiness)
-    geometry = _pipeline_geometry(plot)
-    field_request = FieldIndexRequest(
-        geometry=geometry,
-        crs="EPSG:4326",
-        index=PIPELINE_INDEX,
-        date=requested_date,
-        fallback_policy="nearest_valid_scene",
-        max_cloud_percentage=PIPELINE_DEFAULT_MAX_CLOUD_PERCENTAGE,
-        field_id=plot_id,
-    )
-    response = await _run_ingestion(client.field_index, field_request, request_id=request_id)
-    if isinstance(response, FieldIndexUnavailableResponse):
-        raise _pipeline_unavailable_error(response, source_id, requested_date)
-    assert isinstance(response, FieldIndexAvailableResponse)
-    if not response.overlay_url:
-        raise bad_request(
-            "Pipeline overlay is unavailable for this field and date.",
-            code="PIPELINE_OVERLAY_UNAVAILABLE",
-        )
-    content, content_type, corners = await _run_ingestion(
-        client.fetch_overlay, response.overlay_url, request_id=request_id
-    )
-    headers: dict[str, str] = {}
-    if corners:
-        headers["X-Akasha-Overlay-Corners"] = corners
-    return content, content_type or "image/png", headers
-
-
 @router.post(
     "/fields/{plot_id}/indices/statistics",
     response_model=FieldStatisticsResponse,
@@ -887,23 +846,30 @@ async def post_field_index_statistics(
     request: Request,
     payload: FieldStatisticsRequest = Body(...),
     user: CurrentUser = Depends(get_current_user),
-    team: CurrentTeam = Depends(get_current_team),
 ) -> FieldStatisticsResponse:
     _enforce_index_rate_limit(request)
     plot = await _get_field_or_404(plot_id, user.id)
     index_type = _normalize_index(payload.index_type)
 
-    # Feature-gated Sentinel-2 NDVI pipeline branch. When enabled it must not fall
-    # back to native Sentinel-2: stale/missing readiness surfaces pipeline errors.
-    if _pipeline_stats_enabled(payload.source_id, index_type):
-        return await _pipeline_field_statistics(
-            plot_id=plot_id,
-            plot=plot,
-            payload=payload,
-            request=request,
-            user=user,
-            team=team,
-        )
+    if _uses_pipeline(payload.source_id):
+        try:
+            return await asyncio.wait_for(
+                _run_blocking(
+                    _pipeline_statistics_response,
+                    plot_id=plot_id,
+                    plot=plot,
+                    source_id=payload.source_id,
+                    acquisition_date=payload.acquisition_date,
+                    index_type=index_type,
+                    cloud_mask=payload.cloud_mask,
+                ),
+                timeout=settings.index_request_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Pipeline index-statistics request exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+                timeoutSeconds=settings.index_request_timeout_seconds,
+            ) from exc
 
     def _compute() -> FieldStatisticsResponse:
         return _field_statistics(
@@ -922,8 +888,6 @@ async def post_field_index_statistics(
             timeout=settings.index_request_timeout_seconds,
         )
     except TimeoutError as exc:
-        from ..raster.errors import index_timeout
-
         raise index_timeout(
             "Index-statistics request exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
             timeoutSeconds=settings.index_request_timeout_seconds,
@@ -960,6 +924,28 @@ async def get_field_analytics_trend(
         cloud_shadows=cloudShadows,
         cirrus=cirrus,
     )
+    if _uses_pipeline(sourceId):
+        try:
+            return await asyncio.wait_for(
+                _run_blocking(
+                    _pipeline_trend_response,
+                    plot_id=plot_id,
+                    plot=plot,
+                    source_id=sourceId,
+                    index_type=index_type,
+                    date_start=date_start,
+                    date_end=date_end,
+                    cloud_mask=cloud_mask,
+                    max_cloud_cover_in_aoi=maxCloudCoverInAoi,
+                ),
+                timeout=_pipeline_trend_timeout_budget(),
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Pipeline trend request exceeded its bounded timeout.",
+                timeoutSeconds=_pipeline_trend_timeout_budget(),
+            ) from exc
+
     return await _run_blocking(
         _native_trend_response,
         plot_id=plot_id,
@@ -978,7 +964,6 @@ async def get_field_analytics_trend(
 async def get_field_index_overlay(
     plot_id: str,
     index_type: str,
-    request: Request,
     sourceId: str = Query(default=settings.default_source_id),
     acquisitionDate: str = Query(...),
     preferHighRes: bool = Query(default=True),
@@ -986,26 +971,24 @@ async def get_field_index_overlay(
 ) -> Response:
     plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(index_type)
-    # Pipeline (Sentinel-2 NDVI) renders a field-clipped overlay via ingestion; the
-    # native raster path has no COG for this source. Non-pipeline sources use the
-    # native clipped-overlay renderer.
-    if _pipeline_stats_enabled(sourceId, normalized_index):
-        body, content_type, headers = await _pipeline_field_overlay(
+    if _uses_pipeline(sourceId):
+        body, content_type, headers = await _run_blocking(
+            _pipeline_index_overlay_response,
             plot_id=plot_id,
             plot=plot,
             source_id=sourceId,
             acquisition_date=acquisitionDate,
-            request=request,
+            index_type=normalized_index,
         )
-        return Response(content=body, media_type=content_type, headers=headers)
-    body, content_type, headers = await _run_blocking(
-        _index_overlay_response,
-        plot=plot,
-        source_id=sourceId,
-        acquisition_date=acquisitionDate,
-        index_type=normalized_index,
-        prefer_high_res=preferHighRes,
-    )
+    else:
+        body, content_type, headers = await _run_blocking(
+            _index_overlay_response,
+            plot=plot,
+            source_id=sourceId,
+            acquisition_date=acquisitionDate,
+            index_type=normalized_index,
+            prefer_high_res=preferHighRes,
+        )
     return Response(content=body, media_type=content_type, headers=headers)
 
 
@@ -1022,6 +1005,38 @@ async def get_field_index_point(
 ) -> dict[str, Any]:
     plot = await _get_field_or_404(plot_id, user.id)
     normalized_index = _normalize_index(indexType)
+    if _uses_pipeline(sourceId):
+        _ensure_pipeline_index_supported(sourceId, normalized_index)
+        try:
+            result = await asyncio.wait_for(
+                _run_blocking(
+                    request_field_index_point,
+                    settings,
+                    geometry=plot["geometry"],
+                    field_id=plot_id,
+                    source_id=sourceId,
+                    index_type=normalized_index,
+                    acquisition_date=acquisitionDate,
+                    lng=lng,
+                    lat=lat,
+                    max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+                ),
+                timeout=settings.index_request_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Pipeline point lookup exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+                timeoutSeconds=settings.index_request_timeout_seconds,
+            ) from exc
+        return _pipeline_point_response(
+            plot_id=plot_id,
+            source_id=sourceId,
+            acquisition_date=acquisitionDate,
+            index_type=normalized_index,
+            lng=lng,
+            lat=lat,
+            result=result,
+        )
     return await _run_blocking(
         _field_index_point_response,
         plot_id=plot_id,

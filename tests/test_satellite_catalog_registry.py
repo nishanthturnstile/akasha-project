@@ -769,8 +769,8 @@ def test_awifs_is_product_active():
 # --- TASK-044: Disabled/scaffolded ISRO rows ---------------------------------
 
 
-def test_eos04_is_manual_validation_only_with_correct_profile():
-    """EOS-04 may run bounded manual validation but remains product-hidden."""
+def test_eos04_is_validated_backend_sar_support_with_correct_profile():
+    """EOS-04 is validated for backend SAR assist, not direct optical layer selection."""
     row = SOURCE_REGISTRY["eos-04-sar-mrs-l2b"]
     assert row.schedule_state == ScheduleState.MANUAL_ONLY
     assert row.provider_adapter == "bhoonidhi"
@@ -779,9 +779,10 @@ def test_eos04_is_manual_validation_only_with_correct_profile():
     assert Capability.DOWNLOAD in row.capabilities
     assert Capability.PREPARE in row.capabilities
     assert Capability.VALIDATE in row.capabilities
-    assert row.product_exposure == ProductExposure.HIDDEN
-    assert row.validation_state == sr.ValidationState.UNVALIDATED
-    assert row.readiness_reasons, "eos-04 must document why it is product-hidden"
+    assert Capability.DISPLAY_TILES not in row.capabilities
+    assert row.product_exposure == ProductExposure.BACKGROUND_ONLY
+    assert row.validation_state == sr.ValidationState.VALIDATION_PASSED
+    assert row.readiness_reasons
 
 
 def test_eos06_is_disabled_with_correct_profile():
@@ -825,7 +826,6 @@ def test_cartosat3_is_scaffolded_and_gated():
 def test_isro_disabled_rows_are_not_executable():
     """TASK-044: Disabled ISRO scaffolded rows must not appear in executable_source_ids()."""
     gated_ids = {
-        "eos-04-sar-mrs-l2b",
         "eos-06-ocm-lac-ndvi-8day-360m",
         "nisar-ssar-beta-gcov",
         "cartosat-3-gated",
@@ -1044,12 +1044,15 @@ def test_nisar_mentions_dual_provider_in_readiness_reasons():
 # ---------------------------------------------------------------------------
 
 
-def test_eos04_product_exposure_is_hidden():
-    """TASK-076: eos-04-sar-mrs-l2b must have hidden product exposure (SAR, not activated)."""
+def test_eos04_product_exposure_is_background_only():
+    """TASK-076: eos-04-sar-mrs-l2b is backend-only SAR support, not direct UI."""
     row = SOURCE_REGISTRY["eos-04-sar-mrs-l2b"]
     assert (
-        row.product_exposure == ProductExposure.HIDDEN
-    ), f"eos-04-sar-mrs-l2b product_exposure is {row.product_exposure.value!r}; expected hidden"
+        row.product_exposure == ProductExposure.BACKGROUND_ONLY
+    ), (
+        "eos-04-sar-mrs-l2b product_exposure is "
+        f"{row.product_exposure.value!r}; expected background_only"
+    )
 
 
 def test_eos06_product_exposure_is_hidden():

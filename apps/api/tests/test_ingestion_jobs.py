@@ -1671,6 +1671,7 @@ def test_ingestion_sources_summarize_satellites_with_latest_job_and_schedule(
     assert source["lastJob"] == {
         "jobId": "job_20260620T010000Z_latest_success",
         "state": "succeeded",
+        "runAt": "2026-06-20T01:30:00Z",
         "foundCount": 8,
         "selectedCount": 4,
         "downloadedCount": 3,
@@ -1681,6 +1682,74 @@ def test_ingestion_sources_summarize_satellites_with_latest_job_and_schedule(
         "message": None,
     }
     assert any(not item["active"] and item["gatedReason"] for item in body["sources"])
+
+
+def test_ingestion_sources_treats_eos04_as_admin_manageable_backend_support(
+    monkeypatch, tmp_path
+):
+    """EOS-04 is not map-active, but admins must still manage/sync it behind the scenes."""
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    db = tmp_path / "scheduler.sqlite"
+    _make_schedule_snapshot(
+        jobs_dir,
+        [
+            {
+                "sourceId": "eos-04-sar-mrs-l2b",
+                "provider": "bhoonidhi",
+                "aoiId": "bangalore-60km",
+                "scheduleState": "manual_only",
+                "scheduleEnabled": False,
+                "productExposure": "background_only",
+                "validationState": "validation_passed",
+                "capabilities": [
+                    "search_enabled",
+                    "download_enabled",
+                    "prepare_enabled",
+                    "validate_enabled",
+                ],
+                "cadenceDays": 10,
+            }
+        ],
+    )
+    _make_sqlite_ledger(
+        db,
+        [
+            _row(
+                "job_20260630T053928Z_eos04",
+                source_id="eos-04-sar-mrs-l2b",
+                scheduled_at="2026-06-30T05:39:28Z",
+                started_at="2026-06-30T05:39:30Z",
+                finished_at="2026-06-30T05:45:00Z",
+                window_start="2026-05-17",
+                window_end="2026-06-30",
+                found_count=10,
+                selected_count=1,
+                downloaded_count=1,
+                rejected_count=None,
+            )
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", str(db), raising=False)
+    monkeypatch.setattr(settings, "bhoonidhi_ledger_path", "", raising=False)
+
+    resp = client.get("/api/monitoring/ingestion-sources")
+
+    assert resp.status_code == 200
+    sources = {item["sourceId"]: item for item in resp.json()["sources"]}
+    eos04 = sources["eos-04-sar-mrs-l2b"]
+    assert eos04["active"] is False
+    assert eos04["availabilityStatus"] == "gated"
+    assert eos04["adminManageable"] is True
+    assert eos04["syncEnabled"] is True
+    assert eos04["scheduleState"] == "manual_only"
+    assert eos04["productExposure"] == "background_only"
+    assert eos04["validationState"] == "validation_passed"
+    assert eos04["lastRunAt"] == "2026-06-30T05:45:00Z"
+    assert eos04["lastSuccessAt"] == "2026-06-30T05:45:00Z"
+    assert eos04["lastJob"]["runAt"] == "2026-06-30T05:45:00Z"
+    assert eos04["lastJob"]["downloadedCount"] == 1
 
 
 def test_ingestion_source_products_returns_real_scenes_only_and_redacts_errors(
@@ -2301,6 +2370,33 @@ def _configure_trigger_fixtures(monkeypatch, tmp_path) -> Path:
     return inbox_dir
 
 
+def _configure_eos04_trigger_fixtures(monkeypatch, tmp_path) -> Path:
+    jobs_dir = tmp_path / "jobs"
+    inbox_dir = tmp_path / "inbox"
+    jobs_dir.mkdir(parents=True)
+    inbox_dir.mkdir(parents=True)
+    _make_schedule_snapshot(
+        jobs_dir,
+        [
+            {
+                "sourceId": "eos-04-sar-mrs-l2b",
+                "provider": "bhoonidhi",
+                "aoiId": "bangalore-60km",
+                "scheduleState": "manual_only",
+                "scheduleEnabled": False,
+                "productExposure": "background_only",
+                "validationState": "validation_passed",
+                "capabilities": ["search_enabled", "download_enabled", "prepare_enabled"],
+            }
+        ],
+    )
+    monkeypatch.setattr(settings, "scheduler_jobs_dir", str(jobs_dir), raising=False)
+    monkeypatch.setattr(settings, "scheduler_job_ledger_path", "", raising=False)
+    monkeypatch.setattr(settings, "ingestion_job_inbox_dir", str(inbox_dir), raising=False)
+    monkeypatch.setattr(settings, "admin_ingestion_live_trigger_enabled", True, raising=False)
+    return inbox_dir
+
+
 def _trigger_payload(**overrides) -> dict:
     payload = {"sourceId": "resourcesat-2a-liss3-boa"}
     payload.update(overrides)
@@ -2375,6 +2471,33 @@ def test_trigger_ingestion_job_allows_owner_and_admin(monkeypatch, tmp_path):
             )
         finally:
             app.dependency_overrides.clear()
+
+
+def test_trigger_ingestion_job_allows_manual_only_eos04_backend_sync(monkeypatch, tmp_path):
+    inbox_dir = _configure_eos04_trigger_fixtures(monkeypatch, tmp_path)
+    _override_current_user_role("admin")
+    try:
+        resp = client.post(
+            "/api/monitoring/ingestion-jobs/trigger",
+            json={
+                "sourceId": "eos-04-sar-mrs-l2b",
+                "aoiId": "bangalore-60km",
+                "dryRun": False,
+                "confirmLive": True,
+                "windowDays": 12,
+                "maxDownloads": 1,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "submitted"
+        assert body["dryRun"] is False
+        submitted = _read_submitted_request(inbox_dir, body["jobRequestId"])
+        assert submitted["source_id"] == "eos-04-sar-mrs-l2b"
+        assert submitted["aoi_id"] == "bangalore-60km"
+        assert submitted["dry_run"] is False
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_trigger_ingestion_job_rejects_member_and_viewer(monkeypatch, tmp_path):
@@ -2709,11 +2832,16 @@ def test_monitoring_apis_documented_in_openapi():
 
     source_props = schemas["IngestionSourceSummary"]["properties"]
     for field in (
-        "sourceId", "label", "provider", "kind", "active", "gatedReason", "aoiId",
+        "sourceId", "label", "provider", "kind", "availabilityStatus", "active",
+        "adminManageable", "syncEnabled", "gatedReason", "aoiId", "scheduleState",
+        "scheduleEnabled", "productExposure", "validationState", "capabilities",
         "cadenceDays", "lastRunAt", "lastSuccessAt", "lastFailureAt", "nextDueAt",
         "isDue", "isOverdue", "latestCompositeDate", "lastJob",
     ):
         assert field in source_props, f"ingestionSourceSummary missing field {field!r}"
+
+    last_job_props = schemas["IngestionSourceLastJob"]["properties"]
+    assert "runAt" in last_job_props
 
     product_props = schemas["IngestionProductItem"]["properties"]
     for field in (

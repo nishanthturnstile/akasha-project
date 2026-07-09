@@ -12,13 +12,22 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from alembic import command
+
+from .config import settings
+from .ingestion_client import is_ingestion_configured
+from .raster.catalog_resolver import SENTINEL_2_SOURCE_ID
+from .raster.errors import AkashaError
 
 ALEMBIC_ADVISORY_LOCK_ID = 2_026_060_900
 
@@ -156,6 +165,110 @@ def cmd_check(_: argparse.Namespace) -> int:
     return 0 if plots_ok and alembic_ok and minio_ok else 1
 
 
+def _bool_label(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _check_ingestion_health() -> tuple[bool, str]:
+    endpoint = settings.ingestion_api_url.rstrip("/")
+    if not endpoint:
+        return False, "not configured"
+    request = urllib.request.Request(
+        f"{endpoint}/health",
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(  # noqa: S310 - configured private ingestion URL
+            request,
+            timeout=settings.ingestion_request_timeout_seconds,
+        ) as response:
+            return response.status == 200, f"HTTP {response.status}"
+    except urllib.error.HTTPError as exc:
+        return False, f"HTTP {exc.code}"
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return False, type(exc).__name__
+
+
+def _readiness_count(readiness: dict[str, Any] | None) -> int:
+    if not readiness:
+        return 0
+    dates = readiness.get("availableDates")
+    return len(dates) if isinstance(dates, list) else 0
+
+
+def _check_ingestion_readiness(source_id: str, aoi_id: str) -> dict[str, Any] | None:
+    endpoint = settings.ingestion_api_url.rstrip("/")
+    query = urllib.parse.urlencode({"sourceId": source_id, "aoiId": aoi_id})
+    request = urllib.request.Request(
+        f"{endpoint}/api/v1/analytics/readiness?{query}",
+        headers={"Accept": "application/json", "X-API-Key": settings.ingestion_api_key},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(  # noqa: S310 - configured private ingestion URL
+            request,
+            timeout=settings.ingestion_request_timeout_seconds,
+        ) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        ValueError,
+    ) as exc:
+        raise AkashaError("INGESTION_API_ERROR", "Readiness check failed.", 502) from exc
+    if not isinstance(body, dict) or not body.get("success"):
+        return None
+    data = body.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def cmd_ingestion_check(_: argparse.Namespace) -> int:
+    """Preflight the local remote-ingestion bridge without printing secrets."""
+    configured = is_ingestion_configured(settings)
+    # The resolved setting falls back to INGESTION_API_URL, so check the EXPLICIT env var:
+    # the deployed signed-URL prefix (AKASHA_PUBLIC_BASE_URL) usually differs from the tunnel
+    # URL, and relying on the fallback would let signed fetches fail later (plan TASK-001).
+    allowed_prefix_configured = bool(
+        os.environ.get("INGESTION_SIGNED_URL_ALLOWED_PREFIX", "").strip()
+    )
+    fetch_prefix_configured = bool(settings.ingestion_signed_url_fetch_prefix.strip())
+
+    print(f"Ingestion API configured: {_bool_label(configured)}")
+    print("Ingestion readiness enabled: " f"{_bool_label(settings.ingestion_readiness_enabled)}")
+    print(
+        "Ingestion field-index enabled: " f"{_bool_label(settings.ingestion_field_index_enabled)}"
+    )
+    print(f"Signed URL allowed prefix configured: {_bool_label(allowed_prefix_configured)}")
+    print(f"Signed URL fetch prefix configured: {_bool_label(fetch_prefix_configured)}")
+
+    if not configured or not allowed_prefix_configured:
+        print("Bridge configuration is incomplete.")
+        return 1
+
+    health_ok, health_status = _check_ingestion_health()
+    print(f"Ingestion health: {'ok' if health_ok else 'failed'} ({health_status})")
+    if not health_ok:
+        return 1
+
+    try:
+        readiness = _check_ingestion_readiness(SENTINEL_2_SOURCE_ID, settings.ingestion_aoi_id)
+    except AkashaError as exc:
+        print(f"Readiness check failed: {exc.code}")
+        return 1
+
+    available_count = _readiness_count(readiness)
+    print(f"Sentinel-2 readiness dates: {available_count}")
+    if available_count <= 0:
+        print("Readiness check failed: no available dates.")
+        return 1
+
+    print("Remote ingestion bridge check passed.")
+    return 0
+
+
 def _check_minio_liveness() -> bool:
     endpoint = os.environ.get("S3_ENDPOINT_URL", "").rstrip("/")
     if not endpoint:
@@ -179,6 +292,10 @@ def build_parser() -> argparse.ArgumentParser:
         func=cmd_migrate
     )
     sub.add_parser("check", help="Verify PostGIS + API app schema.").set_defaults(func=cmd_check)
+    sub.add_parser(
+        "ingestion-check",
+        help="Verify local remote-ingestion bridge configuration.",
+    ).set_defaults(func=cmd_ingestion_check)
 
     db = sub.add_parser("db", help="Alembic-backed app-schema commands.")
     db_sub = db.add_subparsers(dest="db_command")

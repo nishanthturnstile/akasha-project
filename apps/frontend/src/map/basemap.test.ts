@@ -7,6 +7,7 @@ import type { AppConfig } from '@/types/api';
 
 const CONFIG: AppConfig = {
   appName: 'Akasha',
+  defaultSourceId: 'resourcesat-2a-liss3-boa',
   aoi: {
     id: 'bangalore',
     name: 'Bangalore',

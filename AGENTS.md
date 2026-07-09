@@ -43,6 +43,41 @@ When an agent is asked to compare, reuse, or align patterns across Akasha projec
   change. If touching both roots, validate each root with its own commands and mention both in the
   final summary.
 
+## Current self-hosted deployment topology (akasha-control + akasha-staging)
+
+As of the UI↔pipeline integration work, Akasha is moving to a **two-VM split**:
+
+- **`akasha-control`** — Coolify control/public-app VM. The product app (`akasha-em-git`: web
+  gateway, FastAPI BFF, app Postgres/MinIO/TiTiler as configured by this repo) should be moved here
+  and managed by Coolify. Current observed size: Azure `Standard_D4s_v4` (4 vCPU, ~16 GiB RAM) with
+  a 64 GiB OS disk and a 256 GiB `/data` disk. This is acceptable for Coolify + the product app MVP,
+  assuming raster bulk data is not stored here. Product-app persistent mounts on this VM must use
+  `APP_DATA_ROOT=/data/akasha` (or an explicitly approved equivalent on the `/data` disk), not
+  staging-only `/srv/akasha` paths and not implicit Docker-created directories on the OS disk.
+- **`akasha-staging`** — provider-whitelisted ingestion VM. Bhoonidhi/ISRO provider access is
+  whitelisted here, so the standalone `../akasha-ingestion` pipeline must run here. Current observed
+  size: Azure `Standard_D4s_v4` (4 vCPU, ~16 GiB RAM) with a 256 GiB OS disk and a 512 GiB
+  `/srv/akasha` data disk. This is acceptable for bounded MVP ingestion jobs; scale up before
+  running concurrent heavy backfills/composites.
+
+Connectivity rules for this split:
+
+- Browser traffic goes only to the product app on `akasha-control` (the app's public `web`/Caddy
+  gateway). The browser must never call `akasha-staging`, ingestion, MinIO, Postgres, pgSTAC, or
+  TiTiler directly.
+- The app BFF on `akasha-control` calls ingestion on `akasha-staging` server-to-server using
+  `INGESTION_API_URL` + `INGESTION_API_KEY`. Prefer private networking/VNet peering/WireGuard or an
+  IP-allowlisted HTTPS endpoint; do not expose ingestion internals publicly.
+- In `../akasha-ingestion`, `AKASHA_PUBLIC_BASE_URL` must match the exact URL prefix configured here
+  as `INGESTION_API_URL` (scheme, host, port, path prefix, and trailing-slash convention). The BFF
+  intentionally rejects signed ingestion URLs outside that prefix in `IngestionClient.fetch_binary()`
+  / `fetch_overlay()`.
+- Admin UI live triggers are **handoffs**: this app writes bounded requests to the configured
+  ingestion inbox/trigger path; the host dispatcher/wrapper on `akasha-staging` runs the actual
+  provider/COG work. Keep `ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false` on `akasha-control` until a
+  validated cross-VM handoff exists; a local inbox on the control VM is not sufficient. Do not run
+  provider downloads or heavy raster processing from the app API.
+
 ## Canonical application tree
 
 This is the most important thing to understand before editing.
@@ -132,6 +167,24 @@ that same origin; the gateway proxies to internal `api`/`titiler`. `api`, `titil
 `postgis`, `minio` never get a public domain. The frontend must never talk directly to MinIO,
 PostGIS, STAC, or TiTiler, and must never hard-code COG/object URLs. This rule holds on
 self-hosted Coolify ([infra/selfhosted/](infra/selfhosted/)) and local Docker alike.
+
+### Standalone ingestion pipeline integration (Sentinel-2 NDVI MVP)
+
+The `sentinel-2-l2a` pipeline source is served by the standalone `../akasha-ingestion` service; do
+not implement it by reading COGs directly in the browser or by exposing ingestion URLs.
+
+- Frontend field analytics continues to call this app only. For Sentinel-2 NDVI, the field map uses
+  `GET /api/fields/{fieldId}/overlay/NDVI.png?sourceId=sentinel-2-l2a&acquisitionDate=...`.
+- The app BFF resolves the app-owned field geometry, calls ingestion `field-index` with that polygon,
+  then fetches ingestion's signed `overlayUrl` server-side and returns an app-domain PNG with
+  `X-Akasha-Overlay-Corners`.
+- The rendered map overlay is a **field-clipped image** (`MapLibre` image source via `IndexOverlay`),
+  transparent outside the polygon. Do **not** use full-scene `/api/pipeline/tiles/{z}/{x}/{y}.png`
+  for the field analytics heatmap.
+- `pipelineBacked` on `/api/sources` marks the source as ingestion-backed. It is used by the
+  frontend to avoid native point/hover lookups while preserving the clipped overlay path.
+- App-side `pipeline_proxy_records` exist only for opaque app-domain stats/tile proxying; the field
+  map's current pipeline path is the clipped overlay endpoint above.
 
 ### BFF (`apps/api/app`) — the core
 - [main.py](apps/api/app/main.py) wires ~16 routers under `/api`, all sharing the standard error

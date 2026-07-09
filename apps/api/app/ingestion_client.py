@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import time
+import urllib.parse
 from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
 from math import ceil
@@ -12,13 +14,16 @@ import httpx
 from pydantic import Field, ValidationError
 
 from .api_models import ApiModel
-from .config import settings
+from .config import Settings, settings
+from .raster.errors import upstream_error
 
 T = TypeVar("T")
 
 FIELD_INDEX_PATH = "/api/v1/analytics/field-index"
 READINESS_PATH = "/api/v1/analytics/readiness"
 MAX_RETRY_AFTER_SECONDS = 30
+_POINT_CACHE_TTL_SECONDS = 60.0
+_FIELD_INDEX_POINT_CACHE: dict[tuple[str, str, str, str], tuple[float, str, str]] = {}
 
 
 class IngestionClientError(Exception):
@@ -144,6 +149,7 @@ class FieldIndexAvailableResponse(ApiModel):
     tile_url: str | None = None
     stats_url: str | None = None
     overlay_url: str | None = None
+    point_url: str | None = None
     selection: Selection | None = None
     statistics: FieldIndexStatistics | None = None
     class_statistics: list[ClassStatistic] = Field(default_factory=list)
@@ -601,3 +607,226 @@ class IngestionClient:
             retryable=False,
             details={"missing": missing},
         )
+
+
+def is_ingestion_configured(settings_obj: Settings) -> bool:
+    return bool(settings_obj.ingestion_api_url.strip() and settings_obj.ingestion_api_key.strip())
+
+
+def _client_for(settings_obj: Settings, timeout_seconds: float | None = None) -> IngestionClient:
+    return IngestionClient(
+        api_url=settings_obj.ingestion_api_url,
+        api_key=settings_obj.ingestion_api_key,
+        timeout_seconds=timeout_seconds or settings_obj.ingestion_request_timeout_seconds,
+    )
+
+
+def _raise_ingestion_api_error(exc: IngestionClientError, *, default_code: str) -> None:
+    if isinstance(exc, IngestionClientConfigError):
+        raise upstream_error(
+            "Standalone ingestion API is not configured.",
+            code="INGESTION_API_UNCONFIGURED",
+            **exc.details,
+        ) from exc
+    raise upstream_error(
+        exc.message,
+        code=default_code,
+        retryable=exc.retryable,
+        upstreamStatus=exc.upstream_status,
+        **exc.details,
+    ) from exc
+
+
+def get_readiness(
+    settings_obj: Settings,
+    *,
+    source_id: str,
+    aoi_id: str,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any] | None:
+    try:
+        readiness = _client_for(settings_obj, timeout_seconds).readiness(
+            source_id=source_id,
+            aoi_id=aoi_id,
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_API_ERROR")
+    return readiness.model_dump(mode="json", by_alias=True)
+
+
+def request_field_index(
+    settings_obj: Settings,
+    *,
+    geometry: dict[str, Any],
+    field_id: str,
+    source_id: str,
+    index_type: str,
+    acquisition_date: str,
+    max_cloud_percentage: float = 20.0,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    try:
+        result = _client_for(settings_obj, timeout_seconds).field_index(
+            {
+                "geometry": geometry,
+                "crs": "EPSG:4326",
+                "index": index_type,
+                "date": acquisition_date,
+                "fallbackPolicy": "nearest_valid_scene",
+                "maxCloudPercentage": max_cloud_percentage,
+                "fieldId": field_id,
+            }
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_INDEX_ERROR")
+    return result.model_dump(mode="json", by_alias=True)
+
+
+def _validate_and_rewrite_signed_url(settings_obj: Settings, url: str) -> str:
+    allowed_prefix = settings_obj.ingestion_signed_url_allowed_prefix.rstrip("/")
+    if not allowed_prefix or not url.startswith(f"{allowed_prefix}/"):
+        raise upstream_error(
+            "Standalone ingestion returned an unexpected signed URL.",
+            code="INGESTION_UPSTREAM_FORBIDDEN",
+        )
+    fetch_prefix = (settings_obj.ingestion_signed_url_fetch_prefix or allowed_prefix).rstrip("/")
+    return fetch_prefix + url[len(allowed_prefix) :]
+
+
+def fetch_signed_ingestion_binary(
+    settings_obj: Settings,
+    url: str,
+) -> tuple[bytes, str, dict[str, str]]:
+    fetch_url = _validate_and_rewrite_signed_url(settings_obj, url)
+    try:
+        with httpx.Client(timeout=settings_obj.ingestion_request_timeout_seconds) as client:
+            response = client.get(fetch_url)
+        if response.status_code >= 400:
+            raise IngestionClientError(
+                "INGESTION_OVERLAY_FETCH_FAILED",
+                "Could not fetch standalone ingestion overlay.",
+                status_code=502,
+                upstream_status=response.status_code,
+            )
+    except (httpx.TimeoutException, httpx.TransportError, IngestionClientError) as exc:
+        if isinstance(exc, IngestionClientError):
+            raise upstream_error(
+                exc.message,
+                code=exc.code,
+                upstreamStatus=exc.upstream_status,
+            ) from exc
+        raise upstream_error(
+            "Could not fetch standalone ingestion overlay.",
+            code="INGESTION_OVERLAY_FETCH_FAILED",
+        ) from exc
+    headers = {key: value for key, value in response.headers.items()}
+    for name in ("X-Akasha-Overlay-Corners", "X-Akasha-Overlay-Stretch"):
+        value = response.headers.get(name)
+        if value is not None:
+            headers[name] = value
+    return (
+        response.content,
+        response.headers.get("Content-Type", "application/octet-stream"),
+        headers,
+    )
+
+
+def fetch_signed_ingestion_json(settings_obj: Settings, url: str) -> dict[str, Any]:
+    fetch_url = _validate_and_rewrite_signed_url(settings_obj, url)
+    try:
+        with httpx.Client(timeout=settings_obj.ingestion_request_timeout_seconds) as client:
+            response = client.get(fetch_url)
+        response.raise_for_status()
+        data = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise upstream_error(
+            "Could not fetch standalone ingestion JSON.",
+            code="INGESTION_SIGNED_JSON_FETCH_FAILED",
+        ) from exc
+    return data if isinstance(data, dict) else {}
+
+
+def _append_point_coordinates(point_url: str, *, lng: float, lat: float) -> str:
+    parsed = urllib.parse.urlsplit(point_url)
+    coordinates = urllib.parse.urlencode({"lng": lng, "lat": lat})
+    query = f"{parsed.query}&{coordinates}" if parsed.query else coordinates
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment)
+    )
+
+
+def _cached_point_url(key: tuple[str, str, str, str]) -> tuple[str, str] | None:
+    cached = _FIELD_INDEX_POINT_CACHE.get(key)
+    if cached is None:
+        return None
+    expires_at, query_id, point_url = cached
+    if expires_at <= time.monotonic():
+        _FIELD_INDEX_POINT_CACHE.pop(key, None)
+        return None
+    return query_id, point_url
+
+
+def _store_point_url(key: tuple[str, str, str, str], query_id: str, point_url: str) -> None:
+    _FIELD_INDEX_POINT_CACHE[key] = (
+        time.monotonic() + _POINT_CACHE_TTL_SECONDS,
+        query_id,
+        point_url,
+    )
+
+
+def request_field_index_point(
+    settings_obj: Settings,
+    *,
+    geometry: dict[str, Any],
+    field_id: str,
+    source_id: str,
+    index_type: str,
+    acquisition_date: str,
+    lng: float,
+    lat: float,
+    max_cloud_percentage: float = 20.0,
+) -> dict[str, Any]:
+    key = (field_id, source_id, acquisition_date, index_type.upper())
+    cached = _cached_point_url(key)
+    if cached is None:
+        result = request_field_index(
+            settings_obj,
+            geometry=geometry,
+            field_id=field_id,
+            source_id=source_id,
+            index_type=index_type,
+            acquisition_date=acquisition_date,
+            max_cloud_percentage=max_cloud_percentage,
+        )
+        if result.get("status") != "AVAILABLE":
+            raise upstream_error(
+                "Standalone ingestion point lookup is unavailable for this field/date.",
+                code="INGESTION_POINT_UNAVAILABLE",
+                reason=result.get("reason"),
+            )
+        query_id = str(result.get("queryId") or "")
+        point_url = str(result.get("pointUrl") or "")
+        if not query_id or not point_url:
+            raise upstream_error(
+                "Standalone ingestion point lookup is not available for this field/date.",
+                code="INGESTION_POINT_UNAVAILABLE",
+            )
+        _store_point_url(key, query_id, point_url)
+    else:
+        query_id, point_url = cached
+
+    point_response = fetch_signed_ingestion_json(
+        settings_obj,
+        _append_point_coordinates(point_url, lng=lng, lat=lat),
+    )
+    if point_response.get("success") is False:
+        raise upstream_error(
+            "Standalone ingestion point lookup failed.",
+            code="INGESTION_POINT_FETCH_FAILED",
+        )
+    data = point_response.get("data")
+    if isinstance(data, dict):
+        data.setdefault("queryId", query_id)
+        return data
+    point_response.setdefault("queryId", query_id)
+    return point_response

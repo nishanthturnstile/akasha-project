@@ -120,9 +120,26 @@ for image in {' '.join(AKASHA_IMAGES)}; do
     exit 1
   }}
 done
+for service in web api stac-api titiler; do
+    name="$(docker compose -f "${{compose_file}}" ps -q "${{service}}")"
+    test -n "${{name}}" || {{
+        echo "${{service}} container missing" >&2
+        exit 1
+    }}
+    health_format='{{{{if .State.Health}}}}'
+    health_format+='{{{{.State.Health.Status}}}}'
+    health_format+='{{{{else}}}}{{{{.State.Status}}}}{{{{end}}}}'
+    status="$(
+        docker inspect "${{name}}" \
+            --format "${{health_format}}"
+    )"
+    test "${{status}}" = "healthy" || test "${{status}}" = "running" || {{
+        echo "${{service}} status ${{status}}" >&2
+        exit 1
+    }}
+done
 for container in web api; do
-  name="$(docker compose -f "${{compose_file}}" ps -q "${{container}}")"
-  test -n "${{name}}"
+    name="$(docker compose -f "${{compose_file}}" ps -q "${{container}}")"
   revision="$(
     docker inspect "${{name}}" \
       --format '{{{{ index .Config.Labels "org.opencontainers.image.revision" }}}}'
@@ -180,6 +197,24 @@ for service in web api stac-api titiler postgis minio; do
     exit 1
   }
 done
+api_id="$(docker compose -f "${compose_file}" ps -q api)"
+docker exec "${api_id}" python - <<'PY'
+import json
+import urllib.request
+
+checks = {
+    "stac-api catalog": "http://stac-api:8080/collections",
+    "titiler health": "http://titiler:8000/healthz",
+}
+for name, url in checks.items():
+    with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
+        body = response.read()
+        if response.status != 200:
+            raise SystemExit(f"{name}: HTTP {response.status}")
+        if name.startswith("stac-api"):
+            json.loads(body.decode("utf-8"))
+        print(f"{name}=ok")
+PY
 ''',
             ),
         ),

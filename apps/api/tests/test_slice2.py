@@ -24,6 +24,11 @@ from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
+NATIVE_RESOURCESAT_ENDPOINTS_RETIRED = (
+    "ResourceSat product endpoints are ingestion-backed; app-native ResourceSat "
+    "date/default-layer/tile contracts are retired."
+)
+
 IN_FOOTPRINT_POLY = {
     "type": "Polygon",
     "coordinates": [[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.105], [78.2, 12.1]]],
@@ -380,18 +385,19 @@ def test_sources_endpoint_contract():
         "SWIR1": "BAND5",
     }
     assert rs["maskAsset"] == "mask"
-    # FCC base imagery + optical index display modes (EOS-style LAYER picker).
-    assert rs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
-    assert rs["defaultDisplayMode"] == "FCC"
+    # ResourceSat is field-overlay/index-only through standalone ingestion.
+    assert rs["pipelineBacked"] is True
+    assert rs["tileRouteMode"] == "field-overlay"
+    assert rs["displayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert rs["defaultDisplayMode"] == "NDVI"
     assert rs["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert rs["defaultMapDisplayMode"] == "NDVI"
     assert [g["label"] for g in rs["layerGroups"]] == [
-        "Imagery",
         "Vegetation Indices",
         "Moisture Indices",
         "Water Index",
     ]
-    assert rs["layerGroups"][3]["modes"] == ["NDWI_GREEN_NIR"]
+    assert rs["layerGroups"][2]["modes"] == ["NDWI_GREEN_NIR"]
     assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
     assert rs["metricsProvisional"] is True
     awifs = sources["resourcesat-2a-awifs-boa"]
@@ -400,9 +406,10 @@ def test_sources_endpoint_contract():
     assert awifs["analysisLevel"] == "regional"
     assert awifs["resolutionMeters"] == 56
     assert awifs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
-    assert awifs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert awifs["pipelineBacked"] is True
+    assert awifs["displayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert awifs["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
-    assert awifs["defaultDisplayMode"] == "FCC"
+    assert awifs["defaultDisplayMode"] == "NDVI"
     assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "active"
     liss4 = catalog.source_payload("resourcesat-2a-liss4-mx70-l2")
     assert liss4["availabilityStatus"] == "active"
@@ -436,10 +443,10 @@ def test_sources_endpoint_contract():
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
     assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["displayModes"] == ["NDVI_CONTEXT"]
-    # EOS-04 and NISAR are scaffolded SAR sources: no optical indices,
-    # VV grayscale backscatter display only, gated until validation.
+    # EOS-04 is validated for backend SAR-assist, but not directly product-active.
     assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
     assert sources["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "gated"
+    assert "backend SAR-assisted" in sources["eos-04-sar-mrs-l2b"]["gatedReason"]
     assert sources["eos-04-sar-mrs-l2b"]["supportedIndices"] == []
     assert sources["eos-04-sar-mrs-l2b"]["displayModes"] == ["VV_GRAYSCALE"]
     assert sources["nisar-ssar-beta-gcov"]["kind"] == "sar"
@@ -630,21 +637,23 @@ def test_legacy_sentinel_seed_dates_are_removed_from_production_seed():
 
 
 def test_registered_empty_source_returns_empty_dates_and_clear_default_layer():
-    dates = client.get("/api/sources/resourcesat-2a-awifs-boa/dates")
+    source_id = "eos-06-ocm-lac-ndvi-8day-360m"
+    dates = client.get(f"/api/sources/{source_id}/dates")
     assert dates.status_code == 200
     assert dates.json() == []
 
-    layer = client.get("/api/layers/default?sourceId=resourcesat-2a-awifs-boa")
+    layer = client.get(f"/api/layers/default?sourceId={source_id}")
     assert layer.status_code == 200
     body = layer.json()
-    assert body["sourceId"] == "resourcesat-2a-awifs-boa"
+    assert body["sourceId"] == source_id
     assert body["acquisitionDate"] is None
-    assert body["displayMode"] == "FCC"
+    assert body["displayMode"] == "NDVI_CONTEXT"
     assert body["tileUrlTemplate"] is None
     assert body["tileAvailable"] is False
     assert body["unavailableReason"]
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_layers_default_tile_template_is_same_origin_api_route():
     r = client.get("/api/layers/default")
     assert r.status_code == 200
@@ -1009,6 +1018,7 @@ def test_source_dates_reject_invalid_window(monkeypatch):
     assert r.json()["error"]["code"] == "INVALID_DATE_RANGE"
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_prefer_composite_when_scene_items_coexist(monkeypatch):
     from app.raster import catalog_resolver as catalog
 
@@ -1049,6 +1059,7 @@ def test_resourcesat_dates_prefer_composite_when_scene_items_coexist(monkeypatch
     assert dates[0]["tileAvailable"] is True
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_mark_newest_qualified_composite_latest_when_stac_flag_missing(
     monkeypatch,
 ):
@@ -1089,6 +1100,7 @@ def test_resourcesat_dates_mark_newest_qualified_composite_latest_when_stac_flag
     assert dates[1]["isLatestUsable"] is False
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite(
     monkeypatch,
 ):
@@ -1131,6 +1143,7 @@ def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite
     )
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_missing(
     monkeypatch,
 ):
@@ -1161,6 +1174,7 @@ def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_mi
     assert dates[0]["isLatestUsable"] is False
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_explain_missing_tile_assets(monkeypatch):
     from app.raster import catalog_resolver as catalog
 
@@ -1270,6 +1284,7 @@ def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
     assert body["cloudMaskedPercent"] is None
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_layers_default_uses_resourcesat_natural_fcc_mode():
     r = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa")
     assert r.status_code == 200
@@ -1399,6 +1414,7 @@ def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
     }
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import tiles
@@ -1835,7 +1851,11 @@ def test_tile_route_multi_scene_fails_without_leaking_cog_hrefs(monkeypatch):
 def test_statistics_invalid_geometry_returns_422_error_shape():
     r = client.post(
         "/api/indices/statistics",
-        json={"geometry": {"type": "Point", "coordinates": [78.2, 12.1]}, "indexType": "NDVI"},
+        json={
+            "geometry": {"type": "Point", "coordinates": [78.2, 12.1]},
+            "sourceId": "sentinel-2-l2a",
+            "indexType": "NDVI",
+        },
     )
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "INVALID_GEOMETRY"
@@ -1844,7 +1864,7 @@ def test_statistics_invalid_geometry_returns_422_error_shape():
 def test_statistics_unsupported_index_returns_400_error_shape():
     r = client.post(
         "/api/indices/statistics",
-        json={"geometry": IN_FOOTPRINT_POLY, "indexType": "NOPE"},
+        json={"geometry": IN_FOOTPRINT_POLY, "sourceId": "sentinel-2-l2a", "indexType": "NOPE"},
     )
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "UNSUPPORTED_INDEX"
@@ -1908,6 +1928,7 @@ def test_statistics_rejects_eos04_optical_index_without_raster_io(monkeypatch):
     assert "s3://" not in r.text
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_rejects_unsupported_ndre_without_raster_access(monkeypatch):
     from app.raster import service
 
@@ -1936,6 +1957,7 @@ def test_resourcesat_rejects_unsupported_ndre_without_raster_access(monkeypatch)
     ]
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import service
@@ -2001,6 +2023,220 @@ def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
     assert body["metadata"]["metricsProvisional"] is True
 
 
+def test_statistics_attaches_sar_support_without_changing_optical_stats(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import service
+    from app.raster.raster_reader import WindowRead
+
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets_for_date",
+        lambda source_id, acquisition_date: [
+            {
+                "itemId": "resourcesat-composite",
+                "analyticHref": "s3://akasha-cogs/resourcesat/analytic.tif",
+                "maskHref": "s3://akasha-cogs/resourcesat/mask.tif",
+                "bandNames": ["BAND2", "BAND3", "BAND4", "BAND5"],
+                "bandRoleMapping": {"RED": "BAND3", "NIR": "BAND4"},
+                "maskMethod": "Akasha threshold mask v1",
+                "excludedMaskClasses": [0, 2, 3],
+                "scale": 0.0001,
+                "offset": 0.0,
+                "nodata": 0,
+                "bbox": [78.19, 12.09, 78.22, 12.12],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        service,
+        "read_index_windows",
+        lambda **_kwargs: WindowRead(
+            band_arrays={
+                2: np.array([[1000, 1000]], dtype="uint16"),
+                3: np.array([[3000, 3000]], dtype="uint16"),
+            },
+            mask=np.array([[1, 2]], dtype="uint8"),
+            geometry_mask=np.array([[True, True]]),
+            nodata=0,
+            height=1,
+            width=2,
+            intersects=True,
+        ),
+    )
+
+    captured = {}
+
+    def fake_sar_support(**kwargs):
+        captured.update(kwargs)
+        return {
+            "available": True,
+            "status": "available",
+            "sourceId": "eos-04-sar-mrs-l2b",
+            "acquisitionDate": "2026-03-20",
+            "daysFromOpticalDate": 1,
+            "windowDays": 7,
+            "cloudGap": True,
+            "opticalCloudMaskedPercent": kwargs["optical_cloud_masked_percent"],
+            "opticalMaskedPixels": kwargs["optical_masked_pixels"],
+            "polarizations": ["HH", "HV"],
+            "coveragePercent": 100.0,
+            "confidence": "high",
+            "reason": "EOS-04 SAR support is available for cloudy/masked optical pixels.",
+            "bands": [
+                {
+                    "name": "HH_dB",
+                    "min": -15.0,
+                    "max": -10.0,
+                    "mean": -12.5,
+                    "stddev": 2.5,
+                    "validPixelPercent": 100.0,
+                }
+            ],
+            "wetnessSignal": "not_assessed",
+            "changeSignal": "not_assessed",
+        }
+
+    monkeypatch.setattr(service, "compute_sar_support", fake_sar_support)
+
+    body = service.compute_statistics(
+        geometry=IN_FOOTPRINT_POLY,
+        source_id="resourcesat-2a-liss3-boa",
+        acquisition_date="2026-03-19",
+        index_type="NDVI",
+    )
+
+    assert body["statistics"]["mean"] == pytest.approx(0.5)
+    assert body["pixelCounts"]["maskedPixels"] == 1
+    assert captured["optical_cloud_masked_percent"] == pytest.approx(50.0)
+    assert captured["optical_masked_pixels"] == 1
+    assert body["sarSupport"]["available"] is True
+    assert body["sarSupport"]["sourceId"] == "eos-04-sar-mrs-l2b"
+    assert body["sarSupport"]["bands"][0]["name"] == "HH_dB"
+
+
+def test_sar_support_resolver_reports_nearby_eos04_scene(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import sar_support
+
+    monkeypatch.setattr(
+        catalog,
+        "list_dates",
+        lambda source_id: [
+            {
+                "acquisitionDate": "2026-03-20",
+                "bounds": [78.19, 12.09, 78.22, 12.12],
+                "tileAvailable": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets",
+        lambda source_id, acquisition_date: {
+            "backscatterHref": "s3://akasha-cogs/eos/backscatter.tif",
+            "bandNames": ["HH_dB", "HV_dB"],
+            "nodata": -9999.0,
+        },
+    )
+    monkeypatch.setattr(
+        sar_support,
+        "_read_sar_statistics",
+        lambda **_kwargs: {
+            "intersects": True,
+            "coveragePercent": 88.0,
+            "bands": [
+                {
+                    "name": "HH_dB",
+                    "min": -18.0,
+                    "max": -9.0,
+                    "mean": -12.0,
+                    "stddev": 1.5,
+                    "validPixelPercent": 88.0,
+                }
+            ],
+        },
+    )
+
+    support = sar_support.compute_sar_support(
+        geometry=IN_FOOTPRINT_POLY,
+        optical_source_id="resourcesat-2a-liss3-boa",
+        optical_acquisition_date="2026-03-19",
+        optical_cloud_masked_percent=50.0,
+        optical_masked_pixels=10,
+        geometry_bounds=[78.19, 12.09, 78.22, 12.12],
+        window_days=7,
+        cloud_threshold_percent=20,
+    )
+
+    assert support["available"] is True
+    assert support["acquisitionDate"] == "2026-03-20"
+    assert support["daysFromOpticalDate"] == 1
+    assert support["polarizations"] == ["HH", "HV"]
+    assert support["confidence"] == "high"
+
+
+def test_sar_support_resolver_rejects_zero_valid_sar_coverage(monkeypatch):
+    from app.raster import catalog_resolver as catalog
+    from app.raster import sar_support
+
+    monkeypatch.setattr(
+        catalog,
+        "list_dates",
+        lambda source_id: [
+            {
+                "acquisitionDate": "2026-03-20",
+                "bounds": [78.19, 12.09, 78.22, 12.12],
+                "tileAvailable": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        catalog,
+        "resolve_assets",
+        lambda source_id, acquisition_date: {
+            "backscatterHref": "s3://akasha-cogs/eos/backscatter.tif",
+            "bandNames": ["HH_dB", "HV_dB"],
+            "nodata": -9999.0,
+        },
+    )
+    monkeypatch.setattr(
+        sar_support,
+        "_read_sar_statistics",
+        lambda **_kwargs: {
+            "intersects": True,
+            "coveragePercent": 0.0,
+            "bands": [
+                {
+                    "name": "HH_dB",
+                    "min": None,
+                    "max": None,
+                    "mean": None,
+                    "stddev": None,
+                    "validPixelPercent": 0.0,
+                }
+            ],
+        },
+    )
+
+    support = sar_support.compute_sar_support(
+        geometry=IN_FOOTPRINT_POLY,
+        optical_source_id="resourcesat-2a-liss3-boa",
+        optical_acquisition_date="2026-03-19",
+        optical_cloud_masked_percent=50.0,
+        optical_masked_pixels=10,
+        geometry_bounds=[78.19, 12.09, 78.22, 12.12],
+        window_days=7,
+        cloud_threshold_percent=20,
+    )
+
+    assert support["available"] is False
+    assert support["status"] == "no_valid_pixels"
+    assert support["reason"] == (
+        "EOS-04 scene overlaps this field but has no valid backscatter pixels."
+    )
+
+
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_statistics_uses_mask_only_nodata_policy(monkeypatch):
     from app.raster import service
     from app.raster.raster_reader import WindowRead

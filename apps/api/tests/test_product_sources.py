@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from app.config import settings
 from app.raster import catalog_resolver as catalog
 from app.raster.catalog_resolver import RESOURCESAT_AWIFS_SOURCE_ID, RESOURCESAT_LISS4_SOURCE_ID
+from app.routers import product_router
 
 
 def test_liss4_source_payload_is_active_after_staging_verification() -> None:
@@ -52,6 +54,29 @@ def test_awifs_source_payload_is_active_with_regional_limitations() -> None:
         ),
         "Not a replacement for LISS-3/LISS-4 field-level monitoring.",
     ]
+
+
+def test_resourcesat_pipeline_payload_preserves_source_specific_metadata(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_api_url", "http://ingestion.internal:18080")
+    monkeypatch.setattr(settings, "ingestion_api_key", "SECRET_API_KEY")
+    monkeypatch.setattr(settings, "ingestion_readiness_enabled", True)
+    monkeypatch.setattr(settings, "ingestion_field_index_enabled", True)
+
+    liss4 = product_router._pipeline_source_payload(RESOURCESAT_LISS4_SOURCE_ID)
+    assert liss4 is not None
+    assert liss4["pipelineBacked"] is True
+    assert liss4["resolutionMeters"] == 5.8
+    assert liss4["displayModes"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert liss4["mapDisplayModes"] == ["NDVI", "MSAVI", "NDWI_GREEN_NIR"]
+    assert "NDMI" not in liss4["supportedIndices"]
+    assert "NDMI" not in liss4["displayModes"]
+
+    awifs = product_router._pipeline_source_payload(RESOURCESAT_AWIFS_SOURCE_ID)
+    assert awifs is not None
+    assert awifs["pipelineBacked"] is True
+    assert awifs["analysisLevel"] == "regional"
+    assert awifs["resolutionMeters"] == 56
+    assert awifs["displayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
 
 
 def test_hidden_unvalidated_sar_sources_are_not_bff_active() -> None:

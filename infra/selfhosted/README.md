@@ -5,35 +5,58 @@ This directory contains the repository-side deployment artifacts for the self-ho
 - `coolify-compose.yml` — staging/production Docker Compose source of truth for Coolify service stacks.
 - `env.example` — environment-variable template. Copy values into Coolify; never commit real secrets.
 
-The stack preserves Akasha's one-public-service rule: **only `web` is public**. Browser traffic must enter through `web` and use same-origin `/api/*` and `/tiles/*` paths.
+For the two-VM migration, this runbook treats `akasha-control` as the Coolify/public product-app VM
+and `akasha-staging` as the provider-whitelisted standalone ingestion VM. The product stack
+preserves Akasha's one-public-service rule: **only `web` is public**. Browser traffic must enter
+through `web` and use same-origin `/api/*` and `/tiles/*` paths.
 
 ## Architecture guardrails
 
 - `web` is the only service with a Coolify FQDN via `SERVICE_FQDN_WEB=/`.
-- `api`, `titiler`, `stac-api`, `postgis`, `minio`, `ingestion-worker`, and `ingestion-sar` have no host `ports:` mappings.
+- `api`, `titiler`, `stac-api`, `postgis`, `minio`, and any transitional private services have no host `ports:` mappings.
+- The target product app runs on `akasha-control`; provider downloads, COG preparation, schedulers,
+  and ingestion workers run on `akasha-staging` in the standalone `akasha-ingestion` deployment.
 - Staging and production pull prebuilt images from GHCR.
 - Production deploys an already validated Git SHA image tag; it does not build release images.
-- Persistent runtime state is mounted under `/srv/akasha` on the target server.
+- Product-app persistent runtime state on `akasha-control` is mounted under
+  `APP_DATA_ROOT=/data/akasha` so app Postgres/MinIO data lands on the `/data` disk. Do not use
+  staging-only `/srv/akasha` paths on the control VM unless an operator has explicitly mapped them to
+  the `/data` disk.
+- Standalone ingestion raw/work/intermediate COG/composite data stays on `akasha-staging` under
+  `/srv/akasha`; do not copy provider bulk raster work directories to `akasha-control`.
+- The product app's native ResourceSat/FCC path still reads app catalog assets from the app stack's
+  configured object store (`minio:9000` by default). Before accepting the move, restore or sync the
+  final app-facing ResourceSat COGs and matching STAC/catalog data into the `akasha-control` app
+  MinIO/Postgres, or explicitly repoint native raster reads to a validated private object store that
+  contains those final COGs.
 
 ## Required target directories
 
-Create these directories on each runtime server before deploying:
+Create these product-app directories on `akasha-control` before deploying:
 
 ```bash
-sudo mkdir -p /srv/akasha/postgis /srv/akasha/minio /srv/akasha/data/raw /srv/akasha/data/work /srv/akasha/data/seed/rasters /srv/akasha/logs /srv/akasha/backups /srv/akasha/snap-cache
+sudo mkdir -p /data/akasha/postgis /data/akasha/minio /data/akasha/data/seed/rasters /data/akasha/logs /data/akasha/backups /data/akasha/snap-cache
 ```
+
+Set `APP_DATA_ROOT=/data/akasha` in the Coolify environment for the product app. The ingestion VM
+has its own `/srv/akasha` layout in the standalone ingestion runbook and should not share these app
+mounts.
 
 ## Coolify staging setup
 
-1. Open project `akasha` and environment `staging`.
-2. Open the existing service stack `akasha-staging-compose`.
+1. On `akasha-control`, open project `akasha` and environment `staging`.
+2. Open the product app service stack. During migration this may still be named
+   `akasha-staging-compose`; it must deploy to `akasha-control`, not to `akasha-staging`.
 3. Replace the placeholder Compose content with `infra/selfhosted/coolify-compose.yml`.
 4. Copy variables from `infra/selfhosted/env.example` into the Coolify service stack environment.
 5. Replace all `CHANGE_ME_*` values in Coolify.
-6. Set `IMAGE_TAG` to the Git SHA image tag that exists in GHCR.
-7. Assign a public domain/FQDN only to the `web` service.
-8. Do not assign public domains to private services.
-9. Deploy the service stack only after the required env values are present.
+6. Set `APP_DATA_ROOT=/data/akasha` and `IMAGE_TAG` to the Git SHA image tag that exists in GHCR.
+7. Keep `ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false` until a validated cross-VM handoff to
+   `akasha-staging` exists; a local inbox on `akasha-control` is not sufficient.
+8. Assign a public domain/FQDN only to the `web` service.
+9. Do not assign public domains to private services.
+10. Deploy the service stack only after the required env values are present and any required data
+    restore has completed before the first API startup.
 
 Postgres password note: `POSTGRES_PASSWORD` is passed directly to the Postgres
 container, while `POSTGRES_PASSWORD_URLENCODED` is used inside `DATABASE_URL` for
@@ -145,20 +168,35 @@ journalctl -u akasha-ingestion-scheduler.service -n 200 --no-pager
 
 ## First staging deployment checklist
 
-1. Confirm `IMAGE_TAG` exists in GHCR for all four Akasha images.
-2. Confirm Coolify env values are set and no `CHANGE_ME` placeholders remain.
-3. Deploy `akasha-staging-compose`.
-4. Confirm the `api` container is healthy. For the current single-replica
-   staging/production model, app-schema migrations run automatically during API
-   container startup before Uvicorn accepts traffic.
-5. Verify the live app schema is at the deployed image's Alembic head from the
+For the two-VM migration, run this against the product app stack on `akasha-control`.
+
+1. Confirm `IMAGE_TAG` exists in GHCR for the product app images required by the current compose
+   target. The app-only target requires `web` and `api`; transitional pre-split compose targets may
+   still require additional private images until the compose/workflow split lands.
+2. Confirm Coolify env values are set, `APP_DATA_ROOT=/data/akasha`, no `CHANGE_ME` placeholders
+   remain, and `ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false`.
+3. If preserving existing app data, restore the product app Postgres dump before the target `api`
+   container first starts. The API image runs `python -m app.cli db upgrade` during startup before
+   Uvicorn accepts traffic, so start/restore the database without the API or keep the API disabled
+   until the restore is complete.
+4. Restore or sync final app-facing ResourceSat COGs and matching STAC/catalog records required by
+   the native FCC/default-source path into the app stack's MinIO/Postgres on `akasha-control`, or
+   repoint native raster reads to a validated private object store containing those COGs. Do not copy
+   raw provider downloads or work directories.
+5. Deploy the product app stack on `akasha-control`.
+6. Confirm the `api` container is healthy after any restore. For the current single-replica
+   staging/production model, app-schema migrations run automatically during API container startup
+   before Uvicorn accepts traffic.
+7. Verify the live app schema is at the deployed image's Alembic head from the
    `api` container:
 
 ```bash
 python -m app.cli db verify-current
 ```
 
-6. Seed or verify catalog/storage only when required for the staging dataset, from `ingestion-worker`:
+8. Do not run provider downloads or COG preparation from `akasha-control`. For legacy pre-split
+   deployments only, seed or verify catalog/storage from the private `ingestion-worker` when that
+   service is still intentionally part of the product stack:
 
 ```bash
 python worker.py seed
@@ -174,11 +212,12 @@ python scripts/validate_selfhosted_staging_bhoonidhi.py --expected-sha <git-sha>
 ```
 
 Remove `--skip-timer-check` after the Phase 3 systemd timer is installed. The validator confirms
-the Coolify compose image tags, running `web`/`api` image revisions, container health,
-`worker.py verify`, `worker.py verify-cogs`, current-window Bhoonidhi search behavior, and the
-known historical dry-run sync window. It stops immediately when the expected image tag is not
-running; use `--continue-after-failure` only when intentionally gathering diagnostics from a
-known-bad deploy.
+the Coolify compose image tags, running `web`/`api` image revisions, `web`/`api`/`stac-api`/`titiler`
+service presence, internal `stac-api` catalog reachability from the API container, internal TiTiler
+health, container health, `worker.py verify`, `worker.py verify-cogs`, current-window Bhoonidhi
+search behavior, and the known historical dry-run sync window. It stops immediately when the
+expected image tag is not running; use `--continue-after-failure` only when intentionally gathering
+diagnostics from a known-bad deploy.
 
 To include the public gateway/API smoke in the same run, add `--public-origin
 https://<staging-domain>`. Without a strict flag, public smoke is advisory because
@@ -193,33 +232,43 @@ unresolved ingestion failures, and tile-unavailable dates. A stale ResourceSat
 catalog/composite date is allowed only when the Bhoonidhi search heartbeat is
 fresh and the source reports the explicit `UPSTREAM_DATA_STALE` warning class.
 
-7. Create the first user through the web app `/signup` flow only when `AUTH_ALLOW_SIGNUP=true` is intentionally enabled for that environment; otherwise provision users through the approved operator/user-management process before authenticated smoke checks.
-8. Run unauthenticated smoke checks:
+9. Create the first user through the web app `/signup` flow only when `AUTH_ALLOW_SIGNUP=true` is intentionally enabled for that environment; otherwise provision users through the approved operator/user-management process before authenticated smoke checks.
+10. Run unauthenticated smoke checks:
 
 ```bash
 python scripts/smoke-test.py https://<staging-domain>
 ```
 
-9. Run authenticated smoke checks after a user exists:
+11. Run authenticated smoke checks after a user exists:
 
 ```bash
 AKASHA_SMOKE_USERNAME=<username> AKASHA_SMOKE_PASSWORD=<password> python scripts/smoke-test.py https://<staging-domain> --login
 ```
 
-10. Verify operator monitoring after a user exists:
+12. Verify native ResourceSat/default-source behavior after the move, not only the Sentinel-2
+    bridge: `GET /api/sources`, default ResourceSat FCC layer/date loading, native stats, trend,
+    overlay, point lookup, exports, reports, and risk should all work through the product app
+    origin.
+13. Verify the Sentinel-2 ingestion bridge only after private ingestion smoke passes: enable
+    readiness/stat flags in staging, request Sentinel-2 NDVI field stats, and request
+    `GET /api/fields/{fieldId}/overlay/NDVI.png?sourceId=sentinel-2-l2a&acquisitionDate=...`.
+    The response must be an app-domain PNG with `X-Akasha-Overlay-Corners` and no browser-visible
+    ingestion URL or signed query parameters.
+14. Verify operator monitoring after a user exists:
 
 ```bash
 curl -fsS -b cookies.txt https://<staging-domain>/api/monitoring/imagery-sources
 ```
 
-The payload should include `sources`, `storage`, and `ingestionLedger`. If
-`ingestionLedger.status` is `missing`, confirm the API service has the read-only
-`/srv/akasha/ingestion` mount and the worker writes `BHOONIDHI_LEDGER_PATH`.
+The payload should include `sources` and `storage`; ingestion bridge readiness should be reported
+only through the app-domain API. If ingestion status is missing after the split, check the private
+bridge variables and standalone ingestion readiness rather than adding staging-worker mounts to
+`akasha-control`.
 
-11. Verify private ports from outside the host:
+15. Verify private ports from outside the product app host:
 
 ```bash
-for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<staging-public-ip>/$p" && echo "$p open" || echo "$p closed_or_filtered"; done
+for p in 5432 9000 9001 8080 8000; do timeout 4 bash -lc "</dev/tcp/<control-public-ip>/$p" && echo "$p open" || echo "$p closed_or_filtered"; done
 ```
 
 ## Standalone ingestion API private connectivity
@@ -240,6 +289,7 @@ private and must not receive Coolify public domains or broad public firewall rul
    explicitly requires it.
 3. Configure the app VM/Coolify stack with server-side variables only:
    ```text
+   APP_DATA_ROOT=/data/akasha
    INGESTION_API_URL=https://<private-ingestion-dns-or-ip>
    INGESTION_API_KEY=<Coolify secret; never commit>
    INGESTION_REQUEST_TIMEOUT_SECONDS=30
@@ -248,11 +298,17 @@ private and must not receive Coolify public domains or broad public firewall rul
    INGESTION_FRESHNESS_MAX_AGE_HOURS=
    INGESTION_READINESS_ENABLED=false
    INGESTION_FIELD_INDEX_ENABLED=false
+   INGESTION_PIPELINE_TILE_LAYER_ENABLED=false
+   ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false
    ```
-4. TLS strategy: prefer private DNS plus a normal TLS certificate or an internal CA trusted by the
+4. In the standalone ingestion deployment, set `AKASHA_PUBLIC_BASE_URL` to the exact
+   `INGESTION_API_URL` prefix used by the app BFF, including scheme, host, port, path prefix, and
+   trailing-slash convention. The app rejects signed ingestion URLs outside that prefix when
+   fetching binary overlays.
+5. TLS strategy: prefer private DNS plus a normal TLS certificate or an internal CA trusted by the
    app container. The minimum acceptable staging posture is private network + ingestion API key +
    app-VM private-IP allowlist. Do not disable browser-side TLS for the public Akasha web origin.
-5. Keep `INGESTION_API_KEY` out of logs, screenshots, build args, frontend `.env` files, and
+6. Keep `INGESTION_API_KEY` out of logs, screenshots, build args, frontend `.env` files, and
    browser-visible `/api/config` payloads.
 
 ### Private smoke from the app VM
@@ -273,6 +329,12 @@ curl -fsS -H "X-API-Key: $INGESTION_API_KEY" \
 
 The field-index payload must use an approved non-secret test field geometry and a date known to be
 preloaded. Do not paste production user field geometry into tickets or chat.
+
+For the app-side Sentinel-2 smoke, the browser/frontend must still call the product app only:
+`GET /api/fields/{fieldId}/overlay/NDVI.png?sourceId=sentinel-2-l2a&acquisitionDate=...`. The app
+BFF resolves the field geometry, calls ingestion server-to-server, fetches ingestion's signed
+`overlayUrl`, and returns an app-domain PNG with `X-Akasha-Overlay-Corners`. Do not switch the field
+analytics heatmap to full-scene `/api/pipeline/tiles/{z}/{x}/{y}.png` tiles.
 
 ### Browser non-reachability and leak checks
 
@@ -308,12 +370,15 @@ production until private connectivity and readiness smoke pass.
    URL/API key.
 5. **Enable readiness in staging**: set `INGESTION_READINESS_ENABLED=true`; verify app-domain source
    and date behavior reports fresh/stale/unavailable status without exposing ingestion URLs.
-6. **Enable stats in staging**: set `INGESTION_FIELD_INDEX_ENABLED=true`; trigger Sentinel-2 NDVI
-   field stats and compare the app-adapted response with the direct ingestion smoke for the same
-   field/date/index.
+6. **Enable stats and overlay in staging**: set `INGESTION_FIELD_INDEX_ENABLED=true`; trigger
+   Sentinel-2 NDVI field stats and compare the app-adapted response with the direct ingestion smoke
+   for the same field/date/index. Then request
+   `/api/fields/{fieldId}/overlay/NDVI.png?sourceId=sentinel-2-l2a&acquisitionDate=...` and verify a
+   field-clipped app-domain PNG with `X-Akasha-Overlay-Corners`.
 7. **Optional tile enablement**: only when the release implements the app-domain tile proxy and the
    ingestion tile bridge returns a real PNG, set `INGESTION_PIPELINE_TILE_LAYER_ENABLED=true`.
-   Confirm app-domain tile URLs return PNG bytes and are not transparent placeholders.
+   Confirm app-domain tile URLs return PNG bytes and are not transparent placeholders. This is not
+   the field analytics heatmap path; field analytics must keep using the clipped overlay endpoint.
 8. **Browser leak test**: inspect browser network payloads, console logs, local/session storage, and
    downloaded JSON for ingestion hostnames, internal service URLs, API keys, and signed URL
    parameters (`sig`, `kid`, `exp`). Any leak blocks rollout.
@@ -598,7 +663,7 @@ and pull policy. It also installs the optional admin-trigger inbox dispatcher un
 AKASHA_INGESTION_JOB_ROOT=/srv/akasha/ingestion/jobs
 AKASHA_INGESTION_INBOX_DIR=/srv/akasha/ingestion-inbox
 AKASHA_INGESTION_INBOX_RETENTION_DAYS=14
-AKASHA_INGESTION_ALLOWED_SOURCES=resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
+AKASHA_INGESTION_ALLOWED_SOURCES=resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa,eos-04-sar-mrs-l2b
 AKASHA_INGESTION_ALLOWED_AOIS=bangalore-60km
 AKASHA_INGESTION_DEFAULT_MAX_DOWNLOADS=3
 AKASHA_SYNC_RAW_ROOT=/srv/akasha/data/raw/bhoonidhi
@@ -606,6 +671,10 @@ AKASHA_SYNC_TEMP_ROOT=/srv/akasha/data/work/bhoonidhi
 AKASHA_SYNC_LEDGER_PATH=/srv/akasha/ingestion/ledger.sqlite
 AKASHA_SYNC_PULL_POLICY=never
 ```
+
+`eos-04-sar-mrs-l2b` is allowed here only for bounded manual/backend SAR-support
+runs. It is not part of routine scheduler ownership and is not a directly user-selectable
+optical index source.
 
 Restrict job access to an OS group instead of general shell users:
 

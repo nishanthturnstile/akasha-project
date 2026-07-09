@@ -37,6 +37,7 @@ from starlette.types import ExceptionHandler
 
 from . import skeleton
 from .config import settings
+from .ingestion_client import is_ingestion_configured
 from .ingestion_jobs import router as ingestion_jobs_router
 from .raster.errors import (
     AkashaError,
@@ -54,7 +55,6 @@ from .routers.field_group_router import router as field_groups_router
 from .routers.field_router import router as fields_router
 from .routers.observations_router import router as observations_router
 from .routers.operation_router import router as operations_router
-from .routers.pipeline_proxy import router as pipeline_proxy_router
 from .routers.plot_router import router as plots_router
 from .routers.predefined_seasons_router import router as predefined_seasons_router
 from .routers.product_router import router as product_router
@@ -141,6 +141,9 @@ def _health_payload() -> dict[str, Any]:
         "sliceName": skeleton.SLICE_NAME,
         "version": APP_VERSION,
         "env": settings.app_env,
+        "ingestionConfigured": is_ingestion_configured(settings),
+        "ingestionReadinessEnabled": settings.ingestion_readiness_enabled,
+        "ingestionFieldIndexEnabled": settings.ingestion_field_index_enabled,
     }
 
 
@@ -254,9 +257,6 @@ app.include_router(skeleton_router)
 
 # --- Field Analytics API ---------------------------------------------------
 app.include_router(field_analytics_router)
-
-# --- Pipeline stats/tile proxy API (Phase 5: opaque proxy) -----------------
-app.include_router(pipeline_proxy_router)
 
 # --- Field Exports API -----------------------------------------------------
 app.include_router(field_exports_router)

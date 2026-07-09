@@ -18,6 +18,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAMESPACE: akasha-techcatalyst
   COMPOSE_TEMPLATE: infra/selfhosted/coolify-compose.yml
+  RENDERED_COMPOSE: .akasha-coolify-compose.yml
   # Opt JavaScript actions into Node.js 24 ahead of the June 2026 runner default.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -43,14 +44,6 @@ jobs:
           - image: akasha-api
             context: apps/api
             dockerfile: apps/api/Dockerfile
-            build_args: ""
-          - image: akasha-ingestion-worker
-            context: .
-            dockerfile: services/ingestion/Dockerfile
-            build_args: ""
-          - image: akasha-ingestion-sar
-            context: .
-            dockerfile: services/ingestion-sar/Dockerfile
             build_args: ""
     steps:
       - name: Check out repository
@@ -91,6 +84,7 @@ jobs:
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       COOLIFY_SERVICE_UUID: ${{ vars.COOLIFY_STAGING_SERVICE_UUID }}
       IMAGE_TAG: ${{ github.sha }}
+      ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -115,7 +109,7 @@ jobs:
       - name: Verify immutable image tags exist
         run: |
           set -euo pipefail
-          for image in akasha-web akasha-api akasha-ingestion-worker akasha-ingestion-sar; do
+          for image in akasha-web akasha-api; do
             ref="${REGISTRY}/${IMAGE_NAMESPACE}/${image}:${IMAGE_TAG}"
             echo "Checking ${ref}"
             docker manifest inspect "${ref}" >/dev/null
@@ -128,9 +122,17 @@ jobs:
           import os
 
           tag = os.environ["IMAGE_TAG"]
+          admin_live = os.environ.get("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED", "true").lower()
+          if admin_live not in {"true", "false"}:
+              raise SystemExit("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED must be true or false")
+          app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
+          if not app_data_root.startswith("/"):
+              raise SystemExit("APP_DATA_ROOT must be an absolute host path")
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
-          Path("/tmp/akasha-coolify-compose.yml").write_text(text)
+          text = text.replace("${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}", admin_live)
+          text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
+          Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY
 
       - name: Patch Coolify service stack
@@ -144,7 +146,7 @@ jobs:
           api_url = os.environ["COOLIFY_API_URL"].rstrip("/")
           service_uuid = os.environ["COOLIFY_SERVICE_UUID"]
           token = os.environ["COOLIFY_TOKEN"]
-          compose = open("/tmp/akasha-coolify-compose.yml", "rb").read()
+          compose = open(os.environ["RENDERED_COMPOSE"], "rb").read()
           payload = json.dumps(
               {
                   "docker_compose_raw": base64.b64encode(compose).decode(),

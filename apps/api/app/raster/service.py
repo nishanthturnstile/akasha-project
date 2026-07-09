@@ -14,6 +14,7 @@ from .errors import bad_request, invalid_geometry, multi_scene_statistics_unavai
 from .geo_validate import validate_polygon
 from .indices import get_index, index_band_positions
 from .raster_reader import read_index_windows
+from .sar_support import compute_sar_support
 from .statistics_core import compute_index_statistics
 
 
@@ -110,8 +111,18 @@ def compute_statistics(
         analytic_nodata_policy=str(assets.get("nodataPolicy") or "selected_band_or_mask"),
     )
 
+    stats_dict = stats.as_dict()
+    sar_support = compute_sar_support(
+        geometry=geometry,
+        optical_source_id=source_id,
+        optical_acquisition_date=acquisition_date,
+        optical_cloud_masked_percent=stats_dict.get("cloudMaskedPercent"),
+        optical_masked_pixels=stats_dict.get("maskedPixels"),
+        geometry_bounds=geom_facts.get("bounds"),
+    )
+
     return build_response(
-        stats=stats.as_dict(),
+        stats=stats_dict,
         index_def=index_def,
         source_id=source_id,
         acquisition_date=acquisition_date,
@@ -119,6 +130,7 @@ def compute_statistics(
         geom_facts=geom_facts,
         excluded=tuple(excluded),
         resolved_bands=resolved_bands,
+        sar_support=sar_support,
     )
 
 
@@ -212,9 +224,10 @@ def build_response(
     geom_facts: dict[str, Any],
     excluded: tuple[int, ...],
     resolved_bands: tuple[str, str],
+    sar_support: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the normalized statistics response (architecture contract shape)."""
-    return {
+    response = {
         "indexType": stats["indexType"],
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
@@ -248,3 +261,6 @@ def build_response(
             "warnings": stats.get("warnings", []),
         },
     }
+    if sar_support is not None:
+        response["sarSupport"] = sar_support
+    return response

@@ -36,6 +36,7 @@ export interface AppConfig {
   usablePixelThresholdPercent: number;
   supportedIndices: string[];
   defaultIndex: string;
+  defaultSourceId?: string;
   adminIngestionLiveTriggerEnabled: boolean;
 }
 
@@ -294,6 +295,7 @@ export interface IngestionScheduleResponse {
 export interface IngestionSourceLastJob {
   jobId: string;
   state: string;
+  runAt?: string | null;
   foundCount?: number | null;
   selectedCount?: number | null;
   downloadedCount?: number | null;
@@ -310,6 +312,14 @@ export interface IngestionSourceSummary {
   provider?: string | null;
   kind?: string | null;
   active: boolean;
+  adminManageable?: boolean;
+  syncEnabled?: boolean;
+  productExposure?: string | null;
+  availabilityStatus?: SourceAvailabilityStatus | string | null;
+  scheduleState?: string | null;
+  scheduleEnabled?: boolean;
+  validationState?: string | null;
+  capabilities?: string[];
   gatedReason?: string | null;
   aoiId?: string | null;
   cadenceDays?: number | null;
@@ -758,6 +768,34 @@ export interface FieldStatisticsPipelineMetadata {
   [key: string]: unknown;
 }
 
+export interface SarBandStatistics {
+  name: string;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  stddev: number | null;
+  validPixelPercent: number;
+}
+
+export interface SarSupport {
+  available: boolean;
+  status: string;
+  sourceId: string;
+  acquisitionDate: string | null;
+  daysFromOpticalDate: number | null;
+  windowDays: number;
+  cloudGap: boolean;
+  opticalCloudMaskedPercent: number | null;
+  opticalMaskedPixels: number | null;
+  polarizations: string[];
+  coveragePercent: number | null;
+  confidence: 'none' | 'low' | 'medium' | 'high' | string;
+  reason: string | null;
+  bands: SarBandStatistics[];
+  wetnessSignal: string;
+  changeSignal: string;
+}
+
 export interface FieldStatisticsRequest {
   sourceId: string;
   acquisitionDate?: string | null;
@@ -768,7 +806,7 @@ export interface FieldStatisticsRequest {
 
 export interface FieldStatisticsResponse {
   plotId: string;
-  provider: 'native';
+  provider: 'native' | 'pipeline';
   scope: 'field';
   indexType: string;
   sourceId: string;
@@ -776,6 +814,7 @@ export interface FieldStatisticsResponse {
   cloudMask: CloudMaskOptions;
   statistics: IndexStatistics;
   pixelCounts: PixelCounts;
+  sarSupport?: SarSupport | null;
   maskedPixels?: number;
   maskMethod?: string | null;
   metricsProvisional?: boolean;
@@ -853,8 +892,8 @@ export interface FieldTrendPoint {
 
 export interface FieldTrendResponse {
   plotId: string;
-  provider: 'native';
-  scope: 'native_fallback';
+  provider: 'native' | 'pipeline';
+  scope: 'native_fallback' | 'pipeline';
   sourceId: string;
   indexType: string;
   startDate: string;

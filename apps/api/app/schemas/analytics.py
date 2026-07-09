@@ -9,7 +9,7 @@ from pydantic import Field
 from ..api_models import ApiModel, CloudMaskOptions
 from ..config import settings
 from ..raster.indices import DEFAULT_INDEX
-from ..raster.models import IndexStatisticsModel, PixelCounts
+from ..raster.models import IndexStatisticsModel, PixelCounts, SarSupport
 
 
 class FieldStatisticsRequest(ApiModel):
@@ -22,7 +22,7 @@ class FieldStatisticsRequest(ApiModel):
 
 class FieldStatisticsResponse(ApiModel):
     plot_id: str
-    provider: Literal["native"] = "native"
+    provider: Literal["native", "pipeline"] = "native"
     scope: Literal["field"] = "field"
     index_type: str
     source_id: str
@@ -31,6 +31,7 @@ class FieldStatisticsResponse(ApiModel):
     statistics: IndexStatisticsModel
     pixel_counts: PixelCounts
     metadata: dict[str, Any]
+    sar_support: SarSupport | None = None
     # Best-resolution provenance (Phase D)
     resolved_source_id: str | None = None
     resolution_meters: float | None = None

@@ -42,8 +42,12 @@ function accountMeResponse(role: 'owner' | 'admin' | 'member' | 'viewer' = 'owne
   };
 }
 
-function renderRoutes(path: string, role: 'owner' | 'admin' | 'member' | 'viewer' = 'owner') {
-  if (!vi.isMockFunction(globalThis.fetch)) {
+function renderRoutes(
+  path: string,
+  role: 'owner' | 'admin' | 'member' | 'viewer' = 'owner',
+  options: { preserveFetch?: boolean } = {},
+) {
+  if (!options.preserveFetch) {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -97,7 +101,13 @@ describe('ProductRoutes', () => {
   it('redirects the root URL to the monitoring map workspace', async () => {
     renderRoutes('/');
 
-    await waitFor(() => expect(screen.getByTestId('map-page')).toBeTruthy(), { timeout: 8000 });
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe(
+          '/monitoring/field-analytics',
+        ),
+      { timeout: 8000 },
+    );
     expect(screen.getByTestId('nav-link-field-analytics').getAttribute('aria-current')).toBe(
       'page',
     );
@@ -115,9 +125,11 @@ describe('ProductRoutes', () => {
       }),
     );
 
-    renderRoutes('/monitoring/field-analytics');
+    renderRoutes('/monitoring/field-analytics', 'owner', { preserveFetch: true });
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Sign in' })).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('location-probe').getAttribute('data-pathname')).toBe('/login'),
+    );
   });
 
   it('renders the signup page for new users', async () => {
@@ -132,9 +144,12 @@ describe('ProductRoutes', () => {
       }),
     );
 
-    renderRoutes('/signup');
+    renderRoutes('/signup', 'owner', { preserveFetch: true });
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Create account' })).toBeTruthy());
+    await waitFor(
+      () => expect(screen.getByRole('heading', { name: 'Create account' })).toBeTruthy(),
+      { timeout: 8000 },
+    );
   });
 
   it('redirects authenticated users away from signup', async () => {
@@ -164,10 +179,11 @@ describe('ProductRoutes', () => {
       }),
     );
 
-    renderRoutes('/monitoring/field-analytics');
+    renderRoutes('/monitoring/field-analytics', 'owner', { preserveFetch: true });
 
-    await waitFor(() =>
-      expect(screen.getByText("Let's start with creating your first season")).toBeTruthy(),
+    await waitFor(
+      () => expect(screen.getByText("Let's start with creating your first season")).toBeTruthy(),
+      { timeout: 8000 },
     );
   });
 

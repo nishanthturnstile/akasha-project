@@ -161,6 +161,32 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
     assert body["metadata"]["cloudMaskMapping"]["warnings"]
 
 
+def test_resourcesat_statistics_stays_native_until_bridge_fully_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "ingestion_api_url", "http://ingestion.internal:18080")
+    monkeypatch.setattr(settings, "ingestion_api_key", "SECRET_API_KEY")
+    monkeypatch.setattr(settings, "ingestion_field_index_enabled", True)
+    monkeypatch.setattr(settings, "ingestion_readiness_enabled", False)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(
+        field_analytics,
+        "request_field_index",
+        lambda *_args, **_kw: pytest.fail("pipeline should not be used while bridge incomplete"),
+    )
+    monkeypatch.setattr(field_analytics, "compute_statistics", lambda **kwargs: _stats_response())
+
+    r = client.post(
+        "/api/fields/plot-1/indices/statistics",
+        json={
+            "sourceId": "resourcesat-2a-liss3-boa",
+            "acquisitionDate": "2026-01-15",
+            "indexType": "NDVI",
+        },
+    )
+
+    assert r.status_code == 200
+    assert r.json()["provider"] == "native"
+
+
 def test_field_statistics_missing_field(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: None)
     r = client.post("/api/fields/missing/indices/statistics", json={"indexType": "NDVI"})

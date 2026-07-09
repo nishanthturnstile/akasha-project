@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
     ChevronDown,
     ChevronUp,
@@ -63,6 +63,11 @@ interface PopoverButtonProps {
     icon?: ReactNode;
 }
 
+const POPOVER_SAFE_TOP_PX = 96;
+const POPOVER_GAP_PX = 8;
+const POPOVER_MIN_HEIGHT_PX = 96;
+const POPOVER_MAX_HEIGHT_PX = 224;
+
 /** Lightweight click-outside-closing popover. Avoids pulling in a new Radix dep. */
 function PopoverButton({
     label,
@@ -76,6 +81,30 @@ function PopoverButton({
 }: PopoverButtonProps) {
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement | null>(null);
+
+    useLayoutEffect(() => {
+        const wrapper = wrapRef.current;
+        if (!wrapper) return;
+        if (!open) {
+            wrapper.style.removeProperty('--layer-popover-max-height');
+            return;
+        }
+
+        const updateMaxHeight = () => {
+            const rect = wrapper.getBoundingClientRect();
+            if (!rect) return;
+            const availableAboveTrigger = rect.top - POPOVER_SAFE_TOP_PX - POPOVER_GAP_PX;
+            const maxHeight = Math.max(
+                POPOVER_MIN_HEIGHT_PX,
+                Math.min(POPOVER_MAX_HEIGHT_PX, availableAboveTrigger),
+            );
+            wrapper.style.setProperty('--layer-popover-max-height', `${maxHeight}px`);
+        };
+
+        updateMaxHeight();
+        window.addEventListener('resize', updateMaxHeight);
+        return () => window.removeEventListener('resize', updateMaxHeight);
+    }, [open]);
 
     useEffect(() => {
         if (!open) return;
@@ -132,8 +161,9 @@ function PopoverButton({
                 <div
                     role="dialog"
                     aria-label={ ariaLabel ?? label }
+                    style={ { maxHeight: 'var(--layer-popover-max-height, 14rem)' } }
                     className={ cn(
-                        'glass absolute bottom-full z-popover mb-2 min-w-56 rounded-md p-3 shadow-e2',
+                        'glass absolute bottom-full z-popover mb-2 min-w-56 overflow-y-auto overscroll-contain rounded-md p-3 shadow-e2',
                         align === 'end' && 'right-0',
                         align === 'start' && 'left-0',
                         align === 'center' && 'left-1/2 -translate-x-1/2',
@@ -221,7 +251,7 @@ function CloudMaskPopover({
             { open && (
                 <div
                     role="dialog"
-                    aria-label={`${label} options`}
+                    aria-label={ `${label} options` }
                     data-testid="cloud-mask-control"
                     className="glass absolute bottom-full right-0 z-popover mb-2 flex w-48 flex-col gap-2 rounded-md p-3 shadow-e2"
                 >

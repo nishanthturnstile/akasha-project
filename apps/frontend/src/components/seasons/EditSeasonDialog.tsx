@@ -75,6 +75,9 @@ export default function EditSeasonDialog({
 
   const isCustom = selectedKey === CUSTOM;
 
+  const predefinedMapRef = useRef(predefinedMap);
+  predefinedMapRef.current = predefinedMap;
+
   const seasonFieldIds = useMemo(
     () => season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id),
     [season.fieldIds],
@@ -84,24 +87,25 @@ export default function EditSeasonDialog({
   // Reset form to season props when dialog opens
   useEffect(() => {
     if (!open) return;
-    const fieldIds = season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id);
+    const s = season;
+    const fieldIds = s.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id);
     startTransition(() => {
-      setName(season.name);
-      setStartDate(season.startDate ?? '');
-      setEndDate(season.endDate ?? '');
+      setName(s.name);
+      setStartDate(s.startDate ?? '');
+      setEndDate(s.endDate ?? '');
       setSelectedFieldIds(fieldIds);
       setError(null);
       setConfirmClose(false);
-      const has = predefinedMap.has(season.name);
-      setSelectedKey(has ? season.name : CUSTOM);
-      setCustomNameDraft(has ? '' : season.name);
-      setDropdownOpen(false);
+      const has = predefinedMapRef.current.has(s.name);
+      setSelectedKey(has ? s.name : CUSTOM);
+      setCustomNameDraft(has ? '' : s.name);
       setFieldTab('list');
       setListSearch('');
       setAddedSearch('');
       setRemovedSearch('');
     });
-  }, [open, season, seasonFieldIds, predefinedMap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!isCustom) return;
@@ -261,6 +265,7 @@ export default function EditSeasonDialog({
                       ref={ inputRef }
                       value={ name }
                       autoFocus
+                      maxLength={15}
                       onChange={ (e) => { setName(e.target.value); setError(null); } }
                       placeholder="Enter season name"
                       className="flex-1 bg-transparent outline-none text-sm"

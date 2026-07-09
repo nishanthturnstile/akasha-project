@@ -194,6 +194,7 @@ async def login(payload: LoginPayload, request: Request, response: Response) -> 
     if not memberships:
         raise forbidden("No team membership is available for this user.")
     auth_repo.record_login_success(user["id"])
+    crops_repo.ensure_reference_data()
     _create_login_session(
         response=response,
         request=request,

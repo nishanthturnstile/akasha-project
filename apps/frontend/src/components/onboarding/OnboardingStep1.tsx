@@ -203,6 +203,7 @@ export default function OnboardingStep1() {
                     ref={ inputRef }
                     value={ seasonName }
                     autoFocus
+                    maxLength={15}
                     onChange={ (e) => { setSeasonName(e.target.value); setNameError(null); setStartDateError(null); setEndDateError(null); } }
                     placeholder="Enter season name"
                     className="flex-1 bg-transparent outline-none text-sm"

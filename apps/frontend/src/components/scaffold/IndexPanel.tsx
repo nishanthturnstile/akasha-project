@@ -283,7 +283,7 @@ function CropInfoTab({
 
   return (
     <div className="grid grid-cols-3 gap-3 pt-1">
-      {/* ── Card 1: Crop Rotation ── */}
+      {/* ── Card 1: Crop Rotation ── */ }
       <div
         data-testid="crop-info-card-crop-rotation"
         className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4"
@@ -352,7 +352,7 @@ function CropInfoTab({
         </Button>
       </div>
 
-      {/* ── Card 2: Growth Stages ── */}
+      {/* ── Card 2: Growth Stages ── */ }
       <div
         data-testid="crop-info-card-growth-stages"
         className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4"
@@ -397,7 +397,7 @@ function CropInfoTab({
         </div>
       </div>
 
-      {/* ── Card 3: Current Risks ── */}
+      {/* ── Card 3: Current Risks ── */ }
       <div
         data-testid="crop-info-card-current-risks"
         className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4 opacity-80"
@@ -412,11 +412,11 @@ function CropInfoTab({
         </div>
 
         <p className="text-[12px] leading-5 text-muted-foreground">
-          Risk information on this field is available in the{' '}
+          Risk information on this field is available in the{ ' ' }
           <span className="font-medium text-primary cursor-default">Essential</span>
-          {' or '}
+          { ' or ' }
           <span className="font-medium text-primary cursor-default">Professional</span>
-          {' '}plans.
+          { ' ' }plans.
         </p>
       </div>
     </div>

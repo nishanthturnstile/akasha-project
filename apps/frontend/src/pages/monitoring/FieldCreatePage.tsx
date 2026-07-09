@@ -97,7 +97,7 @@ function splitPolygonByLine(
   // Ring 1: walk from edgeA to edgeB, including ring[edgeB]
   const ring1Coords: GeoJsonPosition[] = [A];
   let idx = advance(edgeA);
-  for (;;) {
+  for (; ;) {
     ring1Coords.push(ring[idx]);
     if (idx === edgeB) break;
     idx = advance(idx);
@@ -108,7 +108,7 @@ function splitPolygonByLine(
   // Ring 2: walk from edgeB to edgeA, including ring[edgeA]
   const ring2Coords: GeoJsonPosition[] = [B];
   idx = advance(edgeB);
-  for (;;) {
+  for (; ;) {
     ring2Coords.push(ring[idx]);
     if (idx === edgeA) break;
     idx = advance(idx);
@@ -387,7 +387,7 @@ export default function FieldCreatePage() {
     <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
       <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } />
 
-      {/* Top bar */}
+      {/* Top bar */ }
       <div className="glass z-50 flex items-center justify-center px-4 py-3 relative">
         <button
           aria-label="Back"
@@ -399,7 +399,7 @@ export default function FieldCreatePage() {
         <h2 className="font-display text-lg font-semibold">Add field</h2>
       </div>
 
-      {/* Season selector bar */}
+      {/* Season selector bar */ }
       { !preselectedSeasonId && (
         <div className="z-50 flex flex-col border-b border-border/60 bg-background/95">
           <div className="flex items-center gap-3 px-4 py-2">
@@ -444,9 +444,9 @@ export default function FieldCreatePage() {
         </div>
       ) }
 
-      {/* Map + side panel */}
+      {/* Map + side panel */ }
       <div className="relative flex flex-1 min-h-0">
-        {/* Map area */}
+        {/* Map area */ }
         <div className="relative flex-1">
           <MapLayerManager
             basemap={ basemapResolution.basemapConfig! }
@@ -489,9 +489,9 @@ export default function FieldCreatePage() {
             onCutLineComplete={ handleTrimComplete }
           />
 
-          {/* Left controls — vertically centered */}
+          {/* Left controls — vertically centered */ }
           <div className="absolute left-4 top-1/2 z-toolbar flex -translate-y-1/2 flex-col items-start gap-3">
-            {/* Zoom card */}
+            {/* Zoom card */ }
             <div className="glass flex flex-col overflow-hidden rounded-md p-0" role="group" aria-label="Zoom">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -522,7 +522,7 @@ export default function FieldCreatePage() {
               </Tooltip>
             </div>
 
-            {/* Shape toggle card — expands on hover */}
+            {/* Shape toggle card — expands on hover */ }
             <div className="group glass flex w-11 flex-col overflow-hidden rounded-md p-0 transition-all duration-fast hover:w-22.25" role="group" aria-label="Shape">
               <div className="flex">
                 <Tooltip delayDuration={ 600 }>
@@ -530,12 +530,12 @@ export default function FieldCreatePage() {
                     <button
                       type="button"
                       onClick={ () => {
-                      if (cutMode) { setCutMode(false); }
-                      setShapeMode('polygon');
-                      if (map && typeof map.getCanvas === 'function') {
-                        map.getCanvas().style.cursor = 'crosshair';
-                      }
-                    } }
+                        if (cutMode) { setCutMode(false); }
+                        setShapeMode('polygon');
+                        if (map && typeof map.getCanvas === 'function') {
+                          map.getCanvas().style.cursor = 'crosshair';
+                        }
+                      } }
                       className={ cn(
                         'flex h-11 w-11 shrink-0 items-center justify-center transition-colors duration-fast',
                         !cutMode && shapeMode === 'polygon'
@@ -554,12 +554,12 @@ export default function FieldCreatePage() {
                     <button
                       type="button"
                       onClick={ () => {
-                      if (cutMode) { setCutMode(false); }
-                      setShapeMode('circle');
-                      if (map && typeof map.getCanvas === 'function') {
-                        map.getCanvas().style.cursor = 'crosshair';
-                      }
-                    } }
+                        if (cutMode) { setCutMode(false); }
+                        setShapeMode('circle');
+                        if (map && typeof map.getCanvas === 'function') {
+                          map.getCanvas().style.cursor = 'crosshair';
+                        }
+                      } }
                       className={ cn(
                         'flex h-11 w-11 shrink-0 items-center justify-center transition-colors duration-fast',
                         !cutMode && shapeMode === 'circle'
@@ -575,7 +575,7 @@ export default function FieldCreatePage() {
               </div>
             </div>
 
-            {/* Action card: cut + remove last + undo */}
+            {/* Action card: cut + remove last + undo */ }
             <div className="glass flex flex-col overflow-hidden rounded-md p-0" role="group" aria-label="Actions">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -631,7 +631,7 @@ export default function FieldCreatePage() {
             </div>
           </div>
 
-          {/* Bottom center hint */}
+          {/* Bottom center hint */ }
           { !draftGeometry && pendingFields.length === 0 && (
             <div className="absolute left-1/2 bottom-24 z-40 -translate-x-1/2">
               <div className="glass rounded-full px-4 py-2 text-sm">
@@ -642,7 +642,7 @@ export default function FieldCreatePage() {
             </div>
           ) }
 
-          {/* Error toast */}
+          {/* Error toast */ }
           { batchError && (
             <div className="absolute left-1/2 bottom-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
               { batchError }
@@ -650,7 +650,7 @@ export default function FieldCreatePage() {
           ) }
         </div>
 
-        {/* Side panel — always visible in multi-draw mode */}
+        {/* Side panel — always visible in multi-draw mode */ }
         <div className="w-80 shrink-0 border-l border-border bg-background/95 flex flex-col">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
             <h3 className="font-display text-sm font-semibold text-foreground">Fields to add</h3>
@@ -762,7 +762,7 @@ export default function FieldCreatePage() {
         </div>
       </div>
 
-      {/* Menu click-outside handler */}
+      {/* Menu click-outside handler */ }
       { menuOpenId && (
         <div
           className="fixed inset-0 z-40"
@@ -770,7 +770,7 @@ export default function FieldCreatePage() {
         />
       ) }
 
-      {/* Leave confirmation dialog */}
+      {/* Leave confirmation dialog */ }
       <AlertDialogRoot open={ leaveAlertOpen } onOpenChange={ setLeaveAlertOpen }>
         <AlertDialogContent>
           <AlertDialogTitle>Leave this page?</AlertDialogTitle>
@@ -785,7 +785,7 @@ export default function FieldCreatePage() {
         </AlertDialogContent>
       </AlertDialogRoot>
 
-      {/* Delete pending field confirmation */}
+      {/* Delete pending field confirmation */ }
       <AlertDialogRoot
         open={ !!deleteAlertField }
         onOpenChange={ (open) => { if (!open) setDeleteAlertField(null); } }
@@ -807,7 +807,7 @@ export default function FieldCreatePage() {
         </AlertDialogContent>
       </AlertDialogRoot>
 
-      {/* Edit pending field dialog */}
+      {/* Edit pending field dialog */ }
       { editingPendingField && (
         <EditFieldDialog
           key={ editingPendingField.id }

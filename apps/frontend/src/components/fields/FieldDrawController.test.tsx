@@ -23,6 +23,7 @@ vi.mock('terra-draw', () => ({
   })),
   TerraDrawPolygonMode: vi.fn(),
   TerraDrawCircleMode: vi.fn(),
+  TerraDrawFreehandLineStringMode: vi.fn(),
   TerraDrawSelectMode: vi.fn(),
 }));
 

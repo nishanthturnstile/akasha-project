@@ -78,7 +78,7 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.queryByTestId('index-panel-tabs')).toBeNull();
     });
 
-    it('renders three tabs with Crop info active by default when a field is selected', () => {
+    it('renders three tabs with Crop info active by default — shows 3 cards', () => {
         renderPanel(
             <IndexPanel
                 selectedPlot={ plot }
@@ -101,13 +101,10 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         );
         expect(screen.getByTestId('index-panel-content-crop-info')).toBeTruthy();
 
-        // All six Crop info placeholder cards are present on the default tab.
+        // All three Crop info cards are present on the default tab.
         expect(screen.getByTestId('crop-info-card-crop-rotation')).toBeTruthy();
-        expect(screen.getByTestId('crop-info-card-sown-area')).toBeTruthy();
-        expect(screen.getByTestId('crop-info-card-management-guide')).toBeTruthy();
         expect(screen.getByTestId('crop-info-card-growth-stages')).toBeTruthy();
         expect(screen.getByTestId('crop-info-card-current-risks')).toBeTruthy();
-        expect(screen.getByTestId('crop-info-card-ndvi-split')).toBeTruthy();
     });
 
     it('switches to the Chart tab and exposes the index selector and trend chart', () => {
@@ -251,6 +248,190 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         );
     });
 
+    it('renders optional Sentinel-2 pipeline provenance without exposing proxy URLs', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'sentinel-2-l2a',
+                            acquisitionDate: '2026-01-15',
+                            cloudMask,
+                            statistics: {
+                                min: 0.12,
+                                max: 0.86,
+                                mean: 0.54,
+                                stddev: 0.08,
+                                validPixelPercent: 92.5,
+                                cloudMaskedPercent: 4.2,
+                                coveragePercent: 100,
+                            },
+                            pixelCounts: {
+                                totalPixels: 3736,
+                                nodataPixels: 0,
+                                coveragePixels: 3736,
+                                maskedPixels: 280,
+                                validPixels: 3456,
+                            },
+                            basisDate: '2026-01-13',
+                            provenanceNote: 'Pipeline Sentinel-2 scene selected by quality_first.',
+                            metadata: {
+                                formula: '(NIR-RED)/(NIR+RED)',
+                                bands: ['NIR', 'RED'],
+                                warnings: [],
+                                pipeline: {
+                                    enabled: true,
+                                    status: 'AVAILABLE',
+                                    source: 'sentinel-2-l2a',
+                                    providerRoute: 'earthsearch:sentinel-2-l2a',
+                                    requestedDate: '2026-01-15',
+                                    selectedSceneDate: '2026-01-13',
+                                    tileUrl: '/api/pipeline/tiles/{z}/{x}/{y}.png?proxyId=px_1',
+                                    statsUrl: '/api/pipeline/field-index/stats?proxyId=px_2',
+                                    freshness: {
+                                        status: 'FRESH',
+                                        latestProcessedSceneDate: '2026-01-13',
+                                        aoiId: 'bangalore_60km_geodesic_aoi',
+                                    },
+                                    quality: {
+                                        status: 'GOOD',
+                                        reason: 'Field cloud cover within threshold',
+                                        warnings: ['Near-scene fallback used'],
+                                    },
+                                },
+                            },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'sentinel-2-l2a',
+                            indexType: 'NDVI',
+                            startDate: '2025-07-19',
+                            endDate: '2026-01-15',
+                            points: [],
+                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['NIR', 'RED'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-01-15"
+                sourceId="sentinel-2-l2a"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        const provenance = await screen.findByTestId('analytics-pipeline-provenance');
+        expect(provenance.textContent).toContain('earthsearch:sentinel-2-l2a');
+        expect(provenance.textContent).toContain('2026-01-13');
+        expect(screen.getByTestId('analytics-pipeline-freshness').textContent).toContain('FRESH');
+        expect(screen.getByTestId('analytics-pipeline-quality').textContent).toContain(
+            'Field cloud cover within threshold',
+        );
+        expect(screen.getByTestId('analytics-pipeline-warning').textContent).toContain(
+            'Near-scene fallback used',
+        );
+        expect(screen.getByTestId('analytics-pipeline-status').textContent).toContain('GOOD');
+        expect(provenance.textContent).not.toContain('/api/pipeline');
+        expect(provenance.textContent).not.toContain('ingestion');
+        expect(provenance.textContent).not.toContain('sig=');
+    });
+
+    it('keeps native provider compatibility and hides pipeline UI when metadata is absent', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'field',
+                            indexType: 'NDVI',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            acquisitionDate: '2026-03-19',
+                            cloudMask,
+                            statistics: {
+                                min: 0.1,
+                                max: 0.8,
+                                mean: 0.42,
+                                stddev: 0.12,
+                                validPixelPercent: 91,
+                                cloudMaskedPercent: 6,
+                                coveragePercent: 97,
+                            },
+                            pixelCounts: {
+                                totalPixels: 100,
+                                nodataPixels: 3,
+                                coveragePixels: 97,
+                                maskedPixels: 6,
+                                validPixels: 91,
+                            },
+                            metadata: {
+                                formula: '(BAND4 - BAND3) / (BAND4 + BAND3)',
+                                bands: ['BAND4', 'BAND3'],
+                                warnings: [],
+                            },
+                        }),
+                    );
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(
+                        jsonResponse({
+                            plotId: 'plot-1',
+                            provider: 'native',
+                            scope: 'native_fallback',
+                            sourceId: 'resourcesat-2a-liss3-boa',
+                            indexType: 'NDVI',
+                            startDate: '2025-09-20',
+                            endDate: '2026-03-19',
+                            points: [],
+                            metadata: { formula: '(BAND4 - BAND3) / (BAND4 + BAND3)', bands: ['BAND4', 'BAND3'] },
+                        }),
+                    );
+                }
+                throw new Error(`Unexpected request: ${path}`);
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-03-19"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+
+        activateTab('index-panel-tab-chart');
+
+        expect(await screen.findByText('0.42')).toBeTruthy();
+        expect(screen.queryByTestId('analytics-pipeline-provenance')).toBeNull();
+    });
+
     it('surfaces EOS-04 SAR support as cloud-gap context only', async () => {
         vi.stubGlobal(
             'fetch',
@@ -300,7 +481,11 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                                 wetnessSignal: 'not_assessed',
                                 changeSignal: 'not_assessed',
                             },
-                            metadata: { formula: '(NIR-RED)/(NIR+RED)', bands: ['BAND4', 'BAND3'], warnings: [] },
+                            metadata: {
+                                formula: '(NIR-RED)/(NIR+RED)',
+                                bands: ['BAND4', 'BAND3'],
+                                warnings: [],
+                            },
                         }),
                     );
                 }

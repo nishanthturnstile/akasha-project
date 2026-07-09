@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Select,
   SelectContent,
@@ -10,28 +11,43 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StepIndicator } from '@/components/onboarding/StepIndicator';
-import { useCompleteOnboarding, useCrops, useUpdateField } from '@/lib/queries';
+import { useCompleteOnboarding, useCrops, useSeason, useUpdateField } from '@/lib/queries';
 import type { VegetationCycleCreate } from '@/types/api';
 
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
-const ONBOARDING_FIELDS_KEY = 'akasha.onboarding.fieldIds';
+const ONBOARDING_FIELD_KEY = 'akasha.onboarding.fieldId';
 
 /**
  * Onboarding step 3 – add crop details.
  * Shows crop name dropdown (populated from the /api/crops endpoint) and
- * auto-filled start date from the season.
+ * a date picker constrained to the season's date range.
  */
 export default function OnboardingStep3() {
   const navigate = useNavigate();
   const cropsQ = useCrops();
   const completeOnboarding = useCompleteOnboarding();
   const updateField = useUpdateField();
+
+  const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
+  const seasonQ = useSeason(seasonId);
+
   const [cropName, setCropName] = useState('');
-  const [startDate, setStartDate] = useState('2026-01-01');
+  const [startDate, setStartDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
+  const [dateSynced, setDateSynced] = useState(false);
+
+  if (!dateSynced) {
+    if (seasonQ.data?.startDate) {
+      setStartDate(seasonQ.data.startDate);
+      setDateSynced(true);
+    } else if (!seasonQ.isLoading) {
+      const y = new Date().getFullYear();
+      setStartDate(`${y}-01-01`);
+      setDateSynced(true);
+    }
+  }
 
   const handleCancel = () => {
     navigate('/onboarding/step2');
@@ -48,15 +64,8 @@ export default function OnboardingStep3() {
       await completeOnboarding.mutateAsync();
       // Clear onboarding session keys
       sessionStorage.removeItem(ONBOARDING_SEASON_KEY);
-      const storedIds = (() => {
-        try {
-          return JSON.parse(sessionStorage.getItem(ONBOARDING_FIELDS_KEY) ?? '[]') as string[];
-        } catch {
-          return [];
-        }
-      })();
-      const lastFieldId = storedIds[storedIds.length - 1];
-      sessionStorage.removeItem(ONBOARDING_FIELDS_KEY);
+      const lastFieldId = sessionStorage.getItem(ONBOARDING_FIELD_KEY);
+      sessionStorage.removeItem(ONBOARDING_FIELD_KEY);
 
       // Save the selected crop as a vegetation cycle for the last field
       if (lastFieldId && seasonId && cropName) {
@@ -127,11 +136,13 @@ export default function OnboardingStep3() {
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Start date</label>
-            <input
-              type="date"
+            <DatePicker
               value={ startDate }
-              onChange={ (e) => setStartDate(e.target.value) }
-              className="w-full rounded-md border border-border bg-background px-3 py-2"
+              onChange={ setStartDate }
+              placeholder="Select start date"
+              className="w-full"
+              minDate={ seasonQ.data?.startDate ?? undefined }
+              maxDate={ seasonQ.data?.endDate ?? undefined }
             />
           </div>
 

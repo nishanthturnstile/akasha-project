@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   CalendarRange,
+  Check,
   ChevronDown,
   ChevronsLeft,
   Clock,
@@ -19,15 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogRoot,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import DeleteSeasonDialog from '@/components/seasons/DeleteSeasonDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,8 +30,7 @@ import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/Glob
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
-import { queryClient } from '@/lib/queryClient';
-import { useAccountMe, useLogout, useSeasons, useDeleteSeason, useUpdateSeason, useFields } from '@/lib/queries';
+import { useAccountMe, useLogout, useSeasons, useUpdateSeason, useFields } from '@/lib/queries';
 import {
   MAIN_MONITORING_ROUTE,
   productNavigation,
@@ -144,14 +136,20 @@ export function AppShell() {
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
+  const setGlobalViewMode = (isGlobalView: boolean) => {
+    setGlobalViewOpen(isGlobalView);
+    view.setOverlaysVisible(!isGlobalView);
+  };
+
   const seasonsQ = useSeasons();
-  const deleteSeason = useDeleteSeason();
   const updateSeason = useUpdateSeason();
   const fieldsQ = useFields();
 
+  // Sync overlaysVisible with initial globalViewOpen on mount (no lag frame after page refresh)
   useEffect(() => {
     view.setOverlaysVisible(!globalViewOpen);
-  }, [globalViewOpen, view]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clear persisted field selection on mount (unless deep-linked to a specific field)
   useEffect(() => {
@@ -229,11 +227,6 @@ export function AppShell() {
     [editSeasonId, sortedSeasons],
   );
 
-  const deletingSeason = useMemo(
-    () => (deletingSeasonId ? sortedSeasons.find((s) => s.id === deletingSeasonId) ?? null : null),
-    [deletingSeasonId, sortedSeasons],
-  );
-
   const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
@@ -245,10 +238,20 @@ export function AppShell() {
   );
 
   // Auto-select the last-viewed field for the current season on initial load
+  // and when switching between seasons.
   useEffect(() => {
     const fields = fieldsQ.data;
     if (!fields || fields.length === 0 || !effectiveSeasonId) return;
-    if (view.selectedPlotId) return;
+
+    // If there is a currently selected field, verify it belongs to the current
+    // season. If the user switched to a season that has no fields, clear the
+    // stale selection so no polygon from another season lingers on the map.
+    if (view.selectedPlotId) {
+      const selectedField = fields.find((f) => f.id === view.selectedPlotId);
+      const belongsToCurrentSeason = selectedField && selectedField.seasonIds?.includes(effectiveSeasonId);
+      if (belongsToCurrentSeason) return;
+      view.clearSelectedPlot();
+    }
 
     const savedFields = getLastFieldPerSeason();
     const savedFieldId = savedFields[effectiveSeasonId];
@@ -259,13 +262,16 @@ export function AppShell() {
     if (savedField) {
       view.setSelectedPlotId(savedField.id);
       view.setFocusNonce(Date.now());
-      setTimeout(() => setGlobalViewOpen(false), 0);
+      setTimeout(() => setGlobalViewMode(false), 0);
     } else {
       const firstField = fields.find((f) => f.seasonIds?.includes(effectiveSeasonId));
       if (firstField) {
         view.setSelectedPlotId(firstField.id);
         view.setFocusNonce(Date.now());
-        setTimeout(() => setGlobalViewOpen(false), 0);
+        setTimeout(() => setGlobalViewMode(false), 0);
+      } else {
+        // Season has no fields — keep Global View open to show the empty state
+        setTimeout(() => setGlobalViewMode(true), 0);
       }
     }
   }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId, view]);
@@ -326,7 +332,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={ 200 }>
-      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); setGlobalViewOpen(true); } } />
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); setGlobalViewMode(true); } } />
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
@@ -370,7 +376,7 @@ export function AppShell() {
                       to={ item.path }
                       end={ false }
                       data-testid={ `mobile-${testIdFor(item.label)}` }
-                      onClick={ item.globalView ? () => setGlobalViewOpen(true) : undefined }
+                       onClick={ item.globalView ? () => setGlobalViewMode(true) : undefined }
                       className={ ({ isActive }) =>
                         cn(
                           'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
@@ -395,7 +401,7 @@ export function AppShell() {
         </section>
 
         { showGlobalViewPanel && (
-          <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
+          <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewMode(false) } seasonId={ effectiveSeasonId } />
         ) }
 
         <aside
@@ -451,7 +457,7 @@ export function AppShell() {
               aria-label="Season selector"
               onClick={ () => { setSeasonSheetOpen(true); if (currentSeason) setSeasonTab(seasonTabFor(currentSeason)); } }
               className={ cn(
-                'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
                 'border-primary bg-primary/10 text-foreground',
                 railCollapsed && 'justify-center px-0',
               ) }
@@ -482,7 +488,7 @@ export function AppShell() {
                         type="button"
                         onClick={ () => setSeasonTab(tab) }
                         className={ cn(
-                          'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast',
+                          'rounded-full px-3 py-1 text-[12px] font-medium transition-colors duration-fast cursor-pointer',
                           seasonTab === tab
                             ? 'bg-primary text-primary-foreground'
                             : 'border border-border bg-card text-foreground hover:bg-accent/40',
@@ -509,16 +515,31 @@ export function AppShell() {
                   ) : filteredSeasons.length === 0 ? (
                     <Card className="border-border/60 bg-card/90 shadow-sm">
                       <CardContent>
-                        <p className="text-sm font-medium text-foreground">
-                          No { seasonTab } seasons yet
-                        </p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          { seasonTab === 'active'
-                            ? 'Create a new season to get started.'
-                            : seasonTab === 'planned'
-                              ? 'Schedule a future season with a start date beyond today.'
-                              : 'Seasons with an end date in the past will appear here.' }
-                        </p>
+                        {seasonTab === 'active' ? (
+                          <div className="flex flex-col items-center gap-3 text-center">
+                            <p className="text-sm text-muted-foreground">
+                              <button
+                                type="button"
+                                onClick={ () => { setSeasonSheetOpen(false); setCreateSeasonOpen(true); } }
+                                className="inline font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+                              >
+                                Create
+                              </button>
+                              {' an active season to receive up-to-date data.'}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-sm font-medium text-foreground">
+                              No { seasonTab } seasons yet
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              { seasonTab === 'planned'
+                                ? 'Schedule a future season with a start date beyond today.'
+                                : 'Seasons with an end date in the past will appear here.' }
+                            </p>
+                          </>
+                        )}
                       </CardContent>
                     </Card>
                   ) : (
@@ -526,6 +547,10 @@ export function AppShell() {
                       { filteredSeasons.map((season) => {
                         const seasonFields = (fieldsQ.data ?? []).filter((f) =>
                           f.seasonIds?.includes(season.id),
+                        );
+                        const totalArea = seasonFields.reduce(
+                          (sum, f) => sum + (typeof f.areaHa === 'number' ? f.areaHa : 0),
+                          0,
                         );
                         const isCurrent = effectiveSeasonId === season.id;
                         return (
@@ -548,7 +573,8 @@ export function AppShell() {
                               }
                               setCurrentSeasonId(season.id);
                               setSeasonSheetOpen(false);
-                              setGlobalViewOpen(false);
+                              const seasonHasFields = fields.some((f) => f.seasonIds?.includes(season.id));
+                              setGlobalViewMode(!seasonHasFields);
                               if (savedField) {
                                 navigate(`/monitoring/field-analytics/field/${savedField.id}`);
                               } else {
@@ -562,9 +588,7 @@ export function AppShell() {
                                   { season.name }
                                 </CardTitle>
                                 { isCurrent && (
-                                  <span className="text-[10px] font-medium uppercase text-primary tracking-wider">
-                                    Active
-                                  </span>
+                                  <Check className="size-5 text-primary" strokeWidth={2.5} aria-label="Active season" />
                                 ) }
                               </div>
                               <div className="mt-2 flex gap-2">
@@ -593,7 +617,7 @@ export function AppShell() {
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40"
+                                    className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40 cursor-pointer"
                                     onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
                                   >
                                     Edit
@@ -606,13 +630,19 @@ export function AppShell() {
                                       "rounded-md border px-3 py-1.5 text-sm",
                                       !season.canDelete
                                         ? "border-dashed text-muted-foreground cursor-not-allowed"
-                                        : "border-border text-foreground hover:bg-accent/40"
+                                        : "border-border text-foreground hover:bg-accent/40 cursor-pointer"
                                     ) }
                                     onClick={ (e) => { e.stopPropagation(); if (season.canDelete) setDeletingSeasonId(season.id); } }
                                   >
                                     Delete
                                   </button>
                                 </div>
+                              </div>
+                              <div className="mt-1 flex items-center gap-2 text-sm">
+                                <span className="text-muted-foreground">Total area:</span>
+                                <span className="font-semibold text-foreground tabular-nums">
+                                  {seasonFields.length === 0 ? '0.00' : totalArea.toFixed(2)} ha
+                                </span>
                               </div>
                               { seasonFields.length === 0 && (
                                 <button
@@ -621,10 +651,10 @@ export function AppShell() {
                                     e.stopPropagation();
                                     setCurrentSeasonId(season.id);
                                     setSeasonSheetOpen(false);
-                                    setGlobalViewOpen(false);
+                                    setGlobalViewMode(false);
                                     navigate(`/monitoring/field-create?seasonId=${season.id}`);
                                   } }
-                                  className="mt-2 w-full rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+                                  className="mt-2 w-full cursor-pointer rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
                                 >
                                   + Add field
                                 </button>
@@ -705,7 +735,7 @@ export function AppShell() {
                                 data-testid={ testIdFor(item.label) }
                                 onClick={ () => {
                                   setHoveredGroup(null);
-                                  setGlobalViewOpen(!!item.globalView);
+                                  setGlobalViewMode(!!item.globalView);
                                 } }
                                 className={ ({ isActive }) =>
                                   cn(
@@ -771,7 +801,7 @@ export function AppShell() {
                             to={ item.path }
                             end={ false }
                             data-testid={ testIdFor(item.label) }
-                            onClick={ () => setGlobalViewOpen(!!item.globalView) }
+                            onClick={ () => setGlobalViewMode(!!item.globalView) }
                             className={ ({ isActive }) =>
                               cn(
                                 'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
@@ -870,8 +900,7 @@ export function AppShell() {
                           // Ignore: the session cookie is cleared server-side and
                           // local state is dropped below regardless.
                         }
-                        queryClient.clear();
-                        navigate('/login', { replace: true });
+                        window.location.href = '/login?loggedOut=1';
                       } }
                       data-testid="account-popover-trigger"
                       aria-label="Sign out"
@@ -911,29 +940,11 @@ export function AppShell() {
         </aside>
       </div>
 
-      <AlertDialogRoot open={ !!deletingSeasonId } onOpenChange={ (open) => { if (!open) setDeletingSeasonId(null); } }>
-        <AlertDialogContent>
-          <AlertDialogTitle>Delete season?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to delete "{ deletingSeason?.name }"? This action cannot be undone.
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={ async () => {
-              if (!deletingSeasonId) return;
-              try {
-                await deleteSeason.mutateAsync(deletingSeasonId);
-              } catch {
-                // error handled by query state
-              }
-              setDeletingSeasonId(null);
-              window.location.reload();
-            } }>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialogRoot>
+      <DeleteSeasonDialog
+        open={ !!deletingSeasonId }
+        onOpenChange={ (open) => { if (!open) setDeletingSeasonId(null); } }
+        deletingSeasonId={ deletingSeasonId }
+      />
     </TooltipProvider>
   );
 }

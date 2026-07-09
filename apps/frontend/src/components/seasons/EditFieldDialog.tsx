@@ -858,6 +858,12 @@ function CycleCard({
           <DatePicker
             value={ cycle.harvestingDate }
             onChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'harvestingDate', v) }
+            disabled={ !cycle.plantingDate }
+            minDate={ cycle.plantingDate ? (() => {
+              const d = new Date(cycle.plantingDate + 'T00:00:00');
+              d.setDate(d.getDate() + 1);
+              return d.toISOString().split('T')[0];
+            })() : undefined }
           />
         </div>
 

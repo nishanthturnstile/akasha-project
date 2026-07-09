@@ -24,6 +24,16 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_optional_int(name: str) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 def _get_bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -239,8 +249,14 @@ class Settings:
     ingestion_field_index_enabled: bool = field(
         default_factory=lambda: _get_bool("INGESTION_FIELD_INDEX_ENABLED", False)
     )
+    ingestion_field_index_source_id: str = field(
+        default_factory=lambda: _get("INGESTION_FIELD_INDEX_SOURCE_ID", "sentinel-2-l2a")
+    )
     ingestion_readiness_enabled: bool = field(
         default_factory=lambda: _get_bool("INGESTION_READINESS_ENABLED", False)
+    )
+    ingestion_freshness_max_age_hours: int | None = field(
+        default_factory=lambda: _get_optional_int("INGESTION_FRESHNESS_MAX_AGE_HOURS")
     )
     ingestion_aoi_id: str = field(
         default_factory=lambda: _get("INGESTION_AOI_ID", "bangalore_60km_geodesic_aoi")
@@ -253,6 +269,16 @@ class Settings:
     )
     ingestion_trend_max_dates: int = field(
         default_factory=lambda: _get_int("INGESTION_TREND_MAX_DATES", 12)
+    )
+    # Optional XYZ tile layer proxy (Phase 5). Off until the ingestion tile
+    # bridge and upstream signed TTL are validated for interactive sessions.
+    ingestion_pipeline_tile_layer_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_PIPELINE_TILE_LAYER_ENABLED", False)
+    )
+    # TTL (seconds) for opaque stats proxy records. Tile proxy records are
+    # additionally capped to the upstream signed ``exp`` when present.
+    ingestion_pipeline_proxy_ttl_seconds: int = field(
+        default_factory=lambda: _get_int("INGESTION_PIPELINE_PROXY_TTL_SECONDS", 3600)
     )
 
     @property

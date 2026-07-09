@@ -15,15 +15,17 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
-from app.models import Crop, IrrigationType, SeedingType, TillageType, Variety
+from app.models import Crop, IrrigationType, PredefinedSeason, SeedingType, TillageType, Variety
 
-DATA_DIR = Path("/app/data/reference")
+DEFAULT_DATA_DIR = Path("/app/data/reference")
 
 SEEDING_TYPES = [
     ("direct_seed", "Seeds sown directly in the field"),
@@ -34,43 +36,86 @@ SEEDING_TYPES = [
 ]
 
 
+def _candidate_data_dirs() -> list[Path]:
+    """Return possible reference-data directories for Docker and repo checkouts."""
+
+    candidates: list[Path] = []
+    env_dir = os.environ.get("AKASHA_REFERENCE_DATA_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir))
+
+    candidates.append(DEFAULT_DATA_DIR)
+
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidates.append(parent / "scripts" / "data")
+        candidates.append(parent / "data" / "reference")
+
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for candidate in candidates:
+        resolved = candidate.resolve() if candidate.exists() else candidate
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(candidate)
+    return unique
+
+
+def _data_path(filename: str) -> Path:
+    for data_dir in _candidate_data_dirs():
+        path = data_dir / filename
+        if path.exists():
+            return path
+    searched = ", ".join(str(path) for path in _candidate_data_dirs())
+    raise FileNotFoundError(
+        f"Reference data file {filename!r} was not found. Searched: {searched}"
+    )
+
+
 def _load_json(filename: str) -> Any:
-    with open(DATA_DIR / filename, encoding="utf-8") as f:
+    with open(_data_path(filename), encoding="utf-8") as f:
         return json.load(f)
 
 
 def generate_irrigation_types(session: Session) -> int:
     data = _load_json("irrigation-types.json")
+    existing = {name for (name,) in session.query(IrrigationType.name).all()}
     count = 0
     for item in data:
-        if session.query(IrrigationType).filter_by(name=item["name"]).first():
+        if item["name"] in existing:
             continue
         session.add(
             IrrigationType(name=item["name"], description=item.get("description"))
         )
+        existing.add(item["name"])
         count += 1
     return count
 
 
 def generate_tillage_types(session: Session) -> int:
     data = _load_json("tillage-types.json")
+    existing = {name for (name,) in session.query(TillageType.name).all()}
     count = 0
     for item in data:
-        if session.query(TillageType).filter_by(name=item["name"]).first():
+        if item["name"] in existing:
             continue
         session.add(
             TillageType(name=item["name"], description=item.get("description"))
         )
+        existing.add(item["name"])
         count += 1
     return count
 
 
 def generate_seeding_types(session: Session) -> int:
+    existing = {name for (name,) in session.query(SeedingType.name).all()}
     count = 0
     for name, desc in SEEDING_TYPES:
-        if session.query(SeedingType).filter_by(name=name).first():
+        if name in existing:
             continue
         session.add(SeedingType(name=name, description=desc))
+        existing.add(name)
         count += 1
     return count
 
@@ -78,6 +123,7 @@ def generate_seeding_types(session: Session) -> int:
 def generate_crops(session: Session) -> int:
     data = _load_json("crops.json")
     seeding_map = {st.name: st.id for st in session.query(SeedingType).all()}
+    existing = {name for (name,) in session.query(Crop.name).all()}
     SEEDING_INT_TO_NAME = {
         0: "direct_seed",
         1: "transplant",
@@ -87,7 +133,7 @@ def generate_crops(session: Session) -> int:
     }
     count = 0
     for item in data:
-        if session.query(Crop).filter_by(name=item["name_en"]).first():
+        if item["name_en"] in existing:
             continue
         st_int = item["seeding_type"]
         st_name = SEEDING_INT_TO_NAME.get(st_int) if isinstance(st_int, int) else st_int
@@ -112,6 +158,7 @@ def generate_crops(session: Session) -> int:
                 characteristic=characteristic,
             )
         )
+        existing.add(item["name_en"])
         count += 1
     return count
 
@@ -119,17 +166,18 @@ def generate_crops(session: Session) -> int:
 def generate_varieties(session: Session) -> int:
     data = _load_json("varieties.json")
     crop_map = {c.name: c.id for c in session.query(Crop).all()}
+    existing = {
+        (crop_id, name)
+        for crop_id, name in session.query(Variety.crop_id, Variety.name).all()
+    }
     count = 0
     for crop_name, varieties in data.items():
         crop_id = crop_map.get(crop_name)
         if not crop_id:
             continue
         for item in varieties:
-            if (
-                session.query(Variety)
-                .filter_by(crop_id=crop_id, name=item["name"])
-                .first()
-            ):
+            key = (crop_id, item["name"])
+            if key in existing:
                 continue
             maturity_options = item.get("maturity_options") or item.get("maturities")
             session.add(
@@ -139,7 +187,71 @@ def generate_varieties(session: Session) -> int:
                     maturity_options=maturity_options or None,
                 )
             )
+            existing.add(key)
             count += 1
+    return count
+
+
+def _mmdd_to_date(mmdd: str) -> date:
+    """Convert 'MM-DD' to date using current year (determined later)."""
+    parts = mmdd.split("-")
+    return date(date.today().year, int(parts[0]), int(parts[1]))
+
+
+def _resolve_year(mmdd: str, base_year: int, period_start_month: int, wraps: bool) -> date:
+    """Convert 'MM-DD' to a full date. If the season wraps to the next year
+    (end month < start month), dates whose month is before *period_start_month*
+    belong to the *next* year."""
+    parts = mmdd.split("-")
+    month = int(parts[0])
+    day = int(parts[1])
+    year = base_year if not (wraps and month < period_start_month) else base_year + 1
+    return date(year, month, day)
+
+
+def generate_predefined_seasons(session: Session) -> int:
+    data = _load_json("predefined-seasons.json")
+    existing = {name for (name,) in session.query(PredefinedSeason.season_name).all()}
+    count = 0
+    for item in data:
+        if item["season_name"] in existing:
+            continue
+
+        ps_mmdd = item.get("period_start_date")
+        pe_mmdd = item.get("period_end_date")
+        if not ps_mmdd or not pe_mmdd:
+            continue
+
+        ps_month = int(ps_mmdd.split("-")[0])
+        pe_month = int(pe_mmdd.split("-")[0])
+        wraps = pe_month < ps_month
+        base_year = date.today().year
+
+        period_start = date(base_year, ps_month, int(ps_mmdd.split("-")[1]))
+        period_end = _resolve_year(pe_mmdd, base_year, ps_month, wraps)
+
+        def _resolve(v, _by=base_year, _ps=ps_month, _w=wraps):
+            return _resolve_year(v, _by, _ps, _w) if v else None
+
+        sowing_start = _resolve(item.get("sowing_start_date"))
+        sowing_end = _resolve(item.get("sowing_end_date"))
+        harvesting_start = _resolve(item.get("harvesting_start_date"))
+        harvesting_end = _resolve(item.get("harvesting_end_date"))
+
+        session.add(
+            PredefinedSeason(
+                season_name=item["season_name"],
+                period_start_date=period_start,
+                period_end_date=period_end,
+                sowing_start_date=sowing_start,
+                sowing_end_date=sowing_end,
+                harvesting_start_date=harvesting_start,
+                harvesting_end_date=harvesting_end,
+                main_water_source=item.get("main_water_source"),
+            )
+        )
+        existing.add(item["season_name"])
+        count += 1
     return count
 
 
@@ -155,4 +267,6 @@ def generate_all() -> dict[str, int]:
         counts["crops"] = generate_crops(s)
     with session_scope() as s:
         counts["varieties"] = generate_varieties(s)
+    with session_scope() as s:
+        counts["predefined_seasons"] = generate_predefined_seasons(s)
     return counts

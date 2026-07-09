@@ -226,5 +226,5 @@ def create_user_with_team(
         team = Team(name=team_name.strip(), created_by=user.id)
         session.add(team)
         session.flush()
-        session.add(Membership(team_id=team.id, user_id=user.id, role="member"))
+        session.add(Membership(team_id=team.id, user_id=user.id, role="owner"))
         return {"userId": str(user.id), "teamId": str(team.id)}

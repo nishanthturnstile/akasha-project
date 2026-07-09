@@ -50,6 +50,7 @@ import {
   getConfig,
   getCrops,
   getDates,
+  getPredefinedSeasons,
   getBestObservations,
   getDefaultLayer,
   getIrrigationTypes,
@@ -64,6 +65,7 @@ import {
   refreshSession,
   completeOnboarding,
   updatePlot,
+  getSeason,
   listSeasons,
   createSeason,
   updateSeason,
@@ -104,6 +106,7 @@ export const queryKeys = {
   dates: (sourceId: string) => ['dates', sourceId] as const,
   defaultLayer: ['layers', 'default'] as const,
   crops: ['crops'] as const,
+  predefinedSeasons: ['predefined-seasons'] as const,
   irrigationTypes: ['irrigation-types'] as const,
   tillageTypes: ['tillage-types'] as const,
   varieties: (cropId: number) => ['varieties', cropId] as const,
@@ -262,6 +265,10 @@ export function useDefaultLayer() {
 
 export function useCrops() {
   return useQuery({ queryKey: queryKeys.crops, queryFn: getCrops });
+}
+
+export function usePredefinedSeasons() {
+  return useQuery({ queryKey: queryKeys.predefinedSeasons, queryFn: getPredefinedSeasons });
 }
 
 export function useIrrigationTypes() {
@@ -713,6 +720,14 @@ export function useExportFieldReportCsv() {
 // --------------------------------------------------------------------------
 // Seasons hooks
 // --------------------------------------------------------------------------
+export function useSeason(seasonId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.season(seasonId ?? '__skip__'),
+    queryFn: () => getSeason(seasonId!),
+    enabled: !!seasonId,
+  });
+}
+
 export function useSeasons() {
   return useQuery({ queryKey: queryKeys.seasons, queryFn: listSeasons });
 }
@@ -744,8 +759,12 @@ export function useUpdateSeason() {
 export function useDeleteSeason() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: deleteSeason,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.seasons }),
+    mutationFn: (args: { seasonId: string; moveFieldsToSeasonId?: string }) =>
+      deleteSeason(args.seasonId, args.moveFieldsToSeasonId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+    },
   });
 }
 

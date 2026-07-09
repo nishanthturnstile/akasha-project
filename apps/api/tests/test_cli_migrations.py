@@ -42,6 +42,11 @@ def test_db_upgrade_uses_postgres_advisory_lock(monkeypatch, capsys):
         "upgrade",
         lambda cfg, target: calls.append(("upgrade", target)),
     )
+    monkeypatch.setattr(
+        cli,
+        "_seed_reference_data",
+        lambda: {"crops": 0},
+    )
 
     assert cli.cmd_db_upgrade(SimpleNamespace()) == 0
 
@@ -49,13 +54,16 @@ def test_db_upgrade_uses_postgres_advisory_lock(monkeypatch, capsys):
     assert "pg_advisory_lock" in engine.connection.statements[0][0]
     assert "pg_advisory_unlock" in engine.connection.statements[-1][0]
     assert engine.connection.statements[0][1] == {"lock_id": cli.ALEMBIC_ADVISORY_LOCK_ID}
-    assert "app-schema Alembic upgrade complete" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "app-schema Alembic upgrade complete" in output
+    assert "reference data seed complete: {'crops': 0}" in output
 
 
 def test_db_upgrade_releases_advisory_lock_on_failure(monkeypatch):
     engine = _FakeEngine()
 
     monkeypatch.setattr(cli, "_migration_lock_engine", lambda: engine)
+    monkeypatch.setattr(cli, "_seed_reference_data", lambda: {})
 
     def fail_upgrade(_cfg, _target):
         raise RuntimeError("boom")
@@ -70,6 +78,18 @@ def test_db_upgrade_releases_advisory_lock_on_failure(monkeypatch):
         raise AssertionError("cmd_db_upgrade should propagate migration failures")
 
     assert "pg_advisory_unlock" in engine.connection.statements[-1][0]
+
+
+def test_seed_reference_data_skips_when_files_are_missing(monkeypatch, capsys):
+    def fail_generate_all():
+        raise FileNotFoundError("missing crops.json")
+
+    import app.bulk_creation as bulk_creation
+
+    monkeypatch.setattr(bulk_creation, "generate_all", fail_generate_all)
+
+    assert cli._seed_reference_data() == {}
+    assert "reference data seed skipped: missing crops.json" in capsys.readouterr().err
 
 
 def test_db_verify_current_succeeds_when_database_matches_head(monkeypatch, capsys):

@@ -17,27 +17,41 @@ export type FieldBoundaryFeatureCollection = GeoJSON.FeatureCollection<
   FieldBoundaryProperties
 >;
 
-const FIELD_BOUNDARY_FILL_LAYER: maplibregl.LayerSpecification = {
-  id: FIELD_BOUNDARY_FILL_LAYER_ID,
-  type: 'fill',
-  source: FIELD_BOUNDARY_SOURCE_ID,
-  paint: {
-    'fill-color': '#3b82f6',
-    'fill-opacity': 0.22,
-  },
-};
+function srcId(prefix: string): string {
+  return prefix ? `${prefix}${FIELD_BOUNDARY_SOURCE_ID}` : FIELD_BOUNDARY_SOURCE_ID;
+}
+function fillId(prefix: string): string {
+  return prefix ? `${prefix}${FIELD_BOUNDARY_FILL_LAYER_ID}` : FIELD_BOUNDARY_FILL_LAYER_ID;
+}
+function outlineId(prefix: string): string {
+  return prefix ? `${prefix}${FIELD_BOUNDARY_OUTLINE_LAYER_ID}` : FIELD_BOUNDARY_OUTLINE_LAYER_ID;
+}
 
-const FIELD_BOUNDARY_OUTLINE_LAYER: maplibregl.LayerSpecification = {
-  id: FIELD_BOUNDARY_OUTLINE_LAYER_ID,
-  type: 'line',
-  source: FIELD_BOUNDARY_SOURCE_ID,
-  paint: {
-    'line-color': '#1d4ed8',
-    'line-opacity': 0.96,
-    'line-width': 4.5,
-    'line-blur': 0.35,
-  },
-};
+function makeFillLayer(prefix: string): maplibregl.LayerSpecification {
+  return {
+    id: fillId(prefix),
+    type: 'fill',
+    source: srcId(prefix),
+    paint: {
+      'fill-color': '#3b82f6',
+      'fill-opacity': 0.22,
+    },
+  };
+}
+
+function makeOutlineLayer(prefix: string): maplibregl.LayerSpecification {
+  return {
+    id: outlineId(prefix),
+    type: 'line',
+    source: srcId(prefix),
+    paint: {
+      'line-color': '#1d4ed8',
+      'line-opacity': 0.96,
+      'line-width': 4.5,
+      'line-blur': 0.35,
+    },
+  };
+}
 
 export function buildFieldBoundaryFeatureCollectionFromGeometry(
   geometry: FieldBoundaryGeometry,
@@ -68,28 +82,31 @@ export function buildFieldBoundaryFeatureCollection(plot: Plot): FieldBoundaryFe
   );
 }
 
-function getFieldBoundarySource(map: maplibregl.Map): maplibregl.GeoJSONSource | null {
-  const source = map.getSource(FIELD_BOUNDARY_SOURCE_ID);
+function getFieldBoundarySource(map: maplibregl.Map, prefix = ''): maplibregl.GeoJSONSource | null {
+  const id = srcId(prefix);
+  const source = map.getSource(id);
   if (!source || !('setData' in source)) return null;
   return source as maplibregl.GeoJSONSource;
 }
 
-export function ensureFieldBoundaryOrder(map: maplibregl.Map): void {
-  if (!map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID) || !map.getLayer(FIELD_BOUNDARY_OUTLINE_LAYER_ID)) {
+export function ensureFieldBoundaryOrder(map: maplibregl.Map, prefix = ''): void {
+  const fill = fillId(prefix);
+  const outline = outlineId(prefix);
+  if (!map.getLayer(fill) || !map.getLayer(outline)) {
     return;
   }
 
   const layers = map.getStyle().layers ?? [];
   const topLayerIds = layers.slice(-2).map((layer) => layer.id);
   if (
-    topLayerIds[0] === FIELD_BOUNDARY_FILL_LAYER_ID &&
-    topLayerIds[1] === FIELD_BOUNDARY_OUTLINE_LAYER_ID
+    topLayerIds[0] === fill &&
+    topLayerIds[1] === outline
   ) {
     return;
   }
 
-  map.moveLayer(FIELD_BOUNDARY_FILL_LAYER_ID);
-  map.moveLayer(FIELD_BOUNDARY_OUTLINE_LAYER_ID);
+  map.moveLayer(fill);
+  map.moveLayer(outline);
 }
 
 export function upsertFieldBoundaryLayer(
@@ -98,6 +115,7 @@ export function upsertFieldBoundaryLayer(
   geometry?: PlotGeometry | null,
   featureId = 'draft-field',
   name = 'Draft field',
+  prefix = '',
 ): void {
   const activeGeometry = (geometry ?? plot?.geometry) as FieldBoundaryGeometry | undefined;
   if (!activeGeometry) return;
@@ -108,35 +126,41 @@ export function upsertFieldBoundaryLayer(
     isDraft ? featureId : (plot?.id ?? 'field-boundary'),
     isDraft ? name : (plot?.name ?? 'Field'),
   );
-  const source = getFieldBoundarySource(map);
+  const source = getFieldBoundarySource(map, prefix);
 
   if (source) {
     source.setData(data);
   } else {
-    map.addSource(FIELD_BOUNDARY_SOURCE_ID, {
+    map.addSource(srcId(prefix), {
       type: 'geojson',
       data,
     });
   }
 
-  if (!map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID)) {
-    map.addLayer(FIELD_BOUNDARY_FILL_LAYER);
+  const fill = fillId(prefix);
+  const outline = outlineId(prefix);
+
+  if (!map.getLayer(fill)) {
+    map.addLayer(makeFillLayer(prefix));
   }
-  if (!map.getLayer(FIELD_BOUNDARY_OUTLINE_LAYER_ID)) {
-    map.addLayer(FIELD_BOUNDARY_OUTLINE_LAYER);
+  if (!map.getLayer(outline)) {
+    map.addLayer(makeOutlineLayer(prefix));
   }
 
-  ensureFieldBoundaryOrder(map);
+  ensureFieldBoundaryOrder(map, prefix);
 }
 
-export function removeFieldBoundaryLayer(map: maplibregl.Map): void {
-  if (map.getLayer(FIELD_BOUNDARY_OUTLINE_LAYER_ID)) {
-    map.removeLayer(FIELD_BOUNDARY_OUTLINE_LAYER_ID);
+export function removeFieldBoundaryLayer(map: maplibregl.Map, prefix = ''): void {
+  const outline = outlineId(prefix);
+  const fill = fillId(prefix);
+  const source = srcId(prefix);
+  if (map.getLayer(outline)) {
+    map.removeLayer(outline);
   }
-  if (map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID)) {
-    map.removeLayer(FIELD_BOUNDARY_FILL_LAYER_ID);
+  if (map.getLayer(fill)) {
+    map.removeLayer(fill);
   }
-  if (map.getSource(FIELD_BOUNDARY_SOURCE_ID)) {
-    map.removeSource(FIELD_BOUNDARY_SOURCE_ID);
+  if (map.getSource(source)) {
+    map.removeSource(source);
   }
 }

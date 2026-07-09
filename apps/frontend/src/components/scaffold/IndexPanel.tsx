@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarDays, Info, Layers, Lock, Plus, Sprout, Zap } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Sprout, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldTrendPoint, Plot, SarSupport } from '@/types/api';
+import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
 interface IndexPanelProps {
+  className?: string;
   selectedPlot: Plot | null;
   selectedDate: string | null;
   sourceId: string | undefined;
@@ -26,6 +27,8 @@ interface IndexPanelProps {
   /** Prefer LISS-4 high-resolution source when available (default true). */
   preferHighRes?: boolean;
   onPreferHighResChange?: (value: boolean) => void;
+  /** Vegetation cycle data for the selected field. */
+  vegetationData?: VegetationCycleResponse[];
 }
 
 const TAB_ITEMS: { value: AnalyticsTab; label: string }[] = [
@@ -61,6 +64,7 @@ function indexLabel(index: string): string {
 }
 
 export function IndexPanel({
+  className,
   selectedPlot,
   selectedDate,
   sourceId,
@@ -73,6 +77,7 @@ export function IndexPanel({
   periodTo,
   preferHighRes = true,
   onPreferHighResChange,
+  vegetationData,
 }: IndexPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('crop-info');
 
@@ -105,12 +110,13 @@ export function IndexPanel({
 
   const statsResponse = statisticsQ.data;
   const stats = statsResponse?.statistics;
-  const warnings = statsResponse?.metadata.warnings ?? [];
+  const metadata = statsResponse?.metadata;
+  const warnings = metadata?.warnings ?? [];
   const metricsProvisional =
     statsResponse?.metricsProvisional ??
-    statsResponse?.metadata.metricsProvisional ??
+    metadata?.metricsProvisional ??
     sourceMetricsProvisional;
-  const responseMaskMethod = statsResponse?.maskMethod ?? statsResponse?.metadata.maskMethod ?? sourceMaskMethod;
+  const responseMaskMethod = statsResponse?.maskMethod ?? metadata?.maskMethod ?? sourceMaskMethod;
   const maskedPixels = statsResponse?.maskedPixels ?? statsResponse?.pixelCounts.maskedPixels;
   const analyticsCopy = metricsProvisional
     ? 'Akasha provisional-mask analytics'
@@ -118,11 +124,12 @@ export function IndexPanel({
   const enhanced = statsResponse?.enhanced ?? false;
   const resolutionMeters = statsResponse?.resolutionMeters ?? null;
   const provenanceNote = statsResponse?.provenanceNote ?? null;
+  const pipeline = metadata?.pipeline ?? null;
   const sarSupport = statsResponse?.sarSupport ?? null;
 
   return (
     <section
-      className="glass w-[320px] max-w-[84vw] overflow-hidden opacity-95"
+      className={ cn('glass w-[320px] max-w-[84vw] overflow-hidden opacity-95', className) }
       data-testid="index-panel"
       aria-label="Field analytics"
     >
@@ -180,13 +187,13 @@ export function IndexPanel({
             )) }
           </TabsList>
 
-          <div className="max-h-[calc(100vh-260px)] overflow-y-auto pr-1">
+          <div className="pr-1">
             <TabsContent
               value="crop-info"
               data-testid="index-panel-content-crop-info"
               className="space-y-2"
             >
-              <CropInfoTab seasonLabel={ selectedDate ?? null } />
+              <CropInfoTab vegetationData={ vegetationData ?? [] } />
             </TabsContent>
 
             <TabsContent
@@ -219,9 +226,9 @@ export function IndexPanel({
                 selectedDate={ selectedDate }
                 analyticsCopy={ analyticsCopy }
                 fallbackReason={ trendQ.data?.fallbackReason ?? null }
-                formula={ statsResponse?.metadata.formula }
+                formula={ metadata?.formula }
                 bands={
-                  statsResponse?.metadata.bands ?? trendQ.data?.metadata.bands ?? null
+                  metadata?.bands ?? trendQ.data?.metadata.bands ?? null
                 }
                 warnings={ warnings }
                 periodFrom={ trendStart ?? null }
@@ -232,6 +239,7 @@ export function IndexPanel({
                 enhanced={ enhanced }
                 resolutionMeters={ resolutionMeters }
                 provenanceNote={ provenanceNote }
+                pipeline={ pipeline }
                 sarSupport={ sarSupport }
               />
             </TabsContent>
@@ -250,128 +258,167 @@ export function IndexPanel({
   );
 }
 
-function CropInfoTab({ seasonLabel }: { seasonLabel: string | null }) {
+const STAGE_LABELS = ['Seeding', 'Germination', 'Vegetative', 'Branching', 'Flowering', 'Fruiting', 'Ripening', 'Harvest'];
+
+function CropInfoTab({
+  vegetationData,
+}: {
+  vegetationData: VegetationCycleResponse[];
+}) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    if (vegetationData.length > 0) return new Set([vegetationData[0].id]);
+    return new Set();
+  });
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const currentCrop = vegetationData[0];
+
   return (
-    <div className="space-y-2 pt-1">
-      <CropInfoCard
-        testId="crop-info-card-crop-rotation"
-        title="Crop rotation"
-        icon={ <Sprout className="size-3.5 text-primary" strokeWidth={ 1.75 } /> }
+    <div className="grid grid-cols-3 gap-3 pt-1">
+      {/* ── Card 1: Crop Rotation ── */ }
+      <div
+        data-testid="crop-info-card-crop-rotation"
+        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4"
       >
-        <p className="text-[13px] text-muted-foreground">
-          Season · { seasonLabel ? `as of ${seasonLabel}` : 'no scene selected' }
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 px-2 text-[13px]"
-            data-testid="crop-info-add-crop"
-            disabled
-          >
-            <Plus className="size-3" strokeWidth={ 1.75 } /> Add crop
-          </Button>
-          <span className="text-[13px] text-muted-foreground">Show all</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Sprout className="size-4 text-primary" strokeWidth={ 1.75 } />
+            <span className="text-[13px] font-semibold text-foreground">Crop rotation</span>
+            <Info className="size-3 text-muted-foreground" strokeWidth={ 1.75 } />
+          </div>
+          <span className="text-[11px] font-medium text-primary cursor-default">Show all</span>
         </div>
-      </CropInfoCard>
 
-      <CropInfoCard
-        testId="crop-info-card-sown-area"
-        title="Sown area detected"
-        locked
-      >
-        <p className="text-[13px] leading-4 text-muted-foreground">
-          Sown-area detection is available on the Essential or Professional plan.
+        <p className="text-[12px] text-muted-foreground">
+          Season: { currentCrop?.seasonName ?? '—' }
         </p>
-      </CropInfoCard>
 
-      <CropInfoCard
-        testId="crop-info-card-management-guide"
-        title="Crop management guide"
-      >
-        <p className="text-[13px] leading-4 text-muted-foreground">
-          Browse Akasha crop-management notes for each supported crop.
-        </p>
+        <div className="space-y-1">
+          { vegetationData.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground">No crops added yet.</p>
+          ) : (
+            vegetationData.map((cycle, idx) => {
+              const isExpanded = expandedIds.has(cycle.id);
+              const isSelected = idx === 0;
+              return (
+                <div key={ cycle.id } className="rounded-md border border-border/60 bg-background/60">
+                  <button
+                    type="button"
+                    onClick={ () => toggleExpand(cycle.id) }
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                  >
+                    { isExpanded
+                      ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" strokeWidth={ 2 } />
+                      : <ChevronRight className="size-3 shrink-0 text-muted-foreground" strokeWidth={ 2 } />
+                    }
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="truncate text-[12px] font-medium text-foreground">
+                        { cycle.cropName ?? 'Unknown crop' }
+                      </span>
+                      { isSelected && (
+                        <span className="size-2 shrink-0 rounded-full bg-primary" />
+                      ) }
+                    </div>
+                  </button>
+                  { isExpanded && (
+                    <div className="border-t border-border/50 px-3 py-2">
+                      <p className="text-[11px] text-muted-foreground">
+                        Sowing date: { cycle.sowingDate ?? '—' }
+                      </p>
+                    </div>
+                  ) }
+                </div>
+              );
+            })
+          ) }
+        </div>
+
         <Button
           type="button"
           size="sm"
-          variant="ghost"
-          className="h-7 px-0 text-[13px] text-primary"
-          data-testid="crop-info-guide-link"
+          variant="outline"
+          className="mt-auto h-7 gap-1 self-start text-[11px]"
           disabled
         >
-          Go to guide
+          <Plus className="size-3" strokeWidth={ 1.75 } /> Add crop
         </Button>
-      </CropInfoCard>
-
-      <CropInfoCard
-        testId="crop-info-card-growth-stages"
-        title="Growth stages"
-      >
-        <p className="text-[13px] leading-4 text-muted-foreground">
-          Select a crop to view its growth stages.
-        </p>
-      </CropInfoCard>
-
-      <CropInfoCard
-        testId="crop-info-card-current-risks"
-        title="Current risks"
-        locked
-      >
-        <p className="text-[13px] leading-4 text-muted-foreground">
-          Risk diagnostics are available on the Essential or Professional plan.
-        </p>
-      </CropInfoCard>
-
-      <CropInfoCard
-        testId="crop-info-card-ndvi-split"
-        title="NDVI value split"
-        locked
-      >
-        <p className="text-[13px] leading-4 text-muted-foreground">
-          Vegetation-class split is available on the Essential or Professional plan.
-        </p>
-      </CropInfoCard>
-    </div>
-  );
-}
-
-function CropInfoCard({
-  title,
-  children,
-  testId,
-  icon,
-  locked = false,
-}: {
-  title: string;
-  children: React.ReactNode;
-  testId: string;
-  icon?: React.ReactNode;
-  locked?: boolean;
-}) {
-  return (
-    <div
-      data-testid={ testId }
-      className={ cn(
-        'rounded-md border border-border/70 bg-background/40 p-2.5',
-        locked && 'opacity-80',
-      ) }
-    >
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          { icon }
-          <p className="text-[13px] font-medium text-foreground">{ title }</p>
-        </div>
-        { locked && (
-          <Lock
-            className="size-3 text-muted-foreground"
-            strokeWidth={ 1.75 }
-            aria-label="Plan-gated feature"
-          />
-        ) }
       </div>
-      <div className="space-y-1.5">{ children }</div>
+
+      {/* ── Card 2: Growth Stages ── */ }
+      <div
+        data-testid="crop-info-card-growth-stages"
+        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Sprout className="size-4 text-primary" strokeWidth={ 1.75 } />
+            <span className="text-[13px] font-semibold text-foreground">Growth Stages</span>
+            <Info className="size-3 text-muted-foreground" strokeWidth={ 1.75 } />
+          </div>
+          <span className="text-[11px] font-medium text-primary cursor-default">Edit</span>
+        </div>
+
+        <div className="relative py-2">
+          <div className="absolute left-1.75 right-1.75 top-2.75 h-0.5 bg-border" />
+          <div className="relative flex justify-between">
+            { STAGE_LABELS.map((label, i) => (
+              <div key={ label } className="flex flex-col items-center gap-1">
+                <div
+                  className={ cn(
+                    'relative z-10 size-3.5 rounded-full border-2',
+                    i === 0
+                      ? 'border-primary bg-primary'
+                      : 'border-border bg-background',
+                  ) }
+                />
+                <span className={ cn(
+                  'text-[9px] leading-tight text-center',
+                  i === 0 ? 'text-primary font-medium' : 'text-muted-foreground',
+                ) }>
+                  { label }
+                </span>
+              </div>
+            )) }
+          </div>
+        </div>
+
+        <div className="mt-1 rounded-md border border-dashed border-border/70 bg-background/50 px-3 py-2.5 text-center">
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            Growth stages will become available once crop vegetation begins.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Card 3: Current Risks ── */ }
+      <div
+        data-testid="crop-info-card-current-risks"
+        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4 opacity-80"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="size-4 text-muted-foreground" strokeWidth={ 1.75 } />
+            <span className="text-[13px] font-semibold text-foreground">Current risks</span>
+            <Info className="size-3 text-muted-foreground" strokeWidth={ 1.75 } />
+          </div>
+          <Lock className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } aria-label="Plan-gated feature" />
+        </div>
+
+        <p className="text-[12px] leading-5 text-muted-foreground">
+          Risk information on this field is available in the{ ' ' }
+          <span className="font-medium text-primary cursor-default">Essential</span>
+          { ' or ' }
+          <span className="font-medium text-primary cursor-default">Professional</span>
+          { ' ' }plans.
+        </p>
+      </div>
     </div>
   );
 }
@@ -409,6 +456,7 @@ interface ChartTabProps {
   enhanced?: boolean;
   resolutionMeters?: number | null;
   provenanceNote?: string | null;
+  pipeline?: FieldStatisticsPipelineMetadata | null;
   sarSupport?: SarSupport | null;
 }
 
@@ -436,6 +484,7 @@ function ChartTab({
   enhanced = false,
   resolutionMeters,
   provenanceNote,
+  pipeline,
   sarSupport,
 }: ChartTabProps) {
   const maskMethod = sourceMaskMethod ?? null;
@@ -521,6 +570,8 @@ function ChartTab({
           </>
         ) }
       </div>
+
+      { pipeline && <PipelineProvenance pipeline={ pipeline } /> }
 
       <div data-testid="analytics-chart-section">
         <div className="mb-2 flex items-center justify-between">
@@ -609,6 +660,85 @@ function ChartTab({
           <p key={ warning } className="text-amber-300">{ warning }</p>
         )) }
       </div>
+    </div>
+  );
+}
+
+function valueOrDash(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return String(value);
+}
+
+function freshnessSummary(pipeline: FieldStatisticsPipelineMetadata): string | null {
+  const freshness = pipeline.freshness;
+  if (!freshness) return null;
+  const stale = freshness.stale === true || freshness.status?.toUpperCase().includes('STALE');
+  const label = stale ? 'Stale' : freshness.status ?? 'Fresh';
+  const details = [
+    freshness.latestProcessedSceneDate ? `latest ${freshness.latestProcessedSceneDate}` : null,
+    freshness.staleAfter ? `stale after ${freshness.staleAfter}` : null,
+    freshness.aoiId ? `AOI ${freshness.aoiId}` : null,
+  ].filter(Boolean);
+  return details.length > 0 ? `${label} · ${details.join(' · ')}` : label;
+}
+
+function PipelineProvenance({ pipeline }: { pipeline: FieldStatisticsPipelineMetadata }) {
+  const qualityWarnings = pipeline.quality?.warnings ?? [];
+  const freshnessWarnings = pipeline.freshness?.warnings ?? [];
+  const warnings = [...qualityWarnings, ...freshnessWarnings];
+  const freshness = freshnessSummary(pipeline);
+  const route = pipeline.providerRoute ?? pipeline.source ?? null;
+  const qualityStatus = pipeline.quality?.status ?? pipeline.status ?? null;
+
+  return (
+    <div
+      className="rounded-md border border-primary/20 bg-primary/5 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      data-testid="analytics-pipeline-provenance"
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.14em] text-primary/90">
+            Sentinel-2 pipeline
+          </p>
+          <p className="mt-0.5 text-[13px] font-medium text-foreground">
+            { valueOrDash(route) }
+          </p>
+        </div>
+        { qualityStatus && (
+          <span
+            className="rounded-pill border border-primary/25 bg-background/60 px-2 py-0.5 text-[10px] uppercase text-primary"
+            data-testid="analytics-pipeline-status"
+          >
+            { qualityStatus }
+          </span>
+        ) }
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-[11px] leading-4">
+        <DateField label="Scene" value={ pipeline.selectedSceneDate ?? null } />
+        <DateField label="Requested" value={ pipeline.requestedDate ?? null } />
+      </div>
+
+      { freshness && (
+        <p className="mt-2 text-[11px] leading-4 text-muted-foreground" data-testid="analytics-pipeline-freshness">
+          Freshness: { freshness }
+        </p>
+      ) }
+      { pipeline.quality?.reason && (
+        <p className="mt-1 text-[11px] leading-4 text-muted-foreground" data-testid="analytics-pipeline-quality">
+          Quality: { pipeline.quality.reason }
+        </p>
+      ) }
+      { pipeline.cloudMaskOptionsNote && (
+        <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+          { pipeline.cloudMaskOptionsNote }
+        </p>
+      ) }
+      { warnings.map((warning) => (
+        <p key={ warning } className="mt-1 text-[11px] leading-4 text-amber-300" data-testid="analytics-pipeline-warning">
+          { warning }
+        </p>
+      )) }
     </div>
   );
 }

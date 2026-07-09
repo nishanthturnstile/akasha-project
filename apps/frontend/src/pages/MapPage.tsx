@@ -315,7 +315,7 @@ function resolveDisplayMode(
   return availableModes.find((mode) => mode.toUpperCase() === normalized) ?? fallback;
 }
 
-export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLeftCoords }: { hidePlotToolbar?: boolean; simplifiedMapControls?: boolean; topLeftCoords?: boolean } = {}) {
+export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLeftCoords, showFullscreen }: { hidePlotToolbar?: boolean; simplifiedMapControls?: boolean; topLeftCoords?: boolean; showFullscreen?: boolean } = {}) {
   useMapUrlState();
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -690,14 +690,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       lat,
       preferHighRes,
     });
-  }, [
-    isIndexLayer,
-    selectedPlot,
-    selectedDate,
-    requestSourceId,
-    selectedDisplayMode,
-    preferHighRes,
-  ]);
+  }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode, preferHighRes]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -1003,11 +996,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         <div className="absolute left-4 top-4 z-toolbar">
           <CoordinateReadout
             map={ map }
-            indexLookup={
-              isIndexLayer && selectedPlot && selectedDate && requestSourceId
-                ? indexLookup
-                : undefined
-            }
+            indexLookup={ isIndexLayer && selectedPlot && selectedDate && requestSourceId ? indexLookup : undefined }
           />
         </div>
       ) }
@@ -1104,9 +1093,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           />
         </div>
 
-        { overlaysVisible && (
+        { overlaysVisible && showFullscreen && (
           /* Fullscreen card — same height as timeline bar */
-          <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-(--timeline-height)">
+          <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
             <button
               type="button"
               aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }

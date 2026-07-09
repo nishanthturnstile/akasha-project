@@ -12,9 +12,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -23,7 +25,7 @@ from typing import Any
 from alembic import command
 
 from .config import settings
-from .ingestion_client import get_readiness, is_ingestion_configured
+from .ingestion_client import is_ingestion_configured
 from .raster.catalog_resolver import SENTINEL_2_SOURCE_ID
 from .raster.errors import AkashaError
 
@@ -81,9 +83,27 @@ def _format_heads(heads: tuple[str, ...]) -> str:
 
 
 def cmd_db_upgrade(_: argparse.Namespace) -> int:
-    _run_with_migration_lock(lambda: command.upgrade(_alembic_config(), "head"))
+    seed_counts: dict[str, int] = {}
+
+    def upgrade_and_seed() -> None:
+        nonlocal seed_counts
+        command.upgrade(_alembic_config(), "head")
+        seed_counts = _seed_reference_data()
+
+    _run_with_migration_lock(upgrade_and_seed)
     print("app-schema Alembic upgrade complete")
+    print(f"reference data seed complete: {seed_counts}")
     return 0
+
+
+def _seed_reference_data() -> dict[str, int]:
+    from .bulk_creation import generate_all
+
+    try:
+        return generate_all()
+    except FileNotFoundError as exc:
+        print(f"reference data seed skipped: {exc}", file=sys.stderr)
+        return {}
 
 
 def cmd_db_current(_: argparse.Namespace) -> int:
@@ -177,6 +197,34 @@ def _readiness_count(readiness: dict[str, Any] | None) -> int:
     return len(dates) if isinstance(dates, list) else 0
 
 
+def _check_ingestion_readiness(source_id: str, aoi_id: str) -> dict[str, Any] | None:
+    endpoint = settings.ingestion_api_url.rstrip("/")
+    query = urllib.parse.urlencode({"sourceId": source_id, "aoiId": aoi_id})
+    request = urllib.request.Request(
+        f"{endpoint}/api/v1/analytics/readiness?{query}",
+        headers={"Accept": "application/json", "X-API-Key": settings.ingestion_api_key},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(  # noqa: S310 - configured private ingestion URL
+            request,
+            timeout=settings.ingestion_request_timeout_seconds,
+        ) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        ValueError,
+    ) as exc:
+        raise AkashaError("INGESTION_API_ERROR", "Readiness check failed.", 502) from exc
+    if not isinstance(body, dict) or not body.get("success"):
+        return None
+    data = body.get("data")
+    return data if isinstance(data, dict) else None
+
+
 def cmd_ingestion_check(_: argparse.Namespace) -> int:
     """Preflight the local remote-ingestion bridge without printing secrets."""
     configured = is_ingestion_configured(settings)
@@ -206,11 +254,7 @@ def cmd_ingestion_check(_: argparse.Namespace) -> int:
         return 1
 
     try:
-        readiness = get_readiness(
-            settings,
-            source_id=SENTINEL_2_SOURCE_ID,
-            aoi_id=settings.ingestion_aoi_id,
-        )
+        readiness = _check_ingestion_readiness(SENTINEL_2_SOURCE_ID, settings.ingestion_aoi_id)
     except AkashaError as exc:
         print(f"Readiness check failed: {exc.code}")
         return 1

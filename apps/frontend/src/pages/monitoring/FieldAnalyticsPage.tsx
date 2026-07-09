@@ -2,25 +2,65 @@ import { Map as MapIcon, Pencil } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
-import FieldAnalyticsPanel from '@/components/analytics/FieldAnalyticsPanel';
-import { useConfig, useDates, useDeleteField, useFields, useSources, useUpdateField } from '@/lib/queries';
+import { IndexPanel } from '@/components/scaffold/IndexPanel';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import { selectEffectiveSourceId } from '@/lib/sourceSelection';
+import { useConfig, useDates, useDeleteField, useFields, useSources, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
 import { useSeasonContext } from '@/state/seasonContext';
-import { cn } from '@/lib/utils';
-import type { CloudMaskOptions } from '@/types/api';
+import type { CloudMaskOptions, Source } from '@/types/api';
 
 function formatAreaHa(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return `${value.toFixed(1)} ha`;
 }
 
+function maskOptionsForSource(source: Source | null | undefined): Array<keyof CloudMaskOptions> {
+  return source?.availableMaskOptions ?? ['clouds', 'cloudShadows', 'cirrus'];
+}
+
+function sanitizeCloudMaskForSource(
+  value: CloudMaskOptions,
+  source: Source | null | undefined,
+): CloudMaskOptions {
+  const available = new Set(maskOptionsForSource(source));
+  return {
+    clouds: available.has('clouds') ? value.clouds : false,
+    cloudShadows: available.has('cloudShadows') ? value.cloudShadows : false,
+    cirrus: available.has('cirrus') ? value.cirrus : false,
+  };
+}
+
+function defaultDisplayModeForSource(source: Source | null | undefined, fallback: string): string {
+  return (
+    source?.defaultMapDisplayMode ??
+    source?.defaultDisplayMode ??
+    source?.mapDisplayModes?.[0] ??
+    source?.displayModes?.[0] ??
+    fallback
+  );
+}
+
 export default function FieldAnalyticsPage() {
-  const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, selectedDate, displayMode, overlaysVisible, mapFullscreen } = useMapView();
+  const navigate = useNavigate();
+  const {
+    selectedPlotId,
+    setSelectedPlotId,
+    setFocusNonce,
+    clearSelectedPlot,
+    cloudMask,
+    periodFrom,
+    periodTo,
+    activeSourceId,
+    selectedDate: dateOverride,
+    displayMode,
+    overlaysVisible,
+    mapFullscreen,
+  } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -35,11 +75,6 @@ export default function FieldAnalyticsPage() {
     return fieldsQ.data.find((f) => f.id === selectedPlotId) ?? null;
   }, [fieldsQ.data, selectedPlotId]);
 
-  const seasonFields = useMemo(() => {
-    if (!seasonId) return fieldsQ.data ?? [];
-    return (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(seasonId));
-  }, [fieldsQ.data, seasonId]);
-
   const effectiveSourceId = useMemo(
     () => selectEffectiveSourceId({
       activeSourceId,
@@ -49,22 +84,34 @@ export default function FieldAnalyticsPage() {
     [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
   );
   const selectedSource = useMemo(
-    () => sourcesQ.data?.find((source) => source.id === effectiveSourceId),
-    [effectiveSourceId, sourcesQ.data],
+    () => sourcesQ.data?.find((source) => source.id === effectiveSourceId) ?? null,
+    [sourcesQ.data, effectiveSourceId],
   );
   const datesQ = useDates(effectiveSourceId);
-  const effectiveSelectedDate = useMemo(() => {
-    if (!datesQ.data || !configQ.data) return selectedDate ?? null;
-    if (selectedDate && datesQ.data.some((d) => d.acquisitionDate === selectedDate)) {
-      return selectedDate;
+  const selectedDate = useMemo(() => {
+    if (!datesQ.data || !configQ.data) return null;
+    if (dateOverride && datesQ.data.some((entry) => entry.acquisitionDate === dateOverride)) {
+      return dateOverride;
     }
     return selectDefaultDate(datesQ.data, configQ.data.usablePixelThresholdPercent, {
       sourceKind: selectedSource?.kind,
     })?.acquisitionDate ?? null;
-  }, [configQ.data, datesQ.data, selectedDate, selectedSource?.kind]);
+  }, [configQ.data, dateOverride, datesQ.data, selectedSource?.kind]);
   const supportedIndices = selectedSource?.supportedIndices ?? configQ.data?.supportedIndices ?? ['NDVI'];
+  const activeDisplayMode = displayMode ?? defaultDisplayModeForSource(
+    selectedSource,
+    configQ.data?.defaultIndex ?? 'NDVI',
+  );
+  const effectiveCloudMask = sanitizeCloudMaskForSource(
+    cloudMask as CloudMaskOptions,
+    selectedSource,
+  );
 
-  const navigate = useNavigate();
+  const seasonFields = useMemo(() => {
+    if (!fieldsQ.data || !seasonId) return fieldsQ.data ?? [];
+    return fieldsQ.data.filter((f) => f.seasonIds?.includes(seasonId)) ?? [];
+  }, [fieldsQ.data, seasonId]);
+
   const navigateWithImageryState = useCallback((path: string) => {
     const [pathname, query = ''] = path.split('?');
     const params = new URLSearchParams(query);
@@ -78,9 +125,9 @@ export default function FieldAnalyticsPage() {
   }, [displayMode, effectiveSourceId, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4 min-h-0">
+    <div className="h-full flex flex-col gap-4 p-4 min-h-0">
       { overlaysVisible && (
-        <div className="shrink-0 flex items-stretch rounded-md border border-border bg-background">
+        <div className="flex items-stretch rounded-md border border-border bg-background">
           <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">
             <button
               type="button"
@@ -131,30 +178,38 @@ export default function FieldAnalyticsPage() {
             <AddFieldDropdown
               fields={ seasonFields }
               onNavigate={ navigateWithImageryState }
-              onSelectField={ (fieldId) => { setSelectedPlotId(fieldId); setFocusNonce(Date.now()); } }
+              onSelectField={ (fieldId) => {
+                setSelectedPlotId(fieldId);
+                setFocusNonce(Date.now());
+              } }
               defaultSeasonId={ seasonId }
+              testId="analytics-add-field"
             />
           </div>
         </div>
       ) }
 
-      {/* Map card — flex-1 when fullscreen/global, flex-[13] when analytics visible */ }
-      <div className={ cn('min-h-0 rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'flex-[13]' : 'flex-1') }>
-        <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords />
+      {/* Map card */ }
+      <div className={ cn('rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'h-[50vh] min-h-75' : 'flex-1 min-h-0') }>
+        <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords showFullscreen />
       </div>
 
-      {/* Analytics panel card — hidden when mapFullscreen is active */ }
+      {/* Analytics panel */ }
       { selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="min-h-0 flex-[7] rounded-md border border-border bg-background">
-          <FieldAnalyticsPanel
-            field={ selectedField }
+        <div className="rounded-md border border-border bg-background">
+          <IndexPanel
+            className="w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
+            selectedPlot={ selectedField }
+            selectedDate={ selectedDate }
             sourceId={ effectiveSourceId }
-            indices={ supportedIndices }
-            selectedDate={ effectiveSelectedDate }
-            displayMode={ displayMode }
-            cloudMask={ cloudMask as CloudMaskOptions }
+            displayMode={ activeDisplayMode }
+            supportedIndices={ supportedIndices }
+            cloudMask={ effectiveCloudMask }
+            sourceMaskMethod={ selectedSource?.maskMethod ?? null }
+            sourceMetricsProvisional={ selectedSource?.metricsProvisional ?? false }
             periodFrom={ periodFrom }
             periodTo={ periodTo }
+            vegetationData={ selectedField?.vegetationData }
           />
         </div>
       ) }
@@ -176,6 +231,7 @@ export default function FieldAnalyticsPage() {
           onDelete={ (fieldId) => deleteField.mutateAsync(fieldId) }
         />
       ) }
+
     </div>
   );
 }

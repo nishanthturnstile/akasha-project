@@ -9,7 +9,7 @@ from pydantic import field_validator
 
 from ..api_models import ApiModel
 
-MAX_NAME_LENGTH = 100
+MAX_NAME_LENGTH = 15
 
 
 class SeasonCreate(ApiModel):

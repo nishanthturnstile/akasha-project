@@ -54,6 +54,7 @@ import type {
   PlotGeometry,
   PlotImportResponse,
   PlotUpdatePayload,
+  PredefinedSeason,
   SceneDate,
   Source,
   Season,
@@ -194,6 +195,95 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return (await res.json()) as T;
 }
 
+const FORBIDDEN_PIPELINE_QUERY_PARAMS = new Set(['sig', 'kid', 'exp', 'op']);
+const FORBIDDEN_PIPELINE_URL_MARKERS = [
+  'ingestion.',
+  'ingestion.internal',
+  'minio',
+  'pgstac',
+  'titiler',
+  's3://',
+  'akasha-cogs',
+  'x-amz-',
+];
+
+function browserOrigin(): string {
+  return typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'http://localhost';
+}
+
+function hasForbiddenPipelineQueryParams(rawUrl: string): boolean {
+  const queryStart = rawUrl.indexOf('?');
+  if (queryStart < 0) return false;
+  const params = new URLSearchParams(rawUrl.slice(queryStart + 1));
+  return Array.from(params.keys()).some((key) => FORBIDDEN_PIPELINE_QUERY_PARAMS.has(key.toLowerCase()));
+}
+
+/** Normalize a browser-visible pipeline URL to a same-origin `/api/*` path, or reject it. */
+export function normalizeAppDomainApiUrl(rawUrl: string | null | undefined): string | null {
+  if (typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed || hasForbiddenPipelineQueryParams(trimmed)) return null;
+
+  const lowered = trimmed.toLowerCase();
+  if (FORBIDDEN_PIPELINE_URL_MARKERS.some((marker) => lowered.includes(marker))) return null;
+
+  if (trimmed.startsWith('/api/')) {
+    return trimmed;
+  }
+
+  const origin = browserOrigin();
+  if (!trimmed.startsWith(`${origin}/api/`)) return null;
+  return trimmed.slice(origin.length);
+}
+
+export function isSafeAppDomainApiUrl(rawUrl: string | null | undefined): boolean {
+  return normalizeAppDomainApiUrl(rawUrl) !== null;
+}
+
+function sanitizeFieldStatisticsResponse(response: FieldStatisticsResponse): FieldStatisticsResponse {
+  if (response == null || typeof response !== 'object') return response;
+  const metadata = response.metadata;
+  const pipeline = metadata?.pipeline;
+  if (pipeline == null || typeof pipeline !== 'object') return response;
+
+  const sanitizedPipeline = { ...pipeline };
+  let rejectedPipelineUrl = false;
+
+  if ('tileUrl' in sanitizedPipeline) {
+    const normalized = normalizeAppDomainApiUrl(sanitizedPipeline.tileUrl);
+    if (normalized) {
+      sanitizedPipeline.tileUrl = normalized;
+    } else {
+      delete sanitizedPipeline.tileUrl;
+      rejectedPipelineUrl = true;
+    }
+  }
+
+  if ('statsUrl' in sanitizedPipeline) {
+    const normalized = normalizeAppDomainApiUrl(sanitizedPipeline.statsUrl);
+    if (normalized) {
+      sanitizedPipeline.statsUrl = normalized;
+    } else {
+      delete sanitizedPipeline.statsUrl;
+      rejectedPipelineUrl = true;
+    }
+  }
+
+  const warnings = metadata.warnings ?? [];
+  return {
+    ...response,
+    metadata: {
+      ...metadata,
+      warnings: rejectedPipelineUrl
+        ? [...warnings, 'Pipeline proxy URL omitted because it was not an app-domain /api route.']
+        : warnings,
+      pipeline: sanitizedPipeline,
+    },
+  };
+}
+
 async function requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
   const headers = new Headers(options.headers);
   if (!headers.has('Accept')) {
@@ -297,6 +387,9 @@ export const getBestObservations = (params: BestObservationsParams = {}): Promis
 };
 export const getCrops = (): Promise<Crop[]> => request<Crop[]>('/api/crops');
 
+export const getPredefinedSeasons = (): Promise<PredefinedSeason[]> =>
+  request<PredefinedSeason[]>('/api/predefined-seasons');
+
 export const getIrrigationTypes = (): Promise<IrrigationType[]> =>
   request<IrrigationType[]>('/api/irrigation-types');
 
@@ -342,8 +435,13 @@ export const getSeason = (seasonId: string): Promise<Season> =>
 export const updateSeason = (seasonId: string, payload: SeasonUpdatePayload): Promise<Season> =>
   request<Season>(`/api/seasons/${encodeURIComponent(seasonId)}`, { method: 'PATCH', body: payload });
 
-export const deleteSeason = (seasonId: string): Promise<void> =>
-  request<void>(`/api/seasons/${encodeURIComponent(seasonId)}`, { method: 'DELETE' });
+export const deleteSeason = (seasonId: string, moveFieldsToSeasonId?: string): Promise<void> => {
+  let path = `/api/seasons/${encodeURIComponent(seasonId)}`;
+  if (moveFieldsToSeasonId) {
+    path += `?moveFieldsToSeasonId=${encodeURIComponent(moveFieldsToSeasonId)}`;
+  }
+  return request<void>(path, { method: 'DELETE' });
+};
 
 // --------------------------------------------------------------------------
 // Fields API
@@ -369,7 +467,7 @@ export const getFieldStatistics = (
   request<FieldStatisticsResponse>(
     `/api/fields/${encodeURIComponent(plotId)}/indices/statistics`,
     { method: 'POST', body: payload },
-  );
+  ).then(sanitizeFieldStatisticsResponse);
 
 export const getFieldTrend = (
   plotId: string,

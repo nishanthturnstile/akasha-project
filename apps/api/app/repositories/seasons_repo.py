@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 
 from ..db import session_scope
-from ..models import Field, FieldSeason, Season
+from ..models import Field, FieldSeason, Season, VegetationCycle
 from ..raster.errors import AkashaError, not_found
 
 
@@ -290,7 +290,11 @@ def update_season(
         )
 
 
-def delete_season(season_id: str, user_id: str | None = None) -> bool:
+def delete_season(
+    season_id: str,
+    user_id: str | None = None,
+    move_fields_to_season_id: str | None = None,
+) -> bool:
     with session_scope() as session:
         season = session.get(Season, _uuid(season_id))
         if season is None:
@@ -310,6 +314,64 @@ def delete_season(season_id: str, user_id: str | None = None) -> bool:
                 409,
                 {"seasonId": season_id},
             )
+
+        if move_fields_to_season_id:
+            dest_id = _uuid(move_fields_to_season_id)
+            field_seasons = (
+                session.query(FieldSeason)
+                .filter(FieldSeason.season_id == season.season_id)
+                .all()
+            )
+            for fs in field_seasons:
+                existing = (
+                    session.query(FieldSeason)
+                    .filter(
+                        FieldSeason.field_id == fs.field_id,
+                        FieldSeason.season_id == dest_id,
+                    )
+                    .first()
+                )
+                if not existing:
+                    session.add(FieldSeason(field_id=fs.field_id, season_id=dest_id))
+
+            veg_cycles = (
+                session.query(VegetationCycle)
+                .filter(VegetationCycle.season_id == season.season_id)
+                .all()
+            )
+            for vc in veg_cycles:
+                existing = (
+                    session.query(VegetationCycle)
+                    .filter(
+                        VegetationCycle.field_id == vc.field_id,
+                        VegetationCycle.season_id == dest_id,
+                        VegetationCycle.year == vc.year,
+                        VegetationCycle.crop_id == vc.crop_id,
+                    )
+                    .first()
+                )
+                if not existing:
+                    session.add(
+                        VegetationCycle(
+                            user_id=vc.user_id,
+                            field_id=vc.field_id,
+                            season_id=dest_id,
+                            year=vc.year,
+                            crop_id=vc.crop_id,
+                            variety_id=vc.variety_id,
+                            sowing_date=vc.sowing_date,
+                            harvesting_date=vc.harvesting_date,
+                            target_yield=vc.target_yield,
+                            actual_yield=vc.actual_yield,
+                            irrigation_type_id=vc.irrigation_type_id,
+                            tillage_type_id=vc.tillage_type_id,
+                            maturity=vc.maturity,
+                            fertilizer=vc.fertilizer,
+                            hybrid=vc.hybrid,
+                            ndvi_list=vc.ndvi_list,
+                            notes=vc.notes,
+                        )
+                    )
 
         session.delete(season)
         session.flush()

@@ -26,7 +26,6 @@ export interface BasemapConfig {
 
 export interface AppConfig {
   appName: string;
-  defaultSourceId: string;
   aoi: AoiConfig;
   aois?: AoiConfig[];
   /** Backward-compatible field. Esri basemaps are configured through `basemap`. */
@@ -37,6 +36,7 @@ export interface AppConfig {
   usablePixelThresholdPercent: number;
   supportedIndices: string[];
   defaultIndex: string;
+  defaultSourceId?: string;
   adminIngestionLiveTriggerEnabled: boolean;
 }
 
@@ -79,6 +79,18 @@ export interface PaginatedVarieties {
   pages: number;
 }
 
+export interface PredefinedSeason {
+  id: number;
+  seasonName: string;
+  periodStartDate: string | null;
+  periodEndDate: string | null;
+  sowingStartDate: string | null;
+  sowingEndDate: string | null;
+  harvestingStartDate: string | null;
+  harvestingEndDate: string | null;
+  mainWaterSource: string | null;
+}
+
 export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
 export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
 export type SourceAvailabilityStatus = 'active' | 'gated';
@@ -93,7 +105,6 @@ export interface Source {
   id: string;
   label: string;
   provider: string;
-  pipelineBacked?: boolean;
   kind?: SourceKind;
   displayModes?: string[];
   defaultDisplayMode?: string;
@@ -113,6 +124,8 @@ export interface Source {
   analysisLevel?: SourceAnalysisLevel;
   availabilityStatus?: SourceAvailabilityStatus;
   gatedReason?: string | null;
+  /** True when this source is served by the ingestion pipeline (XYZ index tiles + field stats). */
+  pipelineBacked?: boolean;
 }
 
 export interface MonitoringFailure {
@@ -298,17 +311,17 @@ export interface IngestionSourceSummary {
   label: string;
   provider?: string | null;
   kind?: string | null;
-  availabilityStatus?: SourceAvailabilityStatus | string | null;
   active: boolean;
   adminManageable?: boolean;
   syncEnabled?: boolean;
-  gatedReason?: string | null;
-  aoiId?: string | null;
+  productExposure?: string | null;
+  availabilityStatus?: SourceAvailabilityStatus | string | null;
   scheduleState?: string | null;
   scheduleEnabled?: boolean;
-  productExposure?: string | null;
   validationState?: string | null;
   capabilities?: string[];
+  gatedReason?: string | null;
+  aoiId?: string | null;
   cadenceDays?: number | null;
   lastRunAt?: string | null;
   lastSuccessAt?: string | null;
@@ -693,6 +706,68 @@ export interface PixelCounts {
   validPixels: number;
 }
 
+export interface PipelineSelectionMetadata {
+  windowDays?: number | null;
+  rule?: string | null;
+  validPixelCount?: number | null;
+  [key: string]: unknown;
+}
+
+export interface PipelineResolutionMetadata {
+  nativeMeters?: number | null;
+  processingMeters?: number | null;
+  displayMeters?: number | null;
+  [key: string]: unknown;
+}
+
+export interface PipelineQualityMetadata {
+  status?: string | null;
+  reason?: string | null;
+  warnings?: string[];
+  [key: string]: unknown;
+}
+
+export interface PipelineFreshnessMetadata {
+  status?: string | null;
+  stale?: boolean | null;
+  aoiId?: string | null;
+  latestProcessedSceneDate?: string | null;
+  staleAfter?: string | null;
+  reason?: string | null;
+  warnings?: string[];
+  [key: string]: unknown;
+}
+
+export interface PipelineClassStatistic {
+  class?: string | null;
+  valueRange?: [number, number] | number[] | null;
+  areaSqM?: number | null;
+  areaPercentage?: number | null;
+  [key: string]: unknown;
+}
+
+export interface FieldStatisticsPipelineMetadata {
+  enabled?: boolean;
+  status?: string | null;
+  source?: string | null;
+  providerRoute?: string | null;
+  requestedDate?: string | null;
+  selectedSceneDate?: string | null;
+  tileUrl?: string;
+  statsUrl?: string;
+  selection?: PipelineSelectionMetadata;
+  resolution?: PipelineResolutionMetadata;
+  quality?: PipelineQualityMetadata;
+  freshness?: PipelineFreshnessMetadata;
+  versions?: Record<string, unknown>;
+  classStatistics?: PipelineClassStatistic[];
+  pixelCountsBasis?: string | null;
+  cloudMaskedPercentBasis?: string | null;
+  coveragePercentBasis?: string | null;
+  cloudMaskOptionsNote?: string | null;
+  [key: string]: unknown;
+}
+
 export interface SarBandStatistics {
   name: string;
   min: number | null;
@@ -762,6 +837,7 @@ export interface FieldStatisticsResponse {
     areaHa?: number | null;
     vertices?: number | null;
     warnings?: string[];
+    pipeline?: FieldStatisticsPipelineMetadata;
     [key: string]: unknown;
   };
 }

@@ -1,11 +1,17 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { Check, ChevronDown, Search, X } from 'lucide-react';
+import { ChevronDown, Search, X } from 'lucide-react';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from '@/components/ui/select';
 import { usePredefinedSeasons } from '@/lib/queries';
 import {
   AlertDialogAction,
@@ -69,6 +75,9 @@ export default function EditSeasonDialog({
 
   const isCustom = selectedKey === CUSTOM;
 
+  const predefinedMapRef = useRef(predefinedMap);
+  predefinedMapRef.current = predefinedMap;
+
   const seasonFieldIds = useMemo(
     () => season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id),
     [season.fieldIds],
@@ -78,24 +87,25 @@ export default function EditSeasonDialog({
   // Reset form to season props when dialog opens
   useEffect(() => {
     if (!open) return;
-    const fieldIds = season.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id);
+    const s = season;
+    const fieldIds = s.fieldIds.filter((fi) => fi.isMapped).map((fi) => fi.id);
     startTransition(() => {
-      setName(season.name);
-      setStartDate(season.startDate ?? '');
-      setEndDate(season.endDate ?? '');
+      setName(s.name);
+      setStartDate(s.startDate ?? '');
+      setEndDate(s.endDate ?? '');
       setSelectedFieldIds(fieldIds);
       setError(null);
       setConfirmClose(false);
-      const has = predefinedMap.has(season.name);
-      setSelectedKey(has ? season.name : CUSTOM);
-      setCustomNameDraft(has ? '' : season.name);
-      setDropdownOpen(false);
+      const has = predefinedMapRef.current.has(s.name);
+      setSelectedKey(has ? s.name : CUSTOM);
+      setCustomNameDraft(has ? '' : s.name);
       setFieldTab('list');
       setListSearch('');
       setAddedSearch('');
       setRemovedSearch('');
     });
-  }, [open, season, seasonFieldIds, predefinedMap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!isCustom) return;
@@ -239,75 +249,43 @@ export default function EditSeasonDialog({
             <div className="grid grid-cols-1 gap-3">
               <label className="text-sm">Season name <span className="text-destructive">*</span></label>
               <div className="relative">
-                <div className={isCustom ? '' : 'cursor-pointer'}>
-                  { isCustom ? (
-                    <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
-                      <input
-                        ref={ inputRef }
-                        value={ name }
-                        autoFocus
-                        onChange={ (e) => { setName(e.target.value); setError(null); } }
-                        placeholder="Enter season name"
-                        className="flex-1 bg-transparent outline-none text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={ (e) => { e.stopPropagation(); setDropdownOpen(true); } }
-                        className="flex cursor-pointer items-center"
-                      >
-                        <ChevronDown className="size-4 text-muted-foreground" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      className="flex h-10 w-full cursor-pointer items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background hover:bg-accent/40 focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
-                      onClick={ () => setDropdownOpen(true) }
-                    >
-                      <span>{ name }</span>
-                      <ChevronDown className="size-4 text-muted-foreground" />
-                    </div>
-                  ) }
-                </div>
+                <Select value={ selectedKey } onValueChange={ handleSeasonSelect } open={ dropdownOpen } onOpenChange={ setDropdownOpen }>
+                  <SelectTrigger className="sr-only" />
+                  <SelectContent>
+                    { (predefinedQ.data ?? []).map((s) => (
+                      <SelectItem key={ s.id } value={ s.seasonName }>{ s.seasonName }</SelectItem>
+                    )) }
+                    <SelectItem value={ CUSTOM }>Custom</SelectItem>
+                  </SelectContent>
+                </Select>
 
-                { dropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-                    <div
-                      className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-popover text-popover-foreground shadow-e2"
+                { isCustom ? (
+                  <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                    <input
+                      ref={ inputRef }
+                      value={ name }
+                      autoFocus
+                      maxLength={15}
+                      onChange={ (e) => { setName(e.target.value); setError(null); } }
+                      placeholder="Enter season name"
+                      className="flex-1 bg-transparent outline-none text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={ () => setDropdownOpen(true) }
+                      className="flex cursor-pointer items-center"
                     >
-                      { Array.isArray(predefinedQ.data) && predefinedQ.data.map((s) => (
-                        <div
-                          key={ s.id }
-                          className={cn(
-                            'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-foreground outline-none hover:bg-accent',
-                            selectedKey === s.seasonName && 'bg-accent/60',
-                          )}
-                          onClick={ () => handleSeasonSelect(s.seasonName) }
-                        >
-                          { selectedKey === s.seasonName && (
-                            <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-                              <Check className="size-4" />
-                            </span>
-                          ) }
-                          { s.seasonName }
-                        </div>
-                      )) }
-                      <div
-                        className={cn(
-                          'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-foreground outline-none hover:bg-accent',
-                          selectedKey === CUSTOM && 'bg-accent/60',
-                        )}
-                        onClick={ () => handleSeasonSelect(CUSTOM) }
-                      >
-                        { selectedKey === CUSTOM && (
-                          <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-                            <Check className="size-4" />
-                          </span>
-                        ) }
-                        Custom
-                      </div>
-                    </div>
-                  </>
+                      <ChevronDown className="size-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="flex h-10 w-full cursor-pointer items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background hover:bg-accent/40 focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+                    onClick={ () => setDropdownOpen(true) }
+                  >
+                    <span>{ name }</span>
+                    <ChevronDown className="size-4 text-muted-foreground" />
+                  </div>
                 ) }
               </div>
             </div>

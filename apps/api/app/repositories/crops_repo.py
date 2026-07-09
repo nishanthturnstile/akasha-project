@@ -7,7 +7,7 @@ import logging
 from sqlalchemy import exists, select
 
 from ..db import session_scope
-from ..models import Crop, IrrigationType, SeedingType, TillageType, Variety
+from ..models import Crop, IrrigationType, PredefinedSeason, SeedingType, TillageType, Variety
 
 logger = logging.getLogger(__name__)
 
@@ -105,13 +105,28 @@ def list_varieties(crop_id: int, skip: int = 0, limit: int = 100) -> tuple[list[
 
 
 def ensure_reference_data() -> None:
+    _TABLES: list[type] = [
+        SeedingType,
+        IrrigationType,
+        TillageType,
+        Crop,
+        Variety,
+        PredefinedSeason,
+    ]
+
+    try:
+        with session_scope() as session:
+            missing = [t for t in _TABLES if session.query(t).first() is None]
+    except RuntimeError:
+        logger.warning("Database not available — skipping reference data check.")
+        return
+
+    if not missing:
+        return
+
+    logger.info("Reference data tables missing data: %s", [t.__tablename__ for t in missing])
     from ..bulk_creation import generate_all
 
-    with session_scope() as session:
-        has_crops = session.query(Crop).first() is not None
-        if has_crops:
-            return
-    logger.info("Reference data tables are empty — seeding crops, varieties, etc.")
     counts = generate_all()
     if counts:
         logger.info("Seeded reference data: %s", counts)

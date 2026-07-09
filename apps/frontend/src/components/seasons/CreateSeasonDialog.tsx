@@ -283,6 +283,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
                       ref={ inputRef }
                       value={ name }
                       autoFocus
+                      maxLength={15}
                       onChange={ (e) => { setName(e.target.value); setNameError(null); } }
                       placeholder="Enter season name"
                       className="flex-1 bg-transparent outline-none text-sm"

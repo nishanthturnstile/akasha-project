@@ -144,14 +144,21 @@ export function AppShell() {
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
+  const setGlobalViewMode = (isGlobalView: boolean) => {
+    setGlobalViewOpen(isGlobalView);
+    view.setOverlaysVisible(!isGlobalView);
+  };
+
   const seasonsQ = useSeasons();
   const deleteSeason = useDeleteSeason();
   const updateSeason = useUpdateSeason();
   const fieldsQ = useFields();
 
+  // Sync overlaysVisible with initial globalViewOpen on mount (no lag frame after page refresh)
   useEffect(() => {
     view.setOverlaysVisible(!globalViewOpen);
-  }, [globalViewOpen, view]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clear persisted field selection on mount (unless deep-linked to a specific field)
   useEffect(() => {
@@ -269,16 +276,16 @@ export function AppShell() {
     if (savedField) {
       view.setSelectedPlotId(savedField.id);
       view.setFocusNonce(Date.now());
-      setTimeout(() => setGlobalViewOpen(false), 0);
+      setTimeout(() => setGlobalViewMode(false), 0);
     } else {
       const firstField = fields.find((f) => f.seasonIds?.includes(effectiveSeasonId));
       if (firstField) {
         view.setSelectedPlotId(firstField.id);
         view.setFocusNonce(Date.now());
-        setTimeout(() => setGlobalViewOpen(false), 0);
+        setTimeout(() => setGlobalViewMode(false), 0);
       } else {
         // Season has no fields — keep Global View open to show the empty state
-        setTimeout(() => setGlobalViewOpen(true), 0);
+        setTimeout(() => setGlobalViewMode(true), 0);
       }
     }
   }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId, view]);
@@ -339,7 +346,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={ 200 }>
-      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); setGlobalViewOpen(true); } } />
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); setGlobalViewMode(true); } } />
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
@@ -383,7 +390,7 @@ export function AppShell() {
                       to={ item.path }
                       end={ false }
                       data-testid={ `mobile-${testIdFor(item.label)}` }
-                      onClick={ item.globalView ? () => setGlobalViewOpen(true) : undefined }
+                       onClick={ item.globalView ? () => setGlobalViewMode(true) : undefined }
                       className={ ({ isActive }) =>
                         cn(
                           'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
@@ -408,7 +415,7 @@ export function AppShell() {
         </section>
 
         { showGlobalViewPanel && (
-          <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewOpen(false) } seasonId={ effectiveSeasonId } />
+          <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewMode(false) } seasonId={ effectiveSeasonId } />
         ) }
 
         <aside
@@ -581,7 +588,7 @@ export function AppShell() {
                               setCurrentSeasonId(season.id);
                               setSeasonSheetOpen(false);
                               const seasonHasFields = fields.some((f) => f.seasonIds?.includes(season.id));
-                              setGlobalViewOpen(!seasonHasFields);
+                              setGlobalViewMode(!seasonHasFields);
                               if (savedField) {
                                 navigate(`/monitoring/field-analytics/field/${savedField.id}`);
                               } else {
@@ -658,7 +665,7 @@ export function AppShell() {
                                     e.stopPropagation();
                                     setCurrentSeasonId(season.id);
                                     setSeasonSheetOpen(false);
-                                    setGlobalViewOpen(false);
+                                    setGlobalViewMode(false);
                                     navigate(`/monitoring/field-create?seasonId=${season.id}`);
                                   } }
                                   className="mt-2 w-full rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
@@ -742,7 +749,7 @@ export function AppShell() {
                                 data-testid={ testIdFor(item.label) }
                                 onClick={ () => {
                                   setHoveredGroup(null);
-                                  setGlobalViewOpen(!!item.globalView);
+                                  setGlobalViewMode(!!item.globalView);
                                 } }
                                 className={ ({ isActive }) =>
                                   cn(
@@ -808,7 +815,7 @@ export function AppShell() {
                             to={ item.path }
                             end={ false }
                             data-testid={ testIdFor(item.label) }
-                            onClick={ () => setGlobalViewOpen(!!item.globalView) }
+                            onClick={ () => setGlobalViewMode(!!item.globalView) }
                             className={ ({ isActive }) =>
                               cn(
                                 'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
@@ -963,7 +970,6 @@ export function AppShell() {
                 // error handled by query state
               }
               setDeletingSeasonId(null);
-              window.location.reload();
             } }>
               Delete
             </AlertDialogAction>

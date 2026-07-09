@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Field } from '@/types/api';
+import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
 
 interface AddFieldDropdownProps {
   fields: Field[];
@@ -25,6 +26,7 @@ export function AddFieldDropdown({
   testId = 'add-field',
 }: AddFieldDropdownProps) {
   const [open, setOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
 
@@ -115,8 +117,7 @@ export function AddFieldDropdown({
               type="button"
               onClick={() => {
                 setOpen(false);
-                const path = defaultSeasonId ? `/monitoring/field-create?seasonId=${defaultSeasonId}` : '/monitoring/field-create';
-                onNavigate(path);
+                setDialogOpen(true);
               }}
               className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[12px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors duration-fast"
             >
@@ -126,6 +127,7 @@ export function AddFieldDropdown({
           </div>
         </div>
       )}
+      <FieldCreateOptionsDialog open={dialogOpen} onOpenChange={setDialogOpen} defaultSeasonId={defaultSeasonId} />
     </div>
   );
 }

@@ -7,9 +7,9 @@ import {
   upsertFieldBoundaryLayer,
 } from '@/components/fields/fieldBoundaryLayerHelpers';
 
-function safelyRemoveFieldBoundaryLayer(map: maplibregl.Map): void {
+function safelyRemoveFieldBoundaryLayer(map: maplibregl.Map, prefix = ''): void {
   try {
-    removeFieldBoundaryLayer(map);
+    removeFieldBoundaryLayer(map, prefix);
   } catch {
     // MapLibre may already be disposed during page teardown.
   }
@@ -21,6 +21,7 @@ export interface FieldBoundaryLayerProps {
   map: maplibregl.Map | null;
   name?: string;
   plot: Plot | null;
+  layerPrefix?: string;
 }
 
 export function FieldBoundaryLayer({
@@ -29,23 +30,24 @@ export function FieldBoundaryLayer({
   map,
   name = 'Draft field',
   plot,
+  layerPrefix = '',
 }: FieldBoundaryLayerProps) {
   useEffect(() => {
     if (!map) return undefined;
-    return () => safelyRemoveFieldBoundaryLayer(map);
-  }, [map]);
+    return () => safelyRemoveFieldBoundaryLayer(map, layerPrefix);
+  }, [map, layerPrefix]);
 
   useEffect(() => {
     if (!map) return undefined;
 
     if (!plot && !geometry) {
-      removeFieldBoundaryLayer(map);
+      removeFieldBoundaryLayer(map, layerPrefix);
       return undefined;
     }
 
-    upsertFieldBoundaryLayer(map, plot, geometry, featureId, name);
+    upsertFieldBoundaryLayer(map, plot, geometry, featureId, name, layerPrefix);
 
-    const keepBoundaryOnTop = () => ensureFieldBoundaryOrder(map);
+    const keepBoundaryOnTop = () => ensureFieldBoundaryOrder(map, layerPrefix);
     map.on('styledata', keepBoundaryOnTop);
     map.on('idle', keepBoundaryOnTop);
 
@@ -53,7 +55,7 @@ export function FieldBoundaryLayer({
       map.off('styledata', keepBoundaryOnTop);
       map.off('idle', keepBoundaryOnTop);
     };
-  }, [featureId, geometry, map, name, plot]);
+  }, [featureId, geometry, map, name, plot, layerPrefix]);
 
   return null;
 }

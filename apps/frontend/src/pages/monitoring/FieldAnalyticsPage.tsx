@@ -2,6 +2,7 @@ import { Map as MapIcon, Pencil } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
@@ -44,7 +45,8 @@ function defaultDisplayModeForSource(source: Source | null | undefined, fallback
 }
 
 export default function FieldAnalyticsPage() {
-  const { selectedPlotId, setSelectedPlotId, setFocusNonce, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, selectedDate: dateOverride, displayMode, overlaysVisible, mapFullscreen } = useMapView();
+  const navigate = useNavigate();
+  const { selectedPlotId, clearSelectedPlot, cloudMask, periodFrom, periodTo, activeSourceId, selectedDate: dateOverride, displayMode, overlaysVisible, mapFullscreen } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -58,11 +60,6 @@ export default function FieldAnalyticsPage() {
     if (!selectedPlotId || !fieldsQ.data) return null;
     return fieldsQ.data.find((f) => f.id === selectedPlotId) ?? null;
   }, [fieldsQ.data, selectedPlotId]);
-
-  const seasonFields = useMemo(() => {
-    if (!seasonId) return fieldsQ.data ?? [];
-    return (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(seasonId));
-  }, [fieldsQ.data, seasonId]);
 
   const effectiveSourceId = activeSourceId ?? sourcesQ.data?.[0]?.id;
   const selectedSource = useMemo(
@@ -89,12 +86,15 @@ export default function FieldAnalyticsPage() {
     selectedSource,
   );
 
-  const navigate = useNavigate();
+  const seasonFields = useMemo(() => {
+    if (!fieldsQ.data || !seasonId) return fieldsQ.data ?? [];
+    return fieldsQ.data.filter((f) => f.seasonIds?.includes(seasonId)) ?? [];
+  }, [fieldsQ.data, seasonId]);
 
   return (
-    <div className="h-full overflow-y-auto space-y-4 p-4">
+    <div className="flex flex-col h-full gap-4 p-4 overflow-y-auto">
       {overlaysVisible && (
-      <div className="flex items-stretch rounded-md border border-border bg-background">
+      <div className="flex items-stretch rounded-md border border-border bg-background shrink-0">
         <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">
           <button
             type="button"
@@ -143,23 +143,23 @@ export default function FieldAnalyticsPage() {
         </div>
         <div className="flex items-center gap-2 px-4 py-3">
           <AddFieldDropdown
-            fields={seasonFields}
-            onNavigate={navigate}
-            onSelectField={ (fieldId) => { setSelectedPlotId(fieldId); setFocusNonce(Date.now()); } }
+            fields={ seasonFields }
+            onNavigate={ navigate }
             defaultSeasonId={ seasonId }
+            testId="analytics-add-field"
           />
         </div>
       </div>
       )}
 
       {/* Map card */}
-      <div className="h-[50vh] min-h-[300px] rounded-md border border-border overflow-hidden">
+      <div className={cn('rounded-md border border-border overflow-hidden', overlaysVisible ? 'h-[50vh] min-h-[300px]' : 'flex-1 min-h-0')}>
         <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords />
       </div>
 
       {/* Analytics panel */}
       {selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="rounded-md border border-border bg-background">
+        <div className="rounded-md border border-border bg-background shrink-0">
           <IndexPanel
             className="w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
             selectedPlot={selectedField}
@@ -194,6 +194,7 @@ export default function FieldAnalyticsPage() {
           onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
         />
       )}
+
     </div>
   );
 }

@@ -1,8 +1,7 @@
 import { Map as MapIcon, Pencil, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
-import type { Field, Plot } from '@/types/api';
+import type { Plot } from '@/types/api';
 
 interface FieldContextHeaderProps {
     /** Server-resolved plot, or `null` when no field is selected. */
@@ -13,10 +12,6 @@ interface FieldContextHeaderProps {
     onEditGeometry: () => void;
     /** Open the command palette. */
     onOpenCommand: () => void;
-    /** All fields for the dropdown list. */
-    allFields: Field[];
-    /** Navigate function. */
-    onNavigate: (path: string) => void;
 }
 
 function formatAreaHa(value: number | null | undefined): string {
@@ -35,8 +30,6 @@ export function FieldContextHeader({
     onBack,
     onEditGeometry,
     onOpenCommand,
-    allFields,
-    onNavigate,
 }: FieldContextHeaderProps) {
     const hasSelection = Boolean(selectedPlot);
     const name = selectedPlot?.name ?? 'No field selected';
@@ -111,7 +104,6 @@ export function FieldContextHeader({
                     <Pencil className="size-4" strokeWidth={ 1.75 } />
                 </Button>
 
-                <AddFieldDropdown fields={allFields} onNavigate={onNavigate} />
             </div>
 
             <div className="pointer-events-auto flex items-center gap-2">

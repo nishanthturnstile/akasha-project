@@ -113,7 +113,7 @@ function extractRings(geometry: PlotGeometry): GeoJsonPosition[][] {
   return [];
 }
 
-function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry; size?: number }) {
+export function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {

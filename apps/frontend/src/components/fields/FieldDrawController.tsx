@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { Check, Pencil, X } from 'lucide-react';
-import type { TerraDraw } from 'terra-draw';
+import type { TerraDraw, GeoJSONStoreGeometries } from 'terra-draw';
 import { Button } from '@/components/ui/button';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import { cn } from '@/lib/utils';
 import type { Plot, PlotGeometry, PlotUpdatePayload } from '@/types/api';
 
 export type FieldDrawMode = 'draw' | 'edit' | null;
+
+export type DrawShapeMode = 'polygon' | 'circle';
 
 interface FieldDrawControllerProps {
   activeTool: ActiveMapTool;
@@ -21,7 +23,13 @@ interface FieldDrawControllerProps {
   onUpdateField: (plotId: string, payload: PlotUpdatePayload) => Promise<Plot | void> | Plot | void;
   selectedPlot: Plot | null;
   drawResetKey?: number;
-  onPolygonComplete?: (geometry: PlotGeometry | null) => void;
+  onPolygonComplete?: (geometry: PlotGeometry | null, featureId?: string) => void;
+  drawMode?: DrawShapeMode;
+  multiDraw?: boolean;
+  hideCard?: boolean;
+  enableVertexDrag?: boolean;
+  onDrawReady?: (draw: TerraDraw) => void;
+  onGeometryChange?: (geometry: PlotGeometry, featureId?: string) => void;
 }
 
 type TerraDrawFeature = Parameters<TerraDraw['addFeatures']>[0][number];
@@ -59,6 +67,12 @@ export function FieldDrawController({
   selectedPlot,
   drawResetKey = 0,
   onPolygonComplete,
+  drawMode = 'polygon',
+  multiDraw = false,
+  hideCard = false,
+  enableVertexDrag = false,
+  onDrawReady,
+  onGeometryChange,
 }: FieldDrawControllerProps) {
   const [draftGeometry, setDraftGeometry] = useState<PlotGeometry | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -72,6 +86,16 @@ export function FieldDrawController({
   selectedPlotRef.current = selectedPlot;
   const onPolygonCompleteRef = useRef<typeof onPolygonComplete>(onPolygonComplete);
   onPolygonCompleteRef.current = onPolygonComplete;
+  const drawModeRef = useRef<DrawShapeMode>(drawMode);
+  drawModeRef.current = drawMode;
+  const multiDrawRef = useRef(multiDraw);
+  multiDrawRef.current = multiDraw;
+  const enableVertexDragRef = useRef(enableVertexDrag);
+  enableVertexDragRef.current = enableVertexDrag;
+  const onDrawReadyRef = useRef(onDrawReady);
+  onDrawReadyRef.current = onDrawReady;
+  const onGeometryChangeRef = useRef(onGeometryChange);
+  onGeometryChangeRef.current = onGeometryChange;
   const vertexCountRef = useRef(0);
 
   const owner = mode === 'draw' ? 'field-draw' : mode === 'edit' ? 'field-edit' : null;
@@ -104,22 +128,62 @@ export function FieldDrawController({
     if (!map) return null;
     if (!drawRef.current) {
       const [
-        { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode },
+        { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode, TerraDrawCircleMode },
         { TerraDrawMapLibreGLAdapter },
       ] = await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
+      const polygonStyles = {
+        fillColor: '#3b82f6' as const,
+        fillOpacity: 0.25 as const,
+        outlineColor: '#2563eb' as const,
+        outlineOpacity: 1 as const,
+        outlineWidth: 3 as const,
+        outlineDashStyle: [6, 4] as unknown as [number, number],
+        closingPointColor: '#22c55e' as const,
+        closingPointWidth: 8 as const,
+        closingPointOutlineColor: '#ffffff' as const,
+        closingPointOutlineWidth: 2 as const,
+        coordinatePointColor: '#3b82f6' as const,
+        coordinatePointWidth: 5 as const,
+        coordinatePointOutlineColor: '#ffffff' as const,
+        coordinatePointOutlineWidth: 1.5 as const,
+      };
+      const circleStyles = {
+        fillColor: '#3b82f6' as const,
+        fillOpacity: 0.25 as const,
+        outlineColor: '#2563eb' as const,
+        outlineOpacity: 1 as const,
+        outlineWidth: 3 as const,
+      };
       const draw = new TerraDraw({
         adapter: new TerraDrawMapLibreGLAdapter({ map, prefixId: 'field-draw' }),
         modes: [
-          new TerraDrawPolygonMode({
-            styles: {
-              fillColor: '#3b82f6',
-              fillOpacity: 0.25,
-              outlineColor: '#2563eb',
-              outlineOpacity: 1,
-              outlineWidth: 3,
-            },
+          new TerraDrawPolygonMode({ styles: polygonStyles }),
+          new TerraDrawCircleMode({
+            styles: circleStyles as Record<string, unknown>,
+            segments: 64,
+            projection: 'web-mercator',
           }),
-          new TerraDrawSelectMode(),
+          enableVertexDragRef.current
+            ? new TerraDrawSelectMode({
+                styles: {
+                  selectedPolygonColor: '#3b82f6',
+                  selectedPolygonFillOpacity: 0.25,
+                  selectedPolygonOutlineColor: '#2563eb',
+                  selectedPolygonOutlineWidth: 3,
+                },
+                flags: {
+                  polygon: {
+                    feature: {
+                      coordinates: {
+                        draggable: true,
+                        midpoints: { draggable: true },
+                        deletable: true,
+                      },
+                    },
+                  },
+                },
+              })
+            : new TerraDrawSelectMode(),
         ],
       });
       draw.on('finish', (id) => {
@@ -133,7 +197,41 @@ export function FieldDrawController({
         if (feature?.geometry.type !== 'Polygon') return;
         const geometry = feature.geometry as PlotGeometry;
         setDraftGeometry(geometry);
-        onPolygonCompleteRef.current?.(geometry);
+
+        if (multiDrawRef.current) {
+          if (enableVertexDragRef.current) {
+            // Re-add the feature so SelectMode picks up the draggable flags
+            // (programmatic selectFeature often only highlights, not enables
+            // interactive vertex handles).
+            try { draw.removeFeatures([id]); } catch { /* ignore */ }
+            const results = draw.addFeatures([
+              {
+                type: 'Feature',
+                geometry: geometry as GeoJSONStoreGeometries,
+                properties: { mode: 'polygon' },
+              },
+            ]);
+            const newId = results[0]?.id ?? id;
+            try { draw.setMode('select'); draw.selectFeature(newId); } catch { /* ignore */ }
+            onPolygonCompleteRef.current?.(geometry, String(newId));
+            setDraftGeometry(geometry);
+            if (map && typeof map.getCanvas === 'function') {
+              map.getCanvas().style.cursor = 'grab';
+            }
+          } else {
+            onPolygonCompleteRef.current?.(geometry, String(id));
+            // In multi-draw mode, clear the shape and stay in draw mode
+            // so the user can immediately draw the next field.
+            try { draw.clear(); } catch { /* ignore */ }
+            setDraftGeometry(null);
+            if (map && typeof map.getCanvas === 'function') {
+              map.getCanvas().style.cursor = 'crosshair';
+            }
+          }
+          return;
+        }
+
+        onPolygonCompleteRef.current?.(geometry, String(id));
         // Switch to select mode so the finished shape stays visible but the user
         // cannot accidentally start a second polygon on the next click.
         try {
@@ -146,12 +244,18 @@ export function FieldDrawController({
           map.getCanvas().style.cursor = 'grab';
         }
       });
-      draw.on('change', () => {
+      draw.on('change', (changedId) => {
         if (modeRef.current === 'draw') {
-          const snapshot = draw.getSnapshot();
-          const drawing = snapshot.find((f) => f.geometry.type === 'Polygon');
-          const ring = drawing?.geometry?.type === 'Polygon'
-            ? (drawing.geometry as PlotGeometry).coordinates[0]
+          const changedFeatureId = changedId?.[0];
+          const changedFeature = changedFeatureId !== undefined
+            ? draw.getSnapshotFeature(changedFeatureId)
+            : undefined;
+          const anyPolygon = !changedFeature
+            ? draw.getSnapshot().find((f) => f.geometry.type === 'Polygon')
+            : undefined;
+          const refFeature = changedFeature ?? anyPolygon;
+          const ring = refFeature?.geometry?.type === 'Polygon'
+            ? (refFeature.geometry as PlotGeometry).coordinates[0]
             : undefined;
           const count = ring?.length ?? 0;
           if (count !== vertexCountRef.current) {
@@ -160,6 +264,9 @@ export function FieldDrawController({
               const canvas = map.getCanvas();
               canvas.style.cursor = count >= 4 ? 'grab' : 'crosshair';
             }
+          }
+          if (enableVertexDragRef.current && changedFeature && changedFeature.geometry.type === 'Polygon') {
+            onGeometryChangeRef.current?.(changedFeature.geometry as PlotGeometry, String(changedFeatureId));
           }
         }
         if (modeRef.current !== 'edit') return;
@@ -171,6 +278,7 @@ export function FieldDrawController({
     if (!startedRef.current) {
       drawRef.current.start();
       startedRef.current = true;
+      onDrawReadyRef.current?.(drawRef.current);
     }
     return drawRef.current;
   }, [map]);
@@ -198,17 +306,14 @@ export function FieldDrawController({
     void (async () => {
       const draw = await ensureDraw();
       if (!draw || cancelled) return;
-      try {
-        draw.clear();
-      } catch {
-        // Ignore clear errors when Terra Draw is temporarily disabled.
-      }
-      setDraftGeometry(null);
-      setError(null);
-
       if (mode === 'draw') {
+        if (!enableVertexDragRef.current) {
+          try { draw.clear(); } catch { /* ignore */ }
+        }
+        setDraftGeometry(null);
+        setError(null);
         try {
-          draw.setMode('polygon');
+          draw.setMode(drawModeRef.current === 'circle' ? 'circle' : 'polygon');
         } catch {
           // Ignore mode-switch errors.
         }
@@ -217,6 +322,11 @@ export function FieldDrawController({
         }
         return;
       }
+
+      // Edit mode — always clear existing features
+      try { draw.clear(); } catch { /* ignore */ }
+      setDraftGeometry(null);
+      setError(null);
 
       if (!selectedPlot) {
         setError('Select a field before editing its boundary.');
@@ -255,7 +365,7 @@ export function FieldDrawController({
     if (drawResetKey === 0) return;
     const draw = drawRef.current;
     if (!draw) return;
-    // Soft-reset: clear the current sketch and return to polygon mode
+    // Soft-reset: clear the current sketch and return to polygon/circle mode
     // so the user can immediately start a fresh drawing.
     try {
       draw.clear();
@@ -263,7 +373,7 @@ export function FieldDrawController({
       /* ignore */
     }
     try {
-      draw.setMode('polygon');
+      draw.setMode(drawModeRef.current === 'circle' ? 'circle' : 'polygon');
     } catch {
       /* ignore */
     }
@@ -273,14 +383,17 @@ export function FieldDrawController({
     if (map) map.getCanvas().style.cursor = 'crosshair';
   }, [drawResetKey, map, onPolygonComplete]);
 
-  const title = mode === 'draw' ? 'Save new field' : 'Save boundary edit';
+  const title = mode === 'draw' ? (multiDraw ? 'Add fields' : 'Save new field') : 'Save boundary edit';
   const hint = useMemo(() => {
     if (error) return error;
     if (mode === 'draw') {
-      return draftGeometry ? 'Name the field and save it to Akasha.' : 'Click vertices on the map, then double-click to close the field.';
+      if (draftGeometry) return multiDraw ? 'Field added to the list. Draw another or save all.' : 'Name the field and save it to Akasha.';
+      return drawMode === 'circle'
+        ? 'Click to place the circle center, then click to set the radius.'
+        : 'Click vertices on the map, then double-click to close the field.';
     }
     return draftGeometry ? 'Adjust the selected field, then save the boundary.' : 'Select and adjust the field boundary on the map.';
-  }, [draftGeometry, error, mode]);
+  }, [draftGeometry, error, mode, drawMode, multiDraw]);
 
   const [fieldName, setFieldName] = useState('');
 
@@ -313,6 +426,15 @@ export function FieldDrawController({
   };
 
   if (!mode || !isActiveOwner) return null;
+
+  if (hideCard) {
+    return (
+      <div
+        className={ cn('pointer-events-none flex w-0 flex-col', className) }
+        data-testid="field-draw-controller"
+      />
+    );
+  }
 
   return (
     <div

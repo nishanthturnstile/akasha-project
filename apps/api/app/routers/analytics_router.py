@@ -51,6 +51,7 @@ from ..routers.product_router import (
     _enforce_index_rate_limit,
     _is_pipeline_source,
     _pipeline_bridge_enabled,
+    _requires_ingestion_pipeline,
 )
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
 
@@ -117,7 +118,9 @@ def _normalize_index(index_type: str | None) -> str:
 
 
 def _uses_pipeline(source_id: str) -> bool:
-    return _is_pipeline_source(source_id) and _pipeline_bridge_enabled()
+    return _requires_ingestion_pipeline(source_id) or (
+        _is_pipeline_source(source_id) and _pipeline_bridge_enabled()
+    )
 
 
 def _ensure_pipeline_index_supported(source_id: str, index_type: str) -> None:

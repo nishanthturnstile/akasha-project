@@ -186,6 +186,104 @@ def test_half_enabled_bridge_does_not_advertise_pipeline_source(monkeypatch) -> 
         if item["id"] == catalog.SENTINEL_2_SOURCE_ID and item.get("pipelineBacked")
     ]
     assert pipeline_sentinel == []
+    liss3 = next(
+        item for item in sources.json() if item["id"] == catalog.RESOURCESAT_LISS3_SOURCE_ID
+    )
+    assert liss3["pipelineBacked"] is True
+
+
+def test_resourcesat_dates_use_ingestion_even_when_bridge_flags_are_off(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_readiness_enabled", False)
+    monkeypatch.setattr(settings, "ingestion_field_index_enabled", False)
+    monkeypatch.setattr(
+        product_router,
+        "get_readiness",
+        lambda *_args, **_kw: {
+            "availableDates": ["2026-04-02"],
+            "indexCoverage": {"NDVI": {"coveragePercent": 88.0}},
+        },
+    )
+    monkeypatch.setattr(
+        product_router.catalog,
+        "list_dates",
+        lambda *_args, **_kw: pytest.fail("native ResourceSat date fallback"),
+    )
+
+    response = client.get(f"/api/sources/{catalog.RESOURCESAT_LISS3_SOURCE_ID}/dates")
+
+    assert response.status_code == 200
+    assert response.json()[0]["acquisitionDate"] == "2026-04-02"
+
+
+def test_resourcesat_default_layer_does_not_use_native_catalog(monkeypatch) -> None:
+    monkeypatch.setattr(
+        product_router,
+        "get_readiness",
+        lambda *_args, **_kw: {
+            "availableDates": ["2026-04-02"],
+            "indexCoverage": {"NDVI": {"coveragePercent": 88.0}},
+        },
+    )
+    monkeypatch.setattr(
+        product_router.catalog,
+        "list_dates",
+        lambda *_args, **_kw: pytest.fail("native ResourceSat date fallback"),
+    )
+    monkeypatch.setattr(
+        product_router.catalog,
+        "items_for_date",
+        lambda *_args, **_kw: pytest.fail("native ResourceSat item lookup"),
+    )
+
+    response = client.get(f"/api/layers/default?sourceId={catalog.RESOURCESAT_LISS3_SOURCE_ID}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pipelineBacked"] is True
+    assert body["tileRouteMode"] == "field-overlay"
+    assert body["tileUrlTemplate"] is None
+    assert body["acquisitionDate"] == "2026-04-02"
+
+
+def test_resourcesat_direct_tile_route_does_not_use_native_assets(monkeypatch) -> None:
+    monkeypatch.setattr(
+        product_router.catalog,
+        "resolve_assets_for_date",
+        lambda *_args, **_kw: pytest.fail("native ResourceSat asset lookup"),
+    )
+
+    response = client.get(
+        f"/api/tiles/{catalog.RESOURCESAT_LISS3_SOURCE_ID}/2026-04-02/FCC/8/1/1.png"
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "INGESTION_TILE_UNAVAILABLE"
+
+
+def test_resourcesat_root_statistics_route_does_not_use_native_compute(monkeypatch) -> None:
+    monkeypatch.setattr(
+        product_router,
+        "compute_statistics",
+        lambda **_kw: pytest.fail("native ResourceSat root statistics fallback"),
+    )
+
+    response = client.post(
+        "/api/indices/statistics",
+        json={
+            "sourceId": catalog.RESOURCESAT_LISS3_SOURCE_ID,
+            "acquisitionDate": "2026-04-02",
+            "indexType": "NDVI",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [[[77.0, 12.0], [77.01, 12.0], [77.01, 12.01], [77.0, 12.0]]]
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "INGESTION_FIELD_INDEX_REQUIRED"
 
 
 def test_health_exposes_only_non_secret_ingestion_flags() -> None:

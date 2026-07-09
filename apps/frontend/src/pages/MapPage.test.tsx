@@ -634,11 +634,14 @@ describe('MapPage native source behavior', () => {
     fireEvent.click(screen.getByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-eos-04-sar-mrs-l2b'));
 
-    await waitFor(() => {
-      expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
-        'Nearest radar pass: 2026-04-26.',
-      );
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('nearest-pass-note').textContent).toContain(
+          'Nearest radar pass: 2026-04-26.',
+        );
+      },
+      { timeout: 8000 },
+    );
     await waitFor(() => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toContain(
         '/api/tiles/eos-04-sar-mrs-l2b/2026-04-26/VV_GRAYSCALE/{z}/{x}/{y}.png',

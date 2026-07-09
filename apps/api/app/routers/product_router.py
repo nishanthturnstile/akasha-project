@@ -64,6 +64,11 @@ def _is_pipeline_source(source_id: str) -> bool:
     return source_id in _PIPELINE_SOURCE_IDS
 
 
+def _requires_ingestion_pipeline(source_id: str) -> bool:
+    """Sources whose product-app native raster path has been cut over to ingestion."""
+    return source_id in catalog.RESOURCESAT_BOA_SOURCE_IDS
+
+
 def _pipeline_bridge_enabled() -> bool:
     """The Sentinel pipeline bridge is only usable when all three prerequisites hold together.
 
@@ -101,7 +106,7 @@ def _pipeline_layer_groups(payload: dict[str, Any], index_modes: list[str]) -> l
 def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
     if not _is_pipeline_source(source_id):
         return None
-    if not _pipeline_bridge_enabled():
+    if not _requires_ingestion_pipeline(source_id) and not _pipeline_bridge_enabled():
         return None
     payload = catalog.source_payload(source_id)
     index_modes = _pipeline_index_modes(payload)
@@ -186,23 +191,23 @@ async def get_config() -> dict[str, Any]:
 async def get_sources() -> list[dict[str, Any]]:
     """Satellite/product source list derived from the source registry/STAC metadata."""
     sources = catalog.list_sources()
-    if _pipeline_bridge_enabled():
-        replaced: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for source in sources:
-            source_id = str(source["id"])
-            replaced.append(_pipeline_source_payload(source_id) or source)
-            seen.add(source_id)
-        for source_id in sorted(_PIPELINE_SOURCE_IDS - seen):
-            payload = _pipeline_source_payload(source_id)
-            if payload:
-                replaced.append(payload)
-        sources = replaced
-    return sources
+    replaced: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for source in sources:
+        source_id = str(source["id"])
+        replaced.append(_pipeline_source_payload(source_id) or source)
+        seen.add(source_id)
+    for source_id in sorted(_PIPELINE_SOURCE_IDS - seen):
+        payload = _pipeline_source_payload(source_id)
+        if payload:
+            replaced.append(payload)
+    return replaced
 
 
 def _pipeline_dates(source_id: str) -> list[dict[str, Any]] | None:
-    if not _is_pipeline_source(source_id) or not _pipeline_bridge_enabled():
+    if not _is_pipeline_source(source_id):
+        return None
+    if not _requires_ingestion_pipeline(source_id) and not _pipeline_bridge_enabled():
         return None
     try:
         readiness = get_readiness(
@@ -352,6 +357,36 @@ async def get_source_dates(
 async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     """Default source/date/layer metadata + same-origin tile template."""
     source_id = sourceId or settings.default_source_id or catalog.COLLECTION_ID
+    if _requires_ingestion_pipeline(source_id):
+        source = _pipeline_source_payload(source_id) or catalog.source_payload(source_id)
+        dates = _pipeline_dates(source_id) or []
+        date = next((d for d in dates if d["isLatestUsable"]), dates[0])
+        acquisition_date = date["acquisitionDate"]
+        display_mode = str(source["defaultDisplayMode"])
+        return {
+            "sourceId": source_id,
+            "acquisitionDate": acquisition_date,
+            "displayMode": display_mode,
+            "displayModes": source["displayModes"],
+            "defaultDisplayMode": source["defaultDisplayMode"],
+            "mapDisplayModes": source.get("mapDisplayModes", source["displayModes"]),
+            "defaultMapDisplayMode": source.get("defaultMapDisplayMode", display_mode),
+            "kind": source["kind"],
+            "tileUrlTemplate": None,
+            "bounds": None,
+            "minzoom": 8,
+            "maxzoom": 14,
+            "attribution": source["attribution"],
+            "sceneCount": date.get("sceneCount"),
+            "usablePixelPercent": date.get("usablePixelPercent"),
+            "cloudMaskedPercent": date.get("cloudMaskedPercent"),
+            "coveragePercent": date.get("coveragePercent"),
+            "metricsProvisional": bool(date.get("metricsProvisional", False)),
+            "tileAvailable": False,
+            "unavailableReason": None,
+            "tileRouteMode": "field-overlay",
+            "pipelineBacked": True,
+        }
     source = catalog.get_source(source_id)
     dates = catalog.list_dates(source_id)
     selectable_dates = [d for d in dates if bool(d.get("tileAvailable", True))]
@@ -665,6 +700,14 @@ async def _render_index_tile(
 @router.get("/tiles/{source_id}/{acquisition_date}/rgb/{z}/{x}/{y}.png")
 async def get_rgb_tile(source_id: str, acquisition_date: str, z: int, x: int, y: int) -> Response:
     """Legacy same-origin RGB tile route preserved for Sentinel-2 compatibility."""
+    if _requires_ingestion_pipeline(source_id):
+        raise upstream_error(
+            "ResourceSat display tiles are served by standalone ingestion overlays, "
+            "not app storage.",
+            code="INGESTION_TILE_UNAVAILABLE",
+            sourceId=source_id,
+            acquisitionDate=acquisition_date,
+        )
     return await _render_rgb_tile(source_id, acquisition_date, z, x, y)
 
 
@@ -673,6 +716,15 @@ async def get_display_mode_tile(
     source_id: str, acquisition_date: str, display_mode: str, z: int, x: int, y: int
 ) -> Response:
     """Display-mode-aware same-origin tile route."""
+    if _requires_ingestion_pipeline(source_id):
+        raise upstream_error(
+            "ResourceSat display tiles are served by standalone ingestion overlays, "
+            "not app storage.",
+            code="INGESTION_TILE_UNAVAILABLE",
+            sourceId=source_id,
+            acquisitionDate=acquisition_date,
+            displayMode=display_mode,
+        )
     source = catalog.get_source(source_id)
     normalized_mode = display_mode.upper()
     if normalized_mode not in source["displayModes"]:
@@ -710,6 +762,12 @@ async def post_index_statistics(
     geometry = payload.geometry.model_dump()
     if not payload.sourceId:
         raise bad_request("sourceId is required.", code="MISSING_SOURCE")
+    if _requires_ingestion_pipeline(payload.sourceId):
+        raise upstream_error(
+            "ResourceSat statistics are served through standalone ingestion field analytics.",
+            code="INGESTION_FIELD_INDEX_REQUIRED",
+            sourceId=payload.sourceId,
+        )
     _enforce_index_rate_limit(request)
 
     def _compute() -> dict[str, Any]:

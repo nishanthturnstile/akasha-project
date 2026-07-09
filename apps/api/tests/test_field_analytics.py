@@ -21,7 +21,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def native_settings(monkeypatch):
-    monkeypatch.setattr(settings, "default_source_id", "resourcesat-2a-liss3-boa")
+    monkeypatch.setattr(settings, "default_source_id", "sentinel-2-l2a")
 
 
 def _plot(**overrides: Any) -> dict[str, Any]:
@@ -41,10 +41,11 @@ def _plot(**overrides: Any) -> dict[str, Any]:
 def _stats_response(
     index_type: str = "NDVI",
     acquisition_date: str = "2026-01-15",
+    source_id: str = "sentinel-2-l2a",
 ) -> dict[str, Any]:
     return {
         "indexType": index_type,
-        "sourceId": "resourcesat-2a-liss3-boa",
+        "sourceId": source_id,
         "acquisitionDate": acquisition_date,
         "statistics": {
             "min": 0.1,
@@ -117,7 +118,7 @@ def test_field_statistics_uses_field_repository_for_field_ids(monkeypatch):
 
     r = client.post(
         "/api/fields/field-1/indices/statistics",
-        json={"sourceId": "resourcesat-2a-liss3-boa", "indexType": "NDVI"},
+        json={"sourceId": "sentinel-2-l2a", "indexType": "NDVI"},
     )
 
     assert r.status_code == 200
@@ -135,13 +136,14 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
         return _stats_response(
             index_type=kwargs["index_type"],
             acquisition_date=kwargs["acquisition_date"],
+            source_id=kwargs["source_id"],
         )
 
     monkeypatch.setattr(field_analytics, "compute_statistics", fake_compute_statistics)
     r = client.post(
         "/api/fields/plot-1/indices/statistics",
         json={
-            "sourceId": "resourcesat-2a-liss3-boa",
+            "sourceId": "sentinel-2-l2a",
             "acquisitionDate": "2026-01-15",
             "indexType": "NDVI",
             "cloudMask": {"clouds": True, "cloudShadows": False, "cirrus": True},
@@ -151,28 +153,54 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert calls[0]["geometry"] == plot["geometry"]
-    assert calls[0]["source_id"] == "resourcesat-2a-liss3-boa"
-    assert calls[0]["excluded_mask_classes"] == (0, 2)
+    assert calls[0]["source_id"] == "sentinel-2-l2a"
+    assert calls[0]["excluded_mask_classes"] == (0, 1, 2, 7, 8, 9, 10, 11)
     assert body["plotId"] == "plot-1"
     assert body["provider"] == "native"
     assert body["scope"] == "field"
     assert body["statistics"]["mean"] == pytest.approx(0.55)
-    assert body["metadata"]["cloudMaskMapping"]["nativeExcludedMaskClasses"] == [0, 2]
-    assert body["metadata"]["cloudMaskMapping"]["warnings"]
+    assert body["metadata"]["cloudMaskMapping"]["nativeExcludedMaskClasses"] == [
+        0,
+        1,
+        2,
+        7,
+        8,
+        9,
+        10,
+        11,
+    ]
+    assert body["metadata"]["cloudMaskMapping"]["warnings"] == []
 
 
-def test_resourcesat_statistics_stays_native_until_bridge_fully_enabled(monkeypatch):
+def test_resourcesat_statistics_uses_pipeline_even_when_bridge_flags_are_off(monkeypatch):
     monkeypatch.setattr(settings, "ingestion_api_url", "http://ingestion.internal:18080")
     monkeypatch.setattr(settings, "ingestion_api_key", "SECRET_API_KEY")
-    monkeypatch.setattr(settings, "ingestion_field_index_enabled", True)
+    monkeypatch.setattr(settings, "ingestion_field_index_enabled", False)
     monkeypatch.setattr(settings, "ingestion_readiness_enabled", False)
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
         field_analytics,
         "request_field_index",
-        lambda *_args, **_kw: pytest.fail("pipeline should not be used while bridge incomplete"),
+        lambda *_args, **_kw: {
+            "status": "AVAILABLE",
+            "queryId": "query-1",
+            "selectedSceneDate": "2026-01-15",
+            "statistics": {
+                "min": 0.1,
+                "max": 0.8,
+                "mean": 0.55,
+                "stdDev": 0.12,
+                "usablePixelPercentage": 82.5,
+                "cloudPercentage": 10.0,
+            },
+            "resolution": {"displayMeters": 24},
+        },
     )
-    monkeypatch.setattr(field_analytics, "compute_statistics", lambda **kwargs: _stats_response())
+    monkeypatch.setattr(
+        field_analytics,
+        "compute_statistics",
+        lambda **_kwargs: pytest.fail("native ResourceSat statistics fallback"),
+    )
 
     r = client.post(
         "/api/fields/plot-1/indices/statistics",
@@ -184,7 +212,8 @@ def test_resourcesat_statistics_stays_native_until_bridge_fully_enabled(monkeypa
     )
 
     assert r.status_code == 200
-    assert r.json()["provider"] == "native"
+    assert r.json()["provider"] == "pipeline"
+    assert r.json()["sourceId"] == "resourcesat-2a-liss3-boa"
 
 
 def test_field_statistics_missing_field(monkeypatch):
@@ -220,12 +249,13 @@ def test_native_trend_normalizes_points(monkeypatch):
         lambda **kwargs: _stats_response(
             index_type=kwargs["index_type"],
             acquisition_date=kwargs["acquisition_date"],
+            source_id=kwargs["source_id"],
         ),
     )
 
     r = client.get(
         "/api/fields/plot-1/analytics/trend"
-        "?indexType=NDVI&startDate=2026-01-01&endDate=2026-03-01"
+        "?sourceId=sentinel-2-l2a&indexType=NDVI&startDate=2026-01-01&endDate=2026-03-01"
     )
 
     assert r.status_code == 200
@@ -252,7 +282,7 @@ def test_native_trend_rejects_unsupported_index(monkeypatch):
 def test_trend_without_dates_uses_catalog_defaults_without_internal_leaks(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(field_analytics.catalog, "list_dates", lambda _: [])
-    r = client.get("/api/fields/plot-1/analytics/trend?indexType=NDVI")
+    r = client.get("/api/fields/plot-1/analytics/trend?sourceId=sentinel-2-l2a&indexType=NDVI")
     assert r.status_code == 200
     assert r.json()["provider"] == "native"
     for leak in ["s3://", "minio", "postgres", "Traceback"]:
@@ -268,12 +298,15 @@ def test_native_trend_reports_cloud_percent_per_scene(monkeypatch):
         field_analytics,
         "compute_statistics",
         lambda **kwargs: _stats_response(
-            index_type=kwargs["index_type"], acquisition_date=kwargs["acquisition_date"]
+            index_type=kwargs["index_type"],
+            acquisition_date=kwargs["acquisition_date"],
+            source_id=kwargs["source_id"],
         ),
     )
 
     r = client.get(
-        "/api/fields/plot-1/analytics/trend?startDate=2026-01-01&endDate=2026-03-01"
+        "/api/fields/plot-1/analytics/trend?sourceId=sentinel-2-l2a"
+        "&startDate=2026-01-01&endDate=2026-03-01"
     )
 
     assert r.status_code == 200
@@ -294,7 +327,9 @@ def test_native_trend_filters_scenes_over_max_cloud_cover(monkeypatch):
 
     def fake_compute(**kwargs):
         resp = _stats_response(
-            index_type=kwargs["index_type"], acquisition_date=kwargs["acquisition_date"]
+            index_type=kwargs["index_type"],
+            acquisition_date=kwargs["acquisition_date"],
+            source_id=kwargs["source_id"],
         )
         if kwargs["acquisition_date"] == "2026-02-01":
             resp["statistics"]["cloudMaskedPercent"] = 80.0
@@ -304,7 +339,8 @@ def test_native_trend_filters_scenes_over_max_cloud_cover(monkeypatch):
 
     r = client.get(
         "/api/fields/plot-1/analytics/trend"
-        "?startDate=2026-01-01&endDate=2026-03-01&maxCloudCoverInAoi=50"
+        "?sourceId=sentinel-2-l2a&startDate=2026-01-01&endDate=2026-03-01"
+        "&maxCloudCoverInAoi=50"
     )
 
     assert r.status_code == 200
@@ -360,7 +396,7 @@ def test_field_index_overlay_renders_clipped_png(monkeypatch):
 
     r = client.get(
         "/api/fields/plot-1/overlay/ndvi.png"
-        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+        "?sourceId=sentinel-2-l2a&acquisitionDate=2026-03-19"
     )
 
     assert r.status_code == 200
@@ -413,7 +449,7 @@ def test_field_index_overlay_returns_true_window_corners_and_reference_stretch(m
 
     r = client.get(
         "/api/fields/plot-1/overlay/ndvi.png"
-        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+        "?sourceId=sentinel-2-l2a&acquisitionDate=2026-03-19"
     )
 
     assert r.status_code == 200
@@ -599,14 +635,14 @@ def test_field_index_point_returns_precise_value_for_hover(monkeypatch):
 
     r = client.get(
         "/api/fields/plot-1/indices/point"
-        "?sourceId=resourcesat-2a-liss3-boa&acquisitionDate=2026-03-19"
+        "?sourceId=sentinel-2-l2a&acquisitionDate=2026-03-19"
         "&indexType=NDVI&lng=77.05&lat=12.05"
     )
 
     assert r.status_code == 200
     assert r.json() == {
         "plotId": "plot-1",
-        "sourceId": "resourcesat-2a-liss3-boa",
+        "sourceId": "sentinel-2-l2a",
         "acquisitionDate": "2026-03-19",
         "indexType": "NDVI",
         "lng": 77.05,
@@ -614,7 +650,7 @@ def test_field_index_point_returns_precise_value_for_hover(monkeypatch):
         "value": 0.5,
         "masked": False,
         "maskClass": 1,
-        "resolvedSourceId": "resourcesat-2a-liss3-boa",
+        "resolvedSourceId": "sentinel-2-l2a",
         "resolutionMeters": 24,
         "enhanced": False,
         "basisDate": None,

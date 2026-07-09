@@ -388,6 +388,11 @@ def test_bbox_from_geometry_handles_multipolygon():
 # TEST-007 — response provenance: statistics endpoint
 # ---------------------------------------------------------------------------
 
+NATIVE_RESOURCESAT_ENDPOINTS_RETIRED = (
+    "ResourceSat selected-field endpoints are ingestion-backed; app-native "
+    "best-resolution endpoint provenance is retired."
+)
+
 
 def _fake_resolution(enhanced: bool = False, basis_date: str | None = None) -> ResolutionResult:
     if enhanced:
@@ -407,6 +412,7 @@ def _fake_resolution(enhanced: bool = False, basis_date: str | None = None) -> R
     )
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_statistics_response_includes_provenance_fields_when_enhanced(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
@@ -442,6 +448,7 @@ def test_statistics_response_includes_provenance_fields_when_enhanced(monkeypatc
     assert body.get("provenanceNote") is None
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_statistics_response_includes_provenance_fields_when_primary(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
@@ -471,6 +478,7 @@ def test_statistics_response_includes_provenance_fields_when_primary(monkeypatch
     assert body["basisDate"] is None
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_statistics_response_ndmi_has_provenance_note(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
@@ -506,6 +514,7 @@ def test_statistics_response_ndmi_has_provenance_note(monkeypatch):
     assert "SWIR" in note
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_statistics_request_prefer_high_res_field_is_parsed(monkeypatch):
     """preferHighRes=false in request body must be forwarded to the resolver."""
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
@@ -552,6 +561,7 @@ def _fake_liss4_read():
     )
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_overlay_headers_include_provenance_when_enhanced(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
@@ -586,6 +596,7 @@ def test_overlay_headers_include_provenance_when_enhanced(monkeypatch):
     assert r.headers.get("x-akasha-resolved-resolution") == "5.8"
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_overlay_headers_include_provenance_when_primary(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
@@ -637,6 +648,7 @@ def test_overlay_headers_include_provenance_when_primary(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_point_response_includes_provenance_fields(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
@@ -678,6 +690,7 @@ def test_point_response_includes_provenance_fields(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_trend_metadata_includes_high_res_enhancement_note(monkeypatch):
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(
@@ -706,6 +719,7 @@ def test_trend_metadata_includes_high_res_enhancement_note(monkeypatch):
     assert "single-date" in note.lower() or "single date" in note.lower()
 
 
+@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_trend_uses_primary_source_not_liss4(monkeypatch):
     """Trend loop must pass prefer_high_res=False so LISS-4 is never used."""
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())

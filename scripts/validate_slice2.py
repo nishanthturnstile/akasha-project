@@ -226,24 +226,36 @@ try:
     )
     src = tc.get("/api/sources")
     body = src.json()
-    check(src.status_code == 200 and body[0]["id"] == SOURCE_ID, "GET /api/sources")
+    source_payload = next((source for source in body if source.get("id") == SOURCE_ID), None)
+    check(src.status_code == 200 and source_payload is not None, "GET /api/sources")
     check("sentinel-2-l2a" not in {source["id"] for source in body}, "Sentinel-2 hidden by default")
-    check(body[0]["defaultDisplayMode"] == "FCC", "ResourceSat source defaultDisplayMode FCC")
-    check("NDRE" not in body[0]["supportedIndices"], "ResourceSat source hides unsupported NDRE")
+    source_payload = source_payload or {}
+    check(
+        source_payload.get("pipelineBacked") is True
+        and source_payload.get("tileRouteMode") == "field-overlay",
+        "ResourceSat source is ingestion-backed field-overlay only",
+    )
+    check(
+        source_payload.get("defaultDisplayMode") == "NDVI"
+        and source_payload.get("defaultMapDisplayMode") == "NDVI",
+        "ResourceSat source defaults to selected-field NDVI overlay",
+    )
+    check(
+        "NDRE" not in source_payload.get("supportedIndices", []),
+        "ResourceSat source hides unsupported NDRE",
+    )
     dts = tc.get(f"/api/sources/{SOURCE_ID}/dates")
     check(
-        dts.status_code == 200 and any(d["acquisitionDate"] == SAMPLE_DATE for d in dts.json()),
-        f"GET dates contains {SAMPLE_DATE}",
+        dts.status_code == 502
+        and dts.json()["error"]["code"] == "INGESTION_READINESS_UNAVAILABLE",
+        "GET ResourceSat dates requires standalone ingestion readiness",
     )
     lay = tc.get("/api/layers/default")
     lay_body = lay.json()
     check(
-        lay.status_code == 200
-        and lay_body["defaultMapDisplayMode"] == "NDVI"
-        and lay_body["displayMode"] == "FCC"
-        and isinstance(lay_body["tileUrlTemplate"], str)
-        and "/api/tiles/resourcesat-2a-liss3-boa/" in lay_body["tileUrlTemplate"],
-        "GET /api/layers/default defaults to ResourceSat FCC imagery",
+        lay.status_code == 502
+        and lay_body["error"]["code"] == "INGESTION_READINESS_UNAVAILABLE",
+        "GET /api/layers/default requires ResourceSat ingestion readiness",
     )
     from app.raster import catalog_resolver as _catalog
 
@@ -252,21 +264,27 @@ try:
         == f"/api/tiles/{SOURCE_ID}/{SAMPLE_DATE}/FCC/{{z}}/{{x}}/{{y}}.png",
         "FCC tile template is a same-origin /api route",
     )
+    tile = tc.get(f"/api/tiles/{SOURCE_ID}/{SAMPLE_DATE}/FCC/12/2937/1909.png")
+    check(
+        tile.status_code == 502 and tile.json()["error"]["code"] == "INGESTION_TILE_UNAVAILABLE",
+        "GET ResourceSat direct tile route is retired",
+    )
     bad = tc.post(
         "/api/indices/statistics",
         json={"geometry": {"type": "Point", "coordinates": [77.58, 12.96]}, "indexType": "NDVI"},
     )
     check(
-        bad.status_code == 422 and bad.json()["error"]["code"] == "INVALID_GEOMETRY",
-        "POST statistics invalid geometry -> 422 INVALID_GEOMETRY",
+        bad.status_code == 502 and bad.json()["error"]["code"] == "INGESTION_FIELD_INDEX_REQUIRED",
+        "POST ResourceSat statistics route requires ingestion field-index",
     )
     nope = tc.post(
         "/api/indices/statistics",
         json={"geometry": stat_poly, "indexType": "NDRE"},
     )
     check(
-        nope.status_code == 400 and nope.json()["error"]["code"] == "UNSUPPORTED_INDEX",
-        "POST ResourceSat unsupported NDRE -> 400 UNSUPPORTED_INDEX",
+        nope.status_code == 502
+        and nope.json()["error"]["code"] == "INGESTION_FIELD_INDEX_REQUIRED",
+        "POST ResourceSat unsupported-index request does not use native compute",
     )
     openapi = tc.get("/api/openapi.json").json()
     stats_meta = openapi["components"]["schemas"]["StatisticsMetadata"]["properties"]

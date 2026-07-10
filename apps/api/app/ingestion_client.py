@@ -78,6 +78,7 @@ class ApiEnvelope(ApiModel, Generic[T]):
 
 class FieldIndexRequest(ApiModel):
     geometry: dict[str, Any]
+    source_id: str = "sentinel-2-l2a"
     crs: str = "EPSG:4326"
     index: str
     date: date
@@ -669,6 +670,7 @@ def request_field_index(
         result = _client_for(settings_obj, timeout_seconds).field_index(
             {
                 "geometry": geometry,
+                "sourceId": source_id,
                 "crs": "EPSG:4326",
                 "index": index_type,
                 "date": acquisition_date,

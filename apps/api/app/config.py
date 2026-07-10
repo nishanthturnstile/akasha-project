@@ -249,6 +249,9 @@ class Settings:
     ingestion_field_index_enabled: bool = field(
         default_factory=lambda: _get_bool("INGESTION_FIELD_INDEX_ENABLED", False)
     )
+    ingestion_resourcesat_cutover_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_RESOURCESAT_CUTOVER_ENABLED", False)
+    )
     ingestion_field_index_source_id: str = field(
         default_factory=lambda: _get("INGESTION_FIELD_INDEX_SOURCE_ID", "sentinel-2-l2a")
     )

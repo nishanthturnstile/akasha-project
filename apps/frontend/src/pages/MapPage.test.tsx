@@ -358,11 +358,12 @@ function stubAkashaFetch({
         );
       }
 
-      if (path === '/api/layers/default') {
+      if (path.startsWith('/api/layers/default?sourceId=')) {
+        const sourceId = new URL(path, 'http://akasha.test').searchParams.get('sourceId');
         return Promise.resolve(
           jsonResponse({
-            sourceId: 'resourcesat-2a-liss3-boa',
-            acquisitionDate: '2026-03-19',
+            sourceId,
+            acquisitionDate: sourceId === 'sentinel-2-l2a' ? '2026-03-20' : '2026-03-19',
             displayMode: 'NDVI',
             defaultDisplayMode: 'FCC',
             mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
@@ -482,6 +483,12 @@ describe('MapPage source defaults', () => {
     expect(
       calls.some(([input]) => String(input).startsWith('/api/sources/sentinel-2-l2a/dates')),
     ).toBe(true);
+    expect(
+      calls.some(([input]) => String(input) === '/api/layers/default?sourceId=sentinel-2-l2a'),
+    ).toBe(true);
+    expect(
+      calls.some(([input]) => String(input) === '/api/layers/default'),
+    ).toBe(false);
   });
 
   it('keeps a persisted active source ahead of config.defaultSourceId', async () => {
@@ -501,6 +508,33 @@ describe('MapPage source defaults', () => {
     expect(
       calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
     ).toBe(true);
+    expect(
+      calls.some(
+        ([input]) =>
+          String(input) === '/api/layers/default?sourceId=resourcesat-2a-liss3-boa',
+      ),
+    ).toBe(true);
+  });
+
+  it('refetches default-layer metadata for the newly selected source', async () => {
+    stubAkashaFetch();
+
+    renderMapPage();
+
+    fireEvent.click(await screen.findByTestId('layer-source-trigger'));
+    fireEvent.click(await screen.findByTestId('source-tab-sentinel-2-l2a'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls;
+      expect(
+        calls.some(([input]) => String(input) === '/api/layers/default?sourceId=sentinel-2-l2a'),
+      ).toBe(true);
+      expect(
+        calls.some(([input]) => String(input).startsWith('/api/sources/sentinel-2-l2a/dates')),
+      ).toBe(true);
+    });
   });
 });
 

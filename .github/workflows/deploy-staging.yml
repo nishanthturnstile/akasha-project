@@ -135,6 +135,15 @@ jobs:
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY
 
+      - name: Sync API reference data
+        run: |
+          set -euo pipefail
+          target="${APP_DATA_ROOT:-/data/akasha}/data/reference"
+          sudo install -d -m 0755 "$target"
+          sudo install -m 0644 scripts/data/*.json "$target/"
+          test -s "$target/irrigation-types.json"
+          test -s "$target/predefined-seasons.json"
+
       - name: Patch Coolify service stack
         run: |
           python3 - <<'PY'

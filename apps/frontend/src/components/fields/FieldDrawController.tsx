@@ -422,36 +422,24 @@ export function FieldDrawController({
   // Switch to freehand linestring mode for cutting
   useEffect(() => {
     const draw = drawRef.current;
-    if (!draw || !startedRef.current) {
-      console.log('[cut effect] draw or startedRef not ready');
-      return;
-    }
-    if (modeRef.current !== 'draw') {
-      console.log('[cut effect] modeRef.current is not draw:', modeRef.current);
-      return;
-    }
+    if (!draw || !startedRef.current) return;
+    if (modeRef.current !== 'draw') return;
     if (cutMode) {
       const currentMode = draw.getMode();
-      console.log('[cut effect] entering cut mode, current TerraDraw mode:', currentMode);
       // TerraDraw can't switch from 'select' to 'freehand-linestring' directly
       if (currentMode === 'select') {
-        console.log('[cut effect] in select mode, bridging to polygon first');
         draw.setMode('polygon');
-        console.log('[cut effect] bridge to polygon succeeded, now going to freehand-linestring');
       }
       try {
         draw.setMode('freehand-linestring');
-        console.log('[cut effect] freehand-linestring mode set successfully');
-      } catch (err) {
-        console.error('[cut effect] FAILED to set freehand-linestring mode:', err);
+      } catch {
+        return;
       }
       if (map && typeof map.getCanvas === 'function') {
         map.getCanvas().style.cursor = 'crosshair';
       }
     } else if (draw.getMode() === 'freehand-linestring') {
-      console.log('[cut effect] exiting cut mode, restoring to polygon/circle');
       draw.setMode(drawModeRef.current === 'circle' ? 'circle' : 'polygon');
-      console.log('[cut effect] mode restored successfully');
       if (map && typeof map.getCanvas === 'function') {
         map.getCanvas().style.cursor = 'crosshair';
       }

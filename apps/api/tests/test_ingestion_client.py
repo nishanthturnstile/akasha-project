@@ -14,7 +14,9 @@ from app.ingestion_client import (
     IngestionClient,
     IngestionClientConfigError,
     IngestionClientError,
+    _raise_ingestion_api_error,
 )
+from app.raster.errors import AkashaError
 
 API_URL = "https://ingestion.internal"
 API_KEY = "test-secret-ingestion-key"
@@ -401,6 +403,24 @@ def test_connection_failure_is_unavailable() -> None:
 
     assert exc_info.value.code == "PIPELINE_UPSTREAM_UNAVAILABLE"
     assert exc_info.value.status_code == 503
+
+
+def test_wrapper_preserves_typed_upstream_unavailable_error() -> None:
+    error = IngestionClientError(
+        "PIPELINE_UPSTREAM_UNAVAILABLE",
+        "Ingestion pipeline is unavailable.",
+        status_code=503,
+        upstream_status=502,
+        retryable=True,
+        details={"upstreamStatus": 502},
+    )
+
+    with pytest.raises(AkashaError) as exc_info:
+        _raise_ingestion_api_error(error, default_code="INGESTION_FIELD_INDEX_ERROR")
+
+    assert exc_info.value.code == "INGESTION_FIELD_INDEX_ERROR"
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.details == {"upstreamStatus": 502, "retryable": True}
 
 
 def test_invalid_json_raises_invalid_response() -> None:

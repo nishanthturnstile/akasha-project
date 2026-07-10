@@ -10,6 +10,8 @@ interface CoordinateReadoutProps {
     } | null>;
 }
 
+const INDEX_LOOKUP_DEBOUNCE_MS = 180;
+
 /** Format a signed degree value with a hemisphere suffix, fixed to 4 dp (~11 m). */
 function formatLatLng(value: number, positive: string, negative: string): string {
     const hemisphere = value >= 0 ? positive : negative;
@@ -30,6 +32,7 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
         masked: boolean;
     } | null>(null);
     const frame = useRef<number | null>(null);
+    const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pending = useRef<{ lng: number; lat: number } | null>(null);
     const lookupSeq = useRef(0);
 
@@ -42,15 +45,21 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
             const next = pending.current;
             setCoords(next);
             if (!indexLookup) {
+                if (lookupTimer.current !== null) clearTimeout(lookupTimer.current);
+                lookupTimer.current = null;
                 setIndexSample(null);
                 return;
             }
             const seq = ++lookupSeq.current;
-            void indexLookup(next).then((sample) => {
-                if (lookupSeq.current === seq) setIndexSample(sample);
-            }).catch(() => {
-                if (lookupSeq.current === seq) setIndexSample(null);
-            });
+            if (lookupTimer.current !== null) clearTimeout(lookupTimer.current);
+            lookupTimer.current = setTimeout(() => {
+                lookupTimer.current = null;
+                void indexLookup(next).then((sample) => {
+                    if (lookupSeq.current === seq) setIndexSample(sample);
+                }).catch(() => {
+                    if (lookupSeq.current === seq) setIndexSample(null);
+                });
+            }, INDEX_LOOKUP_DEBOUNCE_MS);
         };
         const onMove = (event: maplibregl.MapMouseEvent) => {
             pending.current = { lng: event.lngLat.lng, lat: event.lngLat.lat };
@@ -61,6 +70,10 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
             if (frame.current !== null) {
                 cancelAnimationFrame(frame.current);
                 frame.current = null;
+            }
+            if (lookupTimer.current !== null) {
+                clearTimeout(lookupTimer.current);
+                lookupTimer.current = null;
             }
             lookupSeq.current += 1;
             setCoords(null);
@@ -73,6 +86,7 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
             map.off('mousemove', onMove);
             map.off('mouseout', onLeave);
             if (frame.current !== null) cancelAnimationFrame(frame.current);
+            if (lookupTimer.current !== null) clearTimeout(lookupTimer.current);
         };
     }, [map, indexLookup]);
 

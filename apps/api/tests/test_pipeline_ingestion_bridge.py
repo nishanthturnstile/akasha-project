@@ -30,6 +30,11 @@ def pipeline_settings(monkeypatch):
     monkeypatch.setattr(settings, "ingestion_readiness_enabled", True)
     monkeypatch.setattr(settings, "ingestion_field_index_enabled", True)
     monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "ingestion_resourcesat_cutover_source_ids",
+        ",".join(RESOURCESAT_SOURCE_IDS),
+    )
     monkeypatch.setattr(settings, "ingestion_aoi_id", "bangalore_60km_geodesic_aoi")
     monkeypatch.setattr(settings, "ingestion_signed_url_allowed_prefix", "http://10.10.2.4:18080")
     monkeypatch.setattr(settings, "ingestion_signed_url_fetch_prefix", "http://127.0.0.1:18081")
@@ -228,6 +233,19 @@ def test_resourcesat_uses_native_catalog_until_cutover_enabled(monkeypatch) -> N
     dates = client.get(f"/api/sources/{catalog.RESOURCESAT_LISS3_SOURCE_ID}/dates")
     assert dates.status_code == 200
     assert dates.json()[0]["acquisitionDate"] == "2026-03-19"
+
+
+def test_resourcesat_cutover_is_scoped_to_accepted_source_ids(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "ingestion_resourcesat_cutover_source_ids",
+        catalog.RESOURCESAT_LISS3_SOURCE_ID,
+    )
+
+    assert product_router._requires_ingestion_pipeline(catalog.RESOURCESAT_LISS3_SOURCE_ID)
+    assert not product_router._requires_ingestion_pipeline(catalog.RESOURCESAT_LISS4_SOURCE_ID)
+    assert not product_router._requires_ingestion_pipeline(catalog.RESOURCESAT_AWIFS_SOURCE_ID)
 
 
 def test_half_enabled_bridge_does_not_advertise_pipeline_source(monkeypatch) -> None:

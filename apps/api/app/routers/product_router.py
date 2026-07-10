@@ -66,9 +66,15 @@ def _is_pipeline_source(source_id: str) -> bool:
 
 def _requires_ingestion_pipeline(source_id: str) -> bool:
     """ResourceSat sources explicitly cut over from app-native COGs to ingestion."""
+    cutover_sources = {
+        value.strip()
+        for value in settings.ingestion_resourcesat_cutover_source_ids.split(",")
+        if value.strip()
+    }
     return (
         settings.ingestion_resourcesat_cutover_enabled
         and source_id in catalog.RESOURCESAT_BOA_SOURCE_IDS
+        and source_id in cutover_sources
     )
 
 

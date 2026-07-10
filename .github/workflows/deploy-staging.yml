@@ -85,6 +85,8 @@ jobs:
       COOLIFY_SERVICE_UUID: ${{ vars.COOLIFY_STAGING_SERVICE_UUID }}
       IMAGE_TAG: ${{ github.sha }}
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
+      INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'false' }}
+      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -125,12 +127,31 @@ jobs:
           admin_live = os.environ.get("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED", "true").lower()
           if admin_live not in {"true", "false"}:
               raise SystemExit("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED must be true or false")
+          resourcesat_cutover = os.environ.get(
+              "INGESTION_RESOURCESAT_CUTOVER_ENABLED", "false"
+          ).lower()
+          if resourcesat_cutover not in {"true", "false"}:
+              raise SystemExit("INGESTION_RESOURCESAT_CUTOVER_ENABLED must be true or false")
+          resourcesat_sources = os.environ.get(
+              "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS",
+              "resourcesat-2a-liss3-boa",
+          )
+          if not all(part.strip() for part in resourcesat_sources.split(",")):
+              raise SystemExit("INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid")
           app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
           if not app_data_root.startswith("/"):
               raise SystemExit("APP_DATA_ROOT must be an absolute host path")
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
           text = text.replace("${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}", admin_live)
+          text = text.replace(
+              "${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-false}",
+              resourcesat_cutover,
+          )
+          text = text.replace(
+              "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa}",
+              resourcesat_sources,
+          )
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY

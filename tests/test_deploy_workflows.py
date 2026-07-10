@@ -102,6 +102,22 @@ def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
     assert 'values["health"] == "healthy"' in verify_step["run"]
 
 
+def test_staging_deploy_renders_source_scoped_resourcesat_cutover():
+    workflow = _workflow("deploy-staging.yml")
+    deploy_job = workflow["jobs"]["deploy-staging"]
+    render_step = _step(deploy_job, "Render Compose with immutable image tag")
+
+    assert deploy_job["env"]["INGESTION_RESOURCESAT_CUTOVER_ENABLED"] == (
+        "${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'false' }}"
+    )
+    assert deploy_job["env"]["INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS"] == (
+        "${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || "
+        "'resourcesat-2a-liss3-boa' }}"
+    )
+    assert "INGESTION_RESOURCESAT_CUTOVER_ENABLED must be true or false" in render_step["run"]
+    assert "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid" in render_step["run"]
+
+
 def test_deploy_workflow_inline_python_snippets_compile():
     for workflow_name in DEPLOY_WORKFLOWS:
         workflow = _workflow(workflow_name)

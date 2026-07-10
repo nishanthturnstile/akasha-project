@@ -29,6 +29,12 @@ def pipeline_settings(monkeypatch):
     monkeypatch.setattr(settings, "ingestion_api_key", "SECRET_API_KEY")
     monkeypatch.setattr(settings, "ingestion_readiness_enabled", True)
     monkeypatch.setattr(settings, "ingestion_field_index_enabled", True)
+    monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "ingestion_resourcesat_cutover_source_ids",
+        ",".join(RESOURCESAT_SOURCE_IDS),
+    )
     monkeypatch.setattr(settings, "ingestion_aoi_id", "bangalore_60km_geodesic_aoi")
     monkeypatch.setattr(settings, "ingestion_signed_url_allowed_prefix", "http://10.10.2.4:18080")
     monkeypatch.setattr(settings, "ingestion_signed_url_fetch_prefix", "http://127.0.0.1:18081")
@@ -119,6 +125,34 @@ def test_config_and_sources_expose_pipeline_default(monkeypatch) -> None:
     assert dates.json()[0]["acquisitionDate"] == "2026-03-20"
 
 
+def test_sentinel_default_layer_uses_pipeline_readiness(monkeypatch) -> None:
+    monkeypatch.setattr(
+        product_router,
+        "get_readiness",
+        lambda *_args, **_kw: {
+            "availableDates": ["2026-03-20", "2026-03-18"],
+            "indexCoverage": {"NDVI": {"coveragePercent": 40.0}},
+        },
+    )
+    monkeypatch.setattr(
+        product_router.catalog,
+        "list_dates",
+        lambda *_args, **_kw: pytest.fail("native Sentinel date fallback"),
+    )
+
+    response = client.get(
+        f"/api/layers/default?sourceId={catalog.SENTINEL_2_SOURCE_ID}"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sourceId"] == catalog.SENTINEL_2_SOURCE_ID
+    assert body["acquisitionDate"] == "2026-03-20"
+    assert body["pipelineBacked"] is True
+    assert body["tileRouteMode"] == "field-overlay"
+    assert body["tileUrlTemplate"] is None
+
+
 def test_resourcesat_sources_and_dates_use_pipeline_readiness(monkeypatch) -> None:
     def fake_readiness(_settings, *, source_id: str, aoi_id: str, **_kwargs):
         assert source_id in RESOURCESAT_SOURCE_IDS
@@ -165,6 +199,53 @@ def test_resourcesat_sources_and_dates_use_pipeline_readiness(monkeypatch) -> No
     assert body[0]["resolutionMeters"] == 5.8
     assert body[0]["coveragePercent"] == pytest.approx(87.5)
     assert body[0]["metricsProvisional"] is True
+
+
+def test_resourcesat_uses_native_catalog_until_cutover_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", False)
+    monkeypatch.setattr(
+        product_router,
+        "get_readiness",
+        lambda *_args, **_kw: pytest.fail("readiness used before ResourceSat cutover"),
+    )
+    monkeypatch.setattr(
+        product_router.catalog,
+        "list_dates",
+        lambda source_id: [
+            {
+                "acquisitionDate": "2026-03-19",
+                "tileAvailable": True,
+                "sceneCount": 1,
+            }
+        ]
+        if source_id == catalog.RESOURCESAT_LISS3_SOURCE_ID
+        else [],
+    )
+
+    sources = client.get("/api/sources")
+    assert sources.status_code == 200
+    liss3 = next(
+        item for item in sources.json() if item["id"] == catalog.RESOURCESAT_LISS3_SOURCE_ID
+    )
+    assert liss3.get("pipelineBacked") is not True
+    assert liss3["defaultDisplayMode"] == "FCC"
+
+    dates = client.get(f"/api/sources/{catalog.RESOURCESAT_LISS3_SOURCE_ID}/dates")
+    assert dates.status_code == 200
+    assert dates.json()[0]["acquisitionDate"] == "2026-03-19"
+
+
+def test_resourcesat_cutover_is_scoped_to_accepted_source_ids(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "ingestion_resourcesat_cutover_source_ids",
+        catalog.RESOURCESAT_LISS3_SOURCE_ID,
+    )
+
+    assert product_router._requires_ingestion_pipeline(catalog.RESOURCESAT_LISS3_SOURCE_ID)
+    assert not product_router._requires_ingestion_pipeline(catalog.RESOURCESAT_LISS4_SOURCE_ID)
+    assert not product_router._requires_ingestion_pipeline(catalog.RESOURCESAT_AWIFS_SOURCE_ID)
 
 
 def test_half_enabled_bridge_does_not_advertise_pipeline_source(monkeypatch) -> None:

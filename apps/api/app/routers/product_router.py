@@ -61,12 +61,28 @@ _PIPELINE_SOURCE_IDS = frozenset(
 
 
 def _is_pipeline_source(source_id: str) -> bool:
-    return source_id in _PIPELINE_SOURCE_IDS
+    return source_id == catalog.SENTINEL_2_SOURCE_ID or _requires_ingestion_pipeline(source_id)
 
 
 def _requires_ingestion_pipeline(source_id: str) -> bool:
-    """Sources whose product-app native raster path has been cut over to ingestion."""
-    return source_id in catalog.RESOURCESAT_BOA_SOURCE_IDS
+    """ResourceSat sources explicitly cut over from app-native COGs to ingestion."""
+    cutover_sources = {
+        value.strip()
+        for value in settings.ingestion_resourcesat_cutover_source_ids.split(",")
+        if value.strip()
+    }
+    return (
+        settings.ingestion_resourcesat_cutover_enabled
+        and source_id in catalog.RESOURCESAT_BOA_SOURCE_IDS
+        and source_id in cutover_sources
+    )
+
+
+def _uses_ingestion_pipeline(source_id: str) -> bool:
+    """Return whether product metadata for this source must come from ingestion."""
+    return _requires_ingestion_pipeline(source_id) or (
+        source_id == catalog.SENTINEL_2_SOURCE_ID and _pipeline_bridge_enabled()
+    )
 
 
 def _pipeline_bridge_enabled() -> bool:
@@ -357,7 +373,7 @@ async def get_source_dates(
 async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     """Default source/date/layer metadata + same-origin tile template."""
     source_id = sourceId or settings.default_source_id or catalog.COLLECTION_ID
-    if _requires_ingestion_pipeline(source_id):
+    if _uses_ingestion_pipeline(source_id):
         source = _pipeline_source_payload(source_id) or catalog.source_payload(source_id)
         dates = _pipeline_dates(source_id) or []
         date = next((d for d in dates if d["isLatestUsable"]), dates[0])

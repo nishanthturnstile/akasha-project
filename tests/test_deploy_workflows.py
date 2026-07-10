@@ -84,15 +84,38 @@ def test_production_deploy_verifies_all_images_before_coolify_patch():
         assert image in verify_step["run"]
 
 
-def test_staging_deploy_uses_service_patch_instant_deploy_without_generic_deploy_webhook():
+def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
     workflow = _workflow("deploy-staging.yml")
     deploy_job = workflow["jobs"]["deploy-staging"]
     step_names = _step_names(deploy_job)
     patch_step = _step(deploy_job, "Patch Coolify service stack")
+    verify_step = _step(deploy_job, "Verify deployed image revisions")
 
-    assert "Trigger Coolify deployment" not in step_names
     assert '"instant_deploy": True' in patch_step["run"]
-    assert "/deploy?" not in patch_step["run"]
+    assert "/deploy?" in patch_step["run"]
+    assert 'method="POST"' in patch_step["run"]
+    assert step_names.index("Patch Coolify service stack") < step_names.index(
+        "Verify deployed image revisions"
+    )
+    assert 'os.environ["IMAGE_TAG"]' in verify_step["run"]
+    assert "org.opencontainers.image.revision" in verify_step["run"]
+    assert 'values["health"] == "healthy"' in verify_step["run"]
+
+
+def test_staging_deploy_renders_source_scoped_resourcesat_cutover():
+    workflow = _workflow("deploy-staging.yml")
+    deploy_job = workflow["jobs"]["deploy-staging"]
+    render_step = _step(deploy_job, "Render Compose with immutable image tag")
+
+    assert deploy_job["env"]["INGESTION_RESOURCESAT_CUTOVER_ENABLED"] == (
+        "${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'false' }}"
+    )
+    assert deploy_job["env"]["INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS"] == (
+        "${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || "
+        "'resourcesat-2a-liss3-boa' }}"
+    )
+    assert "INGESTION_RESOURCESAT_CUTOVER_ENABLED must be true or false" in render_step["run"]
+    assert "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid" in render_step["run"]
 
 
 def test_deploy_workflow_inline_python_snippets_compile():

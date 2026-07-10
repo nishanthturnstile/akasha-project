@@ -85,6 +85,8 @@ jobs:
       COOLIFY_SERVICE_UUID: ${{ vars.COOLIFY_STAGING_SERVICE_UUID }}
       IMAGE_TAG: ${{ github.sha }}
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
+      INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'false' }}
+      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -125,15 +127,43 @@ jobs:
           admin_live = os.environ.get("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED", "true").lower()
           if admin_live not in {"true", "false"}:
               raise SystemExit("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED must be true or false")
+          resourcesat_cutover = os.environ.get(
+              "INGESTION_RESOURCESAT_CUTOVER_ENABLED", "false"
+          ).lower()
+          if resourcesat_cutover not in {"true", "false"}:
+              raise SystemExit("INGESTION_RESOURCESAT_CUTOVER_ENABLED must be true or false")
+          resourcesat_sources = os.environ.get(
+              "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS",
+              "resourcesat-2a-liss3-boa",
+          )
+          if not all(part.strip() for part in resourcesat_sources.split(",")):
+              raise SystemExit("INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid")
           app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
           if not app_data_root.startswith("/"):
               raise SystemExit("APP_DATA_ROOT must be an absolute host path")
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
           text = text.replace("${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}", admin_live)
+          text = text.replace(
+              "${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-false}",
+              resourcesat_cutover,
+          )
+          text = text.replace(
+              "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa}",
+              resourcesat_sources,
+          )
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY
+
+      - name: Sync API reference data
+        run: |
+          set -euo pipefail
+          target="${APP_DATA_ROOT:-/data/akasha}/data/reference"
+          sudo install -d -m 0755 "$target"
+          sudo install -m 0644 scripts/data/*.json "$target/"
+          test -s "$target/irrigation-types.json"
+          test -s "$target/predefined-seasons.json"
 
       - name: Patch Coolify service stack
         run: |
@@ -141,6 +171,7 @@ jobs:
           import base64
           import json
           import os
+          import urllib.parse
           import urllib.request
 
           api_url = os.environ["COOLIFY_API_URL"].rstrip("/")
@@ -161,4 +192,66 @@ jobs:
           )
           with urllib.request.urlopen(req, timeout=60) as response:  # noqa: S310
               print(response.status, response.read().decode(errors="replace"))
+
+          deploy_query = urllib.parse.urlencode(
+              {"uuid": service_uuid, "force": "true"}
+          )
+          deploy_req = urllib.request.Request(
+              f"{api_url}/deploy?{deploy_query}",
+              data=b"",
+              method="POST",
+              headers={"Authorization": f"Bearer {token}"},
+          )
+          with urllib.request.urlopen(deploy_req, timeout=60) as response:  # noqa: S310
+              print(response.status, response.read().decode(errors="replace"))
+          PY
+
+      - name: Verify deployed image revisions
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import time
+
+          expected = os.environ["IMAGE_TAG"]
+          service_uuid = os.environ["COOLIFY_SERVICE_UUID"]
+          deadline = time.monotonic() + 600
+          last_status = {}
+
+          while time.monotonic() < deadline:
+              status = {}
+              for role in ("api", "web"):
+                  name = f"{role}-{service_uuid}"
+                  result = subprocess.run(
+                      ["docker", "inspect", name],
+                      check=False,
+                      capture_output=True,
+                      text=True,
+                  )
+                  if result.returncode != 0:
+                      status[role] = {"revision": None, "health": "missing"}
+                      continue
+                  inspection = json.loads(result.stdout)[0]
+                  status[role] = {
+                      "revision": inspection.get("Config", {})
+                      .get("Labels", {})
+                      .get("org.opencontainers.image.revision"),
+                      "health": inspection.get("State", {})
+                      .get("Health", {})
+                      .get("Status"),
+                  }
+              last_status = status
+              if all(
+                  values["revision"] == expected and values["health"] == "healthy"
+                  for values in status.values()
+              ):
+                  print(json.dumps(status, sort_keys=True))
+                  break
+              time.sleep(5)
+          else:
+              raise SystemExit(
+                  "Coolify rollout did not reach the expected healthy image revisions: "
+                  + json.dumps(last_status, sort_keys=True)
+              )
           PY

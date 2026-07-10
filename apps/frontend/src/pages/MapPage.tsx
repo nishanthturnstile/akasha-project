@@ -319,7 +319,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   useMapUrlState();
   const configQ = useConfig();
   const sourcesQ = useSources();
-  const defaultLayerQ = useDefaultLayer();
   const view = useMapView();
   const {
     activeSourceId,
@@ -347,6 +346,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     }),
     [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
   );
+  const defaultLayerQ = useDefaultLayer(effectiveSourceId);
   const datesQ = useDates(effectiveSourceId, { enabled: !bestMode });
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),

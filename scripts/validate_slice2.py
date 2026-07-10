@@ -214,6 +214,7 @@ try:
     settings.auth_mode = "disabled"
     settings.auth_allow_disabled = True
     settings.app_env = "test"
+    settings.ingestion_resourcesat_cutover_enabled = False
 
     tc = TestClient(app)
     cfg = tc.get("/api/config")
@@ -231,14 +232,14 @@ try:
     check("sentinel-2-l2a" not in {source["id"] for source in body}, "Sentinel-2 hidden by default")
     source_payload = source_payload or {}
     check(
-        source_payload.get("pipelineBacked") is True
-        and source_payload.get("tileRouteMode") == "field-overlay",
-        "ResourceSat source is ingestion-backed field-overlay only",
+        source_payload.get("pipelineBacked") is not True
+        and source_payload.get("tileRouteMode") == "fcc",
+        "ResourceSat source remains native until ingestion cutover acceptance",
     )
     check(
-        source_payload.get("defaultDisplayMode") == "NDVI"
+        source_payload.get("defaultDisplayMode") == "FCC"
         and source_payload.get("defaultMapDisplayMode") == "NDVI",
-        "ResourceSat source defaults to selected-field NDVI overlay",
+        "ResourceSat source keeps FCC browsing and NDVI field defaults",
     )
     check(
         "NDRE" not in source_payload.get("supportedIndices", []),
@@ -246,16 +247,18 @@ try:
     )
     dts = tc.get(f"/api/sources/{SOURCE_ID}/dates")
     check(
-        dts.status_code == 502
-        and dts.json()["error"]["code"] == "INGESTION_READINESS_UNAVAILABLE",
-        "GET ResourceSat dates requires standalone ingestion readiness",
+        dts.status_code == 200
+        and any(entry.get("acquisitionDate") == SAMPLE_DATE for entry in dts.json()),
+        "GET ResourceSat dates uses the validated native catalog before cutover",
     )
     lay = tc.get("/api/layers/default")
     lay_body = lay.json()
     check(
-        lay.status_code == 502
-        and lay_body["error"]["code"] == "INGESTION_READINESS_UNAVAILABLE",
-        "GET /api/layers/default requires ResourceSat ingestion readiness",
+        lay.status_code == 200
+        and lay_body.get("sourceId") == SOURCE_ID
+        and lay_body.get("acquisitionDate") == SAMPLE_DATE
+        and lay_body.get("displayMode") == "FCC",
+        "GET /api/layers/default uses native ResourceSat metadata before cutover",
     )
     from app.raster import catalog_resolver as _catalog
 
@@ -264,27 +267,26 @@ try:
         == f"/api/tiles/{SOURCE_ID}/{SAMPLE_DATE}/FCC/{{z}}/{{x}}/{{y}}.png",
         "FCC tile template is a same-origin /api route",
     )
-    tile = tc.get(f"/api/tiles/{SOURCE_ID}/{SAMPLE_DATE}/FCC/12/2937/1909.png")
     check(
-        tile.status_code == 502 and tile.json()["error"]["code"] == "INGESTION_TILE_UNAVAILABLE",
-        "GET ResourceSat direct tile route is retired",
+        lay_body.get("tileUrlTemplate")
+        == f"/api/tiles/{SOURCE_ID}/{SAMPLE_DATE}/FCC/{{z}}/{{x}}/{{y}}.png",
+        "ResourceSat direct FCC tile route remains available before cutover",
     )
     bad = tc.post(
         "/api/indices/statistics",
         json={"geometry": {"type": "Point", "coordinates": [77.58, 12.96]}, "indexType": "NDVI"},
     )
     check(
-        bad.status_code == 502 and bad.json()["error"]["code"] == "INGESTION_FIELD_INDEX_REQUIRED",
-        "POST ResourceSat statistics route requires ingestion field-index",
+        bad.status_code == 422 and bad.json()["error"]["code"] == "INVALID_GEOMETRY",
+        "POST ResourceSat statistics validates geometry on the native path",
     )
     nope = tc.post(
         "/api/indices/statistics",
         json={"geometry": stat_poly, "indexType": "NDRE"},
     )
     check(
-        nope.status_code == 502
-        and nope.json()["error"]["code"] == "INGESTION_FIELD_INDEX_REQUIRED",
-        "POST ResourceSat unsupported-index request does not use native compute",
+        nope.status_code == 400 and nope.json()["error"]["code"] == "UNSUPPORTED_INDEX",
+        "POST ResourceSat unsupported-index request fails before raster access",
     )
     openapi = tc.get("/api/openapi.json").json()
     stats_meta = openapi["components"]["schemas"]["StatisticsMetadata"]["properties"]

@@ -104,7 +104,7 @@ export const queryKeys = {
   config: ['config'] as const,
   sources: ['sources'] as const,
   dates: (sourceId: string) => ['dates', sourceId] as const,
-  defaultLayer: ['layers', 'default'] as const,
+  defaultLayer: (sourceId: string) => ['layers', 'default', sourceId] as const,
   crops: ['crops'] as const,
   predefinedSeasons: ['predefined-seasons'] as const,
   irrigationTypes: ['irrigation-types'] as const,
@@ -258,8 +258,12 @@ export function useDates(sourceId: string | undefined, options?: { enabled?: boo
   });
 }
 
-export function useDefaultLayer() {
-  return useQuery({ queryKey: queryKeys.defaultLayer, queryFn: getDefaultLayer });
+export function useDefaultLayer(sourceId: string | undefined) {
+  return useQuery({
+    queryKey: sourceId ? queryKeys.defaultLayer(sourceId) : (['layers', 'default', 'none'] as const),
+    queryFn: () => getDefaultLayer(sourceId as string),
+    enabled: Boolean(sourceId),
+  });
 }
 
 

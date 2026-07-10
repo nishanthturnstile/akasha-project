@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from app.config import settings
 from app.raster import catalog_resolver as catalog
-from app.raster.catalog_resolver import RESOURCESAT_AWIFS_SOURCE_ID, RESOURCESAT_LISS4_SOURCE_ID
+from app.raster.catalog_resolver import (
+    RESOURCESAT_AWIFS_SOURCE_ID,
+    RESOURCESAT_LISS3_SOURCE_ID,
+    RESOURCESAT_LISS4_SOURCE_ID,
+)
 from app.routers import product_router
 
 
@@ -61,6 +65,18 @@ def test_resourcesat_pipeline_payload_preserves_source_specific_metadata(monkeyp
     monkeypatch.setattr(settings, "ingestion_api_key", "SECRET_API_KEY")
     monkeypatch.setattr(settings, "ingestion_readiness_enabled", True)
     monkeypatch.setattr(settings, "ingestion_field_index_enabled", True)
+    monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "ingestion_resourcesat_cutover_source_ids",
+        ",".join(
+            (
+                RESOURCESAT_LISS3_SOURCE_ID,
+                RESOURCESAT_LISS4_SOURCE_ID,
+                RESOURCESAT_AWIFS_SOURCE_ID,
+            )
+        ),
+    )
 
     liss4 = product_router._pipeline_source_payload(RESOURCESAT_LISS4_SOURCE_ID)
     assert liss4 is not None

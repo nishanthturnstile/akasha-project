@@ -25,6 +25,7 @@ import {
   getFieldRiskSummary,
   getFieldStatistics,
   getImagerySourceMonitoring,
+  getDefaultLayer,
   getJohnDeereConnection,
   listApiKeys,
   listActivities,
@@ -79,6 +80,22 @@ describe('api client error mapping', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/sources/resourcesat-2a-liss3-boa/dates?lookbackDays=92',
+      expect.anything(),
+    );
+  });
+
+  it('requests default-layer metadata for the selected source', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ sourceId: 'sentinel-2-l2a' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getDefaultLayer('sentinel-2-l2a');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/layers/default?sourceId=sentinel-2-l2a',
       expect.anything(),
     );
   });

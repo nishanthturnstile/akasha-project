@@ -368,8 +368,10 @@ export const getDates = (sourceId: string): Promise<SceneDate[]> =>
 export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringResponse> =>
   request<ImagerySourceMonitoringResponse>('/api/monitoring/imagery-sources');
 
-export const getDefaultLayer = (): Promise<DefaultLayer> =>
-  request<DefaultLayer>('/api/layers/default');
+export const getDefaultLayer = (sourceId: string): Promise<DefaultLayer> =>
+  request<DefaultLayer>(
+    `/api/layers/default?sourceId=${encodeURIComponent(sourceId)}`,
+  );
 
 export const getBestObservations = (params: BestObservationsParams = {}): Promise<BestObservationsResponse> => {
   const p = new URLSearchParams();

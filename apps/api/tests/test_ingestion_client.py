@@ -191,7 +191,7 @@ def test_field_index_available_posts_camel_case_and_parses_response() -> None:
         assert payload["fallbackPolicy"] == "nearest_valid_scene"
         assert payload["maxCloudPercentage"] == 20
         assert payload["fieldId"] == "field_123"
-        assert "sourceId" not in payload
+        assert payload["sourceId"] == "sentinel-2-l2a"
         return httpx.Response(200, json=_available_body(), request=request)
 
     result = _client_for(handler).field_index(_request_payload(), request_id="req-123")

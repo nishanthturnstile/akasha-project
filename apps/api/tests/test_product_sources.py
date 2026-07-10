@@ -61,6 +61,7 @@ def test_resourcesat_pipeline_payload_preserves_source_specific_metadata(monkeyp
     monkeypatch.setattr(settings, "ingestion_api_key", "SECRET_API_KEY")
     monkeypatch.setattr(settings, "ingestion_readiness_enabled", True)
     monkeypatch.setattr(settings, "ingestion_field_index_enabled", True)
+    monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", True)
 
     liss4 = product_router._pipeline_source_payload(RESOURCESAT_LISS4_SOURCE_ID)
     assert liss4 is not None

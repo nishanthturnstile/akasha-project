@@ -24,11 +24,6 @@ from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
-NATIVE_RESOURCESAT_ENDPOINTS_RETIRED = (
-    "ResourceSat product endpoints are ingestion-backed; app-native ResourceSat "
-    "date/default-layer/tile contracts are retired."
-)
-
 IN_FOOTPRINT_POLY = {
     "type": "Polygon",
     "coordinates": [[[78.2, 12.1], [78.205, 12.1], [78.205, 12.105], [78.2, 12.105], [78.2, 12.1]]],
@@ -385,19 +380,20 @@ def test_sources_endpoint_contract():
         "SWIR1": "BAND5",
     }
     assert rs["maskAsset"] == "mask"
-    # ResourceSat is field-overlay/index-only through standalone ingestion.
-    assert rs["pipelineBacked"] is True
-    assert rs["tileRouteMode"] == "field-overlay"
-    assert rs["displayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
-    assert rs["defaultDisplayMode"] == "NDVI"
+    # ResourceSat remains native until standalone ingestion passes cutover acceptance.
+    assert rs.get("pipelineBacked") is not True
+    assert rs["tileRouteMode"] == "fcc"
+    assert rs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert rs["defaultDisplayMode"] == "FCC"
     assert rs["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert rs["defaultMapDisplayMode"] == "NDVI"
     assert [g["label"] for g in rs["layerGroups"]] == [
+        "Imagery",
         "Vegetation Indices",
         "Moisture Indices",
         "Water Index",
     ]
-    assert rs["layerGroups"][2]["modes"] == ["NDWI_GREEN_NIR"]
+    assert rs["layerGroups"][3]["modes"] == ["NDWI_GREEN_NIR"]
     assert rs["availableMaskOptions"] == ["clouds", "cloudShadows"]
     assert rs["metricsProvisional"] is True
     awifs = sources["resourcesat-2a-awifs-boa"]
@@ -406,10 +402,11 @@ def test_sources_endpoint_contract():
     assert awifs["analysisLevel"] == "regional"
     assert awifs["resolutionMeters"] == 56
     assert awifs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
-    assert awifs["pipelineBacked"] is True
-    assert awifs["displayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert awifs.get("pipelineBacked") is not True
+    assert awifs["tileRouteMode"] == "fcc"
+    assert awifs["displayModes"] == ["FCC", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert awifs["mapDisplayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
-    assert awifs["defaultDisplayMode"] == "NDVI"
+    assert awifs["defaultDisplayMode"] == "FCC"
     assert sources["resourcesat-2a-liss4-mx70-l2"]["availabilityStatus"] == "active"
     liss4 = catalog.source_payload("resourcesat-2a-liss4-mx70-l2")
     assert liss4["availabilityStatus"] == "active"
@@ -653,7 +650,6 @@ def test_registered_empty_source_returns_empty_dates_and_clear_default_layer():
     assert body["unavailableReason"]
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_layers_default_tile_template_is_same_origin_api_route():
     r = client.get("/api/layers/default")
     assert r.status_code == 200
@@ -1018,7 +1014,6 @@ def test_source_dates_reject_invalid_window(monkeypatch):
     assert r.json()["error"]["code"] == "INVALID_DATE_RANGE"
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_prefer_composite_when_scene_items_coexist(monkeypatch):
     from app.raster import catalog_resolver as catalog
 
@@ -1059,7 +1054,6 @@ def test_resourcesat_dates_prefer_composite_when_scene_items_coexist(monkeypatch
     assert dates[0]["tileAvailable"] is True
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_mark_newest_qualified_composite_latest_when_stac_flag_missing(
     monkeypatch,
 ):
@@ -1100,7 +1094,6 @@ def test_resourcesat_dates_mark_newest_qualified_composite_latest_when_stac_flag
     assert dates[1]["isLatestUsable"] is False
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite(
     monkeypatch,
 ):
@@ -1143,7 +1136,6 @@ def test_default_layer_uses_resolver_marked_latest_usable_resource_sat_composite
     )
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_missing(
     monkeypatch,
 ):
@@ -1174,7 +1166,6 @@ def test_resourcesat_dates_do_not_mark_low_quality_composite_latest_when_flag_mi
     assert dates[0]["isLatestUsable"] is False
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_dates_explain_missing_tile_assets(monkeypatch):
     from app.raster import catalog_resolver as catalog
 
@@ -1284,7 +1275,6 @@ def test_layers_default_supports_sentinel1_display_mode(monkeypatch):
     assert body["cloudMaskedPercent"] is None
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_layers_default_uses_resourcesat_natural_fcc_mode():
     r = client.get("/api/layers/default?sourceId=resourcesat-2a-liss3-boa")
     assert r.status_code == 200
@@ -1414,7 +1404,6 @@ def test_tile_route_preserves_single_cog_url_behavior(monkeypatch):
     }
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_fcc_tile_route_uses_nir_red_green_order(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import tiles
@@ -1928,7 +1917,6 @@ def test_statistics_rejects_eos04_optical_index_without_raster_io(monkeypatch):
     assert "s3://" not in r.text
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_rejects_unsupported_ndre_without_raster_access(monkeypatch):
     from app.raster import service
 
@@ -1957,7 +1945,6 @@ def test_resourcesat_rejects_unsupported_ndre_without_raster_access(monkeypatch)
     ]
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import service
@@ -2236,7 +2223,6 @@ def test_sar_support_resolver_rejects_zero_valid_sar_coverage(monkeypatch):
     )
 
 
-@pytest.mark.skip(reason=NATIVE_RESOURCESAT_ENDPOINTS_RETIRED)
 def test_resourcesat_statistics_uses_mask_only_nodata_policy(monkeypatch):
     from app.raster import service
     from app.raster.raster_reader import WindowRead

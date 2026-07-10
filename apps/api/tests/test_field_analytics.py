@@ -175,6 +175,7 @@ def test_field_statistics_loads_geometry_server_side(monkeypatch):
 def test_resourcesat_statistics_uses_pipeline_even_when_bridge_flags_are_off(monkeypatch):
     monkeypatch.setattr(settings, "ingestion_api_url", "http://ingestion.internal:18080")
     monkeypatch.setattr(settings, "ingestion_api_key", "SECRET_API_KEY")
+    monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", True)
     monkeypatch.setattr(settings, "ingestion_field_index_enabled", False)
     monkeypatch.setattr(settings, "ingestion_readiness_enabled", False)
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())

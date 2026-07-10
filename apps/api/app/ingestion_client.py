@@ -865,10 +865,14 @@ def request_field_index_point(
         max_cloud_percentage=max_cloud_percentage,
     )
 
-    point_response = fetch_signed_ingestion_json(
-        settings_obj,
-        _append_point_coordinates(point_url, lng=lng, lat=lat),
-    )
+    # Each signed point request opens the derived raster upstream. Keep those reads
+    # serial per field/date/index so a cursor burst cannot exhaust or restart the
+    # single ingestion API process after the field-index URL has been cached.
+    with _point_key_lock(key):
+        point_response = fetch_signed_ingestion_json(
+            settings_obj,
+            _append_point_coordinates(point_url, lng=lng, lat=lat),
+        )
     if point_response.get("success") is False:
         raise upstream_error(
             "Standalone ingestion point lookup failed.",

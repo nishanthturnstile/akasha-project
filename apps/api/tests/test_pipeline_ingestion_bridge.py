@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Any
 
 import pytest
@@ -720,6 +721,9 @@ def test_pipeline_point_cache_single_flights_concurrent_misses(monkeypatch) -> N
     import app.ingestion_client as ingestion_client
 
     field_index_calls: list[str] = []
+    fetch_guard = Lock()
+    active_fetches = 0
+    max_active_fetches = 0
 
     def fake_request_field_index(*_args, **kwargs):
         field_index_calls.append(kwargs["acquisition_date"])
@@ -727,17 +731,26 @@ def test_pipeline_point_cache_single_flights_concurrent_misses(monkeypatch) -> N
         return _available_result(point_url=True)
 
     def fake_fetch(_settings, url: str):
+        nonlocal active_fetches, max_active_fetches
+        with fetch_guard:
+            active_fetches += 1
+            max_active_fetches = max(max_active_fetches, active_fetches)
+        time.sleep(0.01)
         query = url.split("?", 1)[-1]
-        return {
-            "queryId": "query-2026-03-20",
-            "index": "NDVI",
-            "lng": float(query.split("lng=", 1)[1].split("&", 1)[0]),
-            "lat": 12.1,
-            "value": 0.33,
-            "masked": False,
-            "maskClass": 1,
-            "source": {"displayMeters": 10},
-        }
+        try:
+            return {
+                "queryId": "query-2026-03-20",
+                "index": "NDVI",
+                "lng": float(query.split("lng=", 1)[1].split("&", 1)[0]),
+                "lat": 12.1,
+                "value": 0.33,
+                "masked": False,
+                "maskClass": 1,
+                "source": {"displayMeters": 10},
+            }
+        finally:
+            with fetch_guard:
+                active_fetches -= 1
 
     monkeypatch.setattr(ingestion_client, "request_field_index", fake_request_field_index)
     monkeypatch.setattr(ingestion_client, "fetch_signed_ingestion_json", fake_fetch)
@@ -758,6 +771,7 @@ def test_pipeline_point_cache_single_flights_concurrent_misses(monkeypatch) -> N
         results = list(executor.map(lookup, range(20)))
 
     assert field_index_calls == ["2026-03-20"]
+    assert max_active_fetches == 1
     assert len(results) == 20
     assert all(result["value"] == pytest.approx(0.33) for result in results)
 

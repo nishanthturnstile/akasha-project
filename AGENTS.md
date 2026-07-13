@@ -19,6 +19,14 @@ scouting, reports/risk) plus a second imagery source (ISRO Bhoonidhi / ResourceS
 Build only the requested slice/feature; preserve API/data contracts from earlier slices. The
 slice roadmap and per-slice doc scope live in [docs/platform-plan.md](docs/platform-plan.md).
 
+## Required working branch
+
+- Always perform repository work on the `dev-akasha-core` branch. Before editing, verify the
+  current branch and switch to `dev-akasha-core` if necessary without discarding unrelated local
+  changes.
+- Do not commit implementation work directly to `main`. Promote validated `dev-akasha-core`
+  changes to `main` through the repository's normal pull-request and deployment workflow.
+
 ## Multi-root workspace context
 
 This repository is commonly opened in the saved VS Code workspace

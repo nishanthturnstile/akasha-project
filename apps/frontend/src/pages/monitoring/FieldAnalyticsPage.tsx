@@ -125,7 +125,7 @@ export default function FieldAnalyticsPage() {
   }, [displayMode, effectiveSourceId, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
-    <div className="flex flex-col gap-4 p-4 overflow-y-auto">
+    <div className="h-full flex flex-col gap-4 p-4 overflow-y-auto">
       { overlaysVisible && (
         <div className="flex items-stretch rounded-md border border-border bg-background shrink-0">
           <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">

@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { createPortal } from 'react-dom';
 import { CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -107,20 +106,6 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
     };
   }, [open]);
 
-  // Recalculate fixed position when opened
-  const [fixedStyle, setFixedStyle] = React.useState<React.CSSProperties>({});
-  React.useEffect(() => {
-    if (!open) return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) {
-      setFixedStyle({
-        top: rect.bottom + 4,
-        left: rect.left,
-        minWidth: Math.max(rect.width, 280),
-      });
-    }
-  }, [open]);
-
   // Sync view date when value changes from outside
   React.useEffect(() => {
     if (value) {
@@ -219,13 +204,12 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
         <CalendarIcon className="size-4 text-muted-foreground" />
       </button>
 
-      {open ? (createPortal(
+      {open && (
         <div
           ref={calendarRef}
           role="dialog"
           aria-label="Pick a date"
-          className="fixed z-[999] rounded-md border border-border bg-popover p-3 shadow-e2 pointer-events-auto"
-          style={fixedStyle}
+          className="absolute left-0 top-full z-[999] mt-1 rounded-md border border-border bg-popover p-3 shadow-e2 pointer-events-auto"
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-3">
@@ -340,7 +324,7 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
             )}
           </div>
         </div>
-      , document.body) as React.ReactNode) : null}
+      )}
     </div>
   );
 });

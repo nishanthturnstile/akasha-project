@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
+import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
 import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
@@ -135,6 +136,7 @@ export function AppShell() {
   );
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
+  const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
 
   const setGlobalViewMode = (isGlobalView: boolean) => {
     setGlobalViewOpen(isGlobalView);
@@ -652,7 +654,7 @@ export function AppShell() {
                                     setCurrentSeasonId(season.id);
                                     setSeasonSheetOpen(false);
                                     setGlobalViewMode(false);
-                                    navigate(`/monitoring/field-create?seasonId=${season.id}`);
+                                    setAddFieldDialogOpen(true);
                                   } }
                                   className="mt-2 w-full cursor-pointer rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
                                 >
@@ -944,6 +946,12 @@ export function AppShell() {
         open={ !!deletingSeasonId }
         onOpenChange={ (open) => { if (!open) setDeletingSeasonId(null); } }
         deletingSeasonId={ deletingSeasonId }
+      />
+
+      <FieldCreateOptionsDialog
+        open={ addFieldDialogOpen }
+        onOpenChange={ setAddFieldDialogOpen }
+        defaultSeasonId={ currentSeasonId }
       />
     </TooltipProvider>
   );

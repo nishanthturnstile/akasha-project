@@ -16,6 +16,7 @@ import { useDeleteField, useFields, useSeasons, useUpdateField } from '@/lib/que
 import { useMapView } from '@/state/useMapView';
 import type { Field, GeoJsonPosition, PlotGeometry } from '@/types/api';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
+import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
 
 interface Props {
   onClose: () => void;
@@ -190,8 +191,11 @@ function FieldCard({
   onUnpin: (field: Field) => void;
   seasonId?: string | null;
 }) {
-  const currentCycle = field.vegetationData?.find((v) => v.seasonId === seasonId);
-  const cropLabel = currentCycle?.cropName ?? 'Unknown crop';
+  const seasonCycles = field.vegetationData?.filter((v) => v.seasonId === seasonId) ?? [];
+  const cropLabel = seasonCycles.length > 0
+    ? seasonCycles[seasonCycles.length - 1].cropName ?? 'Unknown crop'
+    : 'Unknown crop';
+  const allCrops = seasonCycles.map((c) => c.cropName ?? 'Unknown crop').join(', ');
   return (
     <div
       className={ cn(
@@ -217,7 +221,7 @@ function FieldCard({
         <FieldMenu field={field} onEdit={onEdit} onDelete={onDelete} isPinned={isPinned} onPin={onPin} onUnpin={onUnpin} />
       </div>
 
-      <span className="self-center truncate text-xs text-muted-foreground">{cropLabel}</span>
+      <span className="self-center truncate text-xs text-muted-foreground" title={ allCrops }>{cropLabel}</span>
       <span className="self-center justify-self-end text-xs text-muted-foreground tnum">
         {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
       </span>
@@ -280,6 +284,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
   const [editingField, setEditingField] = useState<Field | null>(null);
   const [deletingField, setDeletingField] = useState<Field | null>(null);
   const [savingField, setSavingField] = useState(false);
+  const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
 
   const allFields = useMemo(() => (Array.isArray(fieldsQ.data) ? fieldsQ.data : []), [fieldsQ.data]);
   const allSeasons = useMemo(
@@ -422,8 +427,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
                       type="button"
                       onClick={() => {
                         if (btn.action === 'add-field') {
-                          onClose();
-                          navigate(seasonId ? `/monitoring/field-create?seasonId=${seasonId}` : '/monitoring/field-create');
+                          setAddFieldDialogOpen(true);
                         }
                       }}
                       className="inline-flex items-center gap-1.5 rounded-md border-2 border-dashed border-primary/40 bg-primary/[0.08] px-5 py-2.5 text-sm font-medium text-primary hover:bg-primary/[0.15] transition-colors duration-fast"
@@ -464,10 +468,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
         <div className="shrink-0 border-t border-border/60 px-4 py-3">
           <button
             type="button"
-            onClick={ () => {
-              onClose();
-              navigate(seasonId ? `/monitoring/field-create?seasonId=${seasonId}` : '/monitoring/field-create');
-            } }
+            onClick={ () => setAddFieldDialogOpen(true) }
             className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 active:bg-primary/80 transition-colors duration-fast"
           >
             <Plus className="size-4" strokeWidth={1.75} />
@@ -516,6 +517,12 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
+
+      <FieldCreateOptionsDialog
+        open={ addFieldDialogOpen }
+        onOpenChange={ setAddFieldDialogOpen }
+        defaultSeasonId={ seasonId }
+      />
     </>
   );
 }

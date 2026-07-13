@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
-import { useFieldStatistics, useFieldTrend } from '@/lib/queries';
+import { useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
 
@@ -29,6 +29,10 @@ interface IndexPanelProps {
   onPreferHighResChange?: (value: boolean) => void;
   /** Vegetation cycle data for the selected field. */
   vegetationData?: VegetationCycleResponse[];
+  /** Season IDs the selected field belongs to. */
+  seasonIds?: string[];
+  /** Called when user clicks "Show all" on the crop rotation card. */
+  onShowAllCrops?: (seasonId?: string) => void;
 }
 
 const TAB_ITEMS: { value: AnalyticsTab; label: string }[] = [
@@ -78,6 +82,8 @@ export function IndexPanel({
   preferHighRes = true,
   onPreferHighResChange,
   vegetationData,
+  seasonIds,
+  onShowAllCrops,
 }: IndexPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('crop-info');
 
@@ -133,7 +139,7 @@ export function IndexPanel({
       data-testid="index-panel"
       aria-label="Field analytics"
     >
-      <header className="contour flex items-center justify-between gap-2 px-4 py-3">
+      <header className="contour flex items-center justify-between gap-2 px-4 py-2">
         <div className="flex items-center gap-2">
           <BarChart3 className="size-4 text-primary" strokeWidth={ 1.75 } />
           <h2 className="font-display text-base font-semibold text-foreground">Analytics</h2>
@@ -157,9 +163,9 @@ export function IndexPanel({
       </header>
 
       { !selectedPlot ? (
-        <div className="px-4 py-3">
+        <div className="px-4 py-2">
           <div
-            className="rounded-md border border-dashed border-border/80 p-3 text-[13px] leading-5 text-muted-foreground"
+            className="rounded-md border border-dashed border-border/80 p-2 text-xs leading-4 text-muted-foreground"
             data-testid="index-panel-no-field"
           >
             Select a field to view cloud-masked statistics and trend analytics.
@@ -169,10 +175,10 @@ export function IndexPanel({
         <Tabs
           value={ activeTab }
           onValueChange={ (next) => setActiveTab(next as AnalyticsTab) }
-          className="px-4 pb-3 pt-2"
+          className="px-4 pb-2 pt-1.5"
         >
           <TabsList
-            className="grid w-full grid-cols-3"
+            className="grid w-full grid-cols-3 h-8"
             data-testid="index-panel-tabs"
             aria-label="Field analytics tabs"
           >
@@ -181,6 +187,7 @@ export function IndexPanel({
                 key={ tab.value }
                 value={ tab.value }
                 data-testid={ `index-panel-tab-${tab.value}` }
+                className="px-2 py-0.5 text-sm"
               >
                 { tab.label }
               </TabsTrigger>
@@ -191,15 +198,15 @@ export function IndexPanel({
             <TabsContent
               value="crop-info"
               data-testid="index-panel-content-crop-info"
-              className="space-y-2"
+              className="mt-1.5 space-y-1.5"
             >
-              <CropInfoTab vegetationData={ vegetationData ?? [] } />
+              <CropInfoTab vegetationData={ vegetationData ?? [] } seasonIds={ seasonIds } onShowAllCrops={ onShowAllCrops } />
             </TabsContent>
 
             <TabsContent
               value="chart"
               data-testid="index-panel-content-chart"
-              className="space-y-3"
+              className="mt-1.5 space-y-3"
             >
               <ChartTab
                 indices={ analyticsIndices }
@@ -247,7 +254,7 @@ export function IndexPanel({
             <TabsContent
               value="activities"
               data-testid="index-panel-content-activities"
-              className="space-y-3"
+              className="mt-1.5 space-y-3"
             >
               <ActivitiesTab />
             </TabsContent>
@@ -262,13 +269,32 @@ const STAGE_LABELS = ['Seeding', 'Germination', 'Vegetative', 'Branching', 'Flow
 
 function CropInfoTab({
   vegetationData,
+  seasonIds,
+  onShowAllCrops,
 }: {
   vegetationData: VegetationCycleResponse[];
+  seasonIds?: string[];
+  onShowAllCrops?: (seasonId?: string) => void;
 }) {
+  const seasonsQ = useSeasons();
+  const seasonNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of seasonsQ.data ?? []) map[s.id] = s.name;
+    return map;
+  }, [seasonsQ.data]);
+
+  const seasonIdsFromField = (seasonIds?.length ? seasonIds : [
+    ...new Set(vegetationData.map((v) => v.seasonId)),
+  ]).filter(Boolean);
+
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     if (vegetationData.length > 0) return new Set([vegetationData[0].id]);
     return new Set();
   });
+
+  const [selectedCropId, setSelectedCropId] = useState<string | null>(() =>
+    vegetationData.length > 0 ? vegetationData[0].id : null,
+  );
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
@@ -279,60 +305,127 @@ function CropInfoTab({
     });
   };
 
-  const currentCrop = vegetationData[0];
-
   return (
-    <div className="grid grid-cols-3 gap-3 pt-1">
-      {/* ── Card 1: Crop Rotation ── */ }
+    <div className="grid grid-cols-3 gap-2 pt-0.5">
+      {/* ── Card 1: Crop Rotation ── */}
       <div
         data-testid="crop-info-card-crop-rotation"
-        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4"
+        className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-background/40 p-2.5"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <Sprout className="size-4 text-primary" strokeWidth={ 1.75 } />
-            <span className="text-[13px] font-semibold text-foreground">Crop rotation</span>
-            <Info className="size-3 text-muted-foreground" strokeWidth={ 1.75 } />
+            <span className="text-sm font-semibold text-foreground">Crop rotation</span>
+            <Info className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } />
           </div>
-          <span className="text-[11px] font-medium text-primary cursor-default">Show all</span>
+          <button type="button" onClick={ () => onShowAllCrops?.() } className="text-xs font-medium text-primary hover:underline">Show all</button>
         </div>
 
-        <p className="text-[12px] text-muted-foreground">
-          Season: { currentCrop?.seasonName ?? '—' }
-        </p>
-
-        <div className="space-y-1">
-          { vegetationData.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground">No crops added yet.</p>
+        <div className="space-y-1.5">
+          { seasonIdsFromField.length === 0 && vegetationData.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground">No crops added yet.</p>
           ) : (
-            vegetationData.map((cycle, idx) => {
-              const isExpanded = expandedIds.has(cycle.id);
-              const isSelected = idx === 0;
+            seasonIdsFromField.map((sid) => {
+              const cycles = vegetationData.filter((v) => v.seasonId === sid);
+              const sname = cycles.find((c) => c.seasonName)?.seasonName ?? seasonNameMap[sid] ?? sid;
               return (
-                <div key={ cycle.id } className="rounded-md border border-border/60 bg-background/60">
-                  <button
-                    type="button"
-                    onClick={ () => toggleExpand(cycle.id) }
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left"
-                  >
-                    { isExpanded
-                      ? <ChevronDown className="size-3 shrink-0 text-muted-foreground" strokeWidth={ 2 } />
-                      : <ChevronRight className="size-3 shrink-0 text-muted-foreground" strokeWidth={ 2 } />
-                    }
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="truncate text-[12px] font-medium text-foreground">
-                        { cycle.cropName ?? 'Unknown crop' }
-                      </span>
-                      { isSelected && (
-                        <span className="size-2 shrink-0 rounded-full bg-primary" />
-                      ) }
+                <div key={ sid } className="rounded-md border border-border/60 bg-background/50">
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-muted/30 border-b border-border/40">
+                    <span className="text-xs font-semibold text-foreground">Season : { sname }</span>
+                    { cycles.length > 0 && onShowAllCrops && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 gap-1 text-[11px] text-primary hover:text-primary"
+                        onClick={ (e) => { e.stopPropagation(); onShowAllCrops(sid); } }
+                      >
+                        <Plus className="size-3" strokeWidth={ 1.75 } /> Add crop
+                      </Button>
+                    ) }
+                  </div>
+                  { cycles.length > 0 ? (
+                    <div className="p-1 space-y-0.5">
+                      { cycles.map((cycle) => {
+                        const isExpanded = expandedIds.has(cycle.id);
+                        const isSelected = cycle.id === selectedCropId;
+                        return (
+                          <div key={ cycle.id } className="rounded-md border border-border/60 bg-background/60">
+                            <div className="flex items-center">
+                              <button
+                                type="button"
+                                onClick={ () => { toggleExpand(cycle.id); setSelectedCropId(cycle.id); } }
+                                className="flex flex-1 items-center gap-2 px-2 py-1.5 text-left"
+                              >
+                                { isExpanded
+                                  ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" strokeWidth={ 2 } />
+                                  : <ChevronRight className="size-4 shrink-0 text-muted-foreground" strokeWidth={ 2 } />
+                                }
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="truncate text-[13px] font-medium text-foreground">
+                                    { cycle.cropName ?? 'Unknown crop' }
+                                  </span>
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={ (e) => { e.stopPropagation(); setSelectedCropId(cycle.id); setExpandedIds(new Set([cycle.id])); } }
+                                className="flex items-center justify-center shrink-0 pr-2"
+                                aria-label={ `Select ${cycle.cropName ?? 'crop'}` }
+                              >
+                                <span
+                                  className={ cn(
+                                    'flex size-4 items-center justify-center rounded-full border-2 transition-colors',
+                                    isSelected
+                                      ? 'border-primary'
+                                      : 'border-muted-foreground/40',
+                                  ) }
+                                >
+                                  { isSelected && <span className="size-2 rounded-full bg-primary" /> }
+                                </span>
+                              </button>
+                            </div>
+                            { isExpanded && (
+                              <div className="border-t border-border/50 px-2.5 py-1.5 space-y-0.5">
+                                { cycle.varietyName && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Variety:</span><span className="text-xs text-foreground">{ cycle.varietyName }</span></div> }
+                                { cycle.sowingDate && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Sowing date:</span><span className="text-xs text-foreground">{ cycle.sowingDate }</span></div> }
+                                { cycle.harvestingDate && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Harvesting date:</span><span className="text-xs text-foreground">{ cycle.harvestingDate }</span></div> }
+                                { cycle.maturity && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Maturity:</span><span className="text-xs text-foreground">{ cycle.maturity }</span></div> }
+                                { cycle.irrigationTypeName && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Irrigation:</span><span className="text-xs text-foreground">{ cycle.irrigationTypeName }</span></div> }
+                                { cycle.tillageTypeName && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Tillage:</span><span className="text-xs text-foreground">{ cycle.tillageTypeName }</span></div> }
+                                { cycle.targetYield != null && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Target yield:</span><span className="text-xs text-foreground">{ cycle.targetYield } t/ha</span></div> }
+                                { cycle.actualYield != null && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Actual yield:</span><span className="text-xs text-foreground">{ cycle.actualYield } t/ha</span></div> }
+                                { cycle.fertilizer && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Fertilizer:</span><span className="text-xs text-foreground">{ cycle.fertilizer }</span></div> }
+                                { cycle.hybrid && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Hybrid:</span><span className="text-xs text-foreground">{ cycle.hybrid }</span></div> }
+                                { cycle.notes && <div className="flex items-center gap-2"><span className="text-[11px] font-medium text-muted-foreground shrink-0">Notes:</span><span className="text-xs text-foreground">{ cycle.notes }</span></div> }
+                                { !cycle.notes && onShowAllCrops && (
+                                  <button
+                                    type="button"
+                                    onClick={ (e) => { e.stopPropagation(); onShowAllCrops(sid); } }
+                                    className="mt-1 flex w-full items-center gap-1 text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                                  >
+                                    <Plus className="size-3" strokeWidth={ 2 } />
+                                    Notes
+                                  </button>
+                                ) }
+                              </div>
+                            ) }
+                          </div>
+                        );
+                      }) }
                     </div>
-                  </button>
-                  { isExpanded && (
-                    <div className="border-t border-border/50 px-3 py-2">
-                      <p className="text-[11px] text-muted-foreground">
-                        Sowing date: { cycle.sowingDate ?? '—' }
-                      </p>
+                  ) : (
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <span className="text-[13px] text-muted-foreground">No crops added for this season.</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 text-[11px]"
+                        onClick={ () => onShowAllCrops?.(sid) }
+                      >
+                        <Plus className="size-3" strokeWidth={ 1.75 } /> Add vegetation cycle
+                      </Button>
                     </div>
                   ) }
                 </div>
@@ -340,34 +433,24 @@ function CropInfoTab({
             })
           ) }
         </div>
-
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="mt-auto h-7 gap-1 self-start text-[11px]"
-          disabled
-        >
-          <Plus className="size-3" strokeWidth={ 1.75 } /> Add crop
-        </Button>
       </div>
 
       {/* ── Card 2: Growth Stages ── */ }
       <div
         data-testid="crop-info-card-growth-stages"
-        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4"
+        className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-background/40 p-2.5"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <Sprout className="size-4 text-primary" strokeWidth={ 1.75 } />
-            <span className="text-[13px] font-semibold text-foreground">Growth Stages</span>
-            <Info className="size-3 text-muted-foreground" strokeWidth={ 1.75 } />
+            <span className="text-sm font-semibold text-foreground">Growth Stages</span>
+            <Info className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } />
           </div>
-          <span className="text-[11px] font-medium text-primary cursor-default">Edit</span>
+          <span className="text-xs font-medium text-primary cursor-default">Edit</span>
         </div>
 
-        <div className="relative py-2">
-          <div className="absolute left-1.75 right-1.75 top-2.75 h-0.5 bg-border" />
+        <div className="relative py-1.5">
+          <div className="absolute left-1.75 right-1.75 top-[7px] h-0.5 bg-border" />
           <div className="relative flex justify-between">
             { STAGE_LABELS.map((label, i) => (
               <div key={ label } className="flex flex-col items-center gap-1">
@@ -380,7 +463,7 @@ function CropInfoTab({
                   ) }
                 />
                 <span className={ cn(
-                  'text-[9px] leading-tight text-center',
+                  'text-[10px] leading-tight text-center',
                   i === 0 ? 'text-primary font-medium' : 'text-muted-foreground',
                 ) }>
                   { label }
@@ -391,7 +474,7 @@ function CropInfoTab({
         </div>
 
         <div className="mt-1 rounded-md border border-dashed border-border/70 bg-background/50 px-3 py-2.5 text-center">
-          <p className="text-[11px] leading-4 text-muted-foreground">
+          <p className="text-xs leading-4 text-muted-foreground">
             Growth stages will become available once crop vegetation begins.
           </p>
         </div>
@@ -400,18 +483,18 @@ function CropInfoTab({
       {/* ── Card 3: Current Risks ── */ }
       <div
         data-testid="crop-info-card-current-risks"
-        className="flex flex-col gap-3 rounded-lg border border-border/70 bg-background/40 p-4 opacity-80"
+        className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-background/40 p-2.5 opacity-80"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <AlertTriangle className="size-4 text-muted-foreground" strokeWidth={ 1.75 } />
-            <span className="text-[13px] font-semibold text-foreground">Current risks</span>
-            <Info className="size-3 text-muted-foreground" strokeWidth={ 1.75 } />
+            <span className="text-sm font-semibold text-foreground">Current risks</span>
+            <Info className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } />
           </div>
           <Lock className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } aria-label="Plan-gated feature" />
         </div>
 
-        <p className="text-[12px] leading-5 text-muted-foreground">
+        <p className="text-[13px] leading-5 text-muted-foreground">
           Risk information on this field is available in the{ ' ' }
           <span className="font-medium text-primary cursor-default">Essential</span>
           { ' or ' }
@@ -491,7 +574,7 @@ function ChartTab({
   const maskMetricLabel = sourceMetricsProvisional ? 'Masked' : 'Cloud / masked';
 
   return (
-    <div className="space-y-3 pt-1">
+    <div className="space-y-2 pt-0.5">
       <div className="flex flex-wrap gap-1.5" aria-label="Analytics index">
         { indices.map((index) => (
           <Button
@@ -499,7 +582,7 @@ function ChartTab({
             type="button"
             size="sm"
             variant={ index === activeIndex ? 'primary' : 'ghost' }
-            className="h-7 px-2 text-[11px]"
+            className="h-6 px-1.5 text-[11px]"
             onClick={ () => onSelectIndex(index) }
             data-testid={ `analytics-index-${index}` }
           >
@@ -508,8 +591,8 @@ function ChartTab({
         )) }
       </div>
 
-      <div className="rounded-md border border-border/80 bg-background/50 p-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="rounded-md border border-border/80 bg-background/50 p-2.5">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
           <p className="text-[11px] uppercase text-muted-foreground">
             { selectedDate ?? 'Latest date' }
           </p>
@@ -562,7 +645,7 @@ function ChartTab({
               <Metric label="Min" value={ fmt(stats.min, '') } />
               <Metric label="Max" value={ fmt(stats.max, '') } />
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-1.5">
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
               <Metric label="Valid" value={ fmt(stats.validPixelPercent, '%') } compact />
               <Metric label={ maskMetricLabel } value={ fmt(stats.cloudMaskedPercent, '%') } compact />
               <Metric label="Cover" value={ fmt(stats.coveragePercent, '%') } compact />
@@ -745,14 +828,14 @@ function PipelineProvenance({ pipeline }: { pipeline: FieldStatisticsPipelineMet
 
 function ActivitiesTab() {
   return (
-    <div className="space-y-3 pt-1" data-testid="activities-tab">
+    <div className="space-y-2 pt-0.5" data-testid="activities-tab">
       <div className="flex items-center justify-between">
-        <p className="text-[13px] font-medium text-foreground">Activities</p>
+        <p className="text-xs font-medium text-foreground">Activities</p>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 px-2 text-[11px]"
+          className="h-6 px-1.5 text-[11px]"
           data-testid="activities-add-trigger"
           disabled
         >
@@ -760,19 +843,19 @@ function ActivitiesTab() {
         </Button>
       </div>
       <div
-        className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border/80 p-4 text-center"
+        className="flex flex-col items-center gap-1.5 rounded-md border border-dashed border-border/80 p-3 text-center"
         data-testid="activities-empty-state"
       >
-        <p className="text-[13px] text-muted-foreground">No activities added to this field.</p>
+        <p className="text-xs text-muted-foreground">No activities added to this field.</p>
         <Button
           type="button"
           size="sm"
           variant="primary"
-          className="h-8 px-3 text-[13px]"
+          className="h-7 px-2.5 text-xs"
           data-testid="activities-add-button"
           disabled
         >
-          <Plus className="size-3.5" strokeWidth={ 1.75 } /> Add activity
+          <Plus className="size-3" strokeWidth={ 1.75 } /> Add activity
         </Button>
       </div>
     </div>

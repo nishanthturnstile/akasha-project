@@ -300,7 +300,7 @@ maybe_start_ingestion_ssh_tunnel() {
   local enabled api_url local_port remote_host remote_port target environment
   enabled="$(read_env_value INGESTION_SSH_TUNNEL_ENABLED "$ENV_FILE")"
   enabled="${enabled:-auto}"
-  case "${enabled,,}" in
+  case "$(echo "$enabled" | tr '[:upper:]' '[:lower:]')" in
     0|false|no|off|disabled) return ;;
   esac
 
@@ -535,7 +535,7 @@ if [[ "$START_BACKEND" == true ]]; then
   ensure_web_port_available
 fi
 ensure_frontend_env
-maybe_start_ingestion_ssh_tunnel
+maybe_start_ingestion_ssh_tunnel || true
 if [[ "$START_BACKEND" == true ]]; then
   GATEWAY_URL="$(start_backend | tee /dev/stderr | tail -n 1)"
 else

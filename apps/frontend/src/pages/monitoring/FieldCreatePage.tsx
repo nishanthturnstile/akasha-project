@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, Circle, Loader2, Minus, MoreVertical, Plus, Scissors, Square, Trash2, Undo2, X } from 'lucide-react';
+import { ArrowLeft, Circle, Loader2, Minus, Pencil, Plus, Scissors, Square, Trash2, Undo2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
@@ -145,8 +145,6 @@ export default function FieldCreatePage() {
 
   const initialShapeMode: DrawShapeMode = searchParams.get('mode') === 'circle' ? 'circle' : 'polygon';
   const [shapeMode, setShapeMode] = useState<DrawShapeMode>(initialShapeMode);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
@@ -201,10 +199,12 @@ export default function FieldCreatePage() {
     nextFieldNumRef.current += 1;
     const name = num === 0 ? 'Field' : `Field ${num}`;
     const pendingId = nextTempId();
-    setPendingFields((prev) => [...prev, { id: pendingId, geometry, name }]);
+    const newField = { id: pendingId, geometry, name };
+    setPendingFields((prev) => [...prev, newField]);
     if (featureId) {
       featureToPendingRef.current.set(featureId, pendingId);
     }
+    setEditingPendingField(newField);
   }, []);
 
   const handleTrimComplete = useCallback((lineCoords: [number, number][]) => {
@@ -277,6 +277,16 @@ export default function FieldCreatePage() {
 
   const removePendingField = useCallback((id: string) => {
     setPendingFields((prev) => prev.filter((f) => f.id !== id));
+    const draw = drawInstanceRef.current;
+    if (draw) {
+      const entry = [...featureToPendingRef.current.entries()]
+        .find(([, pid]) => pid === id);
+      if (entry) {
+        const [featureId] = entry;
+        try { draw.removeFeatures([featureId]); } catch { /* ignore */ }
+        featureToPendingRef.current.delete(featureId);
+      }
+    }
   }, []);
 
   const saveAll = async () => {
@@ -287,6 +297,19 @@ export default function FieldCreatePage() {
     }
     setIsBatchSaving(true);
     setBatchError(null);
+
+    const existingNames = new Set(
+      (fieldsQ.data ?? []).map((f) => f.name.toLowerCase()),
+    );
+    for (const pf of pendingFields) {
+      const lower = pf.name.trim().toLowerCase();
+      if (existingNames.has(lower)) {
+        setBatchError(`A field named "${pf.name}" already exists. Please use a different name.`);
+        setIsBatchSaving(false);
+        return;
+      }
+      existingNames.add(lower);
+    }
 
     try {
       const createdFields: Field[] = [];
@@ -673,7 +696,6 @@ export default function FieldCreatePage() {
                   const area = pf.geometry.type === 'Polygon'
                     ? polygonAreaMeters(toLngLatRing(pf.geometry.coordinates[0] ?? [])) / 10000
                     : 0;
-                  const menuOpen = menuOpenId === pf.id;
                   return (
                     <div
                       key={ pf.id }
@@ -685,33 +707,33 @@ export default function FieldCreatePage() {
                       <p className="min-w-0 self-center truncate text-base font-semibold text-foreground">
                         { pf.name }
                       </p>
-                      <div className="self-center justify-self-end relative">
-                        <button
-                          type="button"
-                          onClick={ (e) => { e.stopPropagation(); setMenuOpenId(menuOpen ? null : pf.id); } }
-                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors duration-fast"
-                          aria-label={ `Options for ${pf.name}` }
-                        >
-                          <MoreVertical className="size-4" strokeWidth={ 1.75 } />
-                        </button>
-                        { menuOpen && (
-                          <div className="absolute right-0 top-full z-50 mt-1 min-w-32.5 whitespace-nowrap rounded-md border border-border bg-popover py-1 shadow-e2">
+                      <div className="flex items-center gap-1 self-center justify-self-end">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <button
                               type="button"
-                              onClick={ (e) => { e.stopPropagation(); setMenuOpenId(null); setEditingPendingField(pf); } }
-                              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+                              onClick={ (e) => { e.stopPropagation(); setEditingPendingField(pf); } }
+                              className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors duration-fast"
+                              aria-label={ `Edit ${pf.name}` }
                             >
-                              Edit
+                              <Pencil className="size-4" strokeWidth={ 1.75 } />
                             </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Edit</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <button
                               type="button"
-                              onClick={ (e) => { e.stopPropagation(); setMenuOpenId(null); setDeleteAlertField(pf); } }
-                              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent/40 transition-colors duration-fast"
+                              onClick={ (e) => { e.stopPropagation(); setDeleteAlertField(pf); } }
+                              className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-fast"
+                              aria-label={ `Delete ${pf.name}` }
                             >
-                              Delete
+                              <Trash2 className="size-4" strokeWidth={ 1.75 } />
                             </button>
-                          </div>
-                        ) }
+                          </TooltipTrigger>
+                          <TooltipContent side="left">Delete</TooltipContent>
+                        </Tooltip>
                       </div>
                       <span className="self-center truncate text-xs text-muted-foreground">{ area.toFixed(1) } ha</span>
                       <span />
@@ -762,14 +784,6 @@ export default function FieldCreatePage() {
         </div>
       </div>
 
-      {/* Menu click-outside handler */ }
-      { menuOpenId && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={ () => setMenuOpenId(null) }
-        />
-      ) }
-
       {/* Leave confirmation dialog */ }
       <AlertDialogRoot open={ leaveAlertOpen } onOpenChange={ setLeaveAlertOpen }>
         <AlertDialogContent>
@@ -815,7 +829,8 @@ export default function FieldCreatePage() {
             id: editingPendingField.id,
             name: editingPendingField.name,
             geometry: editingPendingField.geometry,
-            seasonIds: [],
+            seasonIds: selectedSeasonId ? [selectedSeasonId] : [],
+            vegetationData: [],
             areaHa: editingPendingField.geometry.type === 'Polygon'
               ? polygonAreaMeters(toLngLatRing(editingPendingField.geometry.coordinates[0] ?? [])) / 10000
               : 0,

@@ -51,7 +51,6 @@ export default function FieldAnalyticsPage() {
     selectedPlotId,
     setSelectedPlotId,
     setFocusNonce,
-    clearSelectedPlot,
     cloudMask,
     periodFrom,
     periodTo,
@@ -68,6 +67,7 @@ export default function FieldAnalyticsPage() {
   const deleteField = useDeleteField();
   const { seasonId } = useSeasonContext();
   const [editFieldOpen, setEditFieldOpen] = useState(false);
+  const [initialVegSeasonId, setInitialVegSeasonId] = useState<string | undefined>(undefined);
   const [savingField, setSavingField] = useState(false);
 
   const selectedField = useMemo(() => {
@@ -125,22 +125,10 @@ export default function FieldAnalyticsPage() {
   }, [displayMode, effectiveSourceId, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
-    <div className="h-full flex flex-col gap-4 p-4 min-h-0">
+    <div className="h-full flex flex-col gap-4 p-4 overflow-y-auto">
       { overlaysVisible && (
-        <div className="flex items-stretch rounded-md border border-border bg-background">
+        <div className="flex items-stretch rounded-md border border-border bg-background shrink-0">
           <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={ () => clearSelectedPlot() }
-              disabled={ !selectedField }
-              aria-label="Back to all fields"
-              className="flex size-8 items-center justify-center rounded-md text-foreground/80 hover:bg-accent/60 disabled:opacity-30"
-            >
-              <span aria-hidden="true" className="text-base leading-none">←</span>
-            </button>
-
-            <div className="w-px self-stretch bg-border/60" />
-
             <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary">
               <MapIcon className="size-4" strokeWidth={ 1.75 } />
             </div>
@@ -196,7 +184,7 @@ export default function FieldAnalyticsPage() {
 
       {/* Analytics panel */ }
       { selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="rounded-md border border-border bg-background">
+        <div className="rounded-md border border-border bg-background overflow-y-auto max-h-[50vh]">
           <IndexPanel
             className="w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
             selectedPlot={ selectedField }
@@ -210,6 +198,8 @@ export default function FieldAnalyticsPage() {
             periodFrom={ periodFrom }
             periodTo={ periodTo }
             vegetationData={ selectedField?.vegetationData }
+            seasonIds={ selectedField?.seasonIds }
+            onShowAllCrops={ (seasonId) => { setInitialVegSeasonId(seasonId); setEditFieldOpen(true); } }
           />
         </div>
       ) }
@@ -219,16 +209,17 @@ export default function FieldAnalyticsPage() {
           key={ selectedField.id }
           field={ selectedField }
           open={ editFieldOpen }
-          onOpenChange={ setEditFieldOpen }
+          onOpenChange={ (open) => { if (!open) setInitialVegSeasonId(undefined); setEditFieldOpen(open); } }
           onSave={ (fieldId, name, geometry, vegetationData, groupId) => {
             setSavingField(true);
             updateField.mutate(
               { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}) } },
-              { onSuccess: () => { setSavingField(false); setEditFieldOpen(false); }, onError: () => setSavingField(false) },
+              { onSuccess: () => { setSavingField(false); setEditFieldOpen(false); setInitialVegSeasonId(undefined); }, onError: () => setSavingField(false) },
             );
           } }
           saving={ savingField }
           onDelete={ (fieldId) => deleteField.mutateAsync(fieldId) }
+          initialSeasonId={ initialVegSeasonId }
         />
       ) }
 

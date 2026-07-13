@@ -106,7 +106,7 @@ export function MapControls({
           </ControlButton>
         </>
       ) }
-      { !simplified && onFindSelectedField && (
+      { onFindSelectedField && (
         <>
           <div className="h-px w-full bg-border" />
           <ControlButton

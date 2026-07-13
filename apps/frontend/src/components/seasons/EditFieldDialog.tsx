@@ -39,6 +39,7 @@ interface Props {
   onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null) => void;
   onDelete?: (fieldId: string) => void;
   saving?: boolean;
+  initialSeasonId?: string;
 }
 
 function polygonBounds(geometry: Field['geometry']): [[number, number], [number, number]] | null {
@@ -90,11 +91,14 @@ export default function EditFieldDialog({
   onSave,
   onDelete,
   saving = false,
+  initialSeasonId,
 }: Props) {
   const [name, setName] = useState(field.name);
   const [groupId, setGroupId] = useState(field.groupId ?? '');
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmDeleteField, setConfirmDeleteField] = useState(false);
+  const [confirmClearSeasonId, setConfirmClearSeasonId] = useState<string | null>(null);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
 
@@ -119,8 +123,8 @@ export default function EditFieldDialog({
   useEffect(() => {
     if (!open) { seededRef.current = false; return; }
     const data = field.vegetationData;
-    if (!data || data.length === 0) return;
-    // Wait for all reference data to load so names resolve properly
+    if (!data) return;
+    if (data.length === 0) { seededRef.current = true; return; }
     if (!cropsQ.data || !irrigationTypesQ.data || !tillageTypesQ.data) return;
     if (seededRef.current) return;
     seededRef.current = true;
@@ -340,6 +344,17 @@ export default function EditFieldDialog({
     };
   }, [open, miniMap, isMultiPart, stopDraw, field.geometry]);
 
+  // Auto-expand seasons when dialog opens
+  useEffect(() => {
+    if (open) {
+      if (initialSeasonId && field.seasonIds.includes(initialSeasonId)) {
+        setExpandedSeasons(new Set([initialSeasonId]));
+      } else {
+        setExpandedSeasons(new Set(field.seasonIds));
+      }
+    }
+  }, [open, field.seasonIds, initialSeasonId]);
+
   const toggleSeason = useCallback((seasonId: string) => {
     setExpandedSeasons((prev) => {
       const next = new Set(prev);
@@ -350,13 +365,19 @@ export default function EditFieldDialog({
   }, []);
 
   const handleClearSeason = useCallback((seasonId: string) => {
-    clearSeasonCycles(seasonId);
+    setConfirmClearSeasonId(seasonId);
+  }, []);
+
+  const handleConfirmClearSeason = useCallback(() => {
+    if (!confirmClearSeasonId) return;
+    clearSeasonCycles(confirmClearSeasonId);
     setExpandedSeasons((prev) => {
       const next = new Set(prev);
-      next.delete(seasonId);
+      next.delete(confirmClearSeasonId);
       return next;
     });
-  }, [clearSeasonCycles]);
+    setConfirmClearSeasonId(null);
+  }, [confirmClearSeasonId, clearSeasonCycles]);
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -384,8 +405,13 @@ export default function EditFieldDialog({
     );
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
+    setConfirmDeleteField(true);
+  };
+
+  const handleConfirmDelete = async () => {
     try {
+      setConfirmDeleteField(false);
       await onDelete?.(field.id);
       onOpenChange(false);
     } catch {
@@ -615,6 +641,43 @@ export default function EditFieldDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
+
+      <AlertDialogRoot open={confirmDeleteField} onOpenChange={setConfirmDeleteField}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete this field?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete &ldquo;{ field.name }&rdquo;? This action cannot be undone.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDeleteField(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
+
+      { seasonsQ.data && (
+        <AlertDialogRoot
+          open={confirmClearSeasonId !== null}
+          onOpenChange={(open) => { if (!open) setConfirmClearSeasonId(null); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogTitle>Remove all vegetation cycles?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove all vegetation cycles for &ldquo;
+              { seasonsQ.data.find((s) => s.id === confirmClearSeasonId)?.name ?? '' }
+              &rdquo;? This action cannot be undone.
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setConfirmClearSeasonId(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmClearSeason}>
+                Remove all
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogRoot>
+      ) }
     </Dialog.Root>
   );
 }
@@ -653,6 +716,7 @@ function CycleCard({
   const PAGE_SIZE = 20;
   const [varietyCount, setVarietyCount] = useState(PAGE_SIZE);
   const [varietyOpen, setVarietyOpen] = useState(false);
+  const [confirmRemoveCycle, setConfirmRemoveCycle] = useState(false);
   const [varietySearch, setVarietySearch] = useState('');
   const varietyRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -725,7 +789,7 @@ function CycleCard({
     <div className="relative border-2 border-border/60 rounded-lg p-4 space-y-4">
       <button
         type="button"
-        onClick={ () => onRemoveCycle(seasonId, cycle.id) }
+        onClick={ () => setConfirmRemoveCycle(true) }
         className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
       >
         <Trash2 className="size-4" />
@@ -948,6 +1012,21 @@ function CycleCard({
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
+
+      <AlertDialogRoot open={confirmRemoveCycle} onOpenChange={setConfirmRemoveCycle}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Remove vegetation cycle?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to remove this vegetation cycle? This action cannot be undone.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmRemoveCycle(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmRemoveCycle(false); onRemoveCycle(seasonId, cycle.id); }}>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </div>
   );
 }

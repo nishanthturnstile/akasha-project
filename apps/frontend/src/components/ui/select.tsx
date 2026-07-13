@@ -36,30 +36,28 @@ const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
 >(({ className, children, position = 'popper', sideOffset = 4, ...props }, ref) => (
-  <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      side="bottom"
-      sideOffset={sideOffset}
-      avoidCollisions={false}
+  <SelectPrimitive.Content
+    ref={ref}
+    side="bottom"
+    sideOffset={sideOffset}
+    avoidCollisions={false}
+    className={cn(
+      'z-[70] max-h-64 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-e2',
+      className,
+    )}
+    position={position}
+    {...props}
+  >
+    <SelectPrimitive.Viewport
       className={cn(
-        'relative z-[70] max-h-64 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-e2',
-        className,
+        'p-1',
+        position === 'popper' &&
+          'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]',
       )}
-      position={position}
-      {...props}
     >
-      <SelectPrimitive.Viewport
-        className={cn(
-          'p-1',
-          position === 'popper' &&
-            'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]',
-        )}
-      >
-        {children}
-      </SelectPrimitive.Viewport>
-    </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
+      {children}
+    </SelectPrimitive.Viewport>
+  </SelectPrimitive.Content>
 ));
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 

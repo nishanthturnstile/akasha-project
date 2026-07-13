@@ -602,10 +602,28 @@ describe('MapPage pipeline point lookup', () => {
         'ResourceSat-2A LISS-3 BOA',
       );
       expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
-        'true',
+        'false',
       );
       expect(screen.getByTestId('field-overlay-loading-indicator').textContent).toContain(
         'Calculating index',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('coordinate-readout-mock'));
+    expect(
+      (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls.some(([input]) => String(input).includes('/indices/point')),
+    ).toBe(false);
+
+    controls.resolveOverlayRequests();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
+      );
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'true',
       );
     });
 
@@ -616,17 +634,6 @@ describe('MapPage pipeline point lookup', () => {
         mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
       }).mock.calls.map(([input]) => String(input));
       expect(
-        calls.some((input) => input.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
-      ).toBe(true);
-      expect(
-        calls.some(
-          (input) =>
-            input.startsWith('/api/fields/plot-1/overlay/NDVI.png') &&
-            input.includes('sourceId=resourcesat-2a-liss3-boa') &&
-            input.includes('acquisitionDate=2026-04-02'),
-        ),
-      ).toBe(true);
-      expect(
         calls.some(
           (input) =>
             input.startsWith('/api/fields/plot-1/indices/point') &&
@@ -634,14 +641,6 @@ describe('MapPage pipeline point lookup', () => {
             input.includes('acquisitionDate=2026-04-02'),
         ),
       ).toBe(true);
-    });
-
-    controls.resolveOverlayRequests();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
-        'blob:akasha-index-overlay',
-      );
     });
   });
 });

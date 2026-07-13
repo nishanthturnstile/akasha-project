@@ -30,6 +30,9 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
         indexType: string;
         value: number | null;
         masked: boolean;
+        lookup: CoordinateReadoutProps['indexLookup'];
+        lng: number;
+        lat: number;
     } | null>(null);
     const frame = useRef<number | null>(null);
     const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -38,6 +41,7 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
 
     useEffect(() => {
         if (!map) return;
+        lookupSeq.current += 1;
 
         const flush = () => {
             frame.current = null;
@@ -55,7 +59,14 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
             lookupTimer.current = setTimeout(() => {
                 lookupTimer.current = null;
                 void indexLookup(next).then((sample) => {
-                    if (lookupSeq.current === seq) setIndexSample(sample);
+                    if (lookupSeq.current === seq) {
+                        setIndexSample(sample ? {
+                            ...sample,
+                            lookup: indexLookup,
+                            lng: next.lng,
+                            lat: next.lat,
+                        } : null);
+                    }
                 }).catch(() => {
                     if (lookupSeq.current === seq) setIndexSample(null);
                 });
@@ -83,6 +94,7 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
         map.on('mousemove', onMove);
         map.on('mouseout', onLeave);
         return () => {
+            lookupSeq.current += 1;
             map.off('mousemove', onMove);
             map.off('mouseout', onLeave);
             if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -101,12 +113,17 @@ export function CoordinateReadout({ map, indexLookup }: CoordinateReadoutProps) 
             <span>{ formatLatLng(coords.lat, 'N', 'S') }</span>
             <span className="text-border">|</span>
             <span>{ formatLatLng(coords.lng, 'E', 'W') }</span>
-            { indexSample && !indexSample.masked && indexSample.value !== null && (
-                <>
-                    <span className="text-border">|</span>
-                    <span>{ indexSample.indexType } { indexSample.value.toFixed(2) }</span>
-                </>
-            ) }
+            { indexSample &&
+                indexSample.lookup === indexLookup &&
+                indexSample.lng === coords.lng &&
+                indexSample.lat === coords.lat &&
+                !indexSample.masked &&
+                indexSample.value !== null && (
+                    <>
+                        <span className="text-border">|</span>
+                        <span>{ indexSample.indexType } { indexSample.value.toFixed(2) }</span>
+                    </>
+                ) }
         </div>
     );
 }

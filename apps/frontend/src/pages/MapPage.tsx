@@ -126,6 +126,7 @@ function geometryCoordinates(geometry: PlotGeometry): [number, number][] {
 function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
   const coordinates = geometryCoordinates(plot.geometry);
   if (!map || coordinates.length === 0) return;
+  map.resize();
   const lngs = coordinates.map(([lng]) => lng);
   const lats = coordinates.map(([, lat]) => lat);
   map.fitBounds(
@@ -133,7 +134,7 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
     ],
-    { padding: 96, maxZoom: 18, duration: 650 },
+    { padding: 64, maxZoom: 18, duration: 650 },
   );
 }
 

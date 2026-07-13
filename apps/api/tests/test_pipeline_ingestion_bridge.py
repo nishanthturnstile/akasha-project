@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Any
 
 import pytest
 from app.config import settings
-from app.ingestion_client import _FIELD_INDEX_POINT_CACHE
+from app.ingestion_client import _clear_field_index_point_cache
 from app.main import app
 from app.raster import catalog_resolver as catalog
 from app.routers import analytics_router as field_analytics
@@ -40,9 +43,9 @@ def pipeline_settings(monkeypatch):
     monkeypatch.setattr(settings, "ingestion_signed_url_fetch_prefix", "http://127.0.0.1:18081")
     monkeypatch.setattr(settings, "index_request_timeout_seconds", 10)
     monkeypatch.setattr(settings, "ingestion_trend_max_dates", 3)
-    _FIELD_INDEX_POINT_CACHE.clear()
+    _clear_field_index_point_cache()
     yield
-    _FIELD_INDEX_POINT_CACHE.clear()
+    _clear_field_index_point_cache()
 
 
 def _plot() -> dict[str, Any]:
@@ -712,6 +715,65 @@ def test_pipeline_point_route_uses_cache_and_never_native(monkeypatch) -> None:
     assert body["maskClass"] == 1
     assert body["resolutionMeters"] == 10
     _assert_no_leaks(body)
+
+
+def test_pipeline_point_cache_single_flights_concurrent_misses(monkeypatch) -> None:
+    import app.ingestion_client as ingestion_client
+
+    field_index_calls: list[str] = []
+    fetch_guard = Lock()
+    active_fetches = 0
+    max_active_fetches = 0
+
+    def fake_request_field_index(*_args, **kwargs):
+        field_index_calls.append(kwargs["acquisition_date"])
+        time.sleep(0.05)
+        return _available_result(point_url=True)
+
+    def fake_fetch(_settings, url: str):
+        nonlocal active_fetches, max_active_fetches
+        with fetch_guard:
+            active_fetches += 1
+            max_active_fetches = max(max_active_fetches, active_fetches)
+        time.sleep(0.01)
+        query = url.split("?", 1)[-1]
+        try:
+            return {
+                "queryId": "query-2026-03-20",
+                "index": "NDVI",
+                "lng": float(query.split("lng=", 1)[1].split("&", 1)[0]),
+                "lat": 12.1,
+                "value": 0.33,
+                "masked": False,
+                "maskClass": 1,
+                "source": {"displayMeters": 10},
+            }
+        finally:
+            with fetch_guard:
+                active_fetches -= 1
+
+    monkeypatch.setattr(ingestion_client, "request_field_index", fake_request_field_index)
+    monkeypatch.setattr(ingestion_client, "fetch_signed_ingestion_json", fake_fetch)
+
+    def lookup(offset: int):
+        return ingestion_client.request_field_index_point(
+            settings,
+            geometry=_plot()["geometry"],
+            field_id="field-1",
+            source_id=catalog.SENTINEL_2_SOURCE_ID,
+            index_type="NDVI",
+            acquisition_date="2026-03-20",
+            lng=77.1 + offset / 10_000,
+            lat=12.1,
+        )
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(executor.map(lookup, range(20)))
+
+    assert field_index_calls == ["2026-03-20"]
+    assert max_active_fetches == 1
+    assert len(results) == 20
+    assert all(result["value"] == pytest.approx(0.33) for result in results)
 
 
 def test_resourcesat_point_route_sends_source_id_and_never_uses_native(monkeypatch) -> None:

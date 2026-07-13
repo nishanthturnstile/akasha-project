@@ -8,6 +8,7 @@ import urllib.parse
 from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
 from math import ceil
+from threading import Lock
 from typing import Any, Generic, Literal, TypeVar
 
 import httpx
@@ -15,7 +16,7 @@ from pydantic import Field, ValidationError
 
 from .api_models import ApiModel
 from .config import Settings, settings
-from .raster.errors import upstream_error
+from .raster.errors import AkashaError, upstream_error
 
 T = TypeVar("T")
 
@@ -24,6 +25,8 @@ READINESS_PATH = "/api/v1/analytics/readiness"
 MAX_RETRY_AFTER_SECONDS = 30
 _POINT_CACHE_TTL_SECONDS = 60.0
 _FIELD_INDEX_POINT_CACHE: dict[tuple[str, str, str, str], tuple[float, str, str]] = {}
+_FIELD_INDEX_POINT_CACHE_GUARD = Lock()
+_FIELD_INDEX_POINT_KEY_LOCKS: dict[tuple[str, str, str, str], Lock] = {}
 
 
 class IngestionClientError(Exception):
@@ -624,17 +627,21 @@ def _client_for(settings_obj: Settings, timeout_seconds: float | None = None) ->
 
 def _raise_ingestion_api_error(exc: IngestionClientError, *, default_code: str) -> None:
     if isinstance(exc, IngestionClientConfigError):
-        raise upstream_error(
+        raise AkashaError(
+            "INGESTION_API_UNCONFIGURED",
             "Standalone ingestion API is not configured.",
-            code="INGESTION_API_UNCONFIGURED",
-            **exc.details,
+            exc.status_code,
+            exc.details,
         ) from exc
-    raise upstream_error(
+    details = dict(exc.details)
+    details["retryable"] = exc.retryable
+    if exc.upstream_status is not None:
+        details.setdefault("upstreamStatus", exc.upstream_status)
+    raise AkashaError(
+        default_code,
         exc.message,
-        code=default_code,
-        retryable=exc.retryable,
-        upstreamStatus=exc.upstream_status,
-        **exc.details,
+        exc.status_code,
+        details,
     ) from exc
 
 
@@ -758,39 +765,56 @@ def _append_point_coordinates(point_url: str, *, lng: float, lat: float) -> str:
 
 
 def _cached_point_url(key: tuple[str, str, str, str]) -> tuple[str, str] | None:
-    cached = _FIELD_INDEX_POINT_CACHE.get(key)
-    if cached is None:
-        return None
-    expires_at, query_id, point_url = cached
-    if expires_at <= time.monotonic():
-        _FIELD_INDEX_POINT_CACHE.pop(key, None)
-        return None
-    return query_id, point_url
+    with _FIELD_INDEX_POINT_CACHE_GUARD:
+        cached = _FIELD_INDEX_POINT_CACHE.get(key)
+        if cached is None:
+            return None
+        expires_at, query_id, point_url = cached
+        if expires_at <= time.monotonic():
+            _FIELD_INDEX_POINT_CACHE.pop(key, None)
+            return None
+        return query_id, point_url
 
 
 def _store_point_url(key: tuple[str, str, str, str], query_id: str, point_url: str) -> None:
-    _FIELD_INDEX_POINT_CACHE[key] = (
-        time.monotonic() + _POINT_CACHE_TTL_SECONDS,
-        query_id,
-        point_url,
-    )
+    with _FIELD_INDEX_POINT_CACHE_GUARD:
+        _FIELD_INDEX_POINT_CACHE[key] = (
+            time.monotonic() + _POINT_CACHE_TTL_SECONDS,
+            query_id,
+            point_url,
+        )
 
 
-def request_field_index_point(
+def _point_key_lock(key: tuple[str, str, str, str]) -> Lock:
+    with _FIELD_INDEX_POINT_CACHE_GUARD:
+        return _FIELD_INDEX_POINT_KEY_LOCKS.setdefault(key, Lock())
+
+
+def _clear_field_index_point_cache() -> None:
+    with _FIELD_INDEX_POINT_CACHE_GUARD:
+        _FIELD_INDEX_POINT_CACHE.clear()
+        _FIELD_INDEX_POINT_KEY_LOCKS.clear()
+
+
+def _field_index_point_url(
     settings_obj: Settings,
     *,
+    key: tuple[str, str, str, str],
     geometry: dict[str, Any],
     field_id: str,
     source_id: str,
     index_type: str,
     acquisition_date: str,
-    lng: float,
-    lat: float,
-    max_cloud_percentage: float = 20.0,
-) -> dict[str, Any]:
-    key = (field_id, source_id, acquisition_date, index_type.upper())
+    max_cloud_percentage: float,
+) -> tuple[str, str]:
     cached = _cached_point_url(key)
-    if cached is None:
+    if cached is not None:
+        return cached
+
+    with _point_key_lock(key):
+        cached = _cached_point_url(key)
+        if cached is not None:
+            return cached
         result = request_field_index(
             settings_obj,
             geometry=geometry,
@@ -814,13 +838,41 @@ def request_field_index_point(
                 code="INGESTION_POINT_UNAVAILABLE",
             )
         _store_point_url(key, query_id, point_url)
-    else:
-        query_id, point_url = cached
+        return query_id, point_url
 
-    point_response = fetch_signed_ingestion_json(
+
+def request_field_index_point(
+    settings_obj: Settings,
+    *,
+    geometry: dict[str, Any],
+    field_id: str,
+    source_id: str,
+    index_type: str,
+    acquisition_date: str,
+    lng: float,
+    lat: float,
+    max_cloud_percentage: float = 20.0,
+) -> dict[str, Any]:
+    key = (field_id, source_id, acquisition_date, index_type.upper())
+    query_id, point_url = _field_index_point_url(
         settings_obj,
-        _append_point_coordinates(point_url, lng=lng, lat=lat),
+        key=key,
+        geometry=geometry,
+        field_id=field_id,
+        source_id=source_id,
+        index_type=index_type,
+        acquisition_date=acquisition_date,
+        max_cloud_percentage=max_cloud_percentage,
     )
+
+    # Each signed point request opens the derived raster upstream. Keep those reads
+    # serial per field/date/index so a cursor burst cannot exhaust or restart the
+    # single ingestion API process after the field-index URL has been cached.
+    with _point_key_lock(key):
+        point_response = fetch_signed_ingestion_json(
+            settings_obj,
+            _append_point_coordinates(point_url, lng=lng, lat=lat),
+        )
     if point_response.get("success") is False:
         raise upstream_error(
             "Standalone ingestion point lookup failed.",

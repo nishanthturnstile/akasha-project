@@ -358,7 +358,7 @@ export const getConfig = (): Promise<AppConfig> => request<AppConfig>('/api/conf
 
 export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sources');
 
-const SOURCE_DATE_LOOKBACK_DAYS = 92;
+const SOURCE_DATE_LOOKBACK_DAYS = 153;
 
 export const getDates = (sourceId: string): Promise<SceneDate[]> =>
   request<SceneDate[]>(

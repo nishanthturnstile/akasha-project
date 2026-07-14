@@ -13,6 +13,8 @@ export interface IndexRampClass {
     high: number;
     /** Human-readable agricultural label. */
     label: string;
+    /** Concise cursor-tooltip interpretation, when it differs from the legend label. */
+    hoverLabel?: string;
     /** CSS hex color exactly matching backend _NDVI_REFERENCE_CLASSES. */
     color: string;
 }
@@ -52,17 +54,77 @@ export const NDVI_INDEX_RAMP: IndexRampConfig = {
     kind: 'discrete',
     title: 'NDVI heatmap',
     classes: [
-        { low: -Infinity, high: 0,    label: 'Water / non-veg', color: '#13187d' },
-        { low: 0,         high: 0.15, label: 'Bare soil',       color: '#80461a' },
-        { low: 0.15,      high: 0.30, label: 'Stressed',        color: '#d50023' },
-        { low: 0.30,      high: 0.45, label: 'Sparse crop',     color: '#ff530d' },
-        { low: 0.45,      high: 0.60, label: 'Sub-canopy',      color: '#fac909' },
-        { low: 0.60,      high: 0.75, label: 'Moderate',        color: '#6fca07' },
-        { low: 0.75,      high: 0.90, label: 'Healthy',         color: '#16992b' },
-        { low: 0.90,      high: 1.0,  label: 'Peak vigour',     color: '#005825' },
+        {
+            low: -Infinity,
+            high: 0,
+            label: 'Water / non-veg',
+            hoverLabel: 'Water / non-vegetation',
+            color: '#13187d',
+        },
+        { low: 0, high: 0.15, label: 'Bare soil', color: '#80461a' },
+        {
+            low: 0.15,
+            high: 0.30,
+            label: 'Stressed',
+            hoverLabel: 'Stressed vegetation',
+            color: '#d50023',
+        },
+        {
+            low: 0.30,
+            high: 0.45,
+            label: 'Sparse crop',
+            hoverLabel: 'Sparse vegetation',
+            color: '#ff530d',
+        },
+        {
+            low: 0.45,
+            high: 0.60,
+            label: 'Sub-canopy',
+            hoverLabel: 'Moderate vegetation',
+            color: '#fac909',
+        },
+        {
+            low: 0.60,
+            high: 0.75,
+            label: 'Moderate',
+            hoverLabel: 'Dense vegetation',
+            color: '#6fca07',
+        },
+        {
+            low: 0.75,
+            high: 0.90,
+            label: 'Healthy',
+            hoverLabel: 'Very dense vegetation',
+            color: '#16992b',
+        },
+        {
+            low: 0.90,
+            high: 1.0,
+            label: 'Peak vigour',
+            hoverLabel: 'Peak vegetation',
+            color: '#005825',
+        },
     ],
     ticks: ['<0', '0', '.15', '.30', '.45', '.60', '.75', '.90', '1.0'],
     caption: 'Stress ▸ healthy canopy',
     maskedColor: '#d0d5dd',
     maskedLabel: 'Cloud / masked',
 };
+
+/** Resolve a numeric value against a discrete ramp's [low, high) intervals. */
+export function indexRampClassForValue(
+    config: IndexRampConfig,
+    value: number,
+): IndexRampClass | null {
+    if (!Number.isFinite(value)) return null;
+    const lastIndex = config.classes.length - 1;
+    return config.classes.find((item, index) => (
+        value >= item.low && (value < item.high || (index === lastIndex && value === item.high))
+    )) ?? null;
+}
+
+/** Agronomic interpretation shown by the field-map NDVI cursor inspector. */
+export function ndviInterpretation(value: number): string | null {
+    const item = indexRampClassForValue(NDVI_INDEX_RAMP, value);
+    return item?.hoverLabel ?? item?.label ?? null;
+}

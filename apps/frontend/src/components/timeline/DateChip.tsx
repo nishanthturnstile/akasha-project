@@ -15,6 +15,12 @@ interface DateChipProps {
     sensorBadge?: string | null;
     /** Per-chip provenance label for best-available mode (e.g. `LISS-4 · 5.8 m`). */
     provenanceLabel?: string | null;
+    /**
+     * Compact single-row chip: shorter height and no secondary badge line. The
+     * best-available provenance label is still shown (it carries cross-source info);
+     * the sensor badge and usability chip are dropped to reclaim vertical space.
+     */
+    compact?: boolean;
     onSelect: () => void;
     onPrefetch?: () => void;
 }
@@ -35,7 +41,7 @@ function shortLabel(acquisitionDate: string): { month: string; day: string } {
 
 /** A single date in the bottom filmstrip: label + usability badge, button semantics. */
 export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function DateChip(
-    { date, selected, sourceKind, sensorBadge, provenanceLabel, onSelect, onPrefetch },
+    { date, selected, sourceKind, sensorBadge, provenanceLabel, compact = false, onSelect, onPrefetch },
     ref,
 ) {
     const disabled = !date.tileAvailable;
@@ -47,10 +53,10 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
         sourceKind === 'sar'
             ? 'Latest radar pass'
             : sourceKind === 'context'
-              ? 'Latest context layer'
-              : sourceKind === 'archive'
-                ? 'Latest archive scene'
-                : 'Latest usable scene';
+                ? 'Latest context layer'
+                : sourceKind === 'archive'
+                    ? 'Latest archive scene'
+                    : 'Latest usable scene';
     const badge = (sensorBadge ?? date.sensor ?? '').trim() || null;
     const effectiveProvenanceLabel = provenanceLabel ?? date.provenanceLabel ?? null;
     const showCloudIcon =
@@ -84,7 +90,8 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
             onMouseEnter={ onPrefetch }
             onFocus={ onPrefetch }
             className={ cn(
-                'group relative flex h-11 w-[64px] shrink-0 snap-start flex-col items-center justify-center gap-0 rounded-md border px-1 py-0.5 text-center transition-colors duration-fast ease-standard',
+                'group relative flex shrink-0 snap-start flex-col items-center justify-center gap-0 rounded-md border px-1 py-0.5 text-center transition-colors duration-fast ease-standard',
+                compact ? 'min-h-9 w-[54px]' : 'h-11 w-[64px]',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 selected
                     ? 'border-primary/60 bg-primary/10 shadow-e1'
@@ -127,7 +134,17 @@ export const DateChip = forwardRef<HTMLButtonElement, DateChipProps>(function Da
                     { day }
                 </span>
             </span>
-            { effectiveProvenanceLabel ? (
+            { compact ? (
+                provenanceLabel ? (
+                    <span
+                        className="font-mono tnum mt-0.5 inline-flex h-3 max-w-full items-center truncate rounded-pill border border-border/60 bg-card/40 px-1 text-[9px] leading-none tracking-[0.04em] text-muted-foreground"
+                        data-testid={ `date-chip-provenance-${date.acquisitionDate}` }
+                        title={ provenanceLabel }
+                    >
+                        { provenanceLabel }
+                    </span>
+                ) : null
+            ) : effectiveProvenanceLabel ? (
                 <span
                     className="font-mono tnum mt-0.5 inline-flex h-3 max-w-full items-center truncate rounded-pill border border-border/60 bg-card/40 px-1 text-[9px] leading-none tracking-[0.04em] text-muted-foreground"
                     data-testid={ `date-chip-provenance-${date.acquisitionDate}` }

@@ -193,7 +193,7 @@ export default function FieldAnalyticsPage() {
 
       {/* Analytics panel */ }
       { selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="rounded-md border border-border bg-background overflow-y-auto max-h-[50vh]">
+        <div className="animate-panel-in rounded-md border border-border bg-background overflow-y-auto max-h-[50vh]">
           <IndexPanel
             className="w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
             selectedPlot={ selectedField }

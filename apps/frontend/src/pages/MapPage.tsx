@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
-import { AlertTriangle, Maximize, Minimize, RefreshCw, Satellite, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Satellite, Search } from 'lucide-react';
 import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
 import {
   useConfig,
@@ -436,7 +436,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         navigate(`/monitoring/field-analytics/field/${selectedPlotId}`);
       }
     };
-    const enterHandler = () => { map.getCanvas().style.cursor = 'pointer'; };
+    const enterHandler = () => {
+      map.getCanvas().style.cursor = simplifiedMapControls ? 'default' : 'pointer';
+    };
     const leaveHandler = () => { map.getCanvas().style.cursor = ''; };
     map.on('click', clickHandler);
     map.on('mouseenter', FIELD_BOUNDARY_FILL_LAYER_ID, enterHandler);
@@ -449,7 +451,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       }
       map.getCanvas().style.cursor = '';
     };
-  }, [map, selectedPlotId, navigate]);
+  }, [map, selectedPlotId, navigate, simplifiedMapControls]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
@@ -1027,9 +1029,10 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         </div>) }
 
       { overlaysVisible && topLeftCoords && (
-        <div className="absolute left-4 top-4 z-toolbar">
+        <div className="pointer-events-none absolute inset-0 z-popover">
           <CoordinateReadout
             map={ map }
+            interactiveLayerId={ FIELD_BOUNDARY_FILL_LAYER_ID }
             indexLookup={
               isIndexLayer && hasCurrentIndexOverlay && selectedPlot && selectedDate && requestSourceId
                 ? indexLookup
@@ -1080,7 +1083,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           onRequestTool={ requestMapTool }
           onReleaseTool={ releaseMapTool }
         /> }
-        { overlaysVisible && visible && legendOpen && (scene || indexOverlay) && (
+        { overlaysVisible && !simplifiedMapControls && visible && legendOpen && (scene || indexOverlay) && (
           <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } resolvedSourceId={ indexOverlay?.resolvedSourceId } />
         ) }
         <MapControls
@@ -1133,23 +1136,27 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
             onPeriodChange={ view.setPeriod }
             bestMode={ bestMode }
             onBestModeChange={ view.setBestMode }
+            compact
           />
         </div>
 
         { overlaysVisible && showFullscreen && (
-          /* Fullscreen card — same height as timeline bar */
+          /* Analytics drawer toggle — same height as the timeline bar. When the drawer is
+           * closed the map is fullscreen; opening it reveals the analytics panel below. */
           <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
             <button
               type="button"
-              aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }
-              data-testid="map-fullscreen-btn"
+              aria-label={ view.mapFullscreen ? 'Show analytics' : 'Hide analytics' }
+              aria-expanded={ !view.mapFullscreen }
+              title={ view.mapFullscreen ? 'Show analytics' : 'Hide analytics' }
+              data-testid="analytics-drawer-toggle"
               onClick={ () => view.setMapFullscreen(!view.mapFullscreen) }
               className="flex items-center justify-center text-foreground/80 transition-colors duration-fast hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring size-full"
             >
               { view.mapFullscreen ? (
-                <Minimize className="size-4" strokeWidth={ 1.75 } />
+                <ChevronUp className="size-4" strokeWidth={ 1.75 } />
               ) : (
-                <Maximize className="size-4" strokeWidth={ 1.75 } />
+                <ChevronDown className="size-4" strokeWidth={ 1.75 } />
               ) }
             </button>
           </div>

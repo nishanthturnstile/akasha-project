@@ -5,7 +5,13 @@ import { CoordinateReadout } from '@/components/map/CoordinateReadout';
 
 type Handler = (event: maplibregl.MapMouseEvent) => void;
 
-function createMockMap() {
+function createMockMap({
+    renderedFeatures = 1,
+    canvasWidth = 800,
+}: {
+    renderedFeatures?: number;
+    canvasWidth?: number;
+} = {}) {
     const handlers: Record<string, Handler[]> = {};
     const map = {
         on: (type: string, handler: Handler) => {
@@ -14,9 +20,13 @@ function createMockMap() {
         off: (type: string, handler: Handler) => {
             handlers[type] = (handlers[type] ?? []).filter((h) => h !== handler);
         },
+        getCanvas: () => ({ clientWidth: canvasWidth }),
+        getLayer: () => ({}),
+        queryRenderedFeatures: () => Array.from({ length: renderedFeatures }, () => ({})),
     } as unknown as maplibregl.Map;
     const emit = (type: string, event: Partial<maplibregl.MapMouseEvent>) => {
-        (handlers[type] ?? []).forEach((h) => h(event as maplibregl.MapMouseEvent));
+        const mapEvent = { point: { x: 400, y: 300 }, ...event } as maplibregl.MapMouseEvent;
+        (handlers[type] ?? []).forEach((h) => h(mapEvent));
     };
     return { map, emit };
 }
@@ -50,7 +60,7 @@ describe('CoordinateReadout', () => {
         expect(readout.textContent).toContain('77.5946° E');
     });
 
-    it('shows a precise index value when a hover lookup is provided', async () => {
+    it('shows a precise index value and agronomic class in a cursor popup', async () => {
         vi.useFakeTimers();
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
             cb(0);
@@ -64,16 +74,104 @@ describe('CoordinateReadout', () => {
             emit('mousemove', { lngLat: { lng: 77.5946, lat: 12.9716 } as maplibregl.LngLat });
         });
         await act(async () => {
-            await vi.advanceTimersByTimeAsync(180);
             await Promise.resolve();
         });
 
         const readout = getByTestId('coordinate-readout');
+        const tooltip = getByTestId('index-hover-tooltip');
         expect(lookup).toHaveBeenCalledWith({ lng: 77.5946, lat: 12.9716 });
-        expect(readout.textContent).toContain('NDVI 0.45');
+        expect(readout.textContent).not.toContain('NDVI');
+        expect(tooltip.textContent).toContain('NDVI: 0.45');
+        expect(tooltip.textContent).toContain('Moderate vegetation');
+        expect(tooltip.getAttribute('style')).toContain('left: 400px');
     });
 
-    it('debounces rapid hover lookups and samples the latest coordinate', async () => {
+    it('uses the EOS-style sparse vegetation interpretation at NDVI 0.40', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+            cb(0);
+            return 1;
+        });
+        const { map, emit } = createMockMap();
+        const lookup = vi.fn().mockResolvedValue({
+            indexType: 'NDVI',
+            value: 0.4,
+            masked: false,
+        });
+        const { getByTestId } = render(<CoordinateReadout map={ map } indexLookup={ lookup } />);
+
+        act(() => {
+            emit('mousemove', {
+                lngLat: { lng: 77.5946, lat: 12.9716 } as maplibregl.LngLat,
+                point: { x: 420, y: 300 } as maplibregl.Point,
+            });
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(getByTestId('index-hover-tooltip').textContent).toContain('Sparse vegetation');
+    });
+
+    it('reports a known ResourceSat cloud-shadow mask class', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+            cb(0);
+            return 1;
+        });
+        const { map, emit } = createMockMap();
+        const lookup = vi.fn().mockResolvedValue({
+            indexType: 'NDVI',
+            value: null,
+            masked: true,
+            maskClass: 3,
+            sourceId: 'resourcesat-2a-liss3-boa',
+        });
+        const { getByTestId } = render(<CoordinateReadout map={ map } indexLookup={ lookup } />);
+
+        act(() => {
+            emit('mousemove', {
+                lngLat: { lng: 77.5946, lat: 12.9716 } as maplibregl.LngLat,
+                point: { x: 420, y: 300 } as maplibregl.Point,
+            });
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        const tooltip = getByTestId('index-hover-tooltip');
+        expect(tooltip.textContent).toContain('NDVI: Masked');
+        expect(tooltip.textContent).toContain('Cloud shadow');
+    });
+
+    it('does not sample when the pointer is outside the rendered field', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+            cb(0);
+            return 1;
+        });
+        const { map, emit } = createMockMap({ renderedFeatures: 0 });
+        const lookup = vi.fn();
+        const { queryByTestId } = render(
+            <CoordinateReadout
+                map={ map }
+                interactiveLayerId="selected-field-fill"
+                indexLookup={ lookup }
+            />,
+        );
+
+        act(() => {
+            emit('mousemove', {
+                lngLat: { lng: 77.5946, lat: 12.9716 } as maplibregl.LngLat,
+                point: { x: 420, y: 300 } as maplibregl.Point,
+            });
+        });
+
+        expect(lookup).not.toHaveBeenCalled();
+        expect(queryByTestId('index-hover-tooltip')).toBeNull();
+    });
+
+    it('samples the latest animation-frame coordinate immediately', async () => {
         vi.useFakeTimers();
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => (
             window.setTimeout(() => cb(0), 0) as unknown as number
@@ -91,15 +189,44 @@ describe('CoordinateReadout', () => {
             emit('mousemove', { lngLat: { lng: 77.3, lat: 12.3 } as maplibregl.LngLat });
         });
         await act(async () => {
-            await vi.advanceTimersByTimeAsync(179);
-        });
-        expect(lookup).not.toHaveBeenCalled();
-
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(1);
+            await vi.advanceTimersByTimeAsync(0);
+            await Promise.resolve();
         });
         expect(lookup).toHaveBeenCalledTimes(1);
         expect(lookup).toHaveBeenCalledWith({ lng: 77.3, lat: 12.3 });
+    });
+
+    it('allows one lookup in flight and then samples only the latest queued point', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+            cb(0);
+            return 1;
+        });
+        const { map, emit } = createMockMap();
+        let resolveFirst: ((value: { indexType: string; value: number; masked: boolean }) => void) | null = null;
+        const lookup = vi.fn()
+            .mockImplementationOnce(() => new Promise((resolve) => {
+                resolveFirst = resolve;
+            }))
+            .mockResolvedValue({ indexType: 'NDVI', value: 0.75, masked: false });
+        render(<CoordinateReadout map={ map } indexLookup={ lookup } />);
+
+        act(() => {
+            emit('mousemove', { lngLat: { lng: 77.1, lat: 13.1 } as maplibregl.LngLat });
+            emit('mousemove', { lngLat: { lng: 77.2, lat: 13.2 } as maplibregl.LngLat });
+            emit('mousemove', { lngLat: { lng: 77.3, lat: 13.3 } as maplibregl.LngLat });
+        });
+        expect(lookup).toHaveBeenCalledTimes(1);
+        expect(lookup).toHaveBeenLastCalledWith({ lng: 77.1, lat: 13.1 });
+
+        await act(async () => {
+            resolveFirst?.({ indexType: 'NDVI', value: 0.45, masked: false });
+            await Promise.resolve();
+            await vi.advanceTimersByTimeAsync(120);
+        });
+
+        expect(lookup).toHaveBeenCalledTimes(2);
+        expect(lookup).toHaveBeenLastCalledWith({ lng: 77.3, lat: 13.3 });
     });
 
     it('discards a late lookup result when the lookup source changes', async () => {
@@ -113,15 +240,12 @@ describe('CoordinateReadout', () => {
         const lookup = vi.fn().mockImplementation(() => new Promise((resolve) => {
             resolveLookup = resolve;
         }));
-        const { getByTestId, rerender } = render(
+        const { getByTestId, queryByTestId, rerender } = render(
             <CoordinateReadout map={ map } indexLookup={ lookup } />,
         );
 
         act(() => {
             emit('mousemove', { lngLat: { lng: 77.1, lat: 13.1 } as maplibregl.LngLat });
-        });
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(180);
         });
         rerender(<CoordinateReadout map={ map } />);
         await act(async () => {
@@ -129,10 +253,11 @@ describe('CoordinateReadout', () => {
             await Promise.resolve();
         });
 
-        expect(getByTestId('coordinate-readout').textContent).not.toContain('NDVI 0.75');
+        expect(getByTestId('coordinate-readout').textContent).not.toContain('NDVI');
+        expect(queryByTestId('index-hover-tooltip')).toBeNull();
     });
 
-    it('does not show the previous point value beside new cursor coordinates', async () => {
+    it('keeps the popup visible at the moving cursor until the latest value resolves', async () => {
         vi.useFakeTimers();
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => (
             window.setTimeout(() => cb(0), 0) as unknown as number
@@ -141,29 +266,53 @@ describe('CoordinateReadout', () => {
             window.clearTimeout(id);
         });
         const { map, emit } = createMockMap();
-        const lookup = vi.fn().mockResolvedValue({ indexType: 'NDVI', value: 0.45, masked: false });
-        const { getByTestId } = render(<CoordinateReadout map={ map } indexLookup={ lookup } />);
+        let resolveSecond: ((value: { indexType: string; value: number; masked: boolean }) => void) | null = null;
+        const lookup = vi.fn()
+            .mockResolvedValueOnce({ indexType: 'NDVI', value: 0.45, masked: false })
+            .mockImplementationOnce(() => new Promise((resolve) => {
+                resolveSecond = resolve;
+            }));
+        const { getByTestId } = render(
+            <CoordinateReadout map={ map } indexLookup={ lookup } />,
+        );
 
         act(() => {
             emit('mousemove', { lngLat: { lng: 77.1, lat: 13.1 } as maplibregl.LngLat });
         });
         await act(async () => {
             await vi.advanceTimersByTimeAsync(0);
-            await vi.advanceTimersByTimeAsync(180);
             await Promise.resolve();
         });
-        expect(getByTestId('coordinate-readout').textContent).toContain('NDVI 0.45');
+        expect(getByTestId('index-hover-tooltip').textContent).toContain('NDVI: 0.45');
 
         act(() => {
-            emit('mousemove', { lngLat: { lng: 77.2, lat: 13.2 } as maplibregl.LngLat });
+            emit('mousemove', {
+                lngLat: { lng: 77.2, lat: 13.2 } as maplibregl.LngLat,
+                point: { x: 460, y: 320 } as maplibregl.Point,
+            });
         });
         await act(async () => {
             await vi.advanceTimersByTimeAsync(0);
         });
 
         const readout = getByTestId('coordinate-readout');
+        const tooltip = getByTestId('index-hover-tooltip');
         expect(readout.textContent).toContain('13.2000° N');
-        expect(readout.textContent).not.toContain('NDVI 0.45');
+        expect(tooltip.textContent).toContain('NDVI: 0.45');
+        expect(tooltip.getAttribute('style')).toContain('left: 460px');
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(120);
+        });
+        expect(lookup).toHaveBeenCalledTimes(2);
+        expect(getByTestId('index-hover-tooltip').textContent).toContain('NDVI: 0.45');
+
+        await act(async () => {
+            resolveSecond?.({ indexType: 'NDVI', value: 0.75, masked: false });
+            await Promise.resolve();
+        });
+        expect(getByTestId('index-hover-tooltip').textContent).toContain('NDVI: 0.75');
+        expect(getByTestId('index-hover-tooltip').textContent).toContain('Very dense vegetation');
     });
 
     it('uses S/W hemispheres for negative coordinates', () => {

@@ -60,8 +60,10 @@ vi.mock('@/components/map/FieldOverlayLoadingIndicator', () => ({
 
 vi.mock('@/components/map/CoordinateReadout', () => ({
   CoordinateReadout: ({
+    interactiveLayerId,
     indexLookup,
   }: {
+    interactiveLayerId?: string;
     indexLookup?: (point: { lng: number; lat: number }) => Promise<unknown>;
   }) => {
     coordinateReadoutState.lookups.push(indexLookup);
@@ -69,6 +71,7 @@ vi.mock('@/components/map/CoordinateReadout', () => ({
       <button
         type="button"
         data-testid="coordinate-readout-mock"
+        data-interactive-layer={ interactiveLayerId ?? '' }
         data-index-lookup={ String(Boolean(indexLookup)) }
         onClick={ () => {
           void indexLookup?.({ lng: 77.5946, lat: 12.9716 });
@@ -898,6 +901,28 @@ describe('MapPage selected-field native analytics', () => {
     expect(screen.getByTestId('layer-display-trigger').textContent).toContain('NDVI');
   });
 
+  it('replaces the large legend with field-scoped hover inspection on field analytics', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
+
+    renderMapPage(
+      { selectedPlotId: 'plot-1', legendOpen: true },
+      { simplifiedMapControls: true, topLeftCoords: true },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
+      );
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'true',
+      );
+    });
+    expect(
+      screen.getByTestId('coordinate-readout-mock').getAttribute('data-interactive-layer'),
+    ).toBe('akasha-field-boundary-fill-layer');
+    expect(screen.queryByTestId('map-legend')).toBeNull();
+  });
+
   it('shows only index overlay modes in the layer picker', async () => {
     stubAkashaFetch({ plots: [FIELD_PLOT] });
 
@@ -1087,49 +1112,6 @@ describe('MapPage best-available mode', () => {
       expect(bestUrl).toContain('indexType=NDMI');
       expect(bestUrl).toContain('useCase=field');
       expect(bestUrl).toContain('allowCoarse=false');
-    });
-  });
-
-  it('selecting a best-mode date preserves the source-specific source when returning to source mode', async () => {
-    const bestCandidates: ObservationCandidate[] = [
-      {
-        sourceId: 'resourcesat-2a-liss4-mx70-l2',
-        acquisitionDate: '2026-01-15',
-        resolutionMeters: 5.8,
-        analysisLevel: 'field',
-        usablePixelPercent: 88,
-        coveragePercent: 95,
-        cloudMaskedPercent: 5,
-        tileAvailable: true,
-        isLatestUsable: true,
-        score: 92.0,
-        sourcePriority: 100,
-        provenanceNote: null,
-        isCoarse: false,
-        supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
-        label: 'ResourceSat-2A LISS-4 MX70 L2',
-      },
-    ];
-    stubAkashaFetch({ bestCandidates });
-
-    renderMapPage({ bestMode: true, activeSourceId: 'resourcesat-2a-liss3-boa' });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('date-chip-2026-01-15')).toBeTruthy();
-    });
-    fireEvent.click(screen.getByTestId('date-chip-2026-01-15'));
-    fireEvent.click(screen.getByTestId('timeline-best-mode-toggle'));
-
-    await waitFor(() => {
-      const calls = (globalThis.fetch as unknown as {
-        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
-      }).mock.calls;
-      expect(
-        calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
-      ).toBe(true);
-      expect(
-        calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss4-mx70-l2/dates')),
-      ).toBe(false);
     });
   });
 

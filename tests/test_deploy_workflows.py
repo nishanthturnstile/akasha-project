@@ -88,6 +88,9 @@ def test_staging_deploy_verifies_all_images_before_coolify_patch():
     validate_names = _step_names(validate_job)
     build_names = _step_names(build_job)
     assert validate_job["env"]["VITE_ESRI_API_KEY"] == "${{ vars.VITE_ESRI_API_KEY || '' }}"
+    assert validate_job["env"]["ESRI_BASEMAP_USAGE_MODEL"] == (
+        "${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}"
+    )
     assert build_job["env"]["VITE_ESRI_API_KEY"] == "${{ vars.VITE_ESRI_API_KEY || '' }}"
     assert validate_names.index("Mask Esri public key") < validate_names.index(
         "Validate hosted basemap build settings"
@@ -121,6 +124,7 @@ def test_staging_basemap_preflight_rejects_missing_and_placeholder_keys():
         "VITE_ESRI_API_KEY": "test-public-key",
         "VITE_ESRI_BASEMAP_STYLE": "arcgis/imagery",
         "VITE_ESRI_BASEMAP_STYLE_FAMILY": "arcgis",
+        "ESRI_BASEMAP_USAGE_MODEL": "session",
     }
 
     for invalid_key in ("", "   ", "CHANGE_ME_KEY", "<public-key>"):
@@ -133,6 +137,16 @@ def test_staging_basemap_preflight_rejects_missing_and_placeholder_keys():
 
     approved = _run_bash_step(validate_step["run"], base)
     assert approved.returncode == 0, approved.stderr.decode()
+    tile = _run_bash_step(
+        validate_step["run"],
+        {**base, "ESRI_BASEMAP_USAGE_MODEL": "tile"},
+    )
+    assert tile.returncode == 0, tile.stderr.decode()
+    rejected_model = _run_bash_step(
+        validate_step["run"],
+        {**base, "ESRI_BASEMAP_USAGE_MODEL": "per-request"},
+    )
+    assert rejected_model.returncode != 0
 
 
 def test_production_deploy_verifies_all_images_before_coolify_patch():
@@ -230,6 +244,11 @@ def test_staging_deploy_renders_source_scoped_resourcesat_cutover():
     )
     assert "INGESTION_RESOURCESAT_CUTOVER_ENABLED must be true or false" in render_step["run"]
     assert "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid" in render_step["run"]
+    assert deploy_job["env"]["ESRI_BASEMAP_USAGE_MODEL"] == (
+        "${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}"
+    )
+    assert "ESRI_BASEMAP_USAGE_MODEL must be session or tile" in render_step["run"]
+    assert '${ESRI_BASEMAP_USAGE_MODEL:-session}' in render_step["run"]
 
 
 def test_deploy_workflow_inline_python_snippets_compile():

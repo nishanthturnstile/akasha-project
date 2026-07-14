@@ -102,6 +102,8 @@ Repository variables:
 - `VITE_ESRI_BASEMAP_STYLE_FAMILY` — optional, defaults to `arcgis`.
 - `VITE_ESRI_BASEMAP_PLACES` — optional, defaults to `none`.
 - `VITE_ESRI_BASEMAP_SESSION_SECONDS` — optional session-mode setting, defaults to `43200`.
+- `ESRI_BASEMAP_USAGE_MODEL` — staging BFF runtime model rendered by the deploy workflow;
+   keep `session` for compatibility deployment, then set `tile` after acceptance.
 
 GitHub Environment:
 

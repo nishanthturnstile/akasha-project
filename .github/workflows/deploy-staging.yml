@@ -32,6 +32,7 @@ jobs:
       VITE_ESRI_API_KEY: ${{ vars.VITE_ESRI_API_KEY || '' }}
       VITE_ESRI_BASEMAP_STYLE: ${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
       VITE_ESRI_BASEMAP_STYLE_FAMILY: ${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
+      ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Mask Esri public key
         shell: bash
@@ -62,6 +63,11 @@ jobs:
           }
           [[ "${VITE_ESRI_BASEMAP_STYLE_FAMILY,,}" == "arcgis" ]] || {
             echo "VITE_ESRI_BASEMAP_STYLE_FAMILY must be arcgis."
+            exit 1
+          }
+          usage_model="${ESRI_BASEMAP_USAGE_MODEL,,}"
+          [[ "$usage_model" == "session" || "$usage_model" == "tile" ]] || {
+            echo "ESRI_BASEMAP_USAGE_MODEL must be session or tile."
             exit 1
           }
 
@@ -140,6 +146,7 @@ jobs:
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'false' }}
       INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa' }}
+      ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -191,6 +198,9 @@ jobs:
           )
           if not all(part.strip() for part in resourcesat_sources.split(",")):
               raise SystemExit("INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid")
+          esri_usage_model = os.environ.get("ESRI_BASEMAP_USAGE_MODEL", "session").lower()
+          if esri_usage_model not in {"session", "tile"}:
+              raise SystemExit("ESRI_BASEMAP_USAGE_MODEL must be session or tile")
           app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
           if not app_data_root.startswith("/"):
               raise SystemExit("APP_DATA_ROOT must be an absolute host path")
@@ -205,6 +215,7 @@ jobs:
               "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa}",
               resourcesat_sources,
           )
+          text = text.replace("${ESRI_BASEMAP_USAGE_MODEL:-session}", esri_usage_model)
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY

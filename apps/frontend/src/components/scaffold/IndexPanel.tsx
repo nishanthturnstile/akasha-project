@@ -306,8 +306,8 @@ function CropInfoTab({
   };
 
   return (
-    <div className="grid grid-cols-3 gap-2 pt-0.5">
-      {/* ── Card 1: Crop Rotation ── */}
+    <div className="grid grid-cols-1 gap-2 pt-0.5 lg:grid-cols-3">
+      {/* ── Card 1: Crop Rotation ── */ }
       <div
         data-testid="crop-info-card-crop-rotation"
         className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-background/40 p-2.5"

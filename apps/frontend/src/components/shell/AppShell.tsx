@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronsLeft,
+  ChevronUp,
   Clock,
   LogOut,
   Menu,
@@ -137,10 +138,25 @@ export function AppShell() {
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
+  // Utility footer menu (AI assistant / Notifications / Help / Marketplace / Settings /
+  // API + Sign out). Collapsed by default so the footer shows only the account trigger.
+  const [utilityOpen, setUtilityOpen] = useState(false);
 
   const setGlobalViewMode = (isGlobalView: boolean) => {
     setGlobalViewOpen(isGlobalView);
     view.setOverlaysVisible(!isGlobalView);
+  };
+
+  const handleLogout = async () => {
+    // Fully await the server logout so the request completes before we tear down the
+    // page. Navigating/clearing while the POST is in flight aborts it. Logout is
+    // best-effort: clear local session state and leave even if it fails.
+    try {
+      await logout.mutateAsync();
+    } catch {
+      // Ignore: the session cookie is cleared server-side and local state is dropped.
+    }
+    window.location.href = '/login?loggedOut=1';
   };
 
   const seasonsQ = useSeasons();
@@ -378,7 +394,7 @@ export function AppShell() {
                       to={ item.path }
                       end={ false }
                       data-testid={ `mobile-${testIdFor(item.label)}` }
-                       onClick={ item.globalView ? () => setGlobalViewMode(true) : undefined }
+                      onClick={ item.globalView ? () => setGlobalViewMode(true) : undefined }
                       className={ ({ isActive }) =>
                         cn(
                           'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
@@ -517,7 +533,7 @@ export function AppShell() {
                   ) : filteredSeasons.length === 0 ? (
                     <Card className="border-border/60 bg-card/90 shadow-sm">
                       <CardContent>
-                        {seasonTab === 'active' ? (
+                        { seasonTab === 'active' ? (
                           <div className="flex flex-col items-center gap-3 text-center">
                             <p className="text-sm text-muted-foreground">
                               <button
@@ -527,7 +543,7 @@ export function AppShell() {
                               >
                                 Create
                               </button>
-                              {' an active season to receive up-to-date data.'}
+                              { ' an active season to receive up-to-date data.' }
                             </p>
                           </div>
                         ) : (
@@ -541,7 +557,7 @@ export function AppShell() {
                                 : 'Seasons with an end date in the past will appear here.' }
                             </p>
                           </>
-                        )}
+                        ) }
                       </CardContent>
                     </Card>
                   ) : (
@@ -590,7 +606,7 @@ export function AppShell() {
                                   { season.name }
                                 </CardTitle>
                                 { isCurrent && (
-                                  <Check className="size-5 text-primary" strokeWidth={2.5} aria-label="Active season" />
+                                  <Check className="size-5 text-primary" strokeWidth={ 2.5 } aria-label="Active season" />
                                 ) }
                               </div>
                               <div className="mt-2 flex gap-2">
@@ -643,7 +659,7 @@ export function AppShell() {
                               <div className="mt-1 flex items-center gap-2 text-sm">
                                 <span className="text-muted-foreground">Total area:</span>
                                 <span className="font-semibold text-foreground tabular-nums">
-                                  {seasonFields.length === 0 ? '0.00' : totalArea.toFixed(2)} ha
+                                  { seasonFields.length === 0 ? '0.00' : totalArea.toFixed(2) } ha
                                 </span>
                               </div>
                               { seasonFields.length === 0 && (
@@ -827,7 +843,8 @@ export function AppShell() {
             </nav>
           </ScrollArea>
 
-          {/* Utility footer (pinned). Icon-only when collapsed; flat list otherwise. */ }
+          {/* Utility footer (pinned). Collapsed by default: only the account trigger is
+            * shown; the utility links + sign out expand from the account button. */ }
           { utilityGroup && (
             <>
               <Separator />
@@ -839,102 +856,133 @@ export function AppShell() {
                 ) }
                 data-testid="utility-footer"
               >
-                { utilityGroup.items.map((item) => {
-                  const Icon = item.icon;
-                  if (railCollapsed) {
-                    return (
-                      <Tooltip key={ item.path }>
-                        <TooltipTrigger asChild>
-                          <NavLink
-                            to={ item.path }
-                            end={ false }
-                            data-testid={ testIdFor(item.label) }
-                            aria-label={ item.label }
-                            className={ ({ isActive }) =>
-                              cn(
-                                'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                                isActive && 'bg-primary/15 text-foreground shadow-e1',
-                              )
-                            }
-                          >
-                            <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
-                          </NavLink>
-                        </TooltipTrigger>
-                        <TooltipContent side="left">{ item.label }</TooltipContent>
-                      </Tooltip>
-                    );
-                  }
-                  return (
-                    <NavLink
-                      key={ item.path }
-                      to={ item.path }
-                      end={ false }
-                      data-testid={ testIdFor(item.label) }
-                      className={ ({ isActive }) =>
-                        cn(
-                          'group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                          isActive && 'bg-primary/15 text-foreground shadow-e1',
-                        )
+                { utilityOpen && (
+                  <div
+                    className={ cn('flex flex-col gap-1', railCollapsed && 'items-center') }
+                    data-testid="utility-links"
+                  >
+                    { utilityGroup.items.map((item) => {
+                      const Icon = item.icon;
+                      if (railCollapsed) {
+                        return (
+                          <Tooltip key={ item.path }>
+                            <TooltipTrigger asChild>
+                              <NavLink
+                                to={ item.path }
+                                end={ false }
+                                data-testid={ testIdFor(item.label) }
+                                aria-label={ item.label }
+                                className={ ({ isActive }) =>
+                                  cn(
+                                    'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                    isActive && 'bg-primary/15 text-foreground shadow-e1',
+                                  )
+                                }
+                              >
+                                <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                              </NavLink>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">{ item.label }</TooltipContent>
+                          </Tooltip>
+                        );
                       }
-                    >
-                      <Icon
-                        className="size-4 shrink-0"
-                        strokeWidth={ 1.75 }
-                        aria-hidden="true"
-                      />
-                      <span className="min-w-0 flex-1 truncate">{ item.label }</span>
-                    </NavLink>
-                  );
-                }) }
-                {/* Account / team controls */ }
+                      return (
+                        <NavLink
+                          key={ item.path }
+                          to={ item.path }
+                          end={ false }
+                          data-testid={ testIdFor(item.label) }
+                          className={ ({ isActive }) =>
+                            cn(
+                              'group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                              isActive && 'bg-primary/15 text-foreground shadow-e1',
+                            )
+                          }
+                        >
+                          <Icon
+                            className="size-4 shrink-0"
+                            strokeWidth={ 1.75 }
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                        </NavLink>
+                      );
+                    }) }
+                    {/* Sign out lives inside the collapsible menu. */ }
+                    { railCollapsed ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={ handleLogout }
+                            data-testid="sign-out-action"
+                            aria-label="Sign out"
+                            className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground disabled:cursor-wait disabled:opacity-70"
+                            disabled={ logout.isPending }
+                          >
+                            <LogOut className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">Sign out</TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={ handleLogout }
+                        data-testid="sign-out-action"
+                        className="group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground disabled:cursor-wait disabled:opacity-70"
+                        disabled={ logout.isPending }
+                      >
+                        <LogOut className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate text-left">Sign out</span>
+                      </button>
+                    ) }
+                  </div>
+                ) }
+                {/* Account trigger — always visible; toggles the menu above it. */ }
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={ async () => {
-                        // Fully await the server logout so the request completes
-                        // before we tear down the page. Navigating/clearing while
-                        // the POST is in flight aborts it. Logout is best-effort:
-                        // clear local session state and leave even if it fails.
-                        try {
-                          await logout.mutateAsync();
-                        } catch {
-                          // Ignore: the session cookie is cleared server-side and
-                          // local state is dropped below regardless.
-                        }
-                        window.location.href = '/login?loggedOut=1';
-                      } }
+                      onClick={ () => setUtilityOpen((open) => !open) }
                       data-testid="account-popover-trigger"
-                      aria-label="Sign out"
+                      aria-label="Account menu"
+                      aria-expanded={ utilityOpen }
                       className={ cn(
-                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70',
+                        'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                         railCollapsed ? 'size-9 justify-center px-0 py-0' : 'w-full',
                       ) }
-                      disabled={ logout.isPending }
                     >
-                      { railCollapsed ? (
-                        <LogOut className="size-4 shrink-0 text-primary" strokeWidth={ 1.75 } />
-                      ) : (
-                        <UserCircle2
-                          className="size-5 shrink-0 text-primary"
-                          strokeWidth={ 1.5 }
-                          aria-hidden="true"
-                        />
-                      ) }
+                      <UserCircle2
+                        className="size-5 shrink-0 text-primary"
+                        strokeWidth={ 1.5 }
+                        aria-hidden="true"
+                      />
                       { !railCollapsed && (
-                        <span className="min-w-0 flex-1 truncate text-left">
-                          <span className="block truncate text-sm text-foreground/90">
-                            { account.data?.user?.displayName ?? 'Akasha user' }
+                        <>
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            <span className="block truncate text-sm text-foreground/90">
+                              { account.data?.user?.displayName ?? 'Akasha user' }
+                            </span>
+                            <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                              { account.data?.currentTeam?.name ?? 'Workspace' }
+                            </span>
                           </span>
-                          <span className="block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
-                            { account.data?.currentTeam?.name ?? 'Workspace' }
-                          </span>
-                        </span>
+                          <ChevronUp
+                            className={ cn(
+                              'size-4 shrink-0 transition-transform duration-fast',
+                              utilityOpen && 'rotate-180',
+                            ) }
+                            strokeWidth={ 1.75 }
+                            aria-hidden="true"
+                          />
+                        </>
                       ) }
-                      { !railCollapsed && <LogOut className="size-4 shrink-0" strokeWidth={ 1.75 } /> }
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="left">Sign out</TooltipContent>
+                  <TooltipContent side="left">
+                    { utilityOpen ? 'Hide menu' : 'Account & more' }
+                  </TooltipContent>
                 </Tooltip>
               </nav>
             </>

@@ -216,25 +216,31 @@ export function TimelineBar({
                 tabIndex={ 0 }
                 onKeyDown={ handleKeyDown }
                 data-testid="timeline-track"
-                className="flex snap-x gap-1.5 overflow-x-auto py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="snap-x overflow-x-auto py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-                { visible.map((d) => {
-                    const selected = d.acquisitionDate === selectedDate;
-                    return (
-                        <DateChip
-                            key={ d.acquisitionDate }
-                            ref={ selected ? selectedRef : undefined }
-                            date={ d }
-                            selected={ selected }
-                            sourceKind={ sourceKind }
-                            sensorBadge={ bestMode ? null : (sensorBadge ?? undefined) }
-                            provenanceLabel={ bestMode ? (d.provenanceLabel ?? null) : null }
-                            compact={ compact }
-                            onSelect={ () => onSelect(d.acquisitionDate) }
-                            onPrefetch={ onPrefetchDate ? () => onPrefetchDate(d.acquisitionDate) : undefined }
-                        />
-                    );
-                }) }
+                {/* Inner flex sizes to its content (w-max) but is at least full-width
+                    (min-w-full): few chips right-align on large screens (empty space on the
+                    left); when dates overflow it grows past 100% so the outer container
+                    scrolls normally from the left with every chip reachable. */}
+                <div className="flex w-max min-w-full gap-1.5 lg:justify-end">
+                    { visible.map((d) => {
+                        const selected = d.acquisitionDate === selectedDate;
+                        return (
+                            <DateChip
+                                key={ d.acquisitionDate }
+                                ref={ selected ? selectedRef : undefined }
+                                date={ d }
+                                selected={ selected }
+                                sourceKind={ sourceKind }
+                                sensorBadge={ bestMode ? null : (sensorBadge ?? undefined) }
+                                provenanceLabel={ bestMode ? (d.provenanceLabel ?? null) : null }
+                                compact={ compact }
+                                onSelect={ () => onSelect(d.acquisitionDate) }
+                                onPrefetch={ onPrefetchDate ? () => onPrefetchDate(d.acquisitionDate) : undefined }
+                            />
+                        );
+                    }) }
+                </div>
             </div>
         );
     }

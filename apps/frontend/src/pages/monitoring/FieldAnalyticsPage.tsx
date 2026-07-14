@@ -134,30 +134,30 @@ export default function FieldAnalyticsPage() {
   }, [displayMode, effectiveSourceId, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
-    <div className="h-full flex flex-col gap-4 p-4 overflow-y-auto">
+    <div className="h-full flex flex-col gap-3 px-4 py-3 overflow-y-auto">
       { overlaysVisible && (
-        <div className="flex items-stretch rounded-md border border-border bg-background shrink-0">
-          <div className="flex items-center gap-3 px-4 py-3 min-w-0 flex-1">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary">
+        <div className="flex flex-col rounded-md border border-border bg-background shrink-0 sm:flex-row sm:items-stretch">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 min-w-0 flex-1 sm:gap-3 sm:px-4 sm:py-2">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary">
               <MapIcon className="size-4" strokeWidth={ 1.75 } />
             </div>
 
-            <div className="w-px self-stretch bg-border/60" />
+            <div className="hidden w-px self-stretch bg-border/60 sm:block" />
 
-            <span className="font-display text-sm font-semibold text-foreground">
+            <span className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-foreground sm:flex-none">
               { selectedField?.name ?? 'No field selected' }
             </span>
 
             { selectedField && (
               <>
-                <div className="w-px self-stretch bg-border/60" />
-                <span className="rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground/80">
+                <div className="hidden w-px self-stretch bg-border/60 sm:block" />
+                <span className="shrink-0 rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground/80">
                   { formatAreaHa(selectedField.areaHa) }
                 </span>
               </>
             ) }
 
-            <div className="w-px self-stretch bg-border/60" />
+            <div className="hidden w-px self-stretch bg-border/60 sm:block" />
 
             <Button
               type="button"
@@ -165,13 +165,13 @@ export default function FieldAnalyticsPage() {
               size="sm"
               disabled={ !selectedField }
               onClick={ () => setEditFieldOpen(true) }
-              className="h-8 gap-1.5 text-[12px]"
+              className="h-8 shrink-0 gap-1.5 text-[12px]"
             >
               <Pencil className="size-3.5" strokeWidth={ 1.75 } />
               Edit
             </Button>
           </div>
-          <div className="flex items-center gap-2 px-4 py-3">
+          <div className="flex items-center gap-2 border-t border-border/60 px-3 py-1.5 sm:border-t-0 sm:px-4 sm:py-2">
             <AddFieldDropdown
               fields={ seasonFields }
               onNavigate={ navigateWithImageryState }

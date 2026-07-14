@@ -126,6 +126,7 @@ function geometryCoordinates(geometry: PlotGeometry): [number, number][] {
 function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
   const coordinates = geometryCoordinates(plot.geometry);
   if (!map || coordinates.length === 0) return;
+  map.resize();
   const lngs = coordinates.map(([lng]) => lng);
   const lats = coordinates.map(([, lat]) => lat);
   map.fitBounds(
@@ -133,7 +134,7 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
     ],
-    { padding: 96, maxZoom: 18, duration: 650 },
+    { padding: 64, maxZoom: 18, duration: 650 },
   );
 }
 
@@ -347,7 +348,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
   );
   const defaultLayerQ = useDefaultLayer(effectiveSourceId);
-  const datesQ = useDates(effectiveSourceId, { enabled: !bestMode });
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
     [sourcesQ.data, effectiveSourceId],
@@ -389,6 +389,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     if (!selectedPlotId) return null;
     return plotsQ.data?.find((plot) => plot.id === selectedPlotId) ?? null;
   }, [plotsQ.data, selectedPlotId]);
+  const requestedTimelineIndex = resolveDisplayMode(
+    displayModeOverride,
+    selectedSource?.supportedIndices ?? [],
+    selectedSource?.supportedIndices?.[0] ?? configQ.data?.defaultIndex ?? 'NDVI',
+  );
+  const datesQ = useDates(effectiveSourceId, {
+    enabled: !bestMode && (!selectedPlotId || Boolean(selectedPlot)),
+    fieldId: selectedPlot?.id,
+    indexType: requestedTimelineIndex,
+  });
 
   useEffect(() => {
     if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
@@ -633,12 +643,25 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode]);
 
   const [indexOverlay, setIndexOverlay] = useState<IndexOverlay | null>(null);
+  const [indexOverlayRequestKey, setIndexOverlayRequestKey] = useState<string | null>(null);
   const [indexOverlayLoading, setIndexOverlayLoading] = useState(false);
+  const requestedIndexOverlayKey = requestedIndexOverlay
+    ? [
+      requestedIndexOverlay.plotId,
+      requestedIndexOverlay.sourceId,
+      requestedIndexOverlay.acquisitionDate,
+      requestedIndexOverlay.indexType,
+    ].join('|')
+    : null;
+  const hasCurrentIndexOverlay = Boolean(
+    indexOverlay && requestedIndexOverlayKey === indexOverlayRequestKey,
+  );
 
   useEffect(() => {
     let disposed = false;
     if (!requestedIndexOverlay) {
       setIndexOverlayLoading(false);
+      setIndexOverlayRequestKey(null);
       setIndexOverlay((current) => {
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
         return null;
@@ -649,6 +672,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
       return null;
     });
+    setIndexOverlayRequestKey(null);
     setIndexOverlayLoading(true);
     void getFieldIndexOverlayImage(
       requestedIndexOverlay.plotId,
@@ -665,6 +689,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         return;
       }
       setIndexOverlayLoading(false);
+      setIndexOverlayRequestKey(requestedIndexOverlayKey);
       setIndexOverlay((current) => {
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
         return overlay;
@@ -672,16 +697,17 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     }).catch(() => {
       if (!disposed) {
         setIndexOverlayLoading(false);
+        setIndexOverlayRequestKey(null);
         setIndexOverlay(null);
       }
     });
     return () => {
       disposed = true;
     };
-  }, [requestedIndexOverlay, preferHighRes]);
+  }, [requestedIndexOverlay, requestedIndexOverlayKey, preferHighRes]);
 
   const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
-    if (!isIndexLayer || !selectedPlot || !selectedDate || !requestSourceId) return null;
+    if (!isIndexLayer || !hasCurrentIndexOverlay || !selectedPlot || !selectedDate || !requestSourceId) return null;
     return getFieldIndexPoint(selectedPlot.id, {
       sourceId: requestSourceId,
       acquisitionDate: selectedDate,
@@ -690,7 +716,15 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       lat,
       preferHighRes,
     });
-  }, [isIndexLayer, selectedPlot, selectedDate, requestSourceId, selectedDisplayMode, preferHighRes]);
+  }, [
+    isIndexLayer,
+    hasCurrentIndexOverlay,
+    selectedPlot,
+    selectedDate,
+    requestSourceId,
+    selectedDisplayMode,
+    preferHighRes,
+  ]);
 
   // Chronological, tile-available dates for the compare B-scene picker.
   const comparableDates = useMemo(
@@ -996,7 +1030,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         <div className="absolute left-4 top-4 z-toolbar">
           <CoordinateReadout
             map={ map }
-            indexLookup={ isIndexLayer && selectedPlot && selectedDate && requestSourceId ? indexLookup : undefined }
+            indexLookup={
+              isIndexLayer && hasCurrentIndexOverlay && selectedPlot && selectedDate && requestSourceId
+                ? indexLookup
+                : undefined
+            }
           />
         </div>
       ) }

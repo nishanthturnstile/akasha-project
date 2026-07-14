@@ -103,7 +103,8 @@ import type {
 export const queryKeys = {
   config: ['config'] as const,
   sources: ['sources'] as const,
-  dates: (sourceId: string) => ['dates', sourceId] as const,
+  dates: (sourceId: string, fieldId?: string, indexType?: string) =>
+    ['dates', sourceId, fieldId ?? 'global', indexType ?? 'default'] as const,
   defaultLayer: (sourceId: string) => ['layers', 'default', sourceId] as const,
   crops: ['crops'] as const,
   predefinedSeasons: ['predefined-seasons'] as const,
@@ -250,10 +251,18 @@ export function useSources() {
   return useQuery({ queryKey: queryKeys.sources, queryFn: getSources });
 }
 
-export function useDates(sourceId: string | undefined, options?: { enabled?: boolean }) {
+export function useDates(
+  sourceId: string | undefined,
+  options?: { enabled?: boolean; fieldId?: string; indexType?: string },
+) {
   return useQuery({
-    queryKey: sourceId ? queryKeys.dates(sourceId) : (['dates', 'none'] as const),
-    queryFn: () => getDates(sourceId as string),
+    queryKey: sourceId
+      ? queryKeys.dates(sourceId, options?.fieldId, options?.indexType)
+      : (['dates', 'none'] as const),
+    queryFn: () => getDates(sourceId as string, {
+      fieldId: options?.fieldId,
+      indexType: options?.indexType,
+    }),
     enabled: Boolean(sourceId) && options?.enabled !== false,
   });
 }

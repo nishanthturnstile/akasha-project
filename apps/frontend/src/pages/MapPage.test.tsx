@@ -215,6 +215,7 @@ afterEach(() => {
 
 function stubAkashaFetch({
   resourcesatDates = [makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true })],
+  fieldResourcesatDates = resourcesatDates,
   sentinelDates = [makeDate('2026-03-20', { isLatestUsable: true, metricsProvisional: false })],
   liss4Dates = [makeDate('2026-01-15', { isLatestUsable: true, metricsProvisional: true })],
   sarDates = [
@@ -233,6 +234,7 @@ function stubAkashaFetch({
   deferOverlay = false,
 }: {
   resourcesatDates?: SceneDate[];
+  fieldResourcesatDates?: SceneDate[];
   sentinelDates?: SceneDate[];
   liss4Dates?: SceneDate[];
   sarDates?: SceneDate[];
@@ -421,6 +423,18 @@ function stubAkashaFetch({
         );
       }
 
+      if (path.startsWith('/api/fields/plot-1/dates')) {
+        const sourceIdMatch = path.match(/[?&]sourceId=([^&]+)/);
+        const sourceId = sourceIdMatch ? decodeURIComponent(sourceIdMatch[1]) : '';
+        const datesBySource: Record<string, SceneDate[]> = {
+          'resourcesat-2a-liss3-boa': fieldResourcesatDates,
+          'sentinel-2-l2a': sentinelDates,
+          'resourcesat-2a-liss4-mx70-l2': liss4Dates,
+          'eos-04-sar-mrs-l2b': sarDates,
+        };
+        return Promise.resolve(jsonResponse(datesBySource[sourceId] ?? []));
+      }
+
       if (path.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')) {
         return Promise.resolve(jsonResponse(resourcesatDates));
       }
@@ -602,10 +616,28 @@ describe('MapPage pipeline point lookup', () => {
         'ResourceSat-2A LISS-3 BOA',
       );
       expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
-        'true',
+        'false',
       );
       expect(screen.getByTestId('field-overlay-loading-indicator').textContent).toContain(
         'Calculating index',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('coordinate-readout-mock'));
+    expect(
+      (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls.some(([input]) => String(input).includes('/indices/point')),
+    ).toBe(false);
+
+    controls.resolveOverlayRequests();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
+      );
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'true',
       );
     });
 
@@ -616,17 +648,6 @@ describe('MapPage pipeline point lookup', () => {
         mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
       }).mock.calls.map(([input]) => String(input));
       expect(
-        calls.some((input) => input.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
-      ).toBe(true);
-      expect(
-        calls.some(
-          (input) =>
-            input.startsWith('/api/fields/plot-1/overlay/NDVI.png') &&
-            input.includes('sourceId=resourcesat-2a-liss3-boa') &&
-            input.includes('acquisitionDate=2026-04-02'),
-        ),
-      ).toBe(true);
-      expect(
         calls.some(
           (input) =>
             input.startsWith('/api/fields/plot-1/indices/point') &&
@@ -634,14 +655,6 @@ describe('MapPage pipeline point lookup', () => {
             input.includes('acquisitionDate=2026-04-02'),
         ),
       ).toBe(true);
-    });
-
-    controls.resolveOverlayRequests();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
-        'blob:akasha-index-overlay',
-      );
     });
   });
 });
@@ -742,6 +755,31 @@ describe('MapPage native source behavior', () => {
 });
 
 describe('MapPage selected-field native analytics', () => {
+  it('uses only field-filtered dates and omits unavailable global dates', async () => {
+    stubAkashaFetch({
+      plots: [FIELD_PLOT],
+      resourcesatDates: [
+        makeDate('2026-03-01'),
+        makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true }),
+      ],
+      fieldResourcesatDates: [
+        makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true }),
+      ],
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1', selectedDate: '2026-03-01' });
+
+    await waitFor(() => expect(screen.getByTestId('date-chip-2026-03-19')).toBeTruthy());
+    expect(screen.queryByTestId('date-chip-2026-03-01')).toBeNull();
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls.map(([input]) => String(input));
+    expect(calls.some((input) => input.startsWith('/api/fields/plot-1/dates'))).toBe(true);
+    expect(
+      calls.some((input) => input.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+    ).toBe(false);
+  });
+
   it('defaults to a field-clipped NDVI overlay when a field is selected', async () => {
     stubAkashaFetch({ plots: [FIELD_PLOT] });
 

@@ -102,6 +102,70 @@ describe('CoordinateReadout', () => {
         expect(lookup).toHaveBeenCalledWith({ lng: 77.3, lat: 12.3 });
     });
 
+    it('discards a late lookup result when the lookup source changes', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+            cb(0);
+            return 1;
+        });
+        const { map, emit } = createMockMap();
+        let resolveLookup: ((value: { indexType: string; value: number; masked: boolean }) => void) | null = null;
+        const lookup = vi.fn().mockImplementation(() => new Promise((resolve) => {
+            resolveLookup = resolve;
+        }));
+        const { getByTestId, rerender } = render(
+            <CoordinateReadout map={ map } indexLookup={ lookup } />,
+        );
+
+        act(() => {
+            emit('mousemove', { lngLat: { lng: 77.1, lat: 13.1 } as maplibregl.LngLat });
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(180);
+        });
+        rerender(<CoordinateReadout map={ map } />);
+        await act(async () => {
+            resolveLookup?.({ indexType: 'NDVI', value: 0.75, masked: false });
+            await Promise.resolve();
+        });
+
+        expect(getByTestId('coordinate-readout').textContent).not.toContain('NDVI 0.75');
+    });
+
+    it('does not show the previous point value beside new cursor coordinates', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => (
+            window.setTimeout(() => cb(0), 0) as unknown as number
+        ));
+        vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id: number) => {
+            window.clearTimeout(id);
+        });
+        const { map, emit } = createMockMap();
+        const lookup = vi.fn().mockResolvedValue({ indexType: 'NDVI', value: 0.45, masked: false });
+        const { getByTestId } = render(<CoordinateReadout map={ map } indexLookup={ lookup } />);
+
+        act(() => {
+            emit('mousemove', { lngLat: { lng: 77.1, lat: 13.1 } as maplibregl.LngLat });
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+            await vi.advanceTimersByTimeAsync(180);
+            await Promise.resolve();
+        });
+        expect(getByTestId('coordinate-readout').textContent).toContain('NDVI 0.45');
+
+        act(() => {
+            emit('mousemove', { lngLat: { lng: 77.2, lat: 13.2 } as maplibregl.LngLat });
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+
+        const readout = getByTestId('coordinate-readout');
+        expect(readout.textContent).toContain('13.2000° N');
+        expect(readout.textContent).not.toContain('NDVI 0.45');
+    });
+
     it('uses S/W hemispheres for negative coordinates', () => {
         vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
             cb(0);

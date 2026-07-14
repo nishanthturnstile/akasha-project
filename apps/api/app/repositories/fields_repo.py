@@ -8,6 +8,7 @@ from typing import Any
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import shape
 from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 from ..db import session_scope
 from ..models import (
@@ -21,7 +22,7 @@ from ..models import (
     Variety,
     VegetationCycle,
 )
-from ..raster.errors import bad_request, invalid_geometry, not_found
+from ..raster.errors import AkashaError, bad_request, invalid_geometry, not_found
 
 
 def _uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
@@ -377,6 +378,27 @@ def _field_columns() -> tuple[Any, ...]:
     return (Field,)
 
 
+def _validate_field_name_unique(
+    session: Session,
+    user_id: str,
+    name: str,
+    exclude_field_id: str | None = None,
+) -> None:
+    stmt = select(Field).where(
+        Field.user_id == _uuid(user_id),
+        Field.name == name,
+    )
+    if exclude_field_id is not None:
+        stmt = stmt.where(Field.id != _uuid(exclude_field_id))
+    existing = session.execute(stmt).scalar_one_or_none()
+    if existing is not None:
+        raise AkashaError(
+            "DUPLICATE_FIELD_NAME",
+            f'A field named "{name}" already exists.',
+            409,
+        )
+
+
 def create_field(
     user_id: str,
     name: str,
@@ -393,6 +415,7 @@ def create_field(
         _validate_field_group(session, group_uuid)
         _validate_season_links(session, user_id, season_uuids)
         _validate_vegetation_cycles(session, user_id, veg_data, season_uuids)
+        _validate_field_name_unique(session, user_id, name)
         field = Field(
             user_id=_uuid(user_id),
             name=name,
@@ -524,6 +547,8 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
             _validate_vegetation_cycles(
                 session, user_id, veg_data, effective_season_uuids
             )
+        if "name" in values and values["name"] != field.name:
+            _validate_field_name_unique(session, user_id, values["name"], exclude_field_id=field_id)
         for key in ("name", "geometry", "area_ha", "groupId"):
             if key in values:
                 if key == "geometry":

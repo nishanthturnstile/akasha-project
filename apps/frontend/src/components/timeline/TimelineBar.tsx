@@ -16,6 +16,8 @@ interface TimelineBarProps {
     sourceKind?: SourceKind;
     /** Short sensor badge shown per chip when the underlying scene has no `sensor`. */
     sensorBadge?: string | null;
+    /** BFF-projected, source-global acquisition date. Must be strictly future UTC. */
+    nextExpectedAcquisitionDate?: string | null;
     loading: boolean;
     error: string | null;
     onRetry: () => void;
@@ -71,6 +73,7 @@ export function TimelineBar({
     onSelect,
     sourceKind,
     sensorBadge,
+    nextExpectedAcquisitionDate,
     loading,
     error,
     onRetry,
@@ -112,23 +115,20 @@ export function TimelineBar({
         return (latestUsable ?? selectable[selectable.length - 1]).acquisitionDate;
     }, [selectable]);
 
-    /** Project the next expected acquisition from the newest scene + source revisit cadence. */
+    /** Format the authoritative BFF projection and fail closed on stale values. */
     const nextImage = useMemo<{ iso: string; label: string } | null>(() => {
-        if (ordered.length === 0) return null;
-        if (sourceKind === 'archive') return null;
-        const newest = ordered[ordered.length - 1].acquisitionDate;
-        const cadenceDays = sourceKind === 'sar' ? 6 : sourceKind === 'context' ? 8 : 5;
-        const base = new Date(`${newest}T00:00:00Z`);
+        if (bestMode || !nextExpectedAcquisitionDate || sourceKind === 'archive') return null;
+        const todayIso = new Date().toISOString().slice(0, 10);
+        if (nextExpectedAcquisitionDate <= todayIso) return null;
+        const base = new Date(`${nextExpectedAcquisitionDate}T00:00:00Z`);
         if (Number.isNaN(base.getTime())) return null;
-        base.setUTCDate(base.getUTCDate() + cadenceDays);
-        const iso = base.toISOString().slice(0, 10);
         const months = [
             'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
         ];
         const label = `${months[base.getUTCMonth()]} ${base.getUTCDate()}, ${base.getUTCFullYear()}`;
-        return { iso, label };
-    }, [ordered, sourceKind]);
+        return { iso: nextExpectedAcquisitionDate, label };
+    }, [bestMode, nextExpectedAcquisitionDate, sourceKind]);
 
     // Keep the active chip in view when selection changes (e.g. source switch / jump).
     useEffect(() => {
@@ -295,17 +295,14 @@ export function TimelineBar({
                                 >
                                     <CalendarClock className="size-3.5" strokeWidth={ 1.75 } />
                                     <span>
-                                        <span className="hidden lg:inline">Next image </span>
+                                        <span className="hidden lg:inline">Next expected pass </span>
                                         <span className="font-mono tnum">{ nextImage.label }</span>
                                     </span>
                                 </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                                Projected next acquisition · { sourceKind === 'sar'
-                                    ? 'SAR revisit cadence varies by mission'
-                                    : sourceKind === 'context'
-                                      ? 'Context product cadence varies by source'
-                                      : 'Optical revisit cadence varies by source' }
+                                Expected source pass. Imagery appears only after provider publication,
+                                ingestion, and cloud/field quality checks.
                             </TooltipContent>
                         </Tooltip>
                     ) }

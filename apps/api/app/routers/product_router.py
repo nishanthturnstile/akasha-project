@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 import time
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from typing import Any
 
@@ -350,6 +350,44 @@ def _filter_source_dates(
     ]
 
 
+def _next_expected_acquisition_date(
+    latest_acquisition_date: str | None,
+    revisit_days: int | None,
+    *,
+    today: date | None = None,
+) -> str | None:
+    if not latest_acquisition_date or revisit_days is None or revisit_days <= 0:
+        return None
+    try:
+        candidate = date.fromisoformat(latest_acquisition_date) + timedelta(days=revisit_days)
+    except ValueError:
+        return None
+    effective_today = today or datetime.now(UTC).date()
+    if candidate <= effective_today:
+        elapsed_days = (effective_today - candidate).days
+        candidate += timedelta(days=((elapsed_days // revisit_days) + 1) * revisit_days)
+    return candidate.isoformat()
+
+
+def _expected_acquisition_payload(
+    source: dict[str, Any],
+    latest_acquisition_date: str | None,
+) -> dict[str, Any]:
+    revisit_days = source.get("revisitDays")
+    normalized_revisit_days = (
+        int(revisit_days)
+        if isinstance(revisit_days, int) and not isinstance(revisit_days, bool)
+        else None
+    )
+    return {
+        "revisitDays": normalized_revisit_days,
+        "nextExpectedAcquisitionDate": _next_expected_acquisition_date(
+            latest_acquisition_date,
+            normalized_revisit_days,
+        ),
+    }
+
+
 @router.get("/sources/{source_id}/dates")
 async def get_source_dates(
     source_id: str,
@@ -387,6 +425,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         return {
             "sourceId": source_id,
             "acquisitionDate": acquisition_date,
+            **_expected_acquisition_payload(source, acquisition_date),
             "displayMode": display_mode,
             "displayModes": source["displayModes"],
             "defaultDisplayMode": source["defaultDisplayMode"],
@@ -421,6 +460,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         return {
             "sourceId": source_id,
             "acquisitionDate": None,
+            **_expected_acquisition_payload(source, None),
             "displayMode": display_mode,
             "displayModes": source["displayModes"],
             "defaultDisplayMode": source["defaultDisplayMode"],
@@ -442,6 +482,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         }
     date = next((d for d in date_pool if d["isLatestUsable"]), date_pool[0])
     acquisition_date = date["acquisitionDate"]
+    latest_source_acquisition_date = dates[0]["acquisitionDate"] if dates else None
     items = catalog.items_for_date(source_id, acquisition_date)
     display_mode = str(source["defaultDisplayMode"])
     tile_url_template = (
@@ -452,6 +493,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     return {
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
+        **_expected_acquisition_payload(source, latest_source_acquisition_date),
         "displayMode": display_mode,
         "displayModes": source["displayModes"],
         "defaultDisplayMode": source["defaultDisplayMode"],

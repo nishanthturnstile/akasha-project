@@ -232,6 +232,7 @@ function stubAkashaFetch({
   defaultSourceId = 'resourcesat-2a-liss3-boa',
   bestCandidates,
   deferOverlay = false,
+  deferResourceSatDefaultLayer = false,
 }: {
   resourcesatDates?: SceneDate[];
   fieldResourcesatDates?: SceneDate[];
@@ -245,8 +246,10 @@ function stubAkashaFetch({
   /** When provided, /api/observations/best returns these candidates (best-mode tests). */
   bestCandidates?: ObservationCandidate[];
   deferOverlay?: boolean;
+  deferResourceSatDefaultLayer?: boolean;
 } = {}) {
   const overlayResolvers: Array<() => void> = [];
+  const resourceSatDefaultLayerResolvers: Array<() => void> = [];
   const overlayResponse = {
     ok: true,
     status: 200,
@@ -361,23 +364,31 @@ function stubAkashaFetch({
       }
 
       if (path.startsWith('/api/layers/default?sourceId=')) {
-        const sourceId = new URL(path, 'http://akasha.test').searchParams.get('sourceId');
-        return Promise.resolve(
-          jsonResponse({
-            sourceId,
-            acquisitionDate: sourceId === 'sentinel-2-l2a' ? '2026-03-20' : '2026-03-19',
-            displayMode: 'NDVI',
-            defaultDisplayMode: 'FCC',
-            mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
-            defaultMapDisplayMode: 'NDVI',
-            tileUrlTemplate: null,
-            minzoom: 0,
-            maxzoom: 14,
-            attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
-            usablePixelPercent: 90,
-            metricsProvisional: true,
-          }),
-        );
+        const sourceIdMatch = path.match(/[?&]sourceId=([^&]+)/);
+        const sourceId = sourceIdMatch ? decodeURIComponent(sourceIdMatch[1]) : '';
+        const response = jsonResponse({
+          sourceId,
+          acquisitionDate: sourceId === 'sentinel-2-l2a' ? '2026-03-20' : '2026-03-19',
+          revisitDays: sourceId === 'sentinel-2-l2a' ? 5 : 24,
+          nextExpectedAcquisitionDate:
+            sourceId === 'sentinel-2-l2a' ? '2099-07-18' : '2099-08-01',
+          displayMode: 'NDVI',
+          defaultDisplayMode: 'FCC',
+          mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+          defaultMapDisplayMode: 'NDVI',
+          tileUrlTemplate: null,
+          minzoom: 0,
+          maxzoom: 14,
+          attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
+          usablePixelPercent: 90,
+          metricsProvisional: true,
+        });
+        if (deferResourceSatDefaultLayer && sourceId === 'resourcesat-2a-liss3-boa') {
+          return new Promise((resolve) => {
+            resourceSatDefaultLayerResolvers.push(() => resolve(response));
+          });
+        }
+        return Promise.resolve(response);
       }
 
       if (path === '/api/fields') {
@@ -478,6 +489,9 @@ function stubAkashaFetch({
     resolveOverlayRequests: () => {
       overlayResolvers.splice(0).forEach((resolve) => resolve());
     },
+    resolveResourceSatDefaultLayerRequests: () => {
+      resourceSatDefaultLayerResolvers.splice(0).forEach((resolve) => resolve());
+    },
   };
 }
 
@@ -535,6 +549,10 @@ describe('MapPage source defaults', () => {
 
     renderMapPage();
 
+    await waitFor(() => {
+      expect(screen.getByTestId('timeline-next-image').textContent).toContain('Aug 1, 2099');
+    });
+
     fireEvent.click(await screen.findByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-sentinel-2-l2a'));
 
@@ -548,7 +566,25 @@ describe('MapPage source defaults', () => {
       expect(
         calls.some(([input]) => String(input).startsWith('/api/sources/sentinel-2-l2a/dates')),
       ).toBe(true);
+      expect(screen.getByTestId('timeline-next-image').textContent).toContain('Jul 18, 2099');
     });
+  });
+
+  it('ignores a late default-layer response from the previously selected source', async () => {
+    const controls = stubAkashaFetch({ deferResourceSatDefaultLayer: true });
+
+    renderMapPage();
+    fireEvent.click(await screen.findByTestId('layer-source-trigger'));
+    fireEvent.click(await screen.findByTestId('source-tab-sentinel-2-l2a'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('timeline-next-image').textContent).toContain('Jul 18, 2099');
+    });
+    controls.resolveResourceSatDefaultLayerRequests();
+    await waitFor(() => {
+      expect(screen.getByTestId('timeline-next-image').textContent).toContain('Jul 18, 2099');
+    });
+    expect(screen.getByTestId('timeline-next-image').textContent).not.toContain('Aug 1, 2099');
   });
 });
 

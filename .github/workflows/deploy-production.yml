@@ -35,6 +35,8 @@ jobs:
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       COOLIFY_SERVICE_UUID: ${{ vars.COOLIFY_PRODUCTION_SERVICE_UUID }}
       IMAGE_TAG: ${{ inputs.image_tag }}
+      ESRI_WEB_IMAGE_APPROVED_SHA: ${{ vars.ESRI_WEB_IMAGE_APPROVED_SHA }}
+      ESRI_WEB_IMAGE_CREDENTIAL_ID: ${{ vars.ESRI_WEB_IMAGE_CREDENTIAL_ID }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -51,12 +53,12 @@ jobs:
           test -n "$COOLIFY_API_URL" || { echo "COOLIFY_API_URL secret is required, including /api/v1."; exit 1; }
           test -n "$COOLIFY_TOKEN" || { echo "COOLIFY_TOKEN secret is required."; exit 1; }
           test -n "$COOLIFY_SERVICE_UUID" || { echo "COOLIFY_PRODUCTION_SERVICE_UUID repository variable is required."; exit 1; }
-          case "$IMAGE_TAG" in
-            [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
-            *) echo "image_tag must be an immutable Git SHA, not main/latest."; exit 1 ;;
-          esac
-          if [ "$IMAGE_TAG" = "main" ] || [ "$IMAGE_TAG" = "latest" ]; then
-            echo "Mutable image tags are not allowed for production."
+          credential_id="${ESRI_WEB_IMAGE_CREDENTIAL_ID//[[:space:]]/}"
+          [[ -n "$credential_id" ]] || { echo "ESRI_WEB_IMAGE_CREDENTIAL_ID is required in the protected production environment."; exit 1; }
+          [[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "image_tag must be a full 40-character lowercase Git SHA."; exit 1; }
+          [[ "$ESRI_WEB_IMAGE_APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "ESRI_WEB_IMAGE_APPROVED_SHA must be a full 40-character lowercase Git SHA."; exit 1; }
+          if [[ "$ESRI_WEB_IMAGE_APPROVED_SHA" != "$IMAGE_TAG" ]]; then
+            echo "The requested web image SHA is not approved for the production Esri referrer."
             exit 1
           fi
 

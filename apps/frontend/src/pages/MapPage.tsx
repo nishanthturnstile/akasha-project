@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
-import { AlertTriangle, Maximize, Minimize, RefreshCw, Satellite, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Satellite, Search } from 'lucide-react';
 import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
 import {
   useConfig,
@@ -427,29 +427,51 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     prevFocusNonce.current = focusNonce;
   }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, view]);
 
-  // Click the field boundary on the map → navigate to field analytics
+  // Field boundary interactions on the map:
+  //  - continuously reflect whether the pointer is over the field so the cursor is the
+  //    EOS-style flat cursor (default arrow in analytics, pointer on the full map)
+  //    instead of MapLibre's default grab hand.
+  //  - clicking the field opens its analytics.
+  // The cursor is driven from `mousemove` hit-testing rather than the layer's
+  // `mouseenter`/`mouseleave` because those only fire on transitions: when the pointer
+  // is already over the field as the boundary layer is (re)created — e.g. right after
+  // navigating to or focusing a field — `mouseenter` never fires and the cursor would
+  // stay a grab hand. Hit-testing every move keeps it correct with no lag.
   useEffect(() => {
     if (!map || !selectedPlotId) return;
+    const canvas = map.getCanvas();
+    const hoverCursor = simplifiedMapControls ? 'default' : 'pointer';
+
+    const isOverField = (event: maplibregl.MapMouseEvent) => {
+      if (!map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID)) return false;
+      return (
+        map.queryRenderedFeatures(event.point, {
+          layers: [FIELD_BOUNDARY_FILL_LAYER_ID],
+        }).length > 0
+      );
+    };
+
+    const moveHandler = (e: maplibregl.MapMouseEvent) => {
+      // While drawing/editing, let FieldDrawController own the cursor.
+      if (fieldMode) return;
+      canvas.style.cursor = isOverField(e) ? hoverCursor : '';
+    };
+    const leaveHandler = () => { canvas.style.cursor = ''; };
     const clickHandler = (e: maplibregl.MapMouseEvent) => {
-      const features = map.queryRenderedFeatures(e.point, { layers: [FIELD_BOUNDARY_FILL_LAYER_ID] });
-      if (features.length > 0) {
+      if (isOverField(e)) {
         navigate(`/monitoring/field-analytics/field/${selectedPlotId}`);
       }
     };
-    const enterHandler = () => { map.getCanvas().style.cursor = 'pointer'; };
-    const leaveHandler = () => { map.getCanvas().style.cursor = ''; };
+    map.on('mousemove', moveHandler);
+    map.on('mouseout', leaveHandler);
     map.on('click', clickHandler);
-    map.on('mouseenter', FIELD_BOUNDARY_FILL_LAYER_ID, enterHandler);
-    map.on('mouseleave', FIELD_BOUNDARY_FILL_LAYER_ID, leaveHandler);
     return () => {
+      map.off('mousemove', moveHandler);
+      map.off('mouseout', leaveHandler);
       map.off('click', clickHandler);
-      if (map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID)) {
-        map.off('mouseenter', FIELD_BOUNDARY_FILL_LAYER_ID, enterHandler);
-        map.off('mouseleave', FIELD_BOUNDARY_FILL_LAYER_ID, leaveHandler);
-      }
-      map.getCanvas().style.cursor = '';
+      canvas.style.cursor = '';
     };
-  }, [map, selectedPlotId, navigate]);
+  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
@@ -1027,9 +1049,10 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         </div>) }
 
       { overlaysVisible && topLeftCoords && (
-        <div className="absolute left-4 top-4 z-toolbar">
+        <div className="pointer-events-none absolute inset-0 z-popover">
           <CoordinateReadout
             map={ map }
+            interactiveLayerId={ FIELD_BOUNDARY_FILL_LAYER_ID }
             indexLookup={
               isIndexLayer && hasCurrentIndexOverlay && selectedPlot && selectedDate && requestSourceId
                 ? indexLookup
@@ -1080,7 +1103,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           onRequestTool={ requestMapTool }
           onReleaseTool={ releaseMapTool }
         /> }
-        { overlaysVisible && visible && legendOpen && (scene || indexOverlay) && (
+        { overlaysVisible && !simplifiedMapControls && visible && legendOpen && (scene || indexOverlay) && (
           <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } resolvedSourceId={ indexOverlay?.resolvedSourceId } />
         ) }
         <MapControls
@@ -1133,23 +1156,27 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
             onPeriodChange={ view.setPeriod }
             bestMode={ bestMode }
             onBestModeChange={ view.setBestMode }
+            compact
           />
         </div>
 
         { overlaysVisible && showFullscreen && (
-          /* Fullscreen card — same height as timeline bar */
+          /* Analytics drawer toggle — same height as the timeline bar. When the drawer is
+           * closed the map is fullscreen; opening it reveals the analytics panel below. */
           <div className="glass flex shrink-0 w-12 items-center justify-center rounded-md shadow-e2 min-h-[var(--timeline-height)]">
             <button
               type="button"
-              aria-label={ view.mapFullscreen ? 'Exit map fullscreen' : 'Enter map fullscreen' }
-              data-testid="map-fullscreen-btn"
+              aria-label={ view.mapFullscreen ? 'Show analytics' : 'Hide analytics' }
+              aria-expanded={ !view.mapFullscreen }
+              title={ view.mapFullscreen ? 'Show analytics' : 'Hide analytics' }
+              data-testid="analytics-drawer-toggle"
               onClick={ () => view.setMapFullscreen(!view.mapFullscreen) }
               className="flex items-center justify-center text-foreground/80 transition-colors duration-fast hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring size-full"
             >
               { view.mapFullscreen ? (
-                <Minimize className="size-4" strokeWidth={ 1.75 } />
+                <ChevronUp className="size-4" strokeWidth={ 1.75 } />
               ) : (
-                <Maximize className="size-4" strokeWidth={ 1.75 } />
+                <ChevronDown className="size-4" strokeWidth={ 1.75 } />
               ) }
             </button>
           </div>

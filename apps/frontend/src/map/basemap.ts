@@ -29,15 +29,27 @@ export class BasemapConfigurationError extends Error {
   }
 }
 
-export interface EsriBasemapResolvedConfig {
+interface EsriBasemapResolvedBase {
   provider: 'esri';
   apiKey: string;
   style: string;
   styleFamily: 'arcgis';
   places: BasemapPlacesPreference;
+}
+
+export interface EsriSessionBasemapResolvedConfig extends EsriBasemapResolvedBase {
+  usageModel: 'session';
   sessionDurationSeconds: number;
   refreshSafetyMarginSeconds: number;
 }
+
+export interface EsriTileBasemapResolvedConfig extends EsriBasemapResolvedBase {
+  usageModel: 'tile';
+}
+
+export type EsriBasemapResolvedConfig =
+  | EsriSessionBasemapResolvedConfig
+  | EsriTileBasemapResolvedConfig;
 
 export interface OsmBasemapResolvedConfig {
   provider: 'osm';
@@ -57,6 +69,12 @@ function envValue(value: string | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed || trimmed.startsWith('<')) return null;
   return trimmed;
+}
+
+function apiKeyValue(value: string | undefined): string | null {
+  const resolved = envValue(value);
+  if (!resolved || resolved.toUpperCase().startsWith('CHANGE_ME')) return null;
+  return resolved;
 }
 
 function resolvePlaces(value: string | undefined): BasemapPlacesPreference {
@@ -99,13 +117,14 @@ export function resolveBasemapConfig(config: AppConfig | undefined): ResolvedBas
       `Unsupported basemap provider "${provider}". Use "esri", "osm", or "empty".`,
     );
   }
-  if (serverConfig.usageModel !== 'session') {
+  const usageModel = serverConfig.usageModel;
+  if (usageModel !== 'session' && usageModel !== 'tile') {
     throw new BasemapConfigurationError(
-      `Unsupported Esri basemap usage model "${serverConfig.usageModel}". Use basemap sessions.`,
+      `Unsupported Esri basemap usage model "${usageModel}". Use "session" or "tile".`,
     );
   }
 
-  const apiKey = envValue(import.meta.env.VITE_ESRI_API_KEY);
+  const apiKey = apiKeyValue(import.meta.env.VITE_ESRI_API_KEY);
   if (!apiKey) {
     throw new BasemapConfigurationError(
       'Esri basemap is not configured. Set VITE_ESRI_API_KEY to a referrer-restricted ArcGIS Location Platform key with Basemaps privilege.',
@@ -121,7 +140,7 @@ export function resolveBasemapConfig(config: AppConfig | undefined): ResolvedBas
     );
   }
 
-  return {
+  const resolvedBase: EsriBasemapResolvedBase = {
     provider: 'esri',
     apiKey,
     style: style || DEFAULT_BASEMAP.style,
@@ -129,6 +148,15 @@ export function resolveBasemapConfig(config: AppConfig | undefined): ResolvedBas
     places: resolvePlaces(
       envValue(import.meta.env.VITE_ESRI_BASEMAP_PLACES) ?? serverConfig.places,
     ),
+  };
+
+  if (usageModel === 'tile') {
+    return { ...resolvedBase, usageModel };
+  }
+
+  return {
+    ...resolvedBase,
+    usageModel,
     sessionDurationSeconds: resolveSessionSeconds(
       envValue(import.meta.env.VITE_ESRI_BASEMAP_SESSION_SECONDS) ??
       serverConfig.sessionDurationSeconds,

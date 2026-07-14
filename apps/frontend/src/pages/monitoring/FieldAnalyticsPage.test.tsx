@@ -139,6 +139,7 @@ function renderPage() {
             overlaysVisible: true,
             activeSourceId: 'sentinel-2-l2a',
             selectedPlotId: 'field-1',
+            mapFullscreen: false,
           } }
         >
           <FieldAnalyticsPage />

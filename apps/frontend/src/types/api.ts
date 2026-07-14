@@ -12,7 +12,7 @@ export interface AoiConfig {
 }
 
 export type BasemapProvider = 'esri' | 'osm' | 'empty';
-export type BasemapUsageModel = 'session';
+export type BasemapUsageModel = 'session' | 'tile';
 export type BasemapPlacesPreference = 'all' | 'attributed' | 'none';
 
 export interface BasemapConfig {

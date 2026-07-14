@@ -52,6 +52,7 @@ export default function OnboardingFieldCreate() {
   const [fieldName, setFieldName] = useState('');
   const [drawResetKey] = useState(0);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
   const [initialised, setInitialised] = useState(false);
 
   const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
@@ -203,9 +204,18 @@ export default function OnboardingFieldCreate() {
           scene={ null }
           opacity={ 1 }
           visible={ true }
-          onBasemapError={ () => undefined }
+          onBasemapError={ setBasemapRuntimeError }
           onMapReady={ setMap }
         />
+
+        { basemapRuntimeError && (
+          <div
+            className="absolute left-1/2 top-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg"
+            data-testid="basemap-runtime-error"
+          >
+            Unable to load Esri basemap: { basemapRuntimeError.message }
+          </div>
+        ) }
 
         <FieldBoundaryLayer
           map={ map }

@@ -41,6 +41,14 @@ def _get_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
+def _get_choice(name: str, default: str, allowed: set[str]) -> str:
+    value = _get(name, default).strip().lower()
+    if value not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise RuntimeError(f"{name} must be one of: {choices}")
+    return value
+
+
 def _ingestion_signed_url_allowed_prefix() -> str:
     return (_get("INGESTION_SIGNED_URL_ALLOWED_PREFIX") or _get("INGESTION_API_URL", "")).rstrip(
         "/"
@@ -106,7 +114,9 @@ class Settings:
         default_factory=lambda: _get("ESRI_BASEMAP_STYLE_FAMILY", "arcgis")
     )
     esri_basemap_usage_model: str = field(
-        default_factory=lambda: _get("ESRI_BASEMAP_USAGE_MODEL", "session")
+        default_factory=lambda: _get_choice(
+            "ESRI_BASEMAP_USAGE_MODEL", "session", {"session", "tile"}
+        )
     )
     esri_basemap_places: str = field(default_factory=lambda: _get("ESRI_BASEMAP_PLACES", "none"))
     esri_basemap_session_seconds: int = field(

@@ -45,7 +45,11 @@ export interface MapViewState {
     pendingAction: 'create-field' | null;
     /** Monotonic counter bumped on explicit focus requests (bypasses duplicate guard). */
     focusNonce: number;
-    /** Map card fills available height, hiding bottom analytics panel. */
+    /**
+     * Map card fills available height, hiding the bottom analytics panel (drawer closed).
+     * Defaults to `true` so the analytics drawer stays closed on load and only opens when
+     * the user clicks the drawer toggle near the timeline.
+     */
     mapFullscreen: boolean;
     /** Timeline uses the best available observation resolver instead of one source's dates. */
     bestMode: boolean;
@@ -76,7 +80,7 @@ export const initialMapViewState: MapViewState = {
     bottomBarVisible: true,
     pendingAction: null,
     focusNonce: 0,
-    mapFullscreen: false,
+    mapFullscreen: true,
     bestMode: false,
 };
 

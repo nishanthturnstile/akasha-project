@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { BasemapStyle } from '@esri/maplibre-arcgis';
+import { BasemapStyle, type BasemapSession } from '@esri/maplibre-arcgis';
 import maplibregl from 'maplibre-gl';
 import type { ResolvedBasemapConfig } from '@/map/basemap';
 import { getSharedEsriBasemapSession } from '@/map/esriBasemapSession';
@@ -100,6 +100,25 @@ function setIndexOverlayOpacity(map: maplibregl.Map, opacity: number): void {
 
 function overlayKeyOf(overlay: IndexOverlay | null | undefined): string | null {
   return overlay ? `${overlay.url}|${overlay.coordinates.flat().join(',')}` : null;
+}
+
+type SafeBasemapError = Error & { code?: string | number };
+
+function sanitizeBasemapError(error: unknown, apiKey?: string): SafeBasemapError {
+  const source = error instanceof Error ? error : new Error(String(error));
+  let message = source.message;
+  if (apiKey) message = message.split(apiKey).join('[REDACTED]');
+  message = message
+    .replace(/([?&]token=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(/(Bearer\s+)[^\s]+/gi, '$1[REDACTED]');
+
+  const sanitized: SafeBasemapError = new Error(message);
+  sanitized.name = source.name || 'EsriBasemapError';
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string' || typeof code === 'number') sanitized.code = code;
+  }
+  return sanitized;
 }
 
 function sceneFitPadding(map: maplibregl.Map) {
@@ -216,6 +235,7 @@ export function MapLayerManager({
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
+    let activeEsriSession: BasemapSession | null = null;
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: EMPTY_MAP_STYLE,
@@ -245,29 +265,41 @@ export function MapLayerManager({
 
     const reportBasemapError = (error: unknown) => {
       if (disposed) return;
-      const normalized = error instanceof Error ? error : new Error(String(error));
-      console.error('Esri basemap error', normalized);
-      onBasemapError?.(normalized);
+      const sanitized = sanitizeBasemapError(
+        error,
+        basemap.provider === 'esri' ? basemap.apiKey : undefined,
+      );
+      console.error('Esri basemap error', sanitized);
+      onBasemapError?.(sanitized);
+    };
+
+    const reportSessionError = (error: Error) => {
+      reportBasemapError(error);
     };
 
     if (basemap.provider === 'esri') {
-      const session = getSharedEsriBasemapSession(basemap).catch((error: unknown) => {
-        reportBasemapError(error);
-        throw error;
-      });
-      void session.then((startedSession) => {
-        startedSession.on('BasemapSessionError', (error) => {
-          reportBasemapError(error);
-        });
-      }).catch(() => {
-        // Already reported above. Keep the rejection handled for React/browser logs.
-      });
-
-      const esriStyle = new BasemapStyle({
+      const styleOptions = {
         style: basemap.style,
-        session,
         preferences: { places: basemap.places },
-      });
+      };
+      let esriStyle: BasemapStyle;
+
+      if (basemap.usageModel === 'session') {
+        const session = getSharedEsriBasemapSession(basemap).catch((error: unknown) => {
+          reportBasemapError(error);
+          throw error;
+        });
+        void session.then((startedSession) => {
+          if (disposed) return;
+          activeEsriSession = startedSession;
+          startedSession.on('BasemapSessionError', reportSessionError);
+        }).catch(() => {
+          // Already reported above. Keep the rejection handled for React/browser logs.
+        });
+        esriStyle = new BasemapStyle({ ...styleOptions, session });
+      } else {
+        esriStyle = new BasemapStyle({ ...styleOptions, token: basemap.apiKey });
+      }
 
       esriStyle.on('BasemapStyleLoad', () => {
         map.once('styledata', applyOverlays);
@@ -287,6 +319,7 @@ export function MapLayerManager({
 
     return () => {
       disposed = true;
+      activeEsriSession?.off('BasemapSessionError', reportSessionError);
       loadedRef.current = false;
       map.remove();
       mapRef.current = null;

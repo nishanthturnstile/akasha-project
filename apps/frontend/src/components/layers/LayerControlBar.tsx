@@ -349,7 +349,7 @@ export function LayerControlBar({
 
     return (
         <div
-            className="glass pointer-events-auto flex max-w-[calc(100vw-5rem)] flex-wrap items-center justify-end gap-1 rounded-md px-1 py-1 shadow-e1"
+            className="glass pointer-events-auto flex max-w-[calc(100vw-7.5rem)] flex-wrap items-center justify-end gap-1 rounded-md px-1 py-1 shadow-e1 sm:max-w-[calc(100vw-5rem)]"
             data-testid="layer-control-bar"
             data-collapsed="false"
         >

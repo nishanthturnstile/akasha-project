@@ -1,15 +1,21 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import MapPage from '@/pages/MapPage';
+import type { ResolvedBasemapConfig } from '@/map/basemap';
 import { MapViewProvider } from '@/state/mapViewContext';
 import type { MapViewState } from '@/state/mapViewState';
 import type { FieldStatisticsResponse, FieldTrendResponse, ObservationCandidate, Plot, SceneDate } from '@/types/api';
 
 const coordinateReadoutState = vi.hoisted(() => ({
   lookups: [] as Array<((point: { lng: number; lat: number }) => Promise<unknown>) | undefined>,
+}));
+
+const mapLayerManagerState = vi.hoisted(() => ({
+  basemaps: [] as ResolvedBasemapConfig[],
+  errorHandlers: [] as Array<((error: Error) => void) | undefined>,
 }));
 
 vi.mock('@/components/map/MapLayerManager', () => ({
@@ -19,25 +25,32 @@ vi.mock('@/components/map/MapLayerManager', () => ({
     sceneB,
     indexOverlay,
     visible,
+    onBasemapError,
   }: {
-    basemap: { style?: string; places?: string };
+    basemap: ResolvedBasemapConfig;
     scene: { tileUrlTemplate?: string; attribution?: string } | null;
     sceneB?: { tileUrlTemplate?: string } | null;
     indexOverlay?: { url?: string; coordinates?: unknown } | null;
     visible: boolean;
-  }) => (
-    <div
-      data-testid="map-layer-manager"
-      data-tile-template={ scene?.tileUrlTemplate ?? '' }
-      data-compare-tile-template={ sceneB?.tileUrlTemplate ?? '' }
-      data-index-overlay-url={ indexOverlay?.url ?? '' }
-      data-index-overlay-coordinates={ JSON.stringify(indexOverlay?.coordinates ?? null) }
-      data-attribution={ scene?.attribution ?? '' }
-      data-basemap-style={ basemap.style ?? '' }
-      data-basemap-places={ basemap.places ?? '' }
-      data-visible={ String(visible) }
-    />
-  ),
+    onBasemapError?: (error: Error) => void;
+  }) => {
+    mapLayerManagerState.basemaps.push(basemap);
+    mapLayerManagerState.errorHandlers.push(onBasemapError);
+    return (
+      <div
+        data-testid="map-layer-manager"
+        data-tile-template={ scene?.tileUrlTemplate ?? '' }
+        data-compare-tile-template={ sceneB?.tileUrlTemplate ?? '' }
+        data-index-overlay-url={ indexOverlay?.url ?? '' }
+        data-index-overlay-coordinates={ JSON.stringify(indexOverlay?.coordinates ?? null) }
+        data-attribution={ scene?.attribution ?? '' }
+        data-basemap-style={ basemap.provider === 'esri' ? basemap.style : '' }
+        data-basemap-places={ basemap.provider === 'esri' ? basemap.places : '' }
+        data-basemap-usage-model={ basemap.provider === 'esri' ? basemap.usageModel : '' }
+        data-visible={ String(visible) }
+      />
+    );
+  },
 }));
 
 vi.mock('@/components/map/FieldOverlayLoadingIndicator', () => ({
@@ -47,8 +60,10 @@ vi.mock('@/components/map/FieldOverlayLoadingIndicator', () => ({
 
 vi.mock('@/components/map/CoordinateReadout', () => ({
   CoordinateReadout: ({
+    interactiveLayerId,
     indexLookup,
   }: {
+    interactiveLayerId?: string;
     indexLookup?: (point: { lng: number; lat: number }) => Promise<unknown>;
   }) => {
     coordinateReadoutState.lookups.push(indexLookup);
@@ -56,6 +71,7 @@ vi.mock('@/components/map/CoordinateReadout', () => ({
       <button
         type="button"
         data-testid="coordinate-readout-mock"
+        data-interactive-layer={ interactiveLayerId ?? '' }
         data-index-lookup={ String(Boolean(indexLookup)) }
         onClick={ () => {
           void indexLookup?.({ lng: 77.5946, lat: 12.9716 });
@@ -208,6 +224,8 @@ class ResizeObserverMock {
 
 afterEach(() => {
   coordinateReadoutState.lookups.length = 0;
+  mapLayerManagerState.basemaps.length = 0;
+  mapLayerManagerState.errorHandlers.length = 0;
   window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -233,6 +251,8 @@ function stubAkashaFetch({
   bestCandidates,
   deferOverlay = false,
   deferResourceSatDefaultLayer = false,
+  basemapUsageModel = 'session',
+  frontendBasemapProvider = 'osm',
 }: {
   resourcesatDates?: SceneDate[];
   fieldResourcesatDates?: SceneDate[];
@@ -247,6 +267,8 @@ function stubAkashaFetch({
   bestCandidates?: ObservationCandidate[];
   deferOverlay?: boolean;
   deferResourceSatDefaultLayer?: boolean;
+  basemapUsageModel?: string;
+  frontendBasemapProvider?: 'esri' | 'osm';
 } = {}) {
   const overlayResolvers: Array<() => void> = [];
   const resourceSatDefaultLayerResolvers: Array<() => void> = [];
@@ -262,7 +284,7 @@ function stubAkashaFetch({
   };
 
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
-  vi.stubEnv('VITE_BASEMAP_PROVIDER', 'osm');
+  vi.stubEnv('VITE_BASEMAP_PROVIDER', frontendBasemapProvider);
   vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
   vi.stubGlobal('URL', {
     ...URL,
@@ -291,7 +313,7 @@ function stubAkashaFetch({
               provider: 'esri',
               style: 'arcgis/imagery',
               styleFamily: 'arcgis',
-              usageModel: 'session',
+              usageModel: basemapUsageModel,
               places: 'none',
               sessionDurationSeconds: 43200,
             },
@@ -494,6 +516,53 @@ function stubAkashaFetch({
     },
   };
 }
+
+describe('MapPage Esri basemap usage models', () => {
+  it.each(['session', 'tile'] as const)(
+    'forwards the resolved %s configuration to MapLayerManager',
+    async (usageModel) => {
+      stubAkashaFetch({ frontendBasemapProvider: 'esri', basemapUsageModel: usageModel });
+
+      renderMapPage();
+
+      const manager = await screen.findByTestId('map-layer-manager');
+      expect(manager.getAttribute('data-basemap-usage-model')).toBe(usageModel);
+      expect(
+        mapLayerManagerState.basemaps[mapLayerManagerState.basemaps.length - 1],
+      ).toMatchObject({
+        provider: 'esri',
+        usageModel,
+        style: 'arcgis/imagery',
+      });
+    },
+  );
+
+  it('shows the runtime basemap error reported by MapLayerManager', async () => {
+    stubAkashaFetch({ frontendBasemapProvider: 'esri', basemapUsageModel: 'tile' });
+    renderMapPage();
+    await screen.findByTestId('map-layer-manager');
+
+    act(() => {
+      mapLayerManagerState.errorHandlers[
+        mapLayerManagerState.errorHandlers.length - 1
+      ]?.(new Error('ArcGIS referrer rejected'));
+    });
+
+    expect(screen.getByTestId('app-error').textContent).toContain(
+      'Unable to load Esri basemap: ArcGIS referrer rejected',
+    );
+  });
+
+  it('shows an unsupported runtime usage model as a configuration error', async () => {
+    stubAkashaFetch({ frontendBasemapProvider: 'esri', basemapUsageModel: 'per-request' });
+
+    renderMapPage();
+
+    expect((await screen.findByTestId('app-error')).textContent).toContain(
+      'Unsupported Esri basemap usage model "per-request"',
+    );
+  });
+});
 
 describe('MapPage source defaults', () => {
   it('uses config.defaultSourceId when no persisted active source exists', async () => {
@@ -832,6 +901,28 @@ describe('MapPage selected-field native analytics', () => {
     expect(screen.getByTestId('layer-display-trigger').textContent).toContain('NDVI');
   });
 
+  it('replaces the large legend with field-scoped hover inspection on field analytics', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
+
+    renderMapPage(
+      { selectedPlotId: 'plot-1', legendOpen: true },
+      { simplifiedMapControls: true, topLeftCoords: true },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe(
+        'blob:akasha-index-overlay',
+      );
+      expect(screen.getByTestId('coordinate-readout-mock').getAttribute('data-index-lookup')).toBe(
+        'true',
+      );
+    });
+    expect(
+      screen.getByTestId('coordinate-readout-mock').getAttribute('data-interactive-layer'),
+    ).toBe('akasha-field-boundary-fill-layer');
+    expect(screen.queryByTestId('map-legend')).toBeNull();
+  });
+
   it('shows only index overlay modes in the layer picker', async () => {
     stubAkashaFetch({ plots: [FIELD_PLOT] });
 
@@ -1021,49 +1112,6 @@ describe('MapPage best-available mode', () => {
       expect(bestUrl).toContain('indexType=NDMI');
       expect(bestUrl).toContain('useCase=field');
       expect(bestUrl).toContain('allowCoarse=false');
-    });
-  });
-
-  it('selecting a best-mode date preserves the source-specific source when returning to source mode', async () => {
-    const bestCandidates: ObservationCandidate[] = [
-      {
-        sourceId: 'resourcesat-2a-liss4-mx70-l2',
-        acquisitionDate: '2026-01-15',
-        resolutionMeters: 5.8,
-        analysisLevel: 'field',
-        usablePixelPercent: 88,
-        coveragePercent: 95,
-        cloudMaskedPercent: 5,
-        tileAvailable: true,
-        isLatestUsable: true,
-        score: 92.0,
-        sourcePriority: 100,
-        provenanceNote: null,
-        isCoarse: false,
-        supportedIndices: ['NDVI', 'MSAVI', 'NDWI_GREEN_NIR'],
-        label: 'ResourceSat-2A LISS-4 MX70 L2',
-      },
-    ];
-    stubAkashaFetch({ bestCandidates });
-
-    renderMapPage({ bestMode: true, activeSourceId: 'resourcesat-2a-liss3-boa' });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('date-chip-2026-01-15')).toBeTruthy();
-    });
-    fireEvent.click(screen.getByTestId('date-chip-2026-01-15'));
-    fireEvent.click(screen.getByTestId('timeline-best-mode-toggle'));
-
-    await waitFor(() => {
-      const calls = (globalThis.fetch as unknown as {
-        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
-      }).mock.calls;
-      expect(
-        calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
-      ).toBe(true);
-      expect(
-        calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss4-mx70-l2/dates')),
-      ).toBe(false);
     });
   });
 

@@ -156,6 +156,7 @@ export default function FieldCreatePage() {
   const [pendingFields, setPendingFields] = useState<PendingField[]>([]);
   const [isBatchSaving, setIsBatchSaving] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
   const [leaveAlertOpen, setLeaveAlertOpen] = useState(false);
   const [deleteAlertField, setDeleteAlertField] = useState<PendingField | null>(null);
   const [editingPendingField, setEditingPendingField] = useState<PendingField | null>(null);
@@ -478,9 +479,18 @@ export default function FieldCreatePage() {
             scene={ null }
             opacity={ 1 }
             visible={ true }
-            onBasemapError={ () => undefined }
+            onBasemapError={ setBasemapRuntimeError }
             onMapReady={ setMap }
           />
+
+          { basemapRuntimeError && (
+            <div
+              className="absolute left-1/2 top-4 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg"
+              data-testid="basemap-runtime-error"
+            >
+              Unable to load Esri basemap: { basemapRuntimeError.message }
+            </div>
+          ) }
 
           { draftGeometry && (
             <FieldBoundaryLayer

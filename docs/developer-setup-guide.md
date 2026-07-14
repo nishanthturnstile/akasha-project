@@ -743,7 +743,7 @@ make dev
 ### Map basemap does not load
 
 Local development should use OSM by default so repeated reloads do not consume
-ArcGIS Location Platform basemap sessions:
+ArcGIS Location Platform billable basemap usage:
 
 ```env
 VITE_BASEMAP_PROVIDER=osm
@@ -763,7 +763,20 @@ VITE_BASEMAP_PROVIDER=esri
 VITE_ESRI_API_KEY=<your referrer-restricted key with Basemaps privilege>
 ```
 
-Restart Vite after changing frontend env values.
+The billing model is not a Vite setting. The BFF returns it from `/api/config`.
+For deliberate local Esri validation, set this in `infra/docker/.env`:
+
+```env
+# Validate compatibility first.
+ESRI_BASEMAP_USAGE_MODEL=session
+
+# Then validate direct-token tile usage.
+# ESRI_BASEMAP_USAGE_MODEL=tile
+```
+
+Restart Vite after changing frontend env values. Recreate the API container after
+changing `ESRI_BASEMAP_USAGE_MODEL`. In tile mode, browser network tools must show
+the Basemap Styles request and no request whose path contains `/sessions/start`.
 
 ### Backend edit does not reload on Windows
 

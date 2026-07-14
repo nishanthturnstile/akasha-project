@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import type { EsriBasemapResolvedConfig } from '@/map/basemap';
@@ -7,10 +7,15 @@ import { resetSharedEsriBasemapSessionForTests } from '@/map/esriBasemapSession'
 const hoisted = vi.hoisted(() => ({
   mapHandlers: new Map<string, Array<(...args: unknown[]) => void>>(),
   mapOnceHandlers: new Map<string, Array<(...args: unknown[]) => void>>(),
+  layerIds: new Set<string>(),
   applyStyle: vi.fn(),
   createBasemapStyle: vi.fn(),
+  createMap: vi.fn(),
   startSession: vi.fn(),
   setStyle: vi.fn(),
+  addSource: vi.fn(),
+  addLayer: vi.fn(),
+  setPaintProperty: vi.fn(),
   applySatelliteLayer: vi.fn(),
   applyCompareLayer: vi.fn(),
   removeCompareLayer: vi.fn(),
@@ -46,7 +51,9 @@ vi.mock('@esri/maplibre-arcgis', () => ({
 
 vi.mock('maplibre-gl', () => {
   class MapMock {
-    constructor() {}
+    constructor() {
+      hoisted.createMap();
+    }
     addControl = vi.fn();
     on = vi.fn((eventName: string, handler: (...args: unknown[]) => void) => {
       const handlers = hoisted.mapHandlers.get(eventName) ?? [];
@@ -59,6 +66,18 @@ vi.mock('maplibre-gl', () => {
       hoisted.mapOnceHandlers.set(eventName, handlers);
     });
     setStyle = hoisted.setStyle;
+    getLayer = vi.fn((id: string) => (hoisted.layerIds.has(id) ? {} : undefined));
+    getSource = vi.fn(() => undefined);
+    addSource = hoisted.addSource;
+    addLayer = vi.fn((layer: { id: string }) => {
+      hoisted.addLayer(layer);
+      hoisted.layerIds.add(layer.id);
+    });
+    removeLayer = vi.fn((id: string) => {
+      hoisted.layerIds.delete(id);
+    });
+    removeSource = vi.fn();
+    setPaintProperty = hoisted.setPaintProperty;
     remove = vi.fn();
     getCanvas = vi.fn(() => ({ clientWidth: 800, clientHeight: 600 }));
     getBounds = vi.fn(() => ({
@@ -93,10 +112,24 @@ const BASEMAP: EsriBasemapResolvedConfig = {
   apiKey: 'AAPK_TEST_BASEMAP_KEY',
   style: 'arcgis/imagery',
   styleFamily: 'arcgis',
+  usageModel: 'session',
   places: 'none',
   sessionDurationSeconds: 43_200,
   refreshSafetyMarginSeconds: 300,
 };
+
+const TILE_BASEMAP: EsriBasemapResolvedConfig = {
+  provider: 'esri',
+  apiKey: 'AAPK_TEST_BASEMAP_KEY',
+  style: 'arcgis/imagery',
+  styleFamily: 'arcgis',
+  usageModel: 'tile',
+  places: 'none',
+};
+
+function sessionMock() {
+  return { on: vi.fn(), off: vi.fn() };
+}
 
 const OSM_BASEMAP = {
   provider: 'osm',
@@ -111,10 +144,15 @@ afterEach(() => {
   resetSharedEsriBasemapSessionForTests();
   hoisted.mapHandlers.clear();
   hoisted.mapOnceHandlers.clear();
+  hoisted.layerIds.clear();
   hoisted.applyStyle.mockReset();
   hoisted.createBasemapStyle.mockReset();
+  hoisted.createMap.mockReset();
   hoisted.startSession.mockReset();
   hoisted.setStyle.mockReset();
+  hoisted.addSource.mockReset();
+  hoisted.addLayer.mockReset();
+  hoisted.setPaintProperty.mockReset();
   hoisted.applySatelliteLayer.mockReset();
   hoisted.applyCompareLayer.mockReset();
   hoisted.removeCompareLayer.mockReset();
@@ -125,9 +163,7 @@ afterEach(() => {
 
 describe('MapLayerManager Esri basemap lifecycle', () => {
   it('starts one Esri session, applies imagery with places disabled, and waits before overlays', async () => {
-    const session = {
-      on: vi.fn(),
-    };
+    const session = sessionMock();
     hoisted.startSession.mockResolvedValue(session);
     hoisted.applyStyle.mockReturnValue({});
 
@@ -171,7 +207,7 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
   });
 
   it('swaps Akasha overlay scenes without reapplying the Esri basemap', async () => {
-    hoisted.startSession.mockResolvedValue({ on: vi.fn() });
+    hoisted.startSession.mockResolvedValue(sessionMock());
     hoisted.applyStyle.mockReturnValue({});
 
     const { rerender } = render(
@@ -208,7 +244,7 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
   });
 
   it('reuses one Esri session across equivalent map mounts in the same runtime', async () => {
-    hoisted.startSession.mockResolvedValue({ on: vi.fn() });
+    hoisted.startSession.mockResolvedValue(sessionMock());
     hoisted.applyStyle.mockReturnValue({});
 
     const first = render(
@@ -237,6 +273,210 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
 
     await waitFor(() => expect(hoisted.applyStyle).toHaveBeenCalledTimes(2));
     expect(hoisted.startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the API key directly in tile mode without starting a basemap session', async () => {
+    hoisted.applyStyle.mockReturnValue({});
+
+    render(
+      <MapLayerManager
+        basemap={ TILE_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ { tileUrlTemplate: '/api/tiles/tile/{z}/{x}/{y}.png' } }
+        opacity={ 0.8 }
+        visible
+      />,
+    );
+
+    expect(hoisted.startSession).not.toHaveBeenCalled();
+    expect(hoisted.createBasemapStyle).toHaveBeenCalledWith({
+      style: 'arcgis/imagery',
+      token: 'AAPK_TEST_BASEMAP_KEY',
+      preferences: { places: 'none' },
+    });
+    await waitFor(() => expect(hoisted.applyStyle).toHaveBeenCalledTimes(1));
+
+    basemapStyleHandlers.BasemapStyleLoad?.();
+    triggerMapEvent('styledata');
+    expect(hoisted.applySatelliteLayer).toHaveBeenCalledWith(
+      expect.anything(),
+      { tileUrlTemplate: '/api/tiles/tile/{z}/{x}/{y}.png' },
+      { opacity: 0.8, visible: true },
+    );
+  });
+
+  it('does not recreate the tile basemap when Akasha layer state changes', async () => {
+    hoisted.applyStyle.mockReturnValue({});
+    const { rerender } = render(
+      <MapLayerManager
+        basemap={ TILE_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ { tileUrlTemplate: '/api/tiles/a/{z}/{x}/{y}.png' } }
+        sceneB={ null }
+        indexOverlay={ null }
+        opacity={ 1 }
+        visible
+      />,
+    );
+    await waitFor(() => expect(hoisted.applyStyle).toHaveBeenCalledTimes(1));
+    basemapStyleHandlers.BasemapStyleLoad?.();
+    triggerMapEvent('styledata');
+
+    rerender(
+      <MapLayerManager
+        basemap={ TILE_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ { tileUrlTemplate: '/api/tiles/b/{z}/{x}/{y}.png' } }
+        sceneB={ { tileUrlTemplate: '/api/tiles/compare/{z}/{x}/{y}.png' } }
+        indexOverlay={ {
+          url: '/api/fields/f/overlay/NDVI.png',
+          coordinates: [[77, 13], [78, 13], [78, 12], [77, 12]],
+        } }
+        opacity={ 0.5 }
+        visible={ false }
+      />,
+    );
+
+    expect(hoisted.createMap).toHaveBeenCalledTimes(1);
+    expect(hoisted.createBasemapStyle).toHaveBeenCalledTimes(1);
+    expect(hoisted.applyStyle).toHaveBeenCalledTimes(1);
+    expect(hoisted.startSession).not.toHaveBeenCalled();
+    expect(hoisted.applySatelliteLayer).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { tileUrlTemplate: '/api/tiles/b/{z}/{x}/{y}.png' },
+      { opacity: 0.5, visible: false },
+    );
+    expect(hoisted.applyCompareLayer).toHaveBeenCalledWith(
+      expect.anything(),
+      { tileUrlTemplate: '/api/tiles/compare/{z}/{x}/{y}.png' },
+    );
+    expect(hoisted.addSource).toHaveBeenCalledWith(
+      'akasha-index-overlay',
+      expect.objectContaining({
+        type: 'image',
+        url: '/api/fields/f/overlay/NDVI.png',
+      }),
+    );
+    expect(hoisted.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'akasha-index-overlay-layer', type: 'raster' }),
+    );
+    expect(hoisted.setPaintProperty).toHaveBeenCalledWith(
+      'akasha-index-overlay-layer',
+      'raster-opacity',
+      0,
+    );
+    expect(hoisted.setSatelliteVisibility).toHaveBeenLastCalledWith(
+      expect.anything(),
+      false,
+      0.5,
+    );
+  });
+
+  it('sanitizes vendor authentication state before logging or reporting errors', () => {
+    const onBasemapError = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const vendorError = Object.assign(
+      new Error(`Request failed?token=${TILE_BASEMAP.apiKey}`),
+      {
+        code: 'ARC_REQUEST_FAILED',
+        options: { authentication: { key: TILE_BASEMAP.apiKey } },
+      },
+    );
+
+    render(
+      <MapLayerManager
+        basemap={ TILE_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+        onBasemapError={ onBasemapError }
+      />,
+    );
+
+    basemapStyleHandlers.BasemapStyleError?.(vendorError);
+
+    const reported = onBasemapError.mock.calls[0][0] as Error & { code?: string };
+    expect(reported).not.toBe(vendorError);
+    expect(reported.message).toBe('Request failed?token=[REDACTED]');
+    expect(reported.message).not.toContain(TILE_BASEMAP.apiKey);
+    expect(reported.code).toBe('ARC_REQUEST_FAILED');
+    expect('options' in reported).toBe(false);
+    expect(consoleError).toHaveBeenCalledWith('Esri basemap error', reported);
+    expect(consoleError.mock.calls.flat()).not.toContain(vendorError);
+
+    consoleError.mockRestore();
+  });
+
+  it('does not attach a session error listener after unmounting before resolution', async () => {
+    let resolveSession!: (session: ReturnType<typeof sessionMock>) => void;
+    const session = sessionMock();
+    hoisted.startSession.mockReturnValue(new Promise((resolve) => {
+      resolveSession = resolve;
+    }));
+    hoisted.applyStyle.mockReturnValue({});
+
+    const mounted = render(
+      <MapLayerManager
+        basemap={ BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+      />,
+    );
+    mounted.unmount();
+
+    await act(async () => {
+      resolveSession(session);
+      await Promise.resolve();
+    });
+
+    expect(session.on).not.toHaveBeenCalled();
+    expect(session.off).not.toHaveBeenCalled();
+  });
+
+  it('removes shared-session error listeners between sequential map mounts', async () => {
+    const session = sessionMock();
+    hoisted.startSession.mockResolvedValue(session);
+    hoisted.applyStyle.mockReturnValue({});
+
+    const first = render(
+      <MapLayerManager
+        basemap={ BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+      />,
+    );
+    await waitFor(() => expect(session.on).toHaveBeenCalledTimes(1));
+    const firstHandler = session.on.mock.calls[0][1];
+    first.unmount();
+    expect(session.off).toHaveBeenCalledWith('BasemapSessionError', firstHandler);
+
+    const second = render(
+      <MapLayerManager
+        basemap={ BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+      />,
+    );
+    await waitFor(() => expect(session.on).toHaveBeenCalledTimes(2));
+    const secondHandler = session.on.mock.calls[1][1];
+    expect(secondHandler).not.toBe(firstHandler);
+    second.unmount();
+    expect(session.off).toHaveBeenCalledWith('BasemapSessionError', secondHandler);
+    expect(session.off).toHaveBeenCalledTimes(2);
   });
 
   it('uses an OSM raster style without starting an Esri session and still applies overlays', () => {

@@ -35,6 +35,8 @@ interface TimelineBarProps {
     bestMode?: boolean;
     /** When provided, renders a Best / Source toggle button. */
     onBestModeChange?: (on: boolean) => void;
+    /** Compact single-row filmstrip: shorter chips with no per-chip badge line. */
+    compact?: boolean;
 }
 
 function NoteRow({
@@ -85,6 +87,7 @@ export function TimelineBar({
     onPeriodChange,
     bestMode = false,
     onBestModeChange,
+    compact = false,
 }: TimelineBarProps) {
     const trackRef = useRef<HTMLDivElement | null>(null);
     const selectedRef = useRef<HTMLButtonElement | null>(null);
@@ -170,7 +173,10 @@ export function TimelineBar({
         content = (
             <div className="flex gap-1.5" data-testid="timeline-loading">
                 { [0, 1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={ i } className="h-11 w-[62px] shrink-0 rounded-md" />
+                    <Skeleton
+                        key={ i }
+                        className={ cn('shrink-0 rounded-md', compact ? 'h-9 w-[54px]' : 'h-11 w-[62px]') }
+                    />
                 )) }
             </div>
         );
@@ -210,24 +216,31 @@ export function TimelineBar({
                 tabIndex={ 0 }
                 onKeyDown={ handleKeyDown }
                 data-testid="timeline-track"
-                className="flex snap-x gap-1.5 overflow-x-auto py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="snap-x overflow-x-auto py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-                { visible.map((d) => {
-                    const selected = d.acquisitionDate === selectedDate;
-                    return (
-                        <DateChip
-                            key={ d.acquisitionDate }
-                            ref={ selected ? selectedRef : undefined }
-                            date={ d }
-                            selected={ selected }
-                            sourceKind={ sourceKind }
-                            sensorBadge={ bestMode ? null : (sensorBadge ?? undefined) }
-                            provenanceLabel={ bestMode ? (d.provenanceLabel ?? null) : null }
-                            onSelect={ () => onSelect(d.acquisitionDate) }
-                            onPrefetch={ onPrefetchDate ? () => onPrefetchDate(d.acquisitionDate) : undefined }
-                        />
-                    );
-                }) }
+                {/* Inner flex sizes to its content (w-max) but is at least full-width
+                    (min-w-full): few chips right-align on large screens (empty space on the
+                    left); when dates overflow it grows past 100% so the outer container
+                    scrolls normally from the left with every chip reachable. */}
+                <div className="flex w-max min-w-full gap-1.5 lg:justify-end">
+                    { visible.map((d) => {
+                        const selected = d.acquisitionDate === selectedDate;
+                        return (
+                            <DateChip
+                                key={ d.acquisitionDate }
+                                ref={ selected ? selectedRef : undefined }
+                                date={ d }
+                                selected={ selected }
+                                sourceKind={ sourceKind }
+                                sensorBadge={ bestMode ? null : (sensorBadge ?? undefined) }
+                                provenanceLabel={ bestMode ? (d.provenanceLabel ?? null) : null }
+                                compact={ compact }
+                                onSelect={ () => onSelect(d.acquisitionDate) }
+                                onPrefetch={ onPrefetchDate ? () => onPrefetchDate(d.acquisitionDate) : undefined }
+                            />
+                        );
+                    }) }
+                </div>
             </div>
         );
     }
@@ -238,7 +251,7 @@ export function TimelineBar({
             data-testid="timeline-bar"
             className="glass pointer-events-auto z-panel min-h-[var(--timeline-height)] animate-panel-in overflow-hidden px-2 py-1"
         >
-            <div className="flex min-h-12 items-center gap-2">
+            <div className={ cn('flex items-center gap-2', compact ? 'min-h-9' : 'min-h-12') }>
                 { onPeriodChange && (
                     <CalendarRangePicker
                         from={ periodFrom ?? null }
@@ -262,8 +275,8 @@ export function TimelineBar({
                     </div>
                 ) }
                 <div className="min-w-0 flex-1">{ content }</div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                    { onBestModeChange && (
+                <div className={ cn('flex shrink-0 items-center', compact ? 'gap-1' : 'gap-1.5') }>
+                    { !compact && onBestModeChange && (
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -291,11 +304,14 @@ export function TimelineBar({
                                 <span
                                     role="status"
                                     data-testid="timeline-next-image"
-                                    className="hidden h-8 items-center gap-1 rounded-md border border-border/60 bg-card/40 px-2 text-[13px] text-muted-foreground md:inline-flex"
+                                    className={ cn(
+                                        'hidden h-8 items-center gap-1 rounded-md border border-border/60 bg-card/40 text-muted-foreground md:inline-flex',
+                                        compact ? 'px-1.5 text-[12px]' : 'px-2 text-[13px]',
+                                    ) }
                                 >
                                     <CalendarClock className="size-3.5" strokeWidth={ 1.75 } />
                                     <span>
-                                        <span className="hidden lg:inline">Next expected pass </span>
+                                        { !compact && <span className="hidden lg:inline">Next expected pass </span> }
                                         <span className="font-mono tnum">{ nextImage.label }</span>
                                     </span>
                                 </span>
@@ -324,7 +340,7 @@ export function TimelineBar({
                         className="h-8 px-2"
                     >
                         <ChevronsRight className="size-4" strokeWidth={ 1.75 } />
-                        <span className="hidden sm:inline">Latest</span>
+                        <span className={ cn(compact ? 'hidden' : 'hidden sm:inline') }>Latest</span>
                     </Button>
                 </div>
             </div>

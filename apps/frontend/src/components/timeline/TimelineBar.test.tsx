@@ -33,6 +33,7 @@ function renderBar(props: Partial<React.ComponentProps<typeof TimelineBar>> = {}
                 onSelect={ props.onSelect ?? vi.fn() }
                 sourceKind={ props.sourceKind ?? 'optical' }
                 sensorBadge={ props.sensorBadge ?? null }
+                nextExpectedAcquisitionDate={ props.nextExpectedAcquisitionDate ?? null }
                 loading={ props.loading ?? false }
                 error={ props.error ?? null }
                 onRetry={ props.onRetry ?? vi.fn() }
@@ -80,29 +81,71 @@ describe('TimelineBar — date navigation behavior', () => {
         expect(screen.getByTestId('timeline-empty-period')).toBeTruthy();
     });
 
-    it('projects the next image using a 5-day cadence for optical sources', () => {
-        renderBar();
-        const next = screen.getByTestId('timeline-next-image');
-        // Latest is 2026-05-11 → +5d → May 16, 2026.
-        expect(next.textContent).toContain('May 16, 2026');
+    it('renders the BFF-projected strictly future expected pass', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-07-14T12:00:00Z'));
+        try {
+            renderBar({ nextExpectedAcquisitionDate: '2026-07-18' });
+            const next = screen.getByTestId('timeline-next-image');
+            expect(next.textContent).toContain('Next expected pass');
+            expect(next.textContent).toContain('Jul 18, 2026');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
-    it('projects the next image using a 6-day cadence for SAR sources', () => {
-        renderBar({ sourceKind: 'sar' });
-        const next = screen.getByTestId('timeline-next-image');
-        // 2026-05-11 → +6d → May 17, 2026.
-        expect(next.textContent).toContain('May 17, 2026');
+    it('does not infer a pass from historical field dates', () => {
+        renderBar({ nextExpectedAcquisitionDate: null });
+        expect(screen.queryByTestId('timeline-next-image')).toBeNull();
     });
 
-    it('projects the next image using an 8-day cadence for context sources', () => {
-        renderBar({ sourceKind: 'context' });
-        const next = screen.getByTestId('timeline-next-image');
-        // 2026-05-11 -> +8d -> May 19, 2026.
-        expect(next.textContent).toContain('May 19, 2026');
+    it('fails closed when the BFF projection is today or in the past', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-07-14T12:00:00Z'));
+        try {
+            const { rerender } = renderBar({ nextExpectedAcquisitionDate: '2026-05-17' });
+            expect(screen.queryByTestId('timeline-next-image')).toBeNull();
+            rerender(
+                <TooltipProvider>
+                    <TimelineBar
+                        dates={ dates }
+                        selectedDate="2026-05-11"
+                        onSelect={ vi.fn() }
+                        sourceKind="optical"
+                        nextExpectedAcquisitionDate="2026-07-14"
+                        loading={ false }
+                        error={ null }
+                        onRetry={ vi.fn() }
+                    />
+                </TooltipProvider>,
+            );
+            expect(screen.queryByTestId('timeline-next-image')).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
-    it('does not project a next image for archive sources', () => {
-        renderBar({ sourceKind: 'archive' });
+    it('does not show an expected pass for archive or best-available mode', () => {
+        const { rerender } = renderBar({
+            sourceKind: 'archive',
+            nextExpectedAcquisitionDate: '2099-07-18',
+        });
+        expect(screen.queryByTestId('timeline-next-image')).toBeNull();
+        rerender(
+            <TooltipProvider>
+                <TimelineBar
+                    dates={ dates }
+                    selectedDate="2026-05-11"
+                    onSelect={ vi.fn() }
+                    sourceKind="optical"
+                    nextExpectedAcquisitionDate="2099-07-18"
+                    loading={ false }
+                    error={ null }
+                    onRetry={ vi.fn() }
+                    bestMode
+                />
+            </TooltipProvider>,
+        );
         expect(screen.queryByTestId('timeline-next-image')).toBeNull();
     });
 

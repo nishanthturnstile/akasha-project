@@ -1113,6 +1113,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
             onSelect={ bestMode ? handleBestDateSelect : view.setDate }
             sourceKind={ bestMode ? undefined : activeSourceKind }
             sensorBadge={ bestMode ? null : sensorBadgeForSource(selectedSource) }
+            nextExpectedAcquisitionDate={
+              !bestMode && defaultLayerQ.data?.sourceId === effectiveSourceId
+                ? (defaultLayerQ.data?.nextExpectedAcquisitionDate ?? null)
+                : null
+            }
             loading={ bestMode ? bestObsQ.isLoading : datesQ.isLoading }
             error={
               bestMode

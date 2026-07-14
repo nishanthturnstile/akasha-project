@@ -143,6 +143,11 @@ def test_sentinel_default_layer_uses_pipeline_readiness(monkeypatch) -> None:
         "list_dates",
         lambda *_args, **_kw: pytest.fail("native Sentinel date fallback"),
     )
+    monkeypatch.setattr(
+        product_router,
+        "_next_expected_acquisition_date",
+        lambda latest, revisit: "2026-07-18" if latest == "2026-03-20" and revisit == 5 else None,
+    )
 
     response = client.get(
         f"/api/layers/default?sourceId={catalog.SENTINEL_2_SOURCE_ID}"
@@ -152,6 +157,8 @@ def test_sentinel_default_layer_uses_pipeline_readiness(monkeypatch) -> None:
     body = response.json()
     assert body["sourceId"] == catalog.SENTINEL_2_SOURCE_ID
     assert body["acquisitionDate"] == "2026-03-20"
+    assert body["revisitDays"] == 5
+    assert body["nextExpectedAcquisitionDate"] == "2026-07-18"
     assert body["pipelineBacked"] is True
     assert body["tileRouteMode"] == "field-overlay"
     assert body["tileUrlTemplate"] is None

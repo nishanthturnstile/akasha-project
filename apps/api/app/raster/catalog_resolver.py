@@ -71,6 +71,11 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         ],
         "description": "Optical Sentinel-2 L2A surface reflectance with cloud/SCL masking.",
         "attribution": "Copernicus Sentinel-2",
+        "revisitDays": 5,
+        "refreshPolicy": (
+            "Daily standalone-ingestion discovery over the latest seven complete provider days; "
+            "only scenes with known cloud at or below 20% enter processing."
+        ),
         "dateMetricsKind": "optical",
         "defaultRescale": "0,3000",
         "tileRouteMode": "rgb",
@@ -114,6 +119,7 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
         "tileRouteMode": "fcc",
         "resolutionMeters": 24,
         "analysisLevel": "field",
+        "revisitDays": 24,
         "refreshPolicy": "Daily Bhoonidhi search; BOA products lag acquisition by about 5 days.",
         "limitations": [
             "False-colour composite only; LISS-3 has no blue band.",
@@ -176,6 +182,7 @@ _SOURCE_REGISTRY.update(
             "tileRouteMode": "fcc",
             "resolutionMeters": 56,
             "analysisLevel": "regional",
+            "revisitDays": 5,
             "refreshPolicy": (
                 "Scheduler-active Bhoonidhi ingestion; regional composites use a 60% "
                 "minimum usable-coverage threshold."
@@ -233,6 +240,7 @@ _SOURCE_REGISTRY.update(
             "tileRouteMode": "fcc",
             "resolutionMeters": 5.8,
             "analysisLevel": "field",
+            "revisitDays": 5,
             "refreshPolicy": (
                 "Bhoonidhi search on the ~5-day LISS-4 MX revisit cadence; L2 products may "
                 "lag acquisition."
@@ -270,6 +278,7 @@ _SOURCE_REGISTRY.update(
             "tileRouteMode": "context",
             "resolutionMeters": 360,
             "analysisLevel": "regional",
+            "revisitDays": 8,
             "refreshPolicy": "Gated; context only, not field-level analytics.",
             "limitations": ["Precomputed NDVI only; not raw reflectance for plot statistics."],
             "maskMethod": None,
@@ -518,6 +527,7 @@ def source_payload(source_id: str) -> dict[str, Any]:
         "tileRouteMode": source["tileRouteMode"],
         "resolutionMeters": source.get("resolutionMeters"),
         "analysisLevel": source.get("analysisLevel"),
+        "revisitDays": source.get("revisitDays"),
         "refreshPolicy": source.get("refreshPolicy"),
         "limitations": list(source.get("limitations", [])),
         "maskMethod": source.get("maskMethod"),

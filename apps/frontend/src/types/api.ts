@@ -121,6 +121,7 @@ export interface Source {
   limitations?: string[];
   metricsProvisional?: boolean;
   resolutionMeters?: number | null;
+  revisitDays?: number | null;
   analysisLevel?: SourceAnalysisLevel;
   availabilityStatus?: SourceAvailabilityStatus;
   gatedReason?: string | null;
@@ -584,6 +585,8 @@ export interface BestObservationsParams {
 export interface DefaultLayer {
   sourceId: string;
   acquisitionDate: string | null;
+  revisitDays?: number | null;
+  nextExpectedAcquisitionDate?: string | null;
   displayMode?: string;
   kind?: SourceKind;
   displayModes?: string[];

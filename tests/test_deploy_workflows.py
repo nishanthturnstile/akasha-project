@@ -1,3 +1,6 @@
+import os
+import shlex
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -47,13 +50,29 @@ def _python_heredocs(run: str) -> list[str]:
     return snippets
 
 
+def _run_bash_step(script: str, values: dict[str, str]) -> subprocess.CompletedProcess[bytes]:
+    exported = "\n".join(
+        f"export {name}={shlex.quote(value)}" for name, value in values.items()
+    )
+    payload = f"set -euo pipefail\n{exported}\n{script}"
+    return subprocess.run(
+        ["bash"],
+        check=False,
+        capture_output=True,
+        input=payload.encode(),
+        env={**os.environ, **values},
+    )
+
+
 def test_staging_deploy_verifies_all_images_before_coolify_patch():
     workflow = _workflow("deploy-staging.yml")
+    validate_job = workflow["jobs"]["validate-web-basemap-config"]
     build_job = workflow["jobs"]["build-images"]
     deploy_job = workflow["jobs"]["deploy-staging"]
     step_names = _step_names(deploy_job)
     verify_step = _step(deploy_job, "Verify immutable image tags exist")
 
+    assert build_job["needs"] == "validate-web-basemap-config"
     assert deploy_job["needs"] == "build-images"
     assert deploy_job["env"]["IMAGE_TAG"] == "${{ github.sha }}"
     assert "Log in to GHCR for image verification" in step_names
@@ -65,6 +84,56 @@ def test_staging_deploy_verifies_all_images_before_coolify_patch():
         assert image in verify_step["run"]
         assert any(item["image"] == image for item in build_job["strategy"]["matrix"]["include"])
 
+    validate_step = _step(validate_job, "Validate hosted basemap build settings")
+    validate_names = _step_names(validate_job)
+    build_names = _step_names(build_job)
+    assert validate_job["env"]["VITE_ESRI_API_KEY"] == "${{ vars.VITE_ESRI_API_KEY || '' }}"
+    assert build_job["env"]["VITE_ESRI_API_KEY"] == "${{ vars.VITE_ESRI_API_KEY || '' }}"
+    assert validate_names.index("Mask Esri public key") < validate_names.index(
+        "Validate hosted basemap build settings"
+    )
+    assert build_names.index("Mask Esri public key") < build_names.index("Build and push image")
+    assert "::add-mask::$VITE_ESRI_API_KEY" in _step(
+        validate_job, "Mask Esri public key"
+    )["run"]
+    assert "::add-mask::$VITE_ESRI_API_KEY" in _step(build_job, "Mask Esri public key")["run"]
+    web_matrix_args = next(
+        item["build_args"]
+        for item in build_job["strategy"]["matrix"]["include"]
+        if item["image"] == "akasha-web"
+    )
+    assert "${{ env." not in web_matrix_args
+    build_step = _step(build_job, "Build and push image")
+    assert "VITE_ESRI_PUBLIC_ACCESS=${{ matrix.image == 'akasha-web' && env.VITE_ESRI_API_KEY || '' }}" in build_step["with"]["build-args"]
+    assert "CHANGE_ME" in validate_step["run"]
+    assert "VITE_ESRI_API_KEY must be configured" in validate_step["run"]
+    assert "echo \"$VITE_ESRI_API_KEY\"" not in validate_step["run"]
+
+
+def test_staging_basemap_preflight_rejects_missing_and_placeholder_keys():
+    workflow = _workflow("deploy-staging.yml")
+    validate_step = _step(
+        workflow["jobs"]["validate-web-basemap-config"],
+        "Validate hosted basemap build settings",
+    )
+    base = {
+        "VITE_BASEMAP_PROVIDER": "esri",
+        "VITE_ESRI_API_KEY": "test-public-key",
+        "VITE_ESRI_BASEMAP_STYLE": "arcgis/imagery",
+        "VITE_ESRI_BASEMAP_STYLE_FAMILY": "arcgis",
+    }
+
+    for invalid_key in ("", "   ", "CHANGE_ME_KEY", "<public-key>"):
+        rejected = _run_bash_step(
+            validate_step["run"],
+            {**base, "VITE_ESRI_API_KEY": invalid_key},
+        )
+        assert rejected.returncode != 0
+        assert "must be configured" in rejected.stdout.decode()
+
+    approved = _run_bash_step(validate_step["run"], base)
+    assert approved.returncode == 0, approved.stderr.decode()
+
 
 def test_production_deploy_verifies_all_images_before_coolify_patch():
     workflow = _workflow("deploy-production.yml")
@@ -74,14 +143,59 @@ def test_production_deploy_verifies_all_images_before_coolify_patch():
     verify_step = _step(deploy_job, "Verify immutable image tags exist")
 
     assert deploy_job["env"]["IMAGE_TAG"] == "${{ inputs.image_tag }}"
+    assert deploy_job["env"]["ESRI_WEB_IMAGE_APPROVED_SHA"] == (
+        "${{ vars.ESRI_WEB_IMAGE_APPROVED_SHA }}"
+    )
+    assert deploy_job["env"]["ESRI_WEB_IMAGE_CREDENTIAL_ID"] == (
+        "${{ vars.ESRI_WEB_IMAGE_CREDENTIAL_ID }}"
+    )
     assert "Log in to GHCR for image verification" in step_names
     assert step_names.index("Verify immutable image tags exist") < step_names.index(
         "Patch Coolify service stack"
     )
-    assert "Mutable image tags are not allowed for production." in validate_step["run"]
+    assert "full 40-character lowercase Git SHA" in validate_step["run"]
+    assert "ESRI_WEB_IMAGE_CREDENTIAL_ID is required" in validate_step["run"]
+    assert '"$ESRI_WEB_IMAGE_APPROVED_SHA" != "$IMAGE_TAG"' in validate_step["run"]
+    assert step_names.index("Validate production deployment configuration") < step_names.index(
+        "Verify immutable image tags exist"
+    )
     assert "docker manifest inspect" in verify_step["run"]
     for image in AKASHA_IMAGES:
         assert image in verify_step["run"]
+
+
+def test_production_deploy_rejects_unapproved_esri_web_image_sha():
+    workflow = _workflow("deploy-production.yml")
+    validate_step = _step(
+        workflow["jobs"]["deploy-production"],
+        "Validate production deployment configuration",
+    )
+    expected_sha = "a" * 40
+    env = {
+        "COOLIFY_API_URL": "https://coolify.example.test/api/v1",
+        "COOLIFY_TOKEN": "test-token",
+        "COOLIFY_SERVICE_UUID": "test-service",
+        "IMAGE_TAG": expected_sha,
+        "ESRI_WEB_IMAGE_APPROVED_SHA": "b" * 40,
+        "ESRI_WEB_IMAGE_CREDENTIAL_ID": "credential-item-id",
+    }
+
+    rejected = _run_bash_step(validate_step["run"], env)
+    assert rejected.returncode != 0
+    assert "not approved for the production Esri referrer" in rejected.stdout.decode()
+
+    env["ESRI_WEB_IMAGE_APPROVED_SHA"] = expected_sha
+    approved = _run_bash_step(validate_step["run"], env)
+    assert approved.returncode == 0, approved.stderr.decode()
+
+    for name, invalid in (
+        ("IMAGE_TAG", "abcd"),
+        ("IMAGE_TAG", "g" * 40),
+        ("ESRI_WEB_IMAGE_APPROVED_SHA", "abcd"),
+        ("ESRI_WEB_IMAGE_CREDENTIAL_ID", "   "),
+    ):
+        rejected = _run_bash_step(validate_step["run"], {**env, name: invalid})
+        assert rejected.returncode != 0, f"{name}={invalid!r} was accepted"
 
 
 def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
@@ -149,6 +263,26 @@ def test_selfhosted_env_documents_admin_ingestion_live_trigger_gate():
     assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false" in env
     assert "ADMIN_INGESTION_LIVE_TRIGGER_ENABLED" in compose
     assert 'ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "false"' in compose
+
+
+def test_selfhosted_compose_forwards_validated_basemap_runtime_without_public_key():
+    env = _text("infra/selfhosted/env.example")
+    compose = _text("infra/selfhosted/coolify-compose.yml")
+
+    for name, default in (
+        ("BASEMAP_PROVIDER", "esri"),
+        ("ESRI_BASEMAP_STYLE", "arcgis/imagery"),
+        ("ESRI_BASEMAP_STYLE_FAMILY", "arcgis"),
+        ("ESRI_BASEMAP_USAGE_MODEL", "session"),
+        ("ESRI_BASEMAP_PLACES", "none"),
+        ("ESRI_BASEMAP_SESSION_SECONDS", "43200"),
+    ):
+        assert f'{name}: "${{{name}:-{default}}}"' in compose
+        assert f"{name}={default}" in env
+
+    api_block = compose.split("  api:", 1)[1].split("  titiler:", 1)[0]
+    assert "VITE_ESRI_API_KEY" not in api_block
+    assert "VITE_ESRI_PUBLIC_ACCESS" not in api_block
 
 
 def test_ingestion_image_packages_eos04_prepare_script():

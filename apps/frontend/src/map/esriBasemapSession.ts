@@ -1,5 +1,5 @@
 import { BasemapSession } from '@esri/maplibre-arcgis';
-import type { EsriBasemapResolvedConfig } from '@/map/basemap';
+import type { EsriSessionBasemapResolvedConfig } from '@/map/basemap';
 
 type SharedSession = {
     key: string;
@@ -8,7 +8,7 @@ type SharedSession = {
 
 let sharedSession: SharedSession | null = null;
 
-function sessionKeyOf(config: EsriBasemapResolvedConfig): string {
+function sessionKeyOf(config: EsriSessionBasemapResolvedConfig): string {
     return [
         config.apiKey,
         config.styleFamily,
@@ -18,7 +18,7 @@ function sessionKeyOf(config: EsriBasemapResolvedConfig): string {
 }
 
 export function getSharedEsriBasemapSession(
-    config: EsriBasemapResolvedConfig,
+    config: EsriSessionBasemapResolvedConfig,
 ): Promise<BasemapSession> {
     const key = sessionKeyOf(config);
     if (sharedSession?.key === key) return sharedSession.session;

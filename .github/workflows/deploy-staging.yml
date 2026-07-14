@@ -23,10 +23,55 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  validate-web-basemap-config:
+    name: Validate hosted basemap build settings
+    if: github.repository == 'Akasha-TechCatalyst/akasha-project'
+    runs-on: ubuntu-latest
+    env:
+      VITE_BASEMAP_PROVIDER: ${{ vars.VITE_BASEMAP_PROVIDER || 'esri' }}
+      VITE_ESRI_API_KEY: ${{ vars.VITE_ESRI_API_KEY || '' }}
+      VITE_ESRI_BASEMAP_STYLE: ${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
+      VITE_ESRI_BASEMAP_STYLE_FAMILY: ${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
+    steps:
+      - name: Mask Esri public key
+        shell: bash
+        run: |
+          if [[ -n "$VITE_ESRI_API_KEY" ]]; then
+            echo "::add-mask::$VITE_ESRI_API_KEY"
+          fi
+
+      - name: Validate hosted basemap build settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          provider="${VITE_BASEMAP_PROVIDER,,}"
+          if [[ "$provider" != "esri" ]]; then
+            exit 0
+          fi
+
+          compact_key="${VITE_ESRI_API_KEY//[[:space:]]/}"
+          case "$compact_key" in
+            ""|CHANGE_ME*|\<*\>)
+              echo "VITE_ESRI_API_KEY must be configured for hosted Esri builds."
+              exit 1
+              ;;
+          esac
+          [[ -n "${VITE_ESRI_BASEMAP_STYLE//[[:space:]]/}" ]] || {
+            echo "VITE_ESRI_BASEMAP_STYLE must be configured for hosted Esri builds."
+            exit 1
+          }
+          [[ "${VITE_ESRI_BASEMAP_STYLE_FAMILY,,}" == "arcgis" ]] || {
+            echo "VITE_ESRI_BASEMAP_STYLE_FAMILY must be arcgis."
+            exit 1
+          }
+
   build-images:
     name: Build and push ${{ matrix.image }}
     if: github.repository == 'Akasha-TechCatalyst/akasha-project'
+    needs: validate-web-basemap-config
     runs-on: [self-hosted, linux, x64, akasha-control]
+    env:
+      VITE_ESRI_API_KEY: ${{ vars.VITE_ESRI_API_KEY || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -36,7 +81,6 @@ jobs:
             dockerfile: infra/gateway/Dockerfile
             build_args: |
               VITE_BASEMAP_PROVIDER=${{ vars.VITE_BASEMAP_PROVIDER || 'esri' }}
-              VITE_ESRI_PUBLIC_ACCESS=${{ vars.VITE_ESRI_API_KEY || '' }}
               VITE_ESRI_BASEMAP_STYLE=${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
               VITE_ESRI_BASEMAP_STYLE_FAMILY=${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
               VITE_ESRI_BASEMAP_PLACES=${{ vars.VITE_ESRI_BASEMAP_PLACES || 'none' }}
@@ -46,6 +90,13 @@ jobs:
             dockerfile: apps/api/Dockerfile
             build_args: ""
     steps:
+      - name: Mask Esri public key
+        shell: bash
+        run: |
+          if [[ -n "$VITE_ESRI_API_KEY" ]]; then
+            echo "::add-mask::$VITE_ESRI_API_KEY"
+          fi
+
       - name: Check out repository
         uses: actions/checkout@v4
 
@@ -65,7 +116,9 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
-          build-args: ${{ matrix.build_args }}
+          build-args: |
+            ${{ matrix.build_args }}
+            VITE_ESRI_PUBLIC_ACCESS=${{ matrix.image == 'akasha-web' && env.VITE_ESRI_API_KEY || '' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}:main

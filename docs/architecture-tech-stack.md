@@ -151,6 +151,15 @@ The gateway proxies /tiles/* to TiTiler; the frontend only ever uses relative sa
 }
 ```
 
+`basemap.usageModel` accepts `session` or `tile` and is selected only by the BFF
+runtime variable `ESRI_BASEMAP_USAGE_MODEL`. In `session` mode the frontend starts
+and reuses an ArcGIS basemap session. In `tile` mode it passes the referrer-restricted
+public API key directly to `@esri/maplibre-arcgis` and must not call
+`/sessions/start`. The public key and imagery style remain web build settings;
+the usage model must not be duplicated as a Vite variable. Shared deployment
+defaults remain `session`; staging may explicitly select `tile` after compatibility
+and PAYG acceptance, while production requires a separate measured decision.
+
 `GET /api/sources`:
 
 ```json

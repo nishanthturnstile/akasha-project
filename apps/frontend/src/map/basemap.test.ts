@@ -46,10 +46,33 @@ describe('resolveBasemapConfig', () => {
       apiKey: 'AAPK_TEST_BASEMAP_KEY',
       style: 'arcgis/imagery',
       styleFamily: 'arcgis',
+      usageModel: 'session',
       places: 'none',
       sessionDurationSeconds: 43_200,
       refreshSafetyMarginSeconds: 300,
     });
+  });
+
+  it('resolves Esri imagery tile settings without session-only fields', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+    vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
+    const config: AppConfig = {
+      ...CONFIG,
+      basemap: { ...CONFIG.basemap, usageModel: 'tile' },
+    };
+
+    const resolved = resolveBasemapConfig(config);
+
+    expect(resolved).toEqual({
+      provider: 'esri',
+      apiKey: 'AAPK_TEST_BASEMAP_KEY',
+      style: 'arcgis/imagery',
+      styleFamily: 'arcgis',
+      usageModel: 'tile',
+      places: 'none',
+    });
+    expect('sessionDurationSeconds' in resolved).toBe(false);
+    expect('refreshSafetyMarginSeconds' in resolved).toBe(false);
   });
 
   it('rejects missing Esri API keys instead of using a fallback basemap', () => {
@@ -60,6 +83,21 @@ describe('resolveBasemapConfig', () => {
     expect(() => resolveBasemapConfig(CONFIG)).toThrow('VITE_ESRI_API_KEY');
   });
 
+  it.each(['session', 'tile'] as const)(
+    'rejects CHANGE_ME API key placeholders in %s mode',
+    (usageModel) => {
+      vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+      vi.stubEnv('VITE_ESRI_API_KEY', 'CHANGE_ME_REFERRER_RESTRICTED_ESRI_KEY');
+      const config: AppConfig = {
+        ...CONFIG,
+        basemap: { ...CONFIG.basemap, usageModel },
+      };
+
+      expect(() => resolveBasemapConfig(config)).toThrow(BasemapConfigurationError);
+      expect(() => resolveBasemapConfig(config)).toThrow('VITE_ESRI_API_KEY');
+    },
+  );
+
   it('allows explicit Esri build-time overrides', () => {
     vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
     vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
@@ -68,10 +106,23 @@ describe('resolveBasemapConfig', () => {
     vi.stubEnv('VITE_ESRI_BASEMAP_SESSION_SECONDS', '3600');
 
     expect(resolveBasemapConfig(CONFIG)).toMatchObject({
+      usageModel: 'session',
       style: 'arcgis/imagery/standard',
       places: 'attributed',
       sessionDurationSeconds: 3600,
     });
+  });
+
+  it('rejects unsupported Esri usage models from the runtime contract', () => {
+    vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+    vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
+    const config = {
+      ...CONFIG,
+      basemap: { ...CONFIG.basemap, usageModel: 'per-request' },
+    } as unknown as AppConfig;
+
+    expect(() => resolveBasemapConfig(config)).toThrow(BasemapConfigurationError);
+    expect(() => resolveBasemapConfig(config)).toThrow('per-request');
   });
 
   it('uses VITE_BASEMAP_PROVIDER=osm ahead of the backend Esri config without requiring an Esri key', () => {

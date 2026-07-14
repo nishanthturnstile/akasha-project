@@ -181,6 +181,7 @@ ENV_MATRIX: dict[str, dict[str, str]] = {
         "BASEMAP_PROVIDER": "esri",
         "ESRI_BASEMAP_STYLE": "arcgis/imagery",
         "ESRI_BASEMAP_STYLE_FAMILY": "arcgis",
+        # Supported runtime values: session | tile. Keep session as the safe default.
         "ESRI_BASEMAP_USAGE_MODEL": "session",
         "ESRI_BASEMAP_PLACES": "none",
         "ESRI_BASEMAP_SESSION_SECONDS": "43200",

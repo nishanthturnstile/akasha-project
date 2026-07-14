@@ -101,6 +101,7 @@ export default function EditFieldDialog({
   const [confirmClearSeasonId, setConfirmClearSeasonId] = useState<string | null>(null);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
+  const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
 
   const drawRef = useRef<TerraDraw | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -211,10 +212,17 @@ export default function EditFieldDialog({
   }, [open, name, field.name, groupId, field.groupId, editedGeometry, vegPayload]);
 
   const basemapResolution = useMemo(() => {
-    if (!configQ.data) return null;
-    try { return resolveBasemapConfig(configQ.data); }
-    catch { return null; }
+    if (!configQ.data) return { config: null, error: null };
+    try {
+      return { config: resolveBasemapConfig(configQ.data), error: null };
+    } catch (error) {
+      return { config: null, error: error as Error };
+    }
   }, [configQ.data]);
+
+  useEffect(() => {
+    if (!open) setBasemapRuntimeError(null);
+  }, [open]);
 
   const center = useMemo(() => polygonCenter(field.geometry), [field.geometry]);
 
@@ -444,7 +452,7 @@ export default function EditFieldDialog({
 
           <div className="flex items-center justify-between border-b-2 border-border/60 px-6 py-4">
             <h3 className="text-lg font-display font-semibold">Edit field</h3>
-            <button aria-label="Close" onClick={handleCancel} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/40">
+            <button aria-label="Close" onClick={ handleCancel } className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/40">
               <X className="size-5" />
             </button>
           </div>
@@ -453,18 +461,33 @@ export default function EditFieldDialog({
             <div className="grid grid-cols-2 gap-6">
               {/* Left column: mini-map with polygon edit */ }
               <div className="min-h-[200px]">
-                { basemapResolution ? (
+                { basemapResolution.error ? (
+                  <div
+                    className="flex min-h-50 items-center justify-center rounded-xl border-2 border-destructive/60 bg-destructive/10 p-4 text-center text-sm text-destructive"
+                    data-testid="basemap-configuration-error"
+                  >
+                    { basemapResolution.error.message }
+                  </div>
+                ) : basemapResolution.config ? (
                   <div className="relative h-full min-h-[200px] w-full rounded-xl overflow-hidden border-2 border-border/60">
                     <MapLayerManager
-                      basemap={ basemapResolution }
+                      basemap={ basemapResolution.config }
                       center={ center }
                       zoom={ 15 }
                       scene={ null }
                       opacity={ 1 }
                       visible={ true }
-                      onBasemapError={ () => {} }
+                      onBasemapError={ setBasemapRuntimeError }
                       onMapReady={ handleMapReady }
                     />
+                    { basemapRuntimeError && (
+                      <div
+                        className="absolute inset-x-3 top-3 z-50 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground shadow-lg"
+                        data-testid="basemap-runtime-error"
+                      >
+                        Unable to load Esri basemap: { basemapRuntimeError.message }
+                      </div>
+                    ) }
                     { miniMap && isMultiPart && (
                       <FieldBoundaryLayer
                         map={ miniMap }
@@ -613,10 +636,10 @@ export default function EditFieldDialog({
                   Delete field
                 </Button>
                 <div className="flex items-center gap-3">
-                  <Button variant="outline" size="lg" className="min-w-[120px]" onClick={handleCancel}>
+                  <Button variant="outline" size="lg" className="min-w-[120px]" onClick={ handleCancel }>
                     Cancel
                   </Button>
-                  <Button variant="primary" size="lg" onClick={ handleSave } disabled={saving} className="min-w-[120px]">
+                  <Button variant="primary" size="lg" onClick={ handleSave } disabled={ saving } className="min-w-[120px]">
                     { saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null }
                     { saving ? 'Saving…' : 'Save' }
                   </Button>
@@ -627,30 +650,30 @@ export default function EditFieldDialog({
         </Dialog.Content>
       </Dialog.Portal>
 
-      <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
+      <AlertDialogRoot open={ confirmClose } onOpenChange={ setConfirmClose }>
         <AlertDialogContent>
           <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
           <AlertDialogDescription>
             You have unsaved changes. Are you sure you want to discard them?
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmClose(false)}>Keep editing</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
+            <AlertDialogCancel onClick={ () => setConfirmClose(false) }>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={ () => { setConfirmClose(false); onOpenChange(false); } }>
               Discard
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
 
-      <AlertDialogRoot open={confirmDeleteField} onOpenChange={setConfirmDeleteField}>
+      <AlertDialogRoot open={ confirmDeleteField } onOpenChange={ setConfirmDeleteField }>
         <AlertDialogContent>
           <AlertDialogTitle>Delete this field?</AlertDialogTitle>
           <AlertDialogDescription>
             Are you sure you want to delete &ldquo;{ field.name }&rdquo;? This action cannot be undone.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmDeleteField(false)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>
+            <AlertDialogCancel onClick={ () => setConfirmDeleteField(false) }>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={ handleConfirmDelete }>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -659,8 +682,8 @@ export default function EditFieldDialog({
 
       { seasonsQ.data && (
         <AlertDialogRoot
-          open={confirmClearSeasonId !== null}
-          onOpenChange={(open) => { if (!open) setConfirmClearSeasonId(null); }}
+          open={ confirmClearSeasonId !== null }
+          onOpenChange={ (open) => { if (!open) setConfirmClearSeasonId(null); } }
         >
           <AlertDialogContent>
             <AlertDialogTitle>Remove all vegetation cycles?</AlertDialogTitle>
@@ -670,8 +693,8 @@ export default function EditFieldDialog({
               &rdquo;? This action cannot be undone.
             </AlertDialogDescription>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setConfirmClearSeasonId(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleConfirmClearSeason}>
+              <AlertDialogCancel onClick={ () => setConfirmClearSeasonId(null) }>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={ handleConfirmClearSeason }>
                 Remove all
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -959,7 +982,7 @@ function CycleCard({
             <SelectContent>
               { (irrigationTypesData ?? []).map((opt) => (
                 <SelectItem key={ opt.id } value={ opt.name }>{ opt.name }</SelectItem>
-              ))}
+              )) }
             </SelectContent>
           </Select>
         </div>
@@ -975,7 +998,7 @@ function CycleCard({
             <SelectContent>
               { (tillageTypesData ?? []).map((opt) => (
                 <SelectItem key={ opt.id } value={ opt.name }>{ opt.name }</SelectItem>
-              ))}
+              )) }
             </SelectContent>
           </Select>
         </div>
@@ -1013,15 +1036,15 @@ function CycleCard({
         />
       </div>
 
-      <AlertDialogRoot open={confirmRemoveCycle} onOpenChange={setConfirmRemoveCycle}>
+      <AlertDialogRoot open={ confirmRemoveCycle } onOpenChange={ setConfirmRemoveCycle }>
         <AlertDialogContent>
           <AlertDialogTitle>Remove vegetation cycle?</AlertDialogTitle>
           <AlertDialogDescription>
             Are you sure you want to remove this vegetation cycle? This action cannot be undone.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmRemoveCycle(false)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmRemoveCycle(false); onRemoveCycle(seasonId, cycle.id); }}>
+            <AlertDialogCancel onClick={ () => setConfirmRemoveCycle(false) }>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={ () => { setConfirmRemoveCycle(false); onRemoveCycle(seasonId, cycle.id); } }>
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>

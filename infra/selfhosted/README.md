@@ -96,16 +96,69 @@ Repository variables:
 - `COOLIFY_STAGING_SERVICE_UUID` — UUID of the `akasha-staging-compose` service stack.
 - `COOLIFY_PRODUCTION_SERVICE_UUID` — UUID of the future `akasha-production-compose` service stack.
 - `VITE_BASEMAP_PROVIDER` — optional frontend basemap provider; use `esri` for staging/production, `osm` for development previews, or `empty` for no-network debugging.
-- `VITE_ESRI_API_KEY` — optional frontend build key, referrer-restricted in ArcGIS.
+- `VITE_ESRI_API_KEY` — required when `VITE_BASEMAP_PROVIDER=esri`; public frontend
+   build key with only the Basemaps privilege and approved referrer restrictions.
 - `VITE_ESRI_BASEMAP_STYLE` — optional, defaults to `arcgis/imagery`.
 - `VITE_ESRI_BASEMAP_STYLE_FAMILY` — optional, defaults to `arcgis`.
 - `VITE_ESRI_BASEMAP_PLACES` — optional, defaults to `none`.
-- `VITE_ESRI_BASEMAP_SESSION_SECONDS` — optional, defaults to `43200`.
+- `VITE_ESRI_BASEMAP_SESSION_SECONDS` — optional session-mode setting, defaults to `43200`.
 
 GitHub Environment:
 
 - Create environment `production`.
 - Require manual reviewers before `deploy-production.yml` can run.
+- Add protected environment variable `ESRI_WEB_IMAGE_APPROVED_SHA` only after the exact immutable
+  web image SHA is approved for the production ArcGIS referrer.
+- Add protected environment variable `ESRI_WEB_IMAGE_CREDENTIAL_ID` with the ArcGIS credential
+  item ID used by that approved image. Never store the API key in this metadata variable.
+
+## Esri imagery tile-usage rollout
+
+ArcGIS payment/PAYG status and Akasha's basemap usage model are separate controls. PAYG must show
+as **enabled** in ArcGIS Location Platform before tile-mode cutover, but the application selects
+tile usage only when `/api/config.basemap.usageModel` is `tile` and the browser uses the API-key
+access token directly instead of creating a basemap session.
+
+Use this order for staging:
+
+1. In ArcGIS Location Platform, use a **Public application** credential with only
+   `premium:user:basemaps`, no item access, an owned expiry/rotation date, and exact referrer
+   `https://staging.gis.cidsaglobal.com`.
+2. Set the repository web-build variables listed above. The staging workflow fails before building
+   when Esri is selected and the key is empty or a placeholder; it never prints the key.
+3. In Coolify staging, keep these BFF runtime values for the compatibility deployment:
+
+   ```text
+   BASEMAP_PROVIDER=esri
+   ESRI_BASEMAP_STYLE=arcgis/imagery
+   ESRI_BASEMAP_STYLE_FAMILY=arcgis
+   ESRI_BASEMAP_USAGE_MODEL=session
+   ESRI_BASEMAP_PLACES=none
+   ESRI_BASEMAP_SESSION_SECONDS=43200
+   ```
+
+4. Deploy the dual-mode web/API SHA. Verify `/api/config` reports `session`, then smoke the main
+   field analytics map, field creation, onboarding field creation, and edit-field mini-map.
+5. After ArcGIS Billing explicitly shows PAYG enabled, change only staging to
+   `ESRI_BASEMAP_USAGE_MODEL=tile` and redeploy the stack/API with the validated SHA.
+6. Hard-refresh staging. Verify `/api/config` reports `tile`, Esri imagery and attribution load,
+   and browser network tools show no request whose path contains `/sessions/start`.
+7. Repeat source-native imagery, Sentinel-2 field-clipped overlay, compare, drawing/editing,
+   opacity, visibility, and narrow-viewport attribution smoke checks.
+8. After the completed UTC usage day is available, check both ArcGIS **Usage > Developer
+   credentials** and account-wide **Usage > All services / Billing summary**. Tile usage must rise
+   for the staging credential while new session usage remains absent for the tile test window.
+
+The deployment owner reviews account-wide and staging-credential usage after each completed UTC
+day for the first seven days, then weekly for the rest of the first billing cycle. Reconfirm current
+official pricing/free-tier values at cutover. At 50% of the account-wide basemap tile free tier,
+investigate the source/trend; at 75%, freeze nonessential staging map testing; at 90%, return
+staging to `session` unless the billing owner records explicit approval to continue.
+
+Tile-mode rollback does not require a database migration or web rebuild after dual-mode code is
+deployed: set staging `ESRI_BASEMAP_USAGE_MODEL=session`, redeploy the API/stack, hard-refresh, and
+repeat the session compatibility smoke. If key abuse is suspected, deploy a secondary key with the
+same least privileges/referrers, validate it, then invalidate the old key.
 
 ## Image build and staging deploy
 
@@ -793,4 +846,8 @@ manual cleanup.
 
 Production is created only after staging acceptance passes. The production workflow requires manual GitHub Environment approval and accepts an explicit `image_tag`. It does not build images.
 
-Use only the exact Git SHA tag already validated in staging.
+Use only the exact Git SHA tag already validated in staging. The workflow also requires the
+protected `ESRI_WEB_IMAGE_APPROVED_SHA` to exactly equal that tag and requires
+`ESRI_WEB_IMAGE_CREDENTIAL_ID`. Leave the approval SHA unset for a staging-only-referrer web image;
+the workflow will fail before image verification or Coolify patching. Production remains on
+`ESRI_BASEMAP_USAGE_MODEL=session` until a separate measured billing-model decision is approved.

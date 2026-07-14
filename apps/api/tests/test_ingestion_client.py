@@ -6,8 +6,10 @@ from typing import Any
 import httpx
 import pytest
 from app.ingestion_client import (
+    FIELD_DATES_PATH,
     FIELD_INDEX_PATH,
     READINESS_PATH,
+    FieldDatesRequest,
     FieldIndexAvailableResponse,
     FieldIndexRequest,
     FieldIndexUnavailableResponse,
@@ -174,6 +176,17 @@ def _request_payload() -> FieldIndexRequest:
     )
 
 
+def _field_dates_payload() -> FieldDatesRequest:
+    request = _request_payload()
+    return FieldDatesRequest(
+        geometry=request.geometry,
+        sourceId="sentinel-2-l2a",
+        index="NDVI",
+        dates=["2026-06-28", "2026-05-19"],
+        maxCloudPercentage=20,
+    )
+
+
 def _client_for(handler) -> IngestionClient:
     return IngestionClient(
         api_url=API_URL,
@@ -227,6 +240,97 @@ def test_field_index_unavailable_response() -> None:
     assert result.status == "UNAVAILABLE"
     assert result.reason == "No optical scene within +/- 7 days"
     assert result.searched_sources == ["sentinel-2-l2a"]
+
+
+def test_field_dates_posts_batch_and_parses_availability() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == FIELD_DATES_PATH
+        assert request.headers["X-API-Key"] == API_KEY
+        payload = json.loads(request.content)
+        assert payload["dates"] == ["2026-06-28", "2026-05-19"]
+        assert payload["sourceId"] == "sentinel-2-l2a"
+        assert payload["maxCloudPercentage"] == 20
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "sourceId": "sentinel-2-l2a",
+                    "index": "NDVI",
+                    "dates": [
+                        {
+                            "acquisitionDate": "2026-06-28",
+                            "available": False,
+                            "reason": "No exact-date scene satisfies field quality thresholds.",
+                        },
+                        {
+                            "acquisitionDate": "2026-05-19",
+                            "available": True,
+                            "selectedSceneDate": "2026-05-19",
+                            "usablePixelPercentage": 92.5,
+                            "cloudPercentage": 4.2,
+                            "validPixelCount": 3456,
+                        },
+                    ],
+                },
+                "error": None,
+            },
+            request=request,
+        )
+
+    result = _client_for(handler).field_dates(_field_dates_payload())
+
+    assert len(result.dates) == 2
+    assert result.dates[0].available is False
+    assert result.dates[1].usable_pixel_percentage == pytest.approx(92.5)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda data: data.update({"sourceId": "unexpected-source"}),
+        lambda data: data.update({"index": "NDMI"}),
+        lambda data: data["dates"].pop(),
+        lambda data: data["dates"][1].update({"selectedSceneDate": "2026-05-18"}),
+        lambda data: data["dates"][1].update({"validPixelCount": 0}),
+        lambda data: data["dates"][1].update({"cloudPercentage": None}),
+        lambda data: data["dates"][1].update({"cloudPercentage": 35}),
+    ],
+)
+def test_field_dates_rejects_contract_drift(mutate) -> None:
+    data = {
+        "sourceId": "sentinel-2-l2a",
+        "index": "NDVI",
+        "dates": [
+            {
+                "acquisitionDate": "2026-06-28",
+                "available": False,
+                "reason": "No exact-date scene satisfies field quality thresholds.",
+            },
+            {
+                "acquisitionDate": "2026-05-19",
+                "available": True,
+                "selectedSceneDate": "2026-05-19",
+                "usablePixelPercentage": 92.5,
+                "cloudPercentage": 4.2,
+                "validPixelCount": 3456,
+            },
+        ],
+    }
+    mutate(data)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"success": True, "data": data, "error": None},
+            request=request,
+        )
+
+    with pytest.raises(IngestionClientError) as exc_info:
+        _client_for(handler).field_dates(_field_dates_payload())
+
+    assert exc_info.value.code == "PIPELINE_INVALID_RESPONSE"
 
 
 @pytest.mark.parametrize("status", ["AVAILABLE", "STALE", "UNAVAILABLE"])

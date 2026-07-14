@@ -87,7 +87,21 @@ export default function FieldAnalyticsPage() {
     () => sourcesQ.data?.find((source) => source.id === effectiveSourceId) ?? null,
     [sourcesQ.data, effectiveSourceId],
   );
-  const datesQ = useDates(effectiveSourceId);
+  const supportedIndices = selectedSource?.supportedIndices
+    ?? configQ.data?.supportedIndices
+    ?? ['NDVI'];
+  const activeDisplayMode = displayMode ?? defaultDisplayModeForSource(
+    selectedSource,
+    configQ.data?.defaultIndex ?? 'NDVI',
+  );
+  const timelineIndexType = supportedIndices.includes(activeDisplayMode)
+    ? activeDisplayMode
+    : supportedIndices[0] ?? 'NDVI';
+  const datesQ = useDates(effectiveSourceId, {
+    enabled: !selectedPlotId || Boolean(selectedField),
+    fieldId: selectedField?.id,
+    indexType: timelineIndexType,
+  });
   const selectedDate = useMemo(() => {
     if (!datesQ.data || !configQ.data) return null;
     if (dateOverride && datesQ.data.some((entry) => entry.acquisitionDate === dateOverride)) {
@@ -97,11 +111,6 @@ export default function FieldAnalyticsPage() {
       sourceKind: selectedSource?.kind,
     })?.acquisitionDate ?? null;
   }, [configQ.data, dateOverride, datesQ.data, selectedSource?.kind]);
-  const supportedIndices = selectedSource?.supportedIndices ?? configQ.data?.supportedIndices ?? ['NDVI'];
-  const activeDisplayMode = displayMode ?? defaultDisplayModeForSource(
-    selectedSource,
-    configQ.data?.defaultIndex ?? 'NDVI',
-  );
   const effectiveCloudMask = sanitizeCloudMaskForSource(
     cloudMask as CloudMaskOptions,
     selectedSource,

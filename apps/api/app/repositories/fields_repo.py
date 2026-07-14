@@ -8,6 +8,7 @@ from typing import Any
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import shape
 from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 from ..db import session_scope
 from ..models import (

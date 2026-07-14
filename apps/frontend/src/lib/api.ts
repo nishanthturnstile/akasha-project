@@ -360,10 +360,22 @@ export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sourc
 
 const SOURCE_DATE_LOOKBACK_DAYS = 153;
 
-export const getDates = (sourceId: string): Promise<SceneDate[]> =>
-  request<SceneDate[]>(
-    `/api/sources/${encodeURIComponent(sourceId)}/dates?lookbackDays=${SOURCE_DATE_LOOKBACK_DAYS}`,
+export const getDates = (
+  sourceId: string,
+  options: { fieldId?: string; indexType?: string } = {},
+): Promise<SceneDate[]> => {
+  const params = new URLSearchParams({ lookbackDays: String(SOURCE_DATE_LOOKBACK_DAYS) });
+  if (options.fieldId) {
+    params.set('sourceId', sourceId);
+    params.set('indexType', options.indexType ?? 'NDVI');
+    return request<SceneDate[]>(
+      `/api/fields/${encodeURIComponent(options.fieldId)}/dates?${params.toString()}`,
+    );
+  }
+  return request<SceneDate[]>(
+    `/api/sources/${encodeURIComponent(sourceId)}/dates?${params.toString()}`,
   );
+};
 
 export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringResponse> =>
   request<ImagerySourceMonitoringResponse>('/api/monitoring/imagery-sources');

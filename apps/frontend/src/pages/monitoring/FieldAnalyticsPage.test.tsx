@@ -64,8 +64,8 @@ const sentinelSource: Source = {
 const sceneDate: SceneDate = {
   acquisitionDate: '2026-01-13',
   datetime: '2026-01-13T00:00:00Z',
-  usablePixelPercent: 100,
-  cloudMaskedPercent: null,
+  usablePixelPercent: 92,
+  cloudMaskedPercent: 4,
   coveragePercent: 100,
   isLatestUsable: true,
   metricsProvisional: true,
@@ -133,13 +133,13 @@ function renderPage() {
   });
   return render(
     <MemoryRouter>
-      <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={ queryClient }>
         <MapViewProvider
-          initialState={{
+          initialState={ {
             overlaysVisible: true,
             activeSourceId: 'sentinel-2-l2a',
             selectedPlotId: 'field-1',
-          }}
+          } }
         >
           <FieldAnalyticsPage />
         </MapViewProvider>
@@ -183,8 +183,10 @@ describe('FieldAnalyticsPage pipeline integration', () => {
         });
       }
       if (url === '/api/sources') return jsonResponse([sentinelSource]);
+      if (url.startsWith('/api/fields/field-1/dates')) return jsonResponse([sceneDate]);
       if (url.startsWith('/api/sources/sentinel-2-l2a/dates')) return jsonResponse([sceneDate]);
       if (url === '/api/fields') return jsonResponse([field]);
+      if (url.startsWith('/api/seasons')) return jsonResponse([]);
       if (url === '/api/fields/field-1/indices/statistics') return jsonResponse(makeStatistics());
       if (url.startsWith('/api/fields/field-1/analytics/trend')) return jsonResponse(makeTrend());
       return jsonResponse({});
@@ -192,9 +194,18 @@ describe('FieldAnalyticsPage pipeline integration', () => {
 
     renderPage();
 
-    await waitFor(() => {
-      expect(requests.some((request) => request.url === '/api/fields/field-1/indices/statistics')).toBe(true);
-    });
+    await waitFor(
+      () => {
+        expect(
+          requests.some(
+            (request) => request.url === '/api/fields/field-1/indices/statistics',
+          ),
+        ).toBe(true);
+      },
+      { timeout: 15_000 },
+    );
+    expect(requests.some((request) => request.url.startsWith('/api/fields/field-1/dates'))).toBe(true);
+    expect(requests.some((request) => request.url.startsWith('/api/sources/sentinel-2-l2a/dates'))).toBe(false);
 
     const statsRequest = requests.find((request) => request.url === '/api/fields/field-1/indices/statistics');
     expect(statsRequest?.body).toMatchObject({

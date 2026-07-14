@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 from threading import Lock
 from typing import Any
 
@@ -154,6 +155,194 @@ def test_sentinel_default_layer_uses_pipeline_readiness(monkeypatch) -> None:
     assert body["pipelineBacked"] is True
     assert body["tileRouteMode"] == "field-overlay"
     assert body["tileUrlTemplate"] is None
+
+
+def test_field_dates_exclude_unusable_dates_and_recompute_latest(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "sar_support_cloud_threshold_percent", 35)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_args: _plot())
+    monkeypatch.setattr(
+        field_analytics,
+        "_pipeline_dates",
+        lambda _source_id, **_kwargs: [
+            {
+                "acquisitionDate": "2026-06-28",
+                "isLatestUsable": True,
+                "usablePixelPercent": None,
+                "cloudMaskedPercent": None,
+                "tileAvailable": True,
+            },
+            {
+                "acquisitionDate": "2026-05-19",
+                "isLatestUsable": False,
+                "usablePixelPercent": None,
+                "cloudMaskedPercent": None,
+                "tileAvailable": True,
+            },
+            {
+                "acquisitionDate": "2026-05-12",
+                "isLatestUsable": False,
+                "usablePixelPercent": None,
+                "cloudMaskedPercent": None,
+                "tileAvailable": True,
+            },
+        ],
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_field_dates(_settings, **kwargs):
+        calls.append(kwargs)
+        return {
+            "sourceId": catalog.SENTINEL_2_SOURCE_ID,
+            "index": "NDVI",
+            "dates": [
+                {
+                    "acquisitionDate": "2026-06-28",
+                    "available": False,
+                    "reason": "No exact-date scene satisfies field quality thresholds.",
+                },
+                {
+                    "acquisitionDate": "2026-05-19",
+                    "available": True,
+                    "selectedSceneDate": "2026-05-19",
+                    "usablePixelPercentage": 92.5,
+                    "cloudPercentage": 4.2,
+                    "validPixelCount": 100,
+                },
+                {
+                    "acquisitionDate": "2026-05-12",
+                    "available": True,
+                    "selectedSceneDate": "2026-05-12",
+                    "usablePixelPercentage": 85.0,
+                    "cloudPercentage": 8.0,
+                    "validPixelCount": 80,
+                },
+            ],
+        }
+
+    monkeypatch.setattr(field_analytics, "request_field_dates", fake_field_dates)
+
+    response = client.get(
+        "/api/fields/field-1/dates"
+        "?sourceId=sentinel-2-l2a&indexType=NDVI&lookbackDays=153"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["acquisitionDate"] for item in body] == ["2026-05-19", "2026-05-12"]
+    assert body[0]["isLatestUsable"] is True
+    assert body[1]["isLatestUsable"] is False
+    assert body[0]["usablePixelPercent"] == pytest.approx(92.5)
+    assert body[0]["cloudMaskedPercent"] == pytest.approx(4.2)
+    assert calls[0]["geometry"] == _plot()["geometry"]
+    assert calls[0]["max_cloud_percentage"] == 20.0
+    assert calls[0]["acquisition_dates"] == ["2026-06-28", "2026-05-19", "2026-05-12"]
+    _assert_no_leaks(body)
+
+
+def test_field_dates_reject_unknown_or_unowned_field(monkeypatch) -> None:
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_args: None)
+    monkeypatch.setattr(
+        field_analytics,
+        "request_field_dates",
+        lambda *_args, **_kwargs: pytest.fail("ingestion must not receive unowned geometry"),
+    )
+
+    response = client.get(
+        "/api/fields/not-owned/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FIELD_NOT_FOUND"
+
+
+def test_field_dates_use_expensive_index_rate_limit(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "rate_limit_index_per_minute", 1)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_args: _plot())
+    monkeypatch.setattr(field_analytics, "_field_dates_response", lambda **_kwargs: [])
+
+    first = client.get(
+        "/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
+    )
+    second = client.get(
+        "/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+
+def test_field_dates_timeout_returns_without_waiting_for_blocking_worker(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "index_request_timeout_seconds", 0.02)
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_args: _plot())
+
+    def slow_field_dates(**_kwargs):
+        time.sleep(0.2)
+        return []
+
+    monkeypatch.setattr(field_analytics, "_field_dates_response", slow_field_dates)
+
+    started = time.monotonic()
+    response = client.get(
+        "/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
+    )
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 504
+    assert elapsed < 0.15
+
+
+def test_field_dates_chunk_dense_timelines_without_dropping_dates(monkeypatch) -> None:
+    acquisition_dates = [
+        (date(2026, 1, 1) + timedelta(days=offset)).isoformat()
+        for offset in range(65)
+    ]
+    monkeypatch.setattr(
+        field_analytics,
+        "_pipeline_dates",
+        lambda _source_id, **_kwargs: [
+            {
+                "acquisitionDate": acquisition_date,
+                "isLatestUsable": False,
+                "tileAvailable": True,
+            }
+            for acquisition_date in acquisition_dates
+        ],
+    )
+    batches: list[list[str]] = []
+
+    def fake_field_dates(_settings, **kwargs):
+        batch = kwargs["acquisition_dates"]
+        batches.append(batch)
+        return {
+            "sourceId": catalog.SENTINEL_2_SOURCE_ID,
+            "index": "NDVI",
+            "dates": [
+                {
+                    "acquisitionDate": acquisition_date,
+                    "available": True,
+                    "selectedSceneDate": acquisition_date,
+                    "usablePixelPercentage": 90.0,
+                    "cloudPercentage": 5.0,
+                    "validPixelCount": 100,
+                }
+                for acquisition_date in batch
+            ],
+        }
+
+    monkeypatch.setattr(field_analytics, "request_field_dates", fake_field_dates)
+
+    response = field_analytics._field_dates_response(
+        plot=_plot(),
+        source_id=catalog.SENTINEL_2_SOURCE_ID,
+        index_type="NDVI",
+        start_date=None,
+        end_date=None,
+        lookback_days=None,
+    )
+
+    assert [len(batch) for batch in batches] == [64, 1]
+    assert len(response) == 65
+    assert {item["acquisitionDate"] for item in response} == set(acquisition_dates)
 
 
 def test_resourcesat_sources_and_dates_use_pipeline_readiness(monkeypatch) -> None:

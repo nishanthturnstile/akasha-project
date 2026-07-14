@@ -7,6 +7,7 @@ import functools
 import json
 import logging
 import math
+import time
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -20,8 +21,11 @@ from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
 from ..ingestion_adapters import field_index_to_statistics_response, field_index_to_trend_point
 from ..ingestion_client import (
+    FIELD_DATES_MAX_BATCH_SIZE,
+    FIELD_DATES_MAX_CLOUD_PERCENTAGE,
     fetch_signed_ingestion_binary,
     get_readiness,
+    request_field_dates,
     request_field_index,
     request_field_index_point,
 )
@@ -49,8 +53,10 @@ from ..raster.statistics_core import MASK_NODATA_CLASS, correct_reflectance, eva
 from ..repositories import fields_repo
 from ..routers.product_router import (
     _enforce_index_rate_limit,
+    _filter_source_dates,
     _is_pipeline_source,
     _pipeline_bridge_enabled,
+    _pipeline_dates,
     _requires_ingestion_pipeline,
 )
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
@@ -70,6 +76,19 @@ async def _run_blocking(func, *args, **kwargs):
     call = functools.partial(func, *args, **kwargs)
     try:
         return await anyio.to_thread.run_sync(call)
+    except AkashaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("field analytics backend unavailable: %s", type(exc).__name__)
+        raise plots_backend_unavailable(
+            "Field analytics storage is not available in this environment."
+        ) from exc
+
+
+async def _run_blocking_cancellable(func, *args, **kwargs):
+    call = functools.partial(func, *args, **kwargs)
+    try:
+        return await anyio.to_thread.run_sync(call, abandon_on_cancel=True)
     except AkashaError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -239,6 +258,91 @@ def _pipeline_statistics_response(
         index_type=index_type,
         cloud_mask=cloud_mask,
     )
+
+
+def _field_dates_response(
+    *,
+    plot: dict[str, Any],
+    source_id: str,
+    index_type: str,
+    start_date: date | None,
+    end_date: date | None,
+    lookback_days: int | None,
+    timeout_seconds: float | None = None,
+) -> list[dict[str, Any]]:
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
+
+    def remaining_timeout() -> float:
+        remaining_seconds = (
+            max(0.0, deadline - time.monotonic())
+            if deadline is not None
+            else float(settings.index_request_timeout_seconds)
+        )
+        if remaining_seconds <= 0:
+            raise index_timeout(
+                "Field-date availability exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+                timeoutSeconds=timeout_seconds,
+            )
+        return remaining_seconds
+
+    pipeline_dates = (
+        _pipeline_dates(source_id, timeout_seconds=remaining_timeout())
+        if _uses_pipeline(source_id)
+        else None
+    )
+    source_dates = pipeline_dates if pipeline_dates is not None else catalog.list_dates(source_id)
+    windowed_dates = _filter_source_dates(
+        source_dates,
+        start_date=start_date,
+        end_date=end_date,
+        lookback_days=lookback_days,
+    )
+    if not windowed_dates or not _uses_pipeline(source_id):
+        return windowed_dates
+
+    _ensure_pipeline_index_supported(source_id, index_type)
+    acquisition_dates = [
+        str(item["acquisitionDate"])
+        for item in windowed_dates
+        if item.get("acquisitionDate")
+    ]
+    availability_dates: list[dict[str, Any]] = []
+    for offset in range(0, len(acquisition_dates), FIELD_DATES_MAX_BATCH_SIZE):
+        availability = request_field_dates(
+            settings,
+            geometry=plot["geometry"],
+            source_id=source_id,
+            index_type=index_type,
+            acquisition_dates=acquisition_dates[offset : offset + FIELD_DATES_MAX_BATCH_SIZE],
+            max_cloud_percentage=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+            timeout_seconds=remaining_timeout(),
+        )
+        availability_dates.extend(availability.get("dates", []))
+    by_date = {
+        str(item.get("acquisitionDate")): item
+        for item in availability_dates
+        if item.get("available") is True
+    }
+    filtered: list[dict[str, Any]] = []
+    for item in windowed_dates:
+        field_date = by_date.get(str(item.get("acquisitionDate")))
+        if field_date is None:
+            continue
+        usable = field_date.get("usablePixelPercentage")
+        cloud_percentage = field_date.get("cloudPercentage")
+        filtered.append(
+            {
+                **item,
+                "usablePixelPercent": usable,
+                "cloudMaskedPercent": cloud_percentage,
+                "isLatestUsable": False,
+            }
+        )
+    if filtered:
+        newest = max(str(item["acquisitionDate"]) for item in filtered)
+        for item in filtered:
+            item["isLatestUsable"] = item["acquisitionDate"] == newest
+    return filtered
 
 
 def _provisional_trend_point(requested_date: date, reason: str) -> FieldTrendPoint:
@@ -834,6 +938,41 @@ def _field_index_point_response(
     if not is_masked and np.isfinite(values[row, col]):
         value = round(float(values[row, col]), 6)
     return {**base, "value": value, "masked": is_masked, "maskClass": mask_class}
+
+
+@router.get("/fields/{plot_id}/dates")
+async def get_field_dates(
+    plot_id: str,
+    request: Request,
+    sourceId: str = Query(default=settings.default_source_id),
+    indexType: str = Query(default=DEFAULT_INDEX),
+    startDate: date | None = Query(default=None),
+    endDate: date | None = Query(default=None),
+    lookbackDays: int | None = Query(default=None, ge=1, le=366),
+    user: CurrentUser = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    _enforce_index_rate_limit(request)
+    plot = await _get_field_or_404(plot_id, user.id)
+    index_type = _normalize_index(indexType)
+    try:
+        return await asyncio.wait_for(
+            _run_blocking_cancellable(
+                _field_dates_response,
+                plot=plot,
+                source_id=sourceId,
+                index_type=index_type,
+                start_date=startDate,
+                end_date=endDate,
+                lookback_days=lookbackDays,
+                timeout_seconds=float(settings.index_request_timeout_seconds),
+            ),
+            timeout=settings.index_request_timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise index_timeout(
+            "Field-date availability exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+            timeoutSeconds=settings.index_request_timeout_seconds,
+        ) from exc
 
 
 @router.post(

@@ -220,7 +220,11 @@ async def get_sources() -> list[dict[str, Any]]:
     return replaced
 
 
-def _pipeline_dates(source_id: str) -> list[dict[str, Any]] | None:
+def _pipeline_dates(
+    source_id: str,
+    *,
+    timeout_seconds: float | None = None,
+) -> list[dict[str, Any]] | None:
     if not _is_pipeline_source(source_id):
         return None
     if not _requires_ingestion_pipeline(source_id) and not _pipeline_bridge_enabled():
@@ -230,6 +234,7 @@ def _pipeline_dates(source_id: str) -> list[dict[str, Any]] | None:
             settings,
             source_id=source_id,
             aoi_id=settings.ingestion_aoi_id,
+            timeout_seconds=timeout_seconds,
         )
     except AkashaError as exc:
         logger.warning("ingestion readiness unavailable for %s", source_id)

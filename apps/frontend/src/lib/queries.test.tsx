@@ -12,6 +12,7 @@ import {
   useSignup,
   useIngestionSources,
   useIngestionSourceProducts,
+  useDates,
   usePlots,
   useFieldLeaderboard,
   useTriggerIngestionJob,
@@ -55,6 +56,45 @@ function jsonResponse(payload: unknown, status = 200) {
   };
 }
 
+
+describe('date query keys', () => {
+  it('separates global and field-aware availability', () => {
+    expect(queryKeys.dates('sentinel-2-l2a')).toEqual([
+      'dates',
+      'sentinel-2-l2a',
+      'global',
+      'default',
+    ]);
+    expect(queryKeys.dates('sentinel-2-l2a', 'field-1', 'NDVI')).toEqual([
+      'dates',
+      'sentinel-2-l2a',
+      'field-1',
+      'NDVI',
+    ]);
+  });
+
+  it('refetches field dates when the field or index changes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    vi.stubGlobal('fetch', fetchMock);
+    const { Provider } = wrapper();
+    const { result, rerender } = renderHook(
+      ({ fieldId, indexType }) => useDates('sentinel-2-l2a', { fieldId, indexType }),
+      {
+        wrapper: Provider,
+        initialProps: { fieldId: 'field-1', indexType: 'NDVI' },
+      },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    rerender({ fieldId: 'field-2', indexType: 'NDMI' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      '/api/fields/field-1/dates?lookbackDays=153&sourceId=sentinel-2-l2a&indexType=NDVI',
+      '/api/fields/field-2/dates?lookbackDays=153&sourceId=sentinel-2-l2a&indexType=NDMI',
+    ]);
+  });
+});
 afterEach(() => {
   vi.unstubAllGlobals();
 });

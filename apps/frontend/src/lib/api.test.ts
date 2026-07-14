@@ -84,6 +84,22 @@ describe('api client error mapping', () => {
     );
   });
 
+  it('requests field-aware dates through the same-origin BFF route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getDates('sentinel-2-l2a', { fieldId: 'field 1', indexType: 'NDVI' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/fields/field%201/dates?lookbackDays=153&sourceId=sentinel-2-l2a&indexType=NDVI',
+      expect.anything(),
+    );
+  });
+
   it('requests default-layer metadata for the selected source', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

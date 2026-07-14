@@ -348,7 +348,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
   );
   const defaultLayerQ = useDefaultLayer(effectiveSourceId);
-  const datesQ = useDates(effectiveSourceId, { enabled: !bestMode });
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
     [sourcesQ.data, effectiveSourceId],
@@ -390,6 +389,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     if (!selectedPlotId) return null;
     return plotsQ.data?.find((plot) => plot.id === selectedPlotId) ?? null;
   }, [plotsQ.data, selectedPlotId]);
+  const requestedTimelineIndex = resolveDisplayMode(
+    displayModeOverride,
+    selectedSource?.supportedIndices ?? [],
+    selectedSource?.supportedIndices?.[0] ?? configQ.data?.defaultIndex ?? 'NDVI',
+  );
+  const datesQ = useDates(effectiveSourceId, {
+    enabled: !bestMode && (!selectedPlotId || Boolean(selectedPlot)),
+    fieldId: selectedPlot?.id,
+    indexType: requestedTimelineIndex,
+  });
 
   useEffect(() => {
     if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;

@@ -9,10 +9,10 @@ from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
 from math import ceil
 from threading import Lock
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, Self, TypeVar
 
 import httpx
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, model_validator
 
 from .api_models import ApiModel
 from .config import Settings, settings
@@ -21,6 +21,9 @@ from .raster.errors import AkashaError, upstream_error
 T = TypeVar("T")
 
 FIELD_INDEX_PATH = "/api/v1/analytics/field-index"
+FIELD_DATES_PATH = "/api/v1/analytics/field-dates"
+FIELD_DATES_MAX_CLOUD_PERCENTAGE = 20.0
+FIELD_DATES_MAX_BATCH_SIZE = 64
 READINESS_PATH = "/api/v1/analytics/readiness"
 MAX_RETRY_AFTER_SECONDS = 30
 _POINT_CACHE_TTL_SECONDS = 60.0
@@ -88,6 +91,65 @@ class FieldIndexRequest(ApiModel):
     fallback_policy: str = "nearest_valid_scene"
     max_cloud_percentage: int | float | None = None
     field_id: str | None = None
+
+
+class FieldDatesRequest(ApiModel):
+    geometry: dict[str, Any]
+    source_id: str = "sentinel-2-l2a"
+    crs: str = "EPSG:4326"
+    index: str
+    dates: list[date] = Field(min_length=1, max_length=FIELD_DATES_MAX_BATCH_SIZE)
+    max_cloud_percentage: float = Field(
+        default=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+        ge=0,
+        le=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+    )
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> Self:
+        if len(set(self.dates)) != len(self.dates):
+            raise ValueError("dates must be unique")
+        return self
+
+
+class FieldDateAvailability(ApiModel):
+    acquisition_date: date
+    available: bool
+    selected_scene_date: date | None = None
+    usable_pixel_percentage: float | None = Field(default=None, ge=0, le=100)
+    cloud_percentage: float | None = Field(
+        default=None,
+        ge=0,
+        le=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+    )
+    valid_pixel_count: int = Field(default=0, ge=0)
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def validate_availability(self) -> Self:
+        if self.available:
+            if self.selected_scene_date != self.acquisition_date:
+                raise ValueError("available field dates must select the exact acquisition date")
+            if self.usable_pixel_percentage is None or self.valid_pixel_count <= 0:
+                raise ValueError("available field dates require usable pixels")
+            if self.cloud_percentage is None:
+                raise ValueError("available field dates require cloud percentage")
+            if self.reason is not None:
+                raise ValueError("available field dates cannot include an unavailable reason")
+            return self
+        if self.selected_scene_date is not None or self.usable_pixel_percentage is not None:
+            raise ValueError("unavailable field dates cannot include selected-scene metrics")
+        if self.cloud_percentage is not None or self.valid_pixel_count != 0:
+            raise ValueError("unavailable field dates cannot include raster metrics")
+        if not self.reason or not self.reason.strip():
+            raise ValueError("unavailable field dates require a reason")
+        return self
+
+
+class FieldDatesResponse(ApiModel):
+    source_id: str
+    index: str
+    dates: list[FieldDateAvailability] = Field(default_factory=list)
 
 
 class Resolution(ApiModel):
@@ -339,6 +401,37 @@ class IngestionClient:
             raise self._invalid_response(
                 "Ingestion returned an invalid field-index response."
             ) from exc
+
+    def field_dates(
+        self,
+        request: FieldDatesRequest | dict[str, Any],
+        *,
+        request_id: str | None = None,
+    ) -> FieldDatesResponse:
+        payload = FieldDatesRequest.model_validate(request)
+        data = self._request_json(
+            "POST",
+            FIELD_DATES_PATH,
+            json=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+            request_id=request_id,
+        )
+        try:
+            response = FieldDatesResponse.model_validate(data)
+        except ValidationError as exc:
+            raise self._invalid_response(
+                "Ingestion returned an invalid field-dates response."
+            ) from exc
+        response_dates = [item.acquisition_date for item in response.dates]
+        if (
+            response.source_id != payload.source_id
+            or response.index.upper() != payload.index.upper()
+            or len(response_dates) != len(payload.dates)
+            or set(response_dates) != set(payload.dates)
+        ):
+            raise self._invalid_response(
+                "Ingestion returned field dates for an unexpected request."
+            )
+        return response
 
     def readiness(
         self,
@@ -688,6 +781,32 @@ def request_field_index(
         )
     except IngestionClientError as exc:
         _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_INDEX_ERROR")
+    return result.model_dump(mode="json", by_alias=True)
+
+
+def request_field_dates(
+    settings_obj: Settings,
+    *,
+    geometry: dict[str, Any],
+    source_id: str,
+    index_type: str,
+    acquisition_dates: list[str],
+    max_cloud_percentage: float = FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    try:
+        result = _client_for(settings_obj, timeout_seconds).field_dates(
+            {
+                "geometry": geometry,
+                "sourceId": source_id,
+                "crs": "EPSG:4326",
+                "index": index_type,
+                "dates": acquisition_dates,
+                "maxCloudPercentage": max_cloud_percentage,
+            }
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_DATES_ERROR")
     return result.model_dump(mode="json", by_alias=True)
 
 

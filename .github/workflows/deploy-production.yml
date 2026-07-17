@@ -27,7 +27,7 @@ env:
 jobs:
   deploy-production:
     name: Patch Coolify production stack and deploy
-    if: github.repository == 'nishanthturnstile/akasha-project'
+    if: github.repository == 'Akasha-TechCatalyst/akasha-project'
     runs-on: [self-hosted, linux, x64, akasha-control]
     environment: production
     env:

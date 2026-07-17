@@ -45,7 +45,14 @@ discover_compose() {
     compose_args=(-p "${AKASHA_COMPOSE_PROJECT}")
   fi
   pull_policy="${AKASHA_SYNC_PULL_POLICY:-never}"
+  worker_service="${AKASHA_COMPOSE_SERVICE:-ingestion-worker}"
   # The default policy expands to the safe command contract: docker compose ... --pull never.
+}
+
+compose_has_worker_service() {
+  local compose_services
+  compose_services="$(docker compose "${compose_args[@]}" -f "${compose_file}" config --services)"
+  grep -Fxq "${worker_service}" <<<"${compose_services}"
 }
 
 priority_prefix() {
@@ -263,8 +270,8 @@ preflight() {
   fi
   mkdir -p "${RAW_ROOT}" "${TEMP_ROOT}" "$(dirname "${LEDGER_PATH}")"
   discover_compose || { update_status failed 2 preflight "compose file not found; set AKASHA_COMPOSE_FILE"; exit 2; }
-  grep -q "ingestion-worker" "${compose_file}" || { update_status failed 2 preflight "compose file does not include ingestion-worker"; exit 2; }
-  compose_has_bhoonidhi_env || { update_status failed 2 preflight "compose file does not expose Bhoonidhi credentials to ingestion-worker"; exit 2; }
+  compose_has_worker_service || { update_status failed 2 preflight "compose file does not include ${worker_service}"; exit 2; }
+  compose_has_bhoonidhi_env || { update_status failed 2 preflight "compose file does not expose Bhoonidhi credentials to ${worker_service}"; exit 2; }
   csv_contains "${AKASHA_INGESTION_ALLOWED_SOURCES:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa,eos-04-sar-mrs-l2b}" "${source_id}" || {
     update_status failed 2 validation "source is not allowed"
     exit 2
@@ -330,14 +337,14 @@ run_job() {
   priority_prefix
 
   {
-    printf '%q ' "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker python worker.py "${sync_args[@]}"
+    printf '%q ' "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" "${worker_service}" python worker.py "${sync_args[@]}"
     printf '\n'
   } | redact_stream >"${command_path}"
   chmod 640 "${command_path}"
 
   cd "${compose_dir}"
   set +e
-  "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker \
+  "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" "${worker_service}" \
     python worker.py "${sync_args[@]}" 2>&1 | redact_stream | tee -a "${log_path}"
   local exit_code=${PIPESTATUS[0]}
   set -e
@@ -356,13 +363,13 @@ run_job() {
 doctor() {
   discover_compose || { echo "compose: missing"; exit 1; }
   echo "compose=${compose_file}"
-  grep -q "ingestion-worker" "${compose_file}" || { echo "ingestion-worker: missing"; exit 1; }
+  compose_has_worker_service || { echo "${worker_service}: missing"; exit 1; }
   compose_has_bhoonidhi_env || { echo "bhoonidhi env: missing from compose"; exit 1; }
   command -v docker >/dev/null 2>&1 || { echo "docker: missing"; exit 1; }
   mkdir -p "${JOB_ROOT}" "${RAW_ROOT}" "${TEMP_ROOT}" "$(dirname "${LEDGER_PATH}")"
   [[ -w "${JOB_ROOT}" ]] || { echo "job root not writable: ${JOB_ROOT}"; exit 1; }
   cd "${compose_dir}"
-  for service in web api stac-api titiler postgis minio; do
+  for service in caddy api titiler postgres minio redis; do
     local service_id
     service_id="$(docker compose "${compose_args[@]}" -f "${compose_file}" ps -q "${service}")"
     [[ -n "${service_id}" ]] || { echo "${service}: missing"; exit 1; }
@@ -378,21 +385,17 @@ doctor() {
     echo "${service}=${service_status}"
   done
   api_id="$(docker compose "${compose_args[@]}" -f "${compose_file}" ps -q api)"
-  docker exec "${api_id}" python - <<'PY'
-import json
+  docker exec -i "${api_id}" python - <<'PY'
 import urllib.request
 
 checks = {
-    "stac-api catalog": "http://stac-api:8080/collections",
+    "ingestion API health": "http://127.0.0.1:8000/health",
     "titiler health": "http://titiler:8000/healthz",
 }
 for name, url in checks.items():
   with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
-    body = response.read()
     if response.status != 200:
       raise SystemExit(f"{name}: HTTP {response.status}")
-    if name.startswith("stac-api"):
-      json.loads(body.decode("utf-8"))
     print(f"{name}=ok")
 PY
   echo "job_root=${JOB_ROOT}"
@@ -466,7 +469,7 @@ PY
   fi
   cd "${compose_dir}"
   priority_prefix
-  "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" ingestion-worker \
+  "${priority_cmd[@]}" docker compose "${compose_args[@]}" -f "${compose_file}" run --rm --pull "${pull_policy}" "${worker_service}" \
     python worker.py verify-composite --manifest "${manifest}"
 }
 

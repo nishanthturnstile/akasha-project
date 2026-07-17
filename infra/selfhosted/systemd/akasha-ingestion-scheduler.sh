@@ -108,6 +108,12 @@ compose_args=()
 if [[ -n "${AKASHA_COMPOSE_PROJECT:-}" ]]; then
   compose_args=(-p "${AKASHA_COMPOSE_PROJECT}")
 fi
+worker_service="${AKASHA_COMPOSE_SERVICE:-ingestion-worker}"
+compose_services="$(docker compose "${compose_args[@]}" -f "${compose_file}" config --services)"
+if ! grep -Fxq "${worker_service}" <<<"${compose_services}"; then
+  log "compose service not found: ${worker_service}; set AKASHA_COMPOSE_SERVICE" >&2
+  exit 1
+fi
 
 # ── Ensure required directories ───────────────────────────────────────────────
 # All raster/raw/work/COG/job data must stay under /srv/akasha (OPS-002).
@@ -145,11 +151,11 @@ if [[ "${AKASHA_SCHEDULER_ACTIVE}" != "true" ]]; then
     plan_cmd+=(--aoi "${AKASHA_SCHEDULER_AOI}")
   fi
 
-  log "exec: docker compose run ingestion-worker python worker.py schedule-plan --json [redacted paths]"
+  log "exec: docker compose run ${worker_service} python worker.py schedule-plan --json [redacted paths]"
   "${priority_cmd[@]}" \
     docker compose "${compose_args[@]}" -f "${compose_file}" \
     run --rm --pull "${pull_policy}" \
-    ingestion-worker \
+    "${worker_service}" \
     python worker.py "${plan_cmd[@]}" 2>&1 | redact_stream
 
   log "=== ingestion scheduler run end (plan-only) ==="
@@ -180,7 +186,7 @@ if [[ "${AKASHA_SCHEDULER_APPROVED_RUNTIME}" != "true" ]]; then
   "${priority_cmd[@]}" \
     docker compose "${compose_args[@]}" -f "${compose_file}" \
     run --rm --pull "${pull_policy}" \
-    ingestion-worker \
+    "${worker_service}" \
     python worker.py "${plan_cmd[@]}" 2>&1 | redact_stream
 
   log "=== ingestion scheduler run end (plan-only; approved_runtime not set) ==="
@@ -220,12 +226,12 @@ if [[ -n "${AKASHA_SCHEDULER_AOI:-}" ]]; then
   due_cmd+=(--aoi "${AKASHA_SCHEDULER_AOI}")
 fi
 
-log "exec: docker compose run ingestion-worker python worker.py schedule-due-sources [redacted paths]"
+log "exec: docker compose run ${worker_service} python worker.py schedule-due-sources [redacted paths]"
 "${priority_cmd[@]}" \
   docker compose "${compose_args[@]}" -f "${compose_file}" \
   run --rm --pull "${pull_policy}" \
   -e AKASHA_APPROVED_RUNTIME=ingestion-scheduler-wrapper \
-  ingestion-worker \
+  "${worker_service}" \
   python worker.py "${due_cmd[@]}" 2>&1 | redact_stream
 
 log "=== ingestion scheduler run end (active dry_run=${AKASHA_SCHEDULER_DRY_RUN}) ==="

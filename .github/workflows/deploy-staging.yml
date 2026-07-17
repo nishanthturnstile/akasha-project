@@ -28,7 +28,7 @@ jobs:
     if: github.repository == 'nishanthturnstile/akasha-project'
     runs-on: ubuntu-latest
     env:
-      VITE_BASEMAP_PROVIDER: ${{ vars.VITE_BASEMAP_PROVIDER || 'esri' }}
+      VITE_BASEMAP_PROVIDER: ${{ vars.VITE_BASEMAP_PROVIDER || 'osm' }}
       VITE_ESRI_API_KEY: ${{ vars.VITE_ESRI_API_KEY || '' }}
       VITE_ESRI_BASEMAP_STYLE: ${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
       VITE_ESRI_BASEMAP_STYLE_FAMILY: ${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
@@ -86,7 +86,7 @@ jobs:
             context: .
             dockerfile: infra/gateway/Dockerfile
             build_args: |
-              VITE_BASEMAP_PROVIDER=${{ vars.VITE_BASEMAP_PROVIDER || 'esri' }}
+              VITE_BASEMAP_PROVIDER=${{ vars.VITE_BASEMAP_PROVIDER || 'osm' }}
               VITE_ESRI_BASEMAP_STYLE=${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
               VITE_ESRI_BASEMAP_STYLE_FAMILY=${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
               VITE_ESRI_BASEMAP_PLACES=${{ vars.VITE_ESRI_BASEMAP_PLACES || 'none' }}

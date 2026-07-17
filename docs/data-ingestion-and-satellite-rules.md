@@ -272,11 +272,20 @@ STAC registration uses upsert semantics.
 The BFF groups STAC items by `akasha:acquisition_date` or item datetime date.
 
 - `/api/sources/{sourceId}/dates` returns date metadata newest first.
+- Source dates are discovery/catalog candidates only. The product timeline stays hidden until a
+  persisted field is selected, then uses `/api/fields/{fieldId}/dates` and shows only dates whose
+  field window has at least 95% spatial coverage, at least 80% usable pixels, and strictly less
+  than 20% combined cloud plus shadow. Provider scene-wide cloud metadata must not reject an
+  otherwise processable download.
+- AWiFS is regional/coarse and is excluded from normal small-field timelines unless an explicit
+  coarse/regional workflow is selected.
 - `/api/layers/default` chooses the latest usable date and returns a same-origin
   tile template.
 - `/api/tiles/{sourceId}/{acquisitionDate}/FCC/{z}/{x}/{y}.png` serves
   ResourceSat FCC tiles.
 - ResourceSat composites are the preferred served item for a date when present.
+- A dated composite may mosaic spatially adjacent scenes from the same acquisition date only;
+  never blend different dates under one timeline date.
 - Multi-scene, non-composite dates return `MOSAIC_TILES_UNAVAILABLE` until a
   supported mosaic backend is configured.
 

@@ -513,6 +513,8 @@ export interface SceneDate {
   usablePixelPercent: number | null;
   cloudMaskedPercent: number | null;
   coveragePercent: number | null;
+  shadowPercent?: number | null;
+  obscuredPercent?: number | null;
   isLatestUsable: boolean;
   metricsProvisional: boolean;
   tileAvailable: boolean;

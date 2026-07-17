@@ -363,7 +363,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     allowCoarse: false,
     maxCandidates: 30,
   }), [periodFrom, periodTo, bestObservationIndexType]);
-  const bestObsQ = useBestObservations(bestObsParams, { enabled: bestMode });
+  const bestObsQ = useBestObservations(bestObsParams, {
+    enabled: bestMode && Boolean(selectedPlotId),
+  });
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -395,7 +397,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     selectedSource?.supportedIndices?.[0] ?? configQ.data?.defaultIndex ?? 'NDVI',
   );
   const datesQ = useDates(effectiveSourceId, {
-    enabled: !bestMode && (!selectedPlotId || Boolean(selectedPlot)),
+    enabled: !bestMode && Boolean(selectedPlot),
     fieldId: selectedPlot?.id,
     indexType: requestedTimelineIndex,
   });
@@ -1127,7 +1129,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         </div>
       ) }
 
-      {/* Bottom: temporal filmstrip — always visible */ }
+      {/* Field-quality timeline appears only after a persisted field is selected. */ }
+      { selectedPlot && (
       <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
         <div id="timeline-bar" className="min-w-0 flex-1">
           <TimelineBar
@@ -1182,6 +1185,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           </div>
         ) }
       </div>
+      ) }
 
       <AlertDialogRoot
         open={ !!deleteFieldTarget }

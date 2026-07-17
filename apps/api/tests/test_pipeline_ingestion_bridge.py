@@ -213,6 +213,9 @@ def test_field_dates_exclude_unusable_dates_and_recompute_latest(monkeypatch) ->
                     "selectedSceneDate": "2026-05-19",
                     "usablePixelPercentage": 92.5,
                     "cloudPercentage": 4.2,
+                    "fieldCoveragePercentage": 98.0,
+                    "shadowPercentage": 1.0,
+                    "obscuredPercentage": 5.2,
                     "validPixelCount": 100,
                 },
                 {
@@ -221,6 +224,9 @@ def test_field_dates_exclude_unusable_dates_and_recompute_latest(monkeypatch) ->
                     "selectedSceneDate": "2026-05-12",
                     "usablePixelPercentage": 85.0,
                     "cloudPercentage": 8.0,
+                    "fieldCoveragePercentage": 96.0,
+                    "shadowPercentage": 2.0,
+                    "obscuredPercentage": 10.0,
                     "validPixelCount": 80,
                 },
             ],
@@ -330,6 +336,9 @@ def test_field_dates_chunk_dense_timelines_without_dropping_dates(monkeypatch) -
                     "selectedSceneDate": acquisition_date,
                     "usablePixelPercentage": 90.0,
                     "cloudPercentage": 5.0,
+                    "fieldCoveragePercentage": 97.0,
+                    "shadowPercentage": 1.0,
+                    "obscuredPercentage": 6.0,
                     "validPixelCount": 100,
                 }
                 for acquisition_date in batch
@@ -350,6 +359,24 @@ def test_field_dates_chunk_dense_timelines_without_dropping_dates(monkeypatch) -
     assert [len(batch) for batch in batches] == [64, 1]
     assert len(response) == 65
     assert {item["acquisitionDate"] for item in response} == set(acquisition_dates)
+
+
+def test_field_dates_exclude_regional_awifs_from_small_field_timeline(monkeypatch) -> None:
+    def unexpected_pipeline_call(*_args, **_kwargs):
+        raise AssertionError("regional products must not enter field-date evaluation")
+
+    monkeypatch.setattr(field_analytics, "_pipeline_dates", unexpected_pipeline_call)
+
+    response = field_analytics._field_dates_response(
+        plot=_plot(),
+        source_id=catalog.RESOURCESAT_AWIFS_SOURCE_ID,
+        index_type="NDVI",
+        start_date=None,
+        end_date=None,
+        lookback_days=None,
+    )
+
+    assert response == []
 
 
 def test_resourcesat_sources_and_dates_use_pipeline_readiness(monkeypatch) -> None:

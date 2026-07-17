@@ -601,9 +601,9 @@ describe('MapPage source defaults', () => {
   });
 
   it('uses config.defaultSourceId when no persisted active source exists', async () => {
-    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a' });
+    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a', plots: [FIELD_PLOT] });
 
-    renderMapPage();
+    renderMapPage({ selectedPlotId: 'plot-1' });
 
     await waitFor(() => {
       expect(screen.getByTestId('layer-source-trigger').textContent).toContain('Sentinel-2 L2A');
@@ -613,7 +613,10 @@ describe('MapPage source defaults', () => {
       mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
     }).mock.calls;
     expect(
-      calls.some(([input]) => String(input).startsWith('/api/sources/sentinel-2-l2a/dates')),
+      calls.some(([input]) => {
+        const url = String(input);
+        return url.startsWith('/api/fields/plot-1/dates?') && url.includes('sourceId=sentinel-2-l2a');
+      }),
     ).toBe(true);
     expect(
       calls.some(([input]) => String(input) === '/api/layers/default?sourceId=sentinel-2-l2a'),
@@ -624,9 +627,9 @@ describe('MapPage source defaults', () => {
   });
 
   it('keeps a persisted active source ahead of config.defaultSourceId', async () => {
-    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a' });
+    stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a', plots: [FIELD_PLOT] });
 
-    renderMapPage({ activeSourceId: 'resourcesat-2a-liss3-boa' });
+    renderMapPage({ activeSourceId: 'resourcesat-2a-liss3-boa', selectedPlotId: 'plot-1' });
 
     await waitFor(() => {
       expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
@@ -638,7 +641,10 @@ describe('MapPage source defaults', () => {
       mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
     }).mock.calls;
     expect(
-      calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+      calls.some(([input]) => {
+        const url = String(input);
+        return url.startsWith('/api/fields/plot-1/dates?') && url.includes('sourceId=resourcesat-2a-liss3-boa');
+      }),
     ).toBe(true);
     expect(
       calls.some(
@@ -649,9 +655,9 @@ describe('MapPage source defaults', () => {
   });
 
   it('refetches default-layer metadata for the newly selected source', async () => {
-    stubAkashaFetch();
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
 
-    renderMapPage();
+    renderMapPage({ selectedPlotId: 'plot-1' });
 
     await waitFor(() => {
       expect(screen.getByTestId('timeline-next-image').textContent).toContain('Aug 1, 2099');
@@ -668,16 +674,19 @@ describe('MapPage source defaults', () => {
         calls.some(([input]) => String(input) === '/api/layers/default?sourceId=sentinel-2-l2a'),
       ).toBe(true);
       expect(
-        calls.some(([input]) => String(input).startsWith('/api/sources/sentinel-2-l2a/dates')),
+        calls.some(([input]) => {
+          const url = String(input);
+          return url.startsWith('/api/fields/plot-1/dates?') && url.includes('sourceId=sentinel-2-l2a');
+        }),
       ).toBe(true);
       expect(screen.getByTestId('timeline-next-image').textContent).toContain('Jul 18, 2099');
     });
   });
 
   it('ignores a late default-layer response from the previously selected source', async () => {
-    const controls = stubAkashaFetch({ deferResourceSatDefaultLayer: true });
+    const controls = stubAkashaFetch({ deferResourceSatDefaultLayer: true, plots: [FIELD_PLOT] });
 
-    renderMapPage();
+    renderMapPage({ selectedPlotId: 'plot-1' });
     fireEvent.click(await screen.findByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-sentinel-2-l2a'));
 
@@ -809,12 +818,17 @@ describe('MapPage native source behavior', () => {
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-tile-template')).toBe('');
     expect(screen.getByTestId('map-layer-manager').getAttribute('data-index-overlay-url')).toBe('');
     expect(screen.getByTestId('attribution').textContent).toContain('OpenStreetMap');
+    expect(document.getElementById('timeline-bar')).toBeNull();
+    expect(
+      (globalThis.fetch as unknown as { mock: { calls: Array<[RequestInfo | URL]> } }).mock.calls
+        .some(([input]) => String(input).includes('/dates')),
+    ).toBe(false);
   });
 
   it('shows SAR notes and hides optical index controls after SAR selection', async () => {
-    stubAkashaFetch();
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
 
-    renderMapPage();
+    renderMapPage({ selectedPlotId: 'plot-1' });
 
     await screen.findByTestId('map-layer-manager');
 
@@ -864,6 +878,7 @@ describe('MapPage native source behavior', () => {
 
   it('clears the stale compare scene when switching imagery sources', async () => {
     stubAkashaFetch({
+      plots: [FIELD_PLOT],
       resourcesatDates: [
         makeDate('2026-03-01'),
         makeDate('2026-03-19', { isLatestUsable: true, metricsProvisional: true }),
@@ -871,6 +886,7 @@ describe('MapPage native source behavior', () => {
     });
 
     renderMapPage({
+      selectedPlotId: 'plot-1',
       compareEnabled: true,
       compareDate: '2026-03-01',
     });
@@ -1045,9 +1061,9 @@ describe('MapPage selected-field native analytics', () => {
 
 describe('MapPage best-available mode', () => {
   it('source-specific timeline is the default — calls source dates, not observations/best', async () => {
-    stubAkashaFetch();
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
 
-    renderMapPage();
+    renderMapPage({ selectedPlotId: 'plot-1' });
 
     await screen.findByTestId('map-layer-manager');
 
@@ -1055,9 +1071,12 @@ describe('MapPage best-available mode', () => {
       mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
     }).mock.calls;
 
-    // Source-specific dates endpoint must be called in the default (source) mode.
+    // Selected-field dates endpoint must be called in the default (source) mode.
     expect(
-      calls.some(([input]) => String(input).startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')),
+      calls.some(([input]) => {
+        const url = String(input);
+        return url.startsWith('/api/fields/plot-1/dates?') && url.includes('sourceId=resourcesat-2a-liss3-boa');
+      }),
     ).toBe(true);
     // Backend best-observation resolver must NOT be queried in source-specific mode.
     expect(
@@ -1103,9 +1122,9 @@ describe('MapPage best-available mode', () => {
       },
     ];
 
-    stubAkashaFetch({ bestCandidates });
+    stubAkashaFetch({ bestCandidates, plots: [FIELD_PLOT] });
 
-    renderMapPage({ bestMode: true, displayMode: 'FCC' });
+    renderMapPage({ bestMode: true, displayMode: 'FCC', selectedPlotId: 'plot-1' });
 
     // The LISS-4 chip must appear with the provenance label derived from the backend sourceId
     // and resolutionMeters, proving the frontend uses backend-resolved candidates.
@@ -1133,9 +1152,9 @@ describe('MapPage best-available mode', () => {
   });
 
   it('in best mode sends the active analytic intent to the backend resolver', async () => {
-    stubAkashaFetch({ bestCandidates: [] });
+    stubAkashaFetch({ bestCandidates: [], plots: [FIELD_PLOT] });
 
-    renderMapPage({ bestMode: true, displayMode: 'NDMI' });
+    renderMapPage({ bestMode: true, displayMode: 'NDMI', selectedPlotId: 'plot-1' });
 
     await waitFor(() => {
       const calls = (globalThis.fetch as unknown as {
@@ -1253,10 +1272,11 @@ describe('MapPage best-available mode', () => {
       },
     ];
 
-    stubAkashaFetch({ bestCandidates });
+    stubAkashaFetch({ bestCandidates, plots: [FIELD_PLOT] });
 
     renderMapPage({
       activeSourceId: 'eos-04-sar-mrs-l2b',
+      selectedPlotId: 'plot-1',
       bestMode: true,
       compareEnabled: true,
       compareDate: '2026-01-14',

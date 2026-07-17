@@ -98,7 +98,7 @@ export default function FieldAnalyticsPage() {
     ? activeDisplayMode
     : supportedIndices[0] ?? 'NDVI';
   const datesQ = useDates(effectiveSourceId, {
-    enabled: !selectedPlotId || Boolean(selectedField),
+    enabled: Boolean(selectedField),
     fieldId: selectedField?.id,
     indexType: timelineIndexType,
   });

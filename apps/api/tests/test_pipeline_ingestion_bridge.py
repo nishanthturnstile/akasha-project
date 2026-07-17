@@ -659,6 +659,39 @@ def test_resourcesat_statistics_sends_source_id_and_never_uses_native(monkeypatc
     _assert_no_leaks(body)
 
 
+@pytest.mark.parametrize(
+    "source_id",
+    (catalog.SENTINEL_2_SOURCE_ID, *RESOURCESAT_SOURCE_IDS),
+)
+def test_all_four_production_sources_use_pipeline_statistics(monkeypatch, source_id: str) -> None:
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    calls: list[dict[str, Any]] = []
+
+    def fake_request_field_index(*_args, **kwargs):
+        calls.append(kwargs)
+        return _available_result()
+
+    monkeypatch.setattr(field_analytics, "request_field_index", fake_request_field_index)
+    monkeypatch.setattr(
+        field_analytics,
+        "compute_statistics",
+        lambda **_kw: pytest.fail("native statistics fallback"),
+    )
+
+    response = client.post(
+        "/api/fields/field-1/indices/statistics",
+        json={
+            "sourceId": source_id,
+            "acquisitionDate": "2026-03-20",
+            "indexType": "NDVI",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls[0]["source_id"] == source_id
+    assert response.json()["sourceId"] == source_id
+
+
 def test_resourcesat_liss4_rejects_unsupported_pipeline_index_before_upstream(
     monkeypatch,
 ) -> None:

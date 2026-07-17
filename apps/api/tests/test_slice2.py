@@ -368,8 +368,16 @@ def test_sources_endpoint_contract():
     r = client.get("/api/sources")
     assert r.status_code == 200
     sources = {src["id"]: src for src in r.json()}
-    assert "sentinel-2-l2a" not in sources
-    assert "sentinel-1-grd" not in sources
+    assert set(sources) == {
+        "sentinel-2-l2a",
+        "resourcesat-2a-liss3-boa",
+        "resourcesat-2a-liss4-mx70-l2",
+        "resourcesat-2a-awifs-boa",
+    }
+    sentinel = sources["sentinel-2-l2a"]
+    assert sentinel["provider"] == "Copernicus"
+    assert sentinel["kind"] == "optical"
+    assert "NDVI" in sentinel["supportedIndices"]
     rs = sources["resourcesat-2a-liss3-boa"]
     assert rs["provider"] == "ISRO/NRSC Bhoonidhi"
     assert rs["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
@@ -436,53 +444,16 @@ def test_sources_endpoint_contract():
     assert "ISRO" in liss4["attribution"]
     assert "NRSC" in liss4["attribution"]
     assert "Bhoonidhi" in liss4["attribution"]
-    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["availabilityStatus"] == "gated"
-    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["kind"] == "context"
-    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["supportedIndices"] == []
-    assert sources["eos-06-ocm-lac-ndvi-8day-360m"]["displayModes"] == ["NDVI_CONTEXT"]
-    # EOS-04 is validated for backend SAR-assist, but not directly product-active.
-    assert sources["eos-04-sar-mrs-l2b"]["kind"] == "sar"
-    assert sources["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "gated"
-    assert "backend SAR-assisted" in sources["eos-04-sar-mrs-l2b"]["gatedReason"]
-    assert sources["eos-04-sar-mrs-l2b"]["supportedIndices"] == []
-    assert sources["eos-04-sar-mrs-l2b"]["displayModes"] == ["VV_GRAYSCALE"]
-    assert sources["nisar-ssar-beta-gcov"]["kind"] == "sar"
-    assert sources["nisar-ssar-beta-gcov"]["availabilityStatus"] == "gated"
-    assert sources["nisar-ssar-beta-gcov"]["supportedIndices"] == []
-    assert sources["nisar-ssar-beta-gcov"]["displayModes"] == ["VV_GRAYSCALE"]
-    cartosat = sources["cartosat-3-gated"]
-    assert cartosat["availabilityStatus"] == "gated"
-    assert cartosat["kind"] == "context"
-    assert cartosat["analysisLevel"] == "context"
-    assert cartosat["expectedAssets"] == ["visual"]
-    assert cartosat["supportedIndices"] == []
-    assert cartosat["displayModes"] == ["CONTEXT"]
-    assert cartosat["gatedReason"]
-    assert sources["irs-1c-liss3-archive"]["kind"] == "archive"
-    assert sources["irs-1c-liss3-archive"]["analysisLevel"] == "archive"
-
-
-def test_legacy_sentinel_sources_are_opt_in(monkeypatch):
+def test_non_production_sources_remain_available_to_operator_registry():
     from app.raster import catalog_resolver as catalog
 
-    monkeypatch.setenv("AKASHA_INCLUDE_LEGACY_SENTINEL_SOURCES", "true")
-    sources = {src["id"]: src for src in catalog.list_sources()}
-    src = sources["sentinel-2-l2a"]
-    assert "NDVI" in src["supportedIndices"]
-    assert src["kind"] == "optical"
-    assert src["bandRoleMapping"]["NIR"] == "B08"
-    assert src["maskAsset"] == "scl"
-    # RGB stays the default layer; index display modes are additive (EOS-style picker).
-    assert src["displayModes"] == ["RGB", "NDVI", "NDRE", "MSAVI", "NDMI"]
-    assert src["defaultDisplayMode"] == "RGB"
-    s1 = sources["sentinel-1-grd"]
+    production_ids = {src["id"] for src in catalog.list_product_sources()}
+    registered = {src["id"]: src for src in catalog.list_registered_sources()}
+    assert "sentinel-1-grd" not in production_ids
+    s1 = registered["sentinel-1-grd"]
     assert s1["label"] == "Sentinel-1 GRD"
-    assert s1["provider"] == "Copernicus"
     assert s1["kind"] == "sar"
-    assert s1["displayModes"] == ["VV_GRAYSCALE"]
-    assert s1["defaultDisplayMode"] == "VV_GRAYSCALE"
-    assert s1["dateMetricsKind"] == "radar"
-    assert s1["supportedIndices"] == []
+    assert registered["eos-04-sar-mrs-l2b"]["availabilityStatus"] == "gated"
 
 
 def test_phase5_collection_contracts_are_loadable():

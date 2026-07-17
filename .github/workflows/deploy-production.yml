@@ -27,7 +27,7 @@ env:
 jobs:
   deploy-production:
     name: Patch Coolify production stack and deploy
-    if: github.repository == 'Akasha-TechCatalyst/akasha-project'
+    if: github.repository == 'nishanthturnstile/akasha-project'
     runs-on: [self-hosted, linux, x64, akasha-control]
     environment: production
     env:
@@ -37,6 +37,8 @@ jobs:
       IMAGE_TAG: ${{ inputs.image_tag }}
       ESRI_WEB_IMAGE_APPROVED_SHA: ${{ vars.ESRI_WEB_IMAGE_APPROVED_SHA }}
       ESRI_WEB_IMAGE_CREDENTIAL_ID: ${{ vars.ESRI_WEB_IMAGE_CREDENTIAL_ID }}
+      INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
+      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -78,11 +80,40 @@ jobs:
           import os
 
           tag = os.environ["IMAGE_TAG"]
+          resourcesat_cutover = os.environ.get(
+              "INGESTION_RESOURCESAT_CUTOVER_ENABLED", "true"
+          ).lower()
+          if resourcesat_cutover != "true":
+              raise SystemExit("Production requires INGESTION_RESOURCESAT_CUTOVER_ENABLED=true")
+          resourcesat_sources = {
+              value.strip()
+              for value in os.environ.get(
+                  "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS", ""
+              ).split(",")
+              if value.strip()
+          }
+          required_sources = {
+              "resourcesat-2a-liss3-boa",
+              "resourcesat-2a-liss4-mx70-l2",
+              "resourcesat-2a-awifs-boa",
+          }
+          if resourcesat_sources != required_sources:
+              raise SystemExit(
+                  "Production ResourceSat cutover must contain exactly all three source IDs"
+              )
           app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
           if not app_data_root.startswith("/"):
               raise SystemExit("APP_DATA_ROOT must be an absolute host path")
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
+          text = text.replace(
+              "${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-true}",
+              resourcesat_cutover,
+          )
+          text = text.replace(
+              "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}",
+              ",".join(sorted(resourcesat_sources)),
+          )
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)
           PY

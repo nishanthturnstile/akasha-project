@@ -371,6 +371,20 @@ function stubAkashaFetch({
               resolutionMeters: 5.8,
             },
             {
+              id: 'resourcesat-2a-awifs-boa',
+              label: 'ResourceSat-2A AWiFS BOA',
+              provider: 'ISRO/NRSC Bhoonidhi',
+              pipelineBacked: true,
+              kind: 'optical',
+              supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              displayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              defaultDisplayMode: 'NDVI',
+              mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+              defaultMapDisplayMode: 'NDVI',
+              attribution: 'ISRO-IRS, ISRO/NRSC, Bhoonidhi',
+              resolutionMeters: 56,
+            },
+            {
               id: 'eos-04-sar-mrs-l2b',
               label: 'EOS-04 SAR MRS L2B',
               provider: 'ISRO/NRSC Bhoonidhi',
@@ -463,6 +477,7 @@ function stubAkashaFetch({
           'resourcesat-2a-liss3-boa': fieldResourcesatDates,
           'sentinel-2-l2a': sentinelDates,
           'resourcesat-2a-liss4-mx70-l2': liss4Dates,
+          'resourcesat-2a-awifs-boa': resourcesatDates,
           'eos-04-sar-mrs-l2b': sarDates,
         };
         return Promise.resolve(jsonResponse(datesBySource[sourceId] ?? []));
@@ -478,6 +493,10 @@ function stubAkashaFetch({
 
       if (path.startsWith('/api/sources/resourcesat-2a-liss4-mx70-l2/dates')) {
         return Promise.resolve(jsonResponse(liss4Dates));
+      }
+
+      if (path.startsWith('/api/sources/resourcesat-2a-awifs-boa/dates')) {
+        return Promise.resolve(jsonResponse(resourcesatDates));
       }
 
       if (path.startsWith('/api/sources/eos-04-sar-mrs-l2b/dates')) {
@@ -565,6 +584,22 @@ describe('MapPage Esri basemap usage models', () => {
 });
 
 describe('MapPage source defaults', () => {
+  it('renders all four production satellite sources in the selector', async () => {
+    stubAkashaFetch();
+    renderMapPage();
+
+    fireEvent.click(await screen.findByTestId('layer-source-trigger'));
+
+    for (const sourceId of [
+      'sentinel-2-l2a',
+      'resourcesat-2a-liss3-boa',
+      'resourcesat-2a-liss4-mx70-l2',
+      'resourcesat-2a-awifs-boa',
+    ]) {
+      expect(await screen.findByTestId(`source-tab-${sourceId}`)).toBeTruthy();
+    }
+  });
+
   it('uses config.defaultSourceId when no persisted active source exists', async () => {
     stubAkashaFetch({ defaultSourceId: 'sentinel-2-l2a' });
 

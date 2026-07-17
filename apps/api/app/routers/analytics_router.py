@@ -270,6 +270,17 @@ def _field_dates_response(
     lookback_days: int | None,
     timeout_seconds: float | None = None,
 ) -> list[dict[str, Any]]:
+    # Regional/context products such as AWiFS are intentionally excluded from
+    # the normal small-field timeline. They remain available through explicit
+    # regional/coarse product flows, where their resolution is communicated to
+    # the user and the field-quality thresholds can be chosen deliberately.
+    if catalog.source_payload(source_id).get("analysisLevel") in {
+        "regional",
+        "context",
+        "archive",
+    }:
+        return []
+
     deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
 
     def remaining_timeout() -> float:
@@ -330,11 +341,17 @@ def _field_dates_response(
             continue
         usable = field_date.get("usablePixelPercentage")
         cloud_percentage = field_date.get("cloudPercentage")
+        field_coverage = field_date.get("fieldCoveragePercentage")
+        shadow_percentage = field_date.get("shadowPercentage")
+        obscured_percentage = field_date.get("obscuredPercentage")
         filtered.append(
             {
                 **item,
                 "usablePixelPercent": usable,
                 "cloudMaskedPercent": cloud_percentage,
+                "coveragePercent": field_coverage,
+                "shadowPercent": shadow_percentage,
+                "obscuredPercent": obscured_percentage,
                 "isLatestUsable": False,
             }
         )

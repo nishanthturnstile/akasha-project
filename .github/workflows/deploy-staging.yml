@@ -25,7 +25,7 @@ env:
 jobs:
   validate-web-basemap-config:
     name: Validate hosted basemap build settings
-    if: github.repository == 'nishanthturnstile/akasha-project'
+    if: github.repository == 'Akasha-TechCatalyst/akasha-project'
     runs-on: ubuntu-latest
     env:
       VITE_BASEMAP_PROVIDER: ${{ vars.VITE_BASEMAP_PROVIDER || 'osm' }}
@@ -73,7 +73,7 @@ jobs:
 
   build-images:
     name: Build and push ${{ matrix.image }}
-    if: github.repository == 'nishanthturnstile/akasha-project'
+    if: github.repository == 'Akasha-TechCatalyst/akasha-project'
     needs: validate-web-basemap-config
     runs-on: [self-hosted, linux, x64, akasha-control]
     env:
@@ -135,7 +135,7 @@ jobs:
 
   deploy-staging:
     name: Patch Coolify staging stack and deploy
-    if: github.repository == 'nishanthturnstile/akasha-project'
+    if: github.repository == 'Akasha-TechCatalyst/akasha-project'
     needs: build-images
     runs-on: [self-hosted, linux, x64, akasha-control]
     env:

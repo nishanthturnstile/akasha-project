@@ -129,10 +129,11 @@ def main() -> int:
                 ),
                 timeout=120,
             )
-            available = [item for item in field_dates if item.get("available")]
-            if not available:
+            # The product BFF intentionally filters unavailable ingestion dates;
+            # every entry returned by this endpoint is field-usable.
+            if not field_dates:
                 raise RuntimeError(f"{source_id} has no usable NDVI date for field {field_id}")
-            acquisition_date = str(available[0]["acquisitionDate"])
+            acquisition_date = str(field_dates[0]["acquisitionDate"])
             stats = _json_request(
                 app,
                 _url(app_url, f"/api/fields/{field_id}/indices/statistics"),

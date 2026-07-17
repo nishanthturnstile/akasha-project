@@ -144,8 +144,8 @@ jobs:
       COOLIFY_SERVICE_UUID: ${{ vars.COOLIFY_STAGING_SERVICE_UUID }}
       IMAGE_TAG: ${{ github.sha }}
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
-      INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'false' }}
-      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa' }}
+      INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
+      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa' }}
       ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository
@@ -188,16 +188,26 @@ jobs:
           if admin_live not in {"true", "false"}:
               raise SystemExit("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED must be true or false")
           resourcesat_cutover = os.environ.get(
-              "INGESTION_RESOURCESAT_CUTOVER_ENABLED", "false"
+              "INGESTION_RESOURCESAT_CUTOVER_ENABLED", "true"
           ).lower()
-          if resourcesat_cutover not in {"true", "false"}:
-              raise SystemExit("INGESTION_RESOURCESAT_CUTOVER_ENABLED must be true or false")
-          resourcesat_sources = os.environ.get(
-              "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS",
+          if resourcesat_cutover != "true":
+              raise SystemExit("Staging requires INGESTION_RESOURCESAT_CUTOVER_ENABLED=true")
+          resourcesat_sources = {
+              value.strip()
+              for value in os.environ.get(
+                  "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS", ""
+              ).split(",")
+              if value.strip()
+          }
+          required_sources = {
               "resourcesat-2a-liss3-boa",
-          )
-          if not all(part.strip() for part in resourcesat_sources.split(",")):
-              raise SystemExit("INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid")
+              "resourcesat-2a-liss4-mx70-l2",
+              "resourcesat-2a-awifs-boa",
+          }
+          if resourcesat_sources != required_sources:
+              raise SystemExit(
+                  "Staging ResourceSat cutover must contain exactly all three source IDs"
+              )
           esri_usage_model = os.environ.get("ESRI_BASEMAP_USAGE_MODEL", "session").lower()
           if esri_usage_model not in {"session", "tile"}:
               raise SystemExit("ESRI_BASEMAP_USAGE_MODEL must be session or tile")
@@ -208,12 +218,12 @@ jobs:
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
           text = text.replace("${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}", admin_live)
           text = text.replace(
-              "${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-false}",
+              "${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-true}",
               resourcesat_cutover,
           )
           text = text.replace(
-              "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa}",
-              resourcesat_sources,
+              "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}",
+              ",".join(sorted(resourcesat_sources)),
           )
           text = text.replace("${ESRI_BASEMAP_USAGE_MODEL:-session}", esri_usage_model)
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)

@@ -230,20 +230,21 @@ def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
     assert 'values["health"] == "healthy"' in verify_step["run"]
 
 
-def test_staging_deploy_renders_source_scoped_resourcesat_cutover():
+def test_staging_deploy_requires_complete_resourcesat_cutover():
     workflow = _workflow("deploy-staging.yml")
     deploy_job = workflow["jobs"]["deploy-staging"]
     render_step = _step(deploy_job, "Render Compose with immutable image tag")
 
     assert deploy_job["env"]["INGESTION_RESOURCESAT_CUTOVER_ENABLED"] == (
-        "${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'false' }}"
+        "${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}"
     )
     assert deploy_job["env"]["INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS"] == (
         "${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || "
-        "'resourcesat-2a-liss3-boa' }}"
+        "'resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,"
+        "resourcesat-2a-awifs-boa' }}"
     )
-    assert "INGESTION_RESOURCESAT_CUTOVER_ENABLED must be true or false" in render_step["run"]
-    assert "INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS is invalid" in render_step["run"]
+    assert "Staging requires INGESTION_RESOURCESAT_CUTOVER_ENABLED=true" in render_step["run"]
+    assert "must contain exactly all three source IDs" in render_step["run"]
     assert deploy_job["env"]["ESRI_BASEMAP_USAGE_MODEL"] == (
         "${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}"
     )
@@ -299,9 +300,31 @@ def test_selfhosted_compose_forwards_validated_basemap_runtime_without_public_ke
         assert f'{name}: "${{{name}:-{default}}}"' in compose
         assert f"{name}={default}" in env
 
-    api_block = compose.split("  api:", 1)[1].split("  titiler:", 1)[0]
+    api_block = compose.split("\n  api:\n", 1)[1].split("\n  titiler:\n", 1)[0]
     assert "VITE_ESRI_API_KEY" not in api_block
     assert "VITE_ESRI_PUBLIC_ACCESS" not in api_block
+
+
+def test_selfhosted_compose_requires_complete_four_source_ingestion_bridge():
+    env = _text("infra/selfhosted/env.example")
+    compose = _text("infra/selfhosted/coolify-compose.yml")
+    api_block = compose.split("\n  api:\n", 1)[1].split("\n  titiler:\n", 1)[0]
+
+    assert "INGESTION_API_URL:?" in api_block
+    assert "INGESTION_API_KEY:?" in api_block
+    assert 'INGESTION_FIELD_INDEX_ENABLED: "${INGESTION_FIELD_INDEX_ENABLED:-true}"' in api_block
+    assert 'INGESTION_READINESS_ENABLED: "${INGESTION_READINESS_ENABLED:-true}"' in api_block
+    assert (
+        'INGESTION_RESOURCESAT_CUTOVER_ENABLED: '
+        '"${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-true}"'
+    ) in api_block
+    for source_id in (
+        "resourcesat-2a-liss3-boa",
+        "resourcesat-2a-liss4-mx70-l2",
+        "resourcesat-2a-awifs-boa",
+    ):
+        assert source_id in api_block
+        assert source_id in env
 
 
 def test_ingestion_image_packages_eos04_prepare_script():

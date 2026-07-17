@@ -206,7 +206,7 @@ async def get_config() -> dict[str, Any]:
 @router.get("/sources")
 async def get_sources() -> list[dict[str, Any]]:
     """Satellite/product source list derived from the source registry/STAC metadata."""
-    sources = catalog.list_sources()
+    sources = catalog.list_product_sources()
     replaced: list[dict[str, Any]] = []
     seen: set[str] = set()
     for source in sources:

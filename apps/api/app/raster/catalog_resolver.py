@@ -36,7 +36,12 @@ RESOURCESAT_BOA_SOURCE_IDS = {
 COLLECTION_ID = RESOURCESAT_LISS3_SOURCE_ID
 SOURCE_LABEL = "ResourceSat-2A LISS-3 BOA"
 SOURCE_PROVIDER = "ISRO/NRSC Bhoonidhi"
-_LEGACY_SENTINEL_SOURCE_IDS = {SENTINEL_2_SOURCE_ID, SENTINEL_1_SOURCE_ID}
+PRODUCTION_SOURCE_IDS = (
+    SENTINEL_2_SOURCE_ID,
+    RESOURCESAT_LISS3_SOURCE_ID,
+    RESOURCESAT_LISS4_SOURCE_ID,
+    RESOURCESAT_AWIFS_SOURCE_ID,
+)
 _EOS04_KNOWN_POLARIZATIONS = {"HH", "HV", "VH", "VV", "RH", "RV"}
 
 _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
@@ -458,29 +463,9 @@ def registered_source_ids() -> list[str]:
     return list(_SOURCE_REGISTRY)
 
 
-def _include_legacy_sentinel_sources() -> bool:
-    return os.environ.get("AKASHA_INCLUDE_LEGACY_SENTINEL_SOURCES", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
-
 def selectable_source_ids() -> list[str]:
-    """Return browser-selectable production sources.
-
-    Phase 8a moves Sentinel out of the production selector after the ResourceSat
-    composite smoke test. Direct resolver access remains for legacy tests and
-    operator migration checks.
-    """
-    if _include_legacy_sentinel_sources():
-        return registered_source_ids()
-    return [
-        source_id
-        for source_id in registered_source_ids()
-        if source_id not in _LEGACY_SENTINEL_SOURCE_IDS
-    ]
+    """Return the four production imagery sources in stable UI order."""
+    return list(PRODUCTION_SOURCE_IDS)
 
 
 def _collection_from_registry(source_id: str) -> dict[str, Any]:
@@ -544,6 +529,17 @@ def source_payload(source_id: str) -> dict[str, Any]:
 
 
 def list_sources() -> list[dict[str, Any]]:
+    """Return every registered source for internal and operator consumers."""
+    return [source_payload(source_id) for source_id in registered_source_ids()]
+
+
+def list_registered_sources() -> list[dict[str, Any]]:
+    """Return every known source for operator/admin monitoring surfaces."""
+    return list_sources()
+
+
+def list_product_sources() -> list[dict[str, Any]]:
+    """Return only the four production sources exposed by the web product."""
     return [source_payload(source_id) for source_id in selectable_source_ids()]
 
 

@@ -88,6 +88,9 @@ def test_staging_deploy_verifies_all_images_before_coolify_patch():
     validate_names = _step_names(validate_job)
     build_names = _step_names(build_job)
     assert validate_job["env"]["VITE_ESRI_API_KEY"] == "${{ vars.VITE_ESRI_API_KEY || '' }}"
+    assert validate_job["env"]["VITE_BASEMAP_PROVIDER"] == (
+        "${{ vars.VITE_BASEMAP_PROVIDER || 'osm' }}"
+    )
     assert validate_job["env"]["ESRI_BASEMAP_USAGE_MODEL"] == (
         "${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}"
     )
@@ -106,6 +109,7 @@ def test_staging_deploy_verifies_all_images_before_coolify_patch():
         if item["image"] == "akasha-web"
     )
     assert "${{ env." not in web_matrix_args
+    assert "VITE_BASEMAP_PROVIDER=${{ vars.VITE_BASEMAP_PROVIDER || 'osm' }}" in web_matrix_args
     build_step = _step(build_job, "Build and push image")
     assert "VITE_ESRI_PUBLIC_ACCESS=${{ matrix.image == 'akasha-web' && env.VITE_ESRI_API_KEY || '' }}" in build_step["with"]["build-args"]
     assert "CHANGE_ME" in validate_step["run"]

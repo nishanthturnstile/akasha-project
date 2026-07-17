@@ -185,6 +185,9 @@ export default function FieldCreatePage() {
     drawInstanceRef.current = draw;
   }, []);
 
+  const handleCancelDraw = useCallback(() => setFieldMode(null), []);
+  const handleUpdateField = useCallback(() => Promise.resolve(), []);
+
   const handleGeometryChange = useCallback((geometry: PlotGeometry, featureId?: string) => {
     if (!featureId) return;
     const pendingId = featureToPendingRef.current.get(featureId);
@@ -205,7 +208,6 @@ export default function FieldCreatePage() {
     if (featureId) {
       featureToPendingRef.current.set(featureId, pendingId);
     }
-    setEditingPendingField(newField);
   }, []);
 
   const handleTrimComplete = useCallback((lineCoords: [number, number][]) => {
@@ -506,8 +508,8 @@ export default function FieldCreatePage() {
             activeTool={ activeMapTool }
             map={ map }
             mode={ fieldMode }
-            onCancel={ () => setFieldMode(null) }
-            onUpdateField={ () => Promise.resolve() }
+            onCancel={ handleCancelDraw }
+            onUpdateField={ handleUpdateField }
             onRequestTool={ requestMapTool }
             onReleaseTool={ releaseMapTool }
             selectedPlot={ null }
@@ -565,6 +567,7 @@ export default function FieldCreatePage() {
                       onClick={ () => {
                         if (cutMode) { setCutMode(false); }
                         setShapeMode('polygon');
+                        try { drawInstanceRef.current?.setMode('polygon'); } catch { /* ignore */ }
                         if (map && typeof map.getCanvas === 'function') {
                           map.getCanvas().style.cursor = 'crosshair';
                         }
@@ -589,6 +592,7 @@ export default function FieldCreatePage() {
                       onClick={ () => {
                         if (cutMode) { setCutMode(false); }
                         setShapeMode('circle');
+                        try { drawInstanceRef.current?.setMode('circle'); } catch { /* ignore */ }
                         if (map && typeof map.getCanvas === 'function') {
                           map.getCanvas().style.cursor = 'crosshair';
                         }

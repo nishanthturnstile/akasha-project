@@ -28,7 +28,7 @@ jobs:
     if: github.repository == 'Akasha-TechCatalyst/akasha-project'
     runs-on: ubuntu-latest
     env:
-      VITE_BASEMAP_PROVIDER: ${{ vars.VITE_BASEMAP_PROVIDER || 'osm' }}
+      VITE_BASEMAP_PROVIDER: esri
       VITE_ESRI_API_KEY: ${{ vars.VITE_ESRI_API_KEY || '' }}
       VITE_ESRI_BASEMAP_STYLE: ${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
       VITE_ESRI_BASEMAP_STYLE_FAMILY: ${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
@@ -86,7 +86,7 @@ jobs:
             context: .
             dockerfile: infra/gateway/Dockerfile
             build_args: |
-              VITE_BASEMAP_PROVIDER=${{ vars.VITE_BASEMAP_PROVIDER || 'osm' }}
+              VITE_BASEMAP_PROVIDER=esri
               VITE_ESRI_BASEMAP_STYLE=${{ vars.VITE_ESRI_BASEMAP_STYLE || 'arcgis/imagery' }}
               VITE_ESRI_BASEMAP_STYLE_FAMILY=${{ vars.VITE_ESRI_BASEMAP_STYLE_FAMILY || 'arcgis' }}
               VITE_ESRI_BASEMAP_PLACES=${{ vars.VITE_ESRI_BASEMAP_PLACES || 'none' }}
@@ -145,7 +145,7 @@ jobs:
       IMAGE_TAG: ${{ github.sha }}
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
-      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa' }}
+      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
       ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository

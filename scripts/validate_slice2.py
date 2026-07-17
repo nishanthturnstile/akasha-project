@@ -229,7 +229,16 @@ try:
     body = src.json()
     source_payload = next((source for source in body if source.get("id") == SOURCE_ID), None)
     check(src.status_code == 200 and source_payload is not None, "GET /api/sources")
-    check("sentinel-2-l2a" not in {source["id"] for source in body}, "Sentinel-2 hidden by default")
+    check(
+        {source["id"] for source in body}
+        == {
+            "sentinel-2-l2a",
+            "resourcesat-2a-liss3-boa",
+            "resourcesat-2a-liss4-mx70-l2",
+            "resourcesat-2a-awifs-boa",
+        },
+        "product source list contains exactly the four production satellites",
+    )
     source_payload = source_payload or {}
     check(
         source_payload.get("pipelineBacked") is not True

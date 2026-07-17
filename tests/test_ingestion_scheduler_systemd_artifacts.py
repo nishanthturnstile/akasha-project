@@ -383,12 +383,12 @@ def test_manual_runner_allows_eos04_backend_source_by_default():
     assert "eos-04-sar-mrs-l2b" in env
 
 
-def test_manual_runner_doctor_checks_internal_catalog_and_tile_services():
-    """Doctor must fail if stac-api/titiler are missing after deploy/reconcile."""
+def test_manual_runner_doctor_checks_split_ingestion_services():
+    """Doctor must verify the deployed split-ingestion dependencies."""
     runner = read_artifact("manual_runner")
-    assert "for service in web api stac-api titiler postgis minio" in runner
-    assert "http://stac-api:8080/collections" in runner
-    assert "http://titiler:8000/healthz" in runner
+    assert "for service in caddy api titiler postgres minio redis" in runner
+    assert '"ingestion API health": "http://127.0.0.1:8000/health"' in runner
+    assert '"titiler health": "http://titiler:8000/healthz"' in runner
     assert 'print(f"{name}=ok")' in runner
 
 

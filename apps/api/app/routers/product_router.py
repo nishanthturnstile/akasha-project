@@ -28,7 +28,12 @@ from fastapi.responses import Response
 from ..aoi import load_aoi_configs, select_default_aoi
 from ..auth import get_current_team
 from ..config import settings
-from ..ingestion_client import get_readiness, is_ingestion_configured
+from ..ingestion_client import (
+    fetch_natural_source_tile,
+    get_natural_source_dates,
+    get_readiness,
+    is_ingestion_configured,
+)
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
 from ..raster.errors import (
@@ -58,6 +63,7 @@ logger = logging.getLogger("akasha.api.product")
 _PIPELINE_SOURCE_IDS = frozenset(
     {catalog.SENTINEL_2_SOURCE_ID, *catalog.RESOURCESAT_BOA_SOURCE_IDS}
 )
+_EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
 
 
 def _is_pipeline_source(source_id: str) -> bool:
@@ -97,6 +103,68 @@ def _pipeline_bridge_enabled() -> bool:
         and settings.ingestion_field_index_enabled
         and is_ingestion_configured(settings)
     )
+
+
+def _uses_natural_pipeline(source_id: str) -> bool:
+    """Return whether display-only natural imagery is active for this source."""
+    return (
+        source_id == _EOS04_SOURCE_ID
+        and settings.eos04_product_enabled
+        and settings.ingestion_eos04_cutover_enabled
+        and is_ingestion_configured(settings)
+    )
+
+
+def _natural_source_payload(source_id: str) -> dict[str, Any] | None:
+    if not _uses_natural_pipeline(source_id):
+        return None
+    payload = catalog.source_payload(source_id)
+    payload.update(
+        {
+            "availabilityStatus": "active",
+            "gatedReason": None,
+            "tileRouteMode": "natural-pipeline",
+            "refreshPolicy": "Standalone ingestion pipeline; display-only SAR imagery.",
+        }
+    )
+    return payload
+
+
+def _natural_dates(source_id: str) -> list[dict[str, Any]] | None:
+    if not _uses_natural_pipeline(source_id):
+        return None
+    response = get_natural_source_dates(
+        settings,
+        source_id=source_id,
+        aoi_id=settings.ingestion_aoi_id,
+        timeout_seconds=float(settings.ingestion_request_timeout_seconds),
+    )
+    source_dates = list(response.get("dates") or [])
+    latest_available_index = next(
+        (index for index, value in enumerate(source_dates) if value.get("tileAvailable")),
+        None,
+    )
+    dates: list[dict[str, Any]] = []
+    for index, value in enumerate(source_dates):
+        dates.append(
+            {
+                "acquisitionDate": value["acquisitionDate"],
+                "datetime": value["datetime"],
+                "usablePixelPercent": None,
+                "cloudMaskedPercent": None,
+                "coveragePercent": None,
+                "isLatestUsable": index == latest_available_index,
+                "sceneCount": value.get("sceneCount", 1),
+                "bounds": value.get("bounds"),
+                "polarizations": value.get("polarizations") or [],
+                "tileAvailable": bool(value.get("tileAvailable")),
+                "unavailableReason": value.get("unavailableReason"),
+                "metricsProvisional": False,
+                "sensor": "EOS-04 SAR",
+                "provenanceLabel": "EOS-04 · radar backscatter",
+            }
+        )
+    return dates
 
 
 def _pipeline_index_modes(payload: dict[str, Any]) -> list[str]:
@@ -211,12 +279,17 @@ async def get_sources() -> list[dict[str, Any]]:
     seen: set[str] = set()
     for source in sources:
         source_id = str(source["id"])
-        replaced.append(_pipeline_source_payload(source_id) or source)
+        replaced.append(
+            _natural_source_payload(source_id) or _pipeline_source_payload(source_id) or source
+        )
         seen.add(source_id)
     for source_id in sorted(_PIPELINE_SOURCE_IDS - seen):
         payload = _pipeline_source_payload(source_id)
         if payload:
             replaced.append(payload)
+    natural_payload = _natural_source_payload(_EOS04_SOURCE_ID)
+    if natural_payload and _EOS04_SOURCE_ID not in seen:
+        replaced.append(natural_payload)
     return replaced
 
 
@@ -396,6 +469,14 @@ async def get_source_dates(
     lookbackDays: int | None = Query(default=None, ge=1, le=366),
 ) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
+    natural_dates = _natural_dates(source_id)
+    if natural_dates is not None:
+        return _filter_source_dates(
+            natural_dates,
+            start_date=startDate,
+            end_date=endDate,
+            lookback_days=lookbackDays,
+        )
     pipeline_dates = _pipeline_dates(source_id)
     if pipeline_dates is not None:
         return _filter_source_dates(
@@ -416,6 +497,46 @@ async def get_source_dates(
 async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     """Default source/date/layer metadata + same-origin tile template."""
     source_id = sourceId or settings.default_source_id or catalog.COLLECTION_ID
+    if _uses_natural_pipeline(source_id):
+        source = _natural_source_payload(source_id) or catalog.source_payload(source_id)
+        dates = _natural_dates(source_id) or []
+        selectable_dates = [value for value in dates if value.get("tileAvailable")]
+        selected = (selectable_dates or dates or [None])[0]
+        acquisition_date = selected.get("acquisitionDate") if selected else None
+        display_mode = str(source["defaultDisplayMode"])
+        tile_available = bool(selected and selected.get("tileAvailable"))
+        return {
+            "sourceId": source_id,
+            "acquisitionDate": acquisition_date,
+            **_expected_acquisition_payload(source, acquisition_date),
+            "displayMode": display_mode,
+            "displayModes": source["displayModes"],
+            "defaultDisplayMode": source["defaultDisplayMode"],
+            "mapDisplayModes": source.get("mapDisplayModes", source["displayModes"]),
+            "defaultMapDisplayMode": source.get("defaultMapDisplayMode", display_mode),
+            "kind": source["kind"],
+            "tileUrlTemplate": (
+                f"/api/tiles/{source_id}/{acquisition_date}/{display_mode}/{{z}}/{{x}}/{{y}}.png"
+                if acquisition_date and tile_available
+                else None
+            ),
+            "bounds": selected.get("bounds") if selected else None,
+            "minzoom": 8,
+            "maxzoom": 14,
+            "attribution": source["attribution"],
+            "sceneCount": selected.get("sceneCount") if selected else 0,
+            "usablePixelPercent": None,
+            "cloudMaskedPercent": None,
+            "coveragePercent": None,
+            "metricsProvisional": False,
+            "tileAvailable": tile_available,
+            "unavailableReason": (
+                selected.get("unavailableReason")
+                if selected
+                else "No catalog dates are available."
+            ),
+            "tileRouteMode": "natural-pipeline",
+        }
     if _uses_ingestion_pipeline(source_id):
         source = _pipeline_source_payload(source_id) or catalog.source_payload(source_id)
         dates = _pipeline_dates(source_id) or []
@@ -779,6 +900,30 @@ async def get_display_mode_tile(
     source_id: str, acquisition_date: str, display_mode: str, z: int, x: int, y: int
 ) -> Response:
     """Display-mode-aware same-origin tile route."""
+    if _uses_natural_pipeline(source_id):
+        normalized_mode = display_mode.upper()
+        source = _natural_source_payload(source_id) or catalog.source_payload(source_id)
+        if normalized_mode not in source["displayModes"]:
+            raise bad_request(
+                f"Display mode '{display_mode}' is not supported for source '{source_id}'.",
+                code="UNSUPPORTED_DISPLAY_MODE",
+                sourceId=source_id,
+                displayMode=display_mode,
+                supportedDisplayModes=source["displayModes"],
+            )
+        body, content_type = await anyio.to_thread.run_sync(
+            partial(
+                fetch_natural_source_tile,
+                settings,
+                source_id=source_id,
+                aoi_id=settings.ingestion_aoi_id,
+                acquisition_date=acquisition_date,
+                z=z,
+                x=x,
+                y=y,
+            )
+        )
+        return Response(content=body, media_type=content_type)
     if _requires_ingestion_pipeline(source_id):
         raise upstream_error(
             "ResourceSat display tiles are served by standalone ingestion overlays, "

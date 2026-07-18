@@ -146,6 +146,8 @@ jobs:
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
+      INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'false' }}
+      EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'false' }}
       ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository
@@ -208,6 +210,21 @@ jobs:
               raise SystemExit(
                   "Staging ResourceSat cutover must contain exactly all three source IDs"
               )
+          eos04_cutover = os.environ.get(
+              "INGESTION_EOS04_CUTOVER_ENABLED", "false"
+          ).lower()
+          eos04_product = os.environ.get("EOS04_PRODUCT_ENABLED", "false").lower()
+          for name, value in (
+              ("INGESTION_EOS04_CUTOVER_ENABLED", eos04_cutover),
+              ("EOS04_PRODUCT_ENABLED", eos04_product),
+          ):
+              if value not in {"true", "false"}:
+                  raise SystemExit(f"{name} must be true or false")
+          if eos04_product == "true" and eos04_cutover != "true":
+              raise SystemExit(
+                  "EOS04_PRODUCT_ENABLED=true requires "
+                  "INGESTION_EOS04_CUTOVER_ENABLED=true"
+              )
           esri_usage_model = os.environ.get("ESRI_BASEMAP_USAGE_MODEL", "session").lower()
           if esri_usage_model not in {"session", "tile"}:
               raise SystemExit("ESRI_BASEMAP_USAGE_MODEL must be session or tile")
@@ -225,6 +242,10 @@ jobs:
               "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}",
               ",".join(sorted(resourcesat_sources)),
           )
+          text = text.replace(
+              "${INGESTION_EOS04_CUTOVER_ENABLED:-false}", eos04_cutover
+          )
+          text = text.replace("${EOS04_PRODUCT_ENABLED:-false}", eos04_product)
           text = text.replace("${ESRI_BASEMAP_USAGE_MODEL:-session}", esri_usage_model)
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)

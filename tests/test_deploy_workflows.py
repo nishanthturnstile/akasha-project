@@ -254,6 +254,25 @@ def test_staging_deploy_requires_complete_resourcesat_cutover():
     assert '${ESRI_BASEMAP_USAGE_MODEL:-session}' in render_step["run"]
 
 
+def test_staging_deploy_has_independent_fail_closed_eos04_activation_gates():
+    workflow = _workflow("deploy-staging.yml")
+    deploy_job = workflow["jobs"]["deploy-staging"]
+    render_step = _step(deploy_job, "Render Compose with immutable image tag")
+
+    assert deploy_job["env"]["INGESTION_EOS04_CUTOVER_ENABLED"] == (
+        "${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'false' }}"
+    )
+    assert deploy_job["env"]["EOS04_PRODUCT_ENABLED"] == (
+        "${{ vars.EOS04_PRODUCT_ENABLED || 'false' }}"
+    )
+    assert 'f"{name} must be true or false"' in render_step["run"]
+    assert 'if eos04_product == "true" and eos04_cutover != "true"' in render_step["run"]
+    assert "EOS04_PRODUCT_ENABLED=true requires" in render_step["run"]
+    assert "INGESTION_EOS04_CUTOVER_ENABLED=true" in render_step["run"]
+    assert '${INGESTION_EOS04_CUTOVER_ENABLED:-false}' in render_step["run"]
+    assert '${EOS04_PRODUCT_ENABLED:-false}' in render_step["run"]
+
+
 def test_deploy_workflow_inline_python_snippets_compile():
     for workflow_name in DEPLOY_WORKFLOWS:
         workflow = _workflow(workflow_name)

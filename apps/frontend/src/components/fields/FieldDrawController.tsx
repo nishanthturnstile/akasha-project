@@ -196,6 +196,7 @@ export function FieldDrawController({
                 flags: {
                   polygon: {
                     feature: {
+                      draggable: true,
                       coordinates: {
                         draggable: true,
                         midpoints: { draggable: true },

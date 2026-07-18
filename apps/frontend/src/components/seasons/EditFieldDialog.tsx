@@ -295,6 +295,7 @@ export default function EditFieldDialog({
               flags: {
                 polygon: {
                   feature: {
+                    draggable: true,
                     coordinates: {
                       draggable: true,
                       midpoints: { draggable: true },

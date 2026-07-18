@@ -358,14 +358,12 @@ export const getConfig = (): Promise<AppConfig> => request<AppConfig>('/api/conf
 
 export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sources');
 
-const SOURCE_DATE_LOOKBACK_DAYS = 153;
-
 export const getDates = (
   sourceId: string,
   options: { fieldId?: string; indexType?: string } = {},
 ): Promise<SceneDate[]> => {
-  const params = new URLSearchParams({ lookbackDays: String(SOURCE_DATE_LOOKBACK_DAYS) });
   if (options.fieldId) {
+    const params = new URLSearchParams();
     params.set('sourceId', sourceId);
     params.set('indexType', options.indexType ?? 'NDVI');
     return request<SceneDate[]>(
@@ -373,7 +371,7 @@ export const getDates = (
     );
   }
   return request<SceneDate[]>(
-    `/api/sources/${encodeURIComponent(sourceId)}/dates?${params.toString()}`,
+    `/api/sources/${encodeURIComponent(sourceId)}/dates`,
   );
 };
 

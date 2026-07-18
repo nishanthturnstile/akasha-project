@@ -58,6 +58,13 @@ describe('TimelineBar — date navigation behavior', () => {
         expect(screen.queryByTestId('timeline-period-trigger')).toBeNull();
     });
 
+    it('explains that an empty selected-field timeline is quality-filtered', () => {
+        renderBar({ dates: [] });
+        expect(screen.getByTestId('timeline-empty').textContent).toContain(
+            'No dates meet this field’s coverage and cloud-quality requirements.',
+        );
+    });
+
     it('filters chips outside the period but always keeps the selected chip', () => {
         renderBar({
             onPeriodChange: vi.fn(),

@@ -113,10 +113,25 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                                 features: {},
                             },
                             baseline: {
-                                status: 'INSUFFICIENT_OBSERVATIONS',
+                                status: 'AVAILABLE',
                                 requiredPriorObservations: 5,
-                                priorObservationCount: 1,
-                                bands: [],
+                                priorObservationCount: 5,
+                                bands: [
+                                    {
+                                        polarization: 'HH',
+                                        currentValue: -7.22,
+                                        baselineMedian: -6.47,
+                                        mad: 0.5,
+                                        robustDeviation: -1,
+                                    },
+                                    {
+                                        polarization: 'HV',
+                                        currentValue: -14.74,
+                                        baselineMedian: -13.43,
+                                        mad: 0.78,
+                                        robustDeviation: -1.13,
+                                    },
+                                ],
                             },
                             overlayUrl: '/api/fields/plot-1/sar/overlay.png?targetDate=2026-07-18',
                         },
@@ -154,7 +169,8 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
 
         expect(await screen.findByText(/provides structural and moisture-sensitive evidence, not NDVI/i)).toBeTruthy();
         expect(screen.getByTestId('radar-temporal-change').textContent).toContain('HH +2.00 dB');
-        expect(screen.getByTestId('radar-baseline-status').textContent).toContain('5 required');
+        expect(screen.getByTestId('radar-baseline-status').textContent).toContain('Field baseline (5 prior passes)');
+        expect(screen.getByTestId('radar-baseline-status').textContent).toContain('HH -1.00 · HV -1.13 relative deviation');
         expect(screen.getByText(/It is not NDVI or a diagnosis/i)).toBeTruthy();
         fireEvent.click(screen.getByTestId('toggle-radar-evidence'));
         expect(onRadarEvidenceVisibleChange).toHaveBeenCalledWith(true);

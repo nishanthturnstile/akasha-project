@@ -221,6 +221,20 @@ export function IndexPanel({
                           { radarEvidence.baseline.priorObservationCount } comparable prior observation{ radarEvidence.baseline.priorObservationCount === 1 ? '' : 's' } available; { radarEvidence.baseline.requiredPriorObservations } required for a field baseline.
                         </p>
                       ) }
+                      { radarEvidence.baseline?.status === 'AVAILABLE' && (
+                        <div className="rounded border border-info/20 bg-background/30 px-2 py-1" data-testid="radar-baseline-status">
+                          <p className="font-medium text-foreground">
+                            Field baseline ({ radarEvidence.baseline.priorObservationCount } prior passes)
+                          </p>
+                          <p className="text-muted-foreground">
+                            { radarEvidence.baseline.bands
+                                .flatMap((band) => band.robustDeviation === null
+                                  ? []
+                                  : [`${band.polarization} ${band.robustDeviation >= 0 ? '+' : ''}${band.robustDeviation.toFixed(2)}`])
+                                .join(' · ') } relative deviation
+                          </p>
+                        </div>
+                      ) }
                       { radarEvidence.comparison?.status === 'METADATA_INCOMPLETE' && (
                         <p className="text-muted-foreground" data-testid="radar-comparison-status">
                           This pass can be viewed, but its acquisition metadata is incomplete for temporal comparison.

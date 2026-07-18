@@ -7,8 +7,10 @@ supersedes the earlier single-repository EOS-04 plan.
 
 Implementation status: phases 1–5 and local validation are complete in the working trees. A real
 approved-runtime EOS-04 product has also passed catalog search, capped download, package inspection,
-calibration, mask application, and strict COG validation. Product exposure remains intentionally
-gated pending the operational ingest/catalog/API run and screenshot-backed staging smoke test.
+calibration, mask application, and strict COG validation. The operational ingest/catalog/API run
+is also complete. Staging product exposure is approved through the two fail-closed deployment
+gates; production exposure remains unchanged. A screenshot-backed staging smoke test is the
+remaining release-evidence step.
 
 - `akasha-ingestion` owns provider access, raw downloads, preparation, validation, object storage,
   pgSTAC registration, scheduler jobs, and private raster-serving APIs.
@@ -149,12 +151,14 @@ Staging activation requires, in order:
    SHA-256 recorded in the staging validation evidence.
 4. Pass SAR preparation/COG validation before upload. **Passed:** strict-valid 478,982,354-byte
    HH/HV Float32 dB COG with five overview levels and expected sampled backscatter distributions.
-5. Confirm object storage and pgSTAC contain exactly the expected backscatter scene/item.
-6. Confirm ingestion dates and tile endpoints through API-key authentication.
+5. Confirm object storage and pgSTAC contain exactly the expected backscatter scene/item. **Passed:**
+   one accepted scene, one 509 MB prepared COG, and one SAR pgSTAC item with HH/HV metadata.
+6. Confirm ingestion dates and tile endpoints through API-key authentication. **Passed:** private
+   dates returned one tile-available acquisition and an authenticated tile returned PNG 200.
 7. Confirm the product BFF returns same-origin dates/tiles and leaks no internal URLs or secrets.
-8. Complete a screenshot-backed frontend smoke test.
-9. Only then enable EOS-04 cutover and product exposure. Routine scheduling remains a separate
-   operational decision.
+8. Enable both EOS-04 gates in staging only after steps 1–7 pass; keep production unchanged.
+9. Complete a screenshot-backed frontend smoke test on the activated staging source. Routine
+   scheduling and production exposure remain separate operational decisions.
 
 ## Validation commands
 

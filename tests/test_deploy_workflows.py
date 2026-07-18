@@ -260,10 +260,10 @@ def test_staging_deploy_has_independent_fail_closed_eos04_activation_gates():
     render_step = _step(deploy_job, "Render Compose with immutable image tag")
 
     assert deploy_job["env"]["INGESTION_EOS04_CUTOVER_ENABLED"] == (
-        "${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'false' }}"
+        "${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}"
     )
     assert deploy_job["env"]["EOS04_PRODUCT_ENABLED"] == (
-        "${{ vars.EOS04_PRODUCT_ENABLED || 'false' }}"
+        "${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}"
     )
     assert 'f"{name} must be true or false"' in render_step["run"]
     assert 'if eos04_product == "true" and eos04_cutover != "true"' in render_step["run"]

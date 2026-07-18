@@ -444,6 +444,10 @@ def _field_monitoring_evidence(
             reason="EOS-04 field support is not enabled in this environment.",
         )
     elif should_request_radar:
+        include_temporal = (
+            settings.eos04_temporal_change_enabled
+            or settings.eos04_temporal_shadow_enabled
+        )
         try:
             result = request_field_sar(
                 settings,
@@ -451,6 +455,12 @@ def _field_monitoring_evidence(
                 field_id=plot_id,
                 target_date=target_date.isoformat(),
                 window_days=sar_window_days,
+                include_history=include_temporal,
+                history_lookback_days=settings.eos04_temporal_lookback_days,
+                maximum_history_observations=settings.eos04_temporal_max_observations,
+                minimum_baseline_observations=(
+                    settings.eos04_temporal_min_baseline_observations
+                ),
                 timeout_seconds=float(settings.ingestion_request_timeout_seconds),
             )
         except AkashaError as exc:
@@ -458,6 +468,9 @@ def _field_monitoring_evidence(
         else:
             result.pop("overlayUrl", None)
             result.pop("queryId", None)
+            if include_temporal and not settings.eos04_temporal_change_enabled:
+                for field in ("comparison", "history", "change", "baseline"):
+                    result.pop(field, None)
             radar.update(result)
             if result.get("status") == "AVAILABLE":
                 radar["overlayUrl"] = (

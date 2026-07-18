@@ -852,6 +852,55 @@ export interface FieldMonitoringEvidence {
     quality?: { qualified: boolean; confidence: 'none' | 'low' | 'medium' | 'high'; warnings: string[] };
     provenance?: Record<string, unknown>;
     overlayUrl?: string;
+    comparison?: {
+      status: 'AVAILABLE' | 'INSUFFICIENT_BASELINE' | 'DEGENERATE_BASELINE' | 'NO_COMPARABLE_HISTORY' | 'METADATA_INCOMPLETE';
+      policyVersion?: string | null;
+      currentKeyHash?: string | null;
+      previousComparableDate?: string | null;
+      comparableObservationCount: number;
+      excludedObservationCount: number;
+      exclusions?: Array<{ acquisitionDate: string; reasonCodes: string[] }>;
+    };
+    history?: Array<{
+      acquisitionDate: string;
+      coveragePercent: number;
+      validPixelCount: number;
+      fieldPixelCount: number;
+      bands: Array<{
+        polarization: string;
+        median: number | null;
+        mean: number | null;
+        validPixelPercent: number;
+        unit: 'dB';
+      }>;
+      features: Record<string, number>;
+      comparableToCurrent: true;
+    }>;
+    change?: {
+      status: 'AVAILABLE' | 'UNAVAILABLE';
+      referenceDate?: string | null;
+      bands: Array<{
+        polarization: string;
+        currentMedianDb: number;
+        referenceMedianDb: number;
+        medianDeltaDb: number;
+      }>;
+      features: Record<string, number>;
+    };
+    baseline?: {
+      status: 'AVAILABLE' | 'INSUFFICIENT_OBSERVATIONS' | 'DEGENERATE_BASELINE';
+      requiredPriorObservations: number;
+      priorObservationCount: number;
+      windowStart?: string | null;
+      windowEnd?: string | null;
+      bands: Array<{
+        polarization: string;
+        currentValue: number;
+        baselineMedian: number;
+        mad: number;
+        robustDeviation: number | null;
+      }>;
+    };
   };
 }
 

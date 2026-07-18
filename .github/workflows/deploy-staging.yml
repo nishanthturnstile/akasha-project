@@ -150,6 +150,9 @@ jobs:
       INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}
       EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}
       EOS04_FIELD_SUPPORT_ENABLED: ${{ vars.EOS04_FIELD_SUPPORT_ENABLED || 'true' }}
+      EOS04_TEMPORAL_CHANGE_ENABLED: ${{ vars.EOS04_TEMPORAL_CHANGE_ENABLED || 'false' }}
+      EOS04_TEMPORAL_SHADOW_ENABLED: ${{ vars.EOS04_TEMPORAL_SHADOW_ENABLED || 'true' }}
+      EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED: ${{ vars.EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED || 'false' }}
       ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository
@@ -217,10 +220,18 @@ jobs:
           ).lower()
           eos04_product = os.environ.get("EOS04_PRODUCT_ENABLED", "false").lower()
           eos04_field_support = os.environ.get("EOS04_FIELD_SUPPORT_ENABLED", "false").lower()
+          eos04_temporal_change = os.environ.get("EOS04_TEMPORAL_CHANGE_ENABLED", "false").lower()
+          eos04_temporal_shadow = os.environ.get("EOS04_TEMPORAL_SHADOW_ENABLED", "false").lower()
+          eos04_temporal_recommendations = os.environ.get(
+              "EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED", "false"
+          ).lower()
           for name, value in (
               ("INGESTION_EOS04_CUTOVER_ENABLED", eos04_cutover),
               ("EOS04_PRODUCT_ENABLED", eos04_product),
               ("EOS04_FIELD_SUPPORT_ENABLED", eos04_field_support),
+              ("EOS04_TEMPORAL_CHANGE_ENABLED", eos04_temporal_change),
+              ("EOS04_TEMPORAL_SHADOW_ENABLED", eos04_temporal_shadow),
+              ("EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED", eos04_temporal_recommendations),
           ):
               if value not in {"true", "false"}:
                   raise SystemExit(f"{name} must be true or false")
@@ -233,6 +244,15 @@ jobs:
               raise SystemExit(
                   "EOS04_FIELD_SUPPORT_ENABLED=true requires "
                   "INGESTION_EOS04_CUTOVER_ENABLED=true"
+              )
+          if eos04_temporal_change == "true" and eos04_field_support != "true":
+              raise SystemExit(
+                  "EOS04_TEMPORAL_CHANGE_ENABLED=true requires EOS04_FIELD_SUPPORT_ENABLED=true"
+              )
+          if eos04_temporal_recommendations == "true" and eos04_temporal_change != "true":
+              raise SystemExit(
+                  "EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED=true requires "
+                  "EOS04_TEMPORAL_CHANGE_ENABLED=true"
               )
           esri_usage_model = os.environ.get("ESRI_BASEMAP_USAGE_MODEL", "session").lower()
           if esri_usage_model not in {"session", "tile"}:
@@ -256,6 +276,12 @@ jobs:
           )
           text = text.replace("${EOS04_PRODUCT_ENABLED:-false}", eos04_product)
           text = text.replace("${EOS04_FIELD_SUPPORT_ENABLED:-false}", eos04_field_support)
+          text = text.replace("${EOS04_TEMPORAL_CHANGE_ENABLED:-false}", eos04_temporal_change)
+          text = text.replace("${EOS04_TEMPORAL_SHADOW_ENABLED:-false}", eos04_temporal_shadow)
+          text = text.replace(
+              "${EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED:-false}",
+              eos04_temporal_recommendations,
+          )
           text = text.replace("${ESRI_BASEMAP_USAGE_MODEL:-session}", esri_usage_model)
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)

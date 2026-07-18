@@ -2,9 +2,10 @@
 
 ## Status and authority
 
-Implementation status: Phases 0-2 were implemented and locally validated on 2026-07-18 after
-explicit user authorization. Staging deployment and real-field acceptance remain the release gate.
-Phases 3-5 remain planned work and are not implied by the first engineering slice.
+Implementation status: Phases 0-2 were implemented, validated, merged, and deployed on 2026-07-18.
+Staging real-field acceptance passed for the single-date field-clipped EOS-04 evidence path. Phases
+3-5 remain planned work and are not implied by the first engineering slice. The implementation-ready
+Phase 3 plan is `feature-eos04-comparable-temporal-change-phase3-1.md`.
 
 This plan follows the completed EOS-04 ingestion/display work in
 `feature-eos04-sar-integration-1.md`. That earlier plan remains the source of truth for provider
@@ -235,7 +236,7 @@ owned by the product layer:
   "regions": ["IN"],
   "requiredContext": [],
   "allowedFeatures": ["HH_MEDIAN_DB", "HV_MEDIAN_DB", "HH_MINUS_HV_DB"],
-  "minimumComparableRadarObservations": 3,
+  "minimumPriorComparableRadarObservations": 5,
   "stageModel": "none",
   "interpretationTier": 1,
   "recommendationPolicy": "scout-only",
@@ -389,7 +390,8 @@ Requirements:
 - Prefer robust field median over mean for change detection; retain both in evidence.
 - Do not define a universal anomaly threshold in ingestion. Return normalized features, baseline
   counts, and robust deviations; product crop profiles decide how they may be interpreted.
-- Require at least three comparable observations before returning a field-relative anomaly score.
+- Require at least five prior comparable observations before returning a user-facing field-relative
+  anomaly score. Three observations may exercise the contract in synthetic/shadow validation only.
 - Preserve raw evidence and formula/version provenance so results can be reproduced.
 
 ## Product BFF changes
@@ -500,13 +502,18 @@ do; missing SAR fails soft and remains explainable.
 
 ### Phase 3 - comparable temporal change
 
+- Follow `feature-eos04-comparable-temporal-change-phase3-1.md`; it supersedes the earlier Phase 3
+  defaults where the repository and real-product audit produced more precise requirements.
 - Persist/register acquisition-comparability metadata.
 - Return comparable history and robust temporal features.
-- Add field-relative baseline/anomaly results after the minimum sample count.
-- Surface neutral change evidence and scout-only recommendations.
+- Add field-relative baseline results after at least five prior comparable observations. Three
+  observations remain sufficient only for synthetic contract-path validation.
+- Surface neutral change evidence first. Keep scout-only recommendations behind a later validation
+  and activation gate.
 
-Exit: at least three comparable real/synthetic observations validate stable, positive-change,
-negative-change, non-comparable, and insufficient-baseline behavior.
+Exit: at least two real products validate comparison semantics and previous-pass change; synthetic
+fixtures validate positive/negative change, non-comparable, insufficient, and degenerate baseline
+behavior. User-facing baseline output requires current plus five prior comparable real observations.
 
 ### Phase 4 - crop-context integration
 
@@ -646,7 +653,7 @@ The plan recommends these defaults, but product/science owners should explicitly
 1. Hide EOS-04 from the default source selector and expose it through `Radar evidence`.
 2. Use 10 days as optical staleness and 21 days as maximum EOS support age.
 3. Require 95% EOS field coverage.
-4. Require at least three comparable radar observations for a field anomaly.
+4. Require at least five prior comparable radar observations for a user-facing field anomaly.
 5. Use generic, scout-only messaging for all crops initially.
 6. Make rice the first separately validated crop-specific pilot.
 7. Keep full-scene EOS visualization only for admin/advanced diagnostics.

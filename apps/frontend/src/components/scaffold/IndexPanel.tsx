@@ -203,21 +203,58 @@ export function IndexPanel({
                       : radarEvidence?.reason ?? radarEvidence?.triggerReason ?? 'Radar evidence is unavailable.' }
                   </p>
                   { radarEvidence?.status === 'AVAILABLE' && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      <span className="text-muted-foreground">
-                        { radarEvidence.coveragePercent?.toFixed(1) }% coverage · { radarEvidence.quality?.confidence ?? 'unknown' } confidence
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={ radarEvidenceVisible ? 'primary' : 'ghost' }
-                        className="h-6 px-2 text-[11px]"
-                        onClick={ () => onRadarEvidenceVisibleChange?.(!radarEvidenceVisible) }
-                        disabled={ !onRadarEvidenceVisibleChange }
-                        data-testid="toggle-radar-evidence"
-                      >
-                        { radarEvidenceVisible ? 'Show optical' : 'Show radar layer' }
-                      </Button>
+                    <div className="mt-1.5 space-y-1.5">
+                      { radarEvidence.change?.status === 'AVAILABLE' && radarEvidence.change.referenceDate && (
+                        <div className="rounded border border-info/20 bg-background/30 px-2 py-1" data-testid="radar-temporal-change">
+                          <p className="font-medium text-foreground">
+                            Compared with { radarEvidence.change.referenceDate }
+                          </p>
+                          <p className="text-muted-foreground">
+                            { radarEvidence.change.bands.map((band) => (
+                              `${band.polarization} ${band.medianDeltaDb >= 0 ? '+' : ''}${band.medianDeltaDb.toFixed(2)} dB`
+                            )).join(' · ') }
+                          </p>
+                        </div>
+                      ) }
+                      { radarEvidence.baseline?.status === 'INSUFFICIENT_OBSERVATIONS' && (
+                        <p className="text-muted-foreground" data-testid="radar-baseline-status">
+                          { radarEvidence.baseline.priorObservationCount } comparable prior observation{ radarEvidence.baseline.priorObservationCount === 1 ? '' : 's' } available; { radarEvidence.baseline.requiredPriorObservations } required for a field baseline.
+                        </p>
+                      ) }
+                      { radarEvidence.comparison?.status === 'METADATA_INCOMPLETE' && (
+                        <p className="text-muted-foreground" data-testid="radar-comparison-status">
+                          This pass can be viewed, but its acquisition metadata is incomplete for temporal comparison.
+                        </p>
+                      ) }
+                      { radarEvidence.comparison?.status === 'NO_COMPARABLE_HISTORY' && (
+                        <p className="text-muted-foreground" data-testid="radar-comparison-status">
+                          No earlier pass with compatible acquisition geometry is available.
+                        </p>
+                      ) }
+                      { radarEvidence.baseline?.status === 'DEGENERATE_BASELINE' && (
+                        <p className="text-muted-foreground" data-testid="radar-baseline-status">
+                          The historical spread is too small to calculate a reliable field-relative deviation.
+                        </p>
+                      ) }
+                      <p className="text-muted-foreground">
+                        Radar change can reflect crop structure, surface condition, or acquisition effects. It is not NDVI or a diagnosis.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-muted-foreground">
+                          { radarEvidence.coveragePercent?.toFixed(1) }% coverage · { radarEvidence.quality?.confidence ?? 'unknown' } confidence
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={ radarEvidenceVisible ? 'primary' : 'ghost' }
+                          className="h-6 px-2 text-[11px]"
+                          onClick={ () => onRadarEvidenceVisibleChange?.(!radarEvidenceVisible) }
+                          disabled={ !onRadarEvidenceVisibleChange }
+                          data-testid="toggle-radar-evidence"
+                        >
+                          { radarEvidenceVisible ? 'Show optical' : 'Show radar layer' }
+                        </Button>
+                      </div>
                     </div>
                   ) }
                 </div>

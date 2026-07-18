@@ -13,10 +13,11 @@ export function selectEffectiveSourceId({
     return activeSourceId ?? defaultSourceId ?? undefined;
   }
 
+  const primarySources = sources.filter((source) => source.productRole !== 'support');
   const hasSource = (sourceId: string | null | undefined) =>
-    Boolean(sourceId && sources.some((source) => source.id === sourceId));
+    Boolean(sourceId && primarySources.some((source) => source.id === sourceId));
 
   if (hasSource(activeSourceId)) return activeSourceId;
   if (hasSource(defaultSourceId)) return defaultSourceId ?? undefined;
-  return sources[0]?.id;
+  return primarySources[0]?.id;
 }

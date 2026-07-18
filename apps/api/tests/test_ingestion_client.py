@@ -8,6 +8,7 @@ import pytest
 from app.ingestion_client import (
     FIELD_DATES_PATH,
     FIELD_INDEX_PATH,
+    FIELD_SAR_PATH,
     READINESS_PATH,
     SOURCE_DATES_PATH,
     SOURCE_TILE_PATH,
@@ -15,6 +16,7 @@ from app.ingestion_client import (
     FieldIndexAvailableResponse,
     FieldIndexRequest,
     FieldIndexUnavailableResponse,
+    FieldSarAvailableResponse,
     IngestionClient,
     IngestionClientConfigError,
     IngestionClientError,
@@ -146,9 +148,7 @@ def _readiness_body(status: str) -> dict[str, Any]:
             "latestSuccessfulJobCompletedAt": None,
             "staleAfter": None,
             "availableDates": [],
-            "indexCoverage": {
-                "NDVI": {"available": False, "dateCount": 0, "coveragePercent": 0.0}
-            },
+            "indexCoverage": {"NDVI": {"available": False, "dateCount": 0, "coveragePercent": 0.0}},
             "lastSuccessfulJob": None,
             "unavailableReasons": [
                 {"code": "NO_PRELOAD_OUTPUTS", "message": "No precomputed outputs."}
@@ -242,6 +242,63 @@ def test_field_index_unavailable_response() -> None:
     assert result.status == "UNAVAILABLE"
     assert result.reason == "No optical scene within +/- 7 days"
     assert result.searched_sources == ["sentinel-2-l2a"]
+
+
+def test_field_sar_posts_exact_geometry_and_parses_calibrated_evidence() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == FIELD_SAR_PATH
+        payload = json.loads(request.content)
+        assert payload["fieldId"] == "field_123"
+        assert payload["targetDate"] == "2026-07-18"
+        assert payload["windowDays"] == 21
+        assert payload["minimumCoveragePercent"] == 95
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "status": "AVAILABLE",
+                    "queryId": "sar-query",
+                    "fieldId": "field_123",
+                    "sourceId": "eos-04-sar-mrs-l2b",
+                    "requestedDate": "2026-07-18",
+                    "acquisitionDate": "2026-07-17",
+                    "daysFromTarget": -1,
+                    "coveragePercent": 100,
+                    "validPixelCount": 100,
+                    "fieldPixelCount": 100,
+                    "polarizations": ["HH", "HV"],
+                    "displayedPolarization": "HH",
+                    "bands": [
+                        {
+                            "polarization": "HH",
+                            "mean": -12.5,
+                            "validPixelCount": 100,
+                            "validPixelPercent": 100,
+                            "unit": "dB",
+                        }
+                    ],
+                    "features": {"HH_MINUS_HV_DB": 5.1},
+                    "quality": {"qualified": True, "confidence": "high", "warnings": []},
+                    "provenance": {"rtcApplied": True, "unit": "dB"},
+                    "overlayUrl": "https://ingestion.internal/sar.png?sig=SIGNED",
+                },
+                "error": None,
+            },
+            request=request,
+        )
+
+    result = _client_for(handler).field_sar(
+        {
+            "geometry": _request_payload().geometry,
+            "fieldId": "field_123",
+            "targetDate": "2026-07-18",
+        }
+    )
+
+    assert isinstance(result, FieldSarAvailableResponse)
+    assert result.bands[0].mean == pytest.approx(-12.5)
+    assert result.quality.confidence == "high"
 
 
 def test_field_dates_posts_batch_and_parses_availability() -> None:
@@ -380,8 +437,7 @@ def test_non_2xx_envelopes_map_by_http_status(
                 "error": {
                     "code": str(upstream_status),
                     "message": (
-                        f"Bad upstream at https://ingestion.internal/path?sig=SECRET "
-                        f"with {API_KEY}"
+                        f"Bad upstream at https://ingestion.internal/path?sig=SECRET with {API_KEY}"
                     ),
                 },
             },

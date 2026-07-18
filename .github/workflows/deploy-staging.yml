@@ -149,6 +149,7 @@ jobs:
       # Activated after the 2026-07-18 capped real-product acceptance run.
       INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}
       EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}
+      EOS04_FIELD_SUPPORT_ENABLED: ${{ vars.EOS04_FIELD_SUPPORT_ENABLED || 'true' }}
       ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository
@@ -215,15 +216,22 @@ jobs:
               "INGESTION_EOS04_CUTOVER_ENABLED", "false"
           ).lower()
           eos04_product = os.environ.get("EOS04_PRODUCT_ENABLED", "false").lower()
+          eos04_field_support = os.environ.get("EOS04_FIELD_SUPPORT_ENABLED", "false").lower()
           for name, value in (
               ("INGESTION_EOS04_CUTOVER_ENABLED", eos04_cutover),
               ("EOS04_PRODUCT_ENABLED", eos04_product),
+              ("EOS04_FIELD_SUPPORT_ENABLED", eos04_field_support),
           ):
               if value not in {"true", "false"}:
                   raise SystemExit(f"{name} must be true or false")
           if eos04_product == "true" and eos04_cutover != "true":
               raise SystemExit(
                   "EOS04_PRODUCT_ENABLED=true requires "
+                  "INGESTION_EOS04_CUTOVER_ENABLED=true"
+              )
+          if eos04_field_support == "true" and eos04_cutover != "true":
+              raise SystemExit(
+                  "EOS04_FIELD_SUPPORT_ENABLED=true requires "
                   "INGESTION_EOS04_CUTOVER_ENABLED=true"
               )
           esri_usage_model = os.environ.get("ESRI_BASEMAP_USAGE_MODEL", "session").lower()
@@ -247,6 +255,7 @@ jobs:
               "${INGESTION_EOS04_CUTOVER_ENABLED:-false}", eos04_cutover
           )
           text = text.replace("${EOS04_PRODUCT_ENABLED:-false}", eos04_product)
+          text = text.replace("${EOS04_FIELD_SUPPORT_ENABLED:-false}", eos04_field_support)
           text = text.replace("${ESRI_BASEMAP_USAGE_MODEL:-session}", esri_usage_model)
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)

@@ -5,12 +5,15 @@
 This plan was reconciled with the current two-repository implementation on 2026-07-18. It
 supersedes the earlier single-repository EOS-04 plan.
 
-Implementation status: phases 1–5 and local validation are complete in the working trees. A real
-approved-runtime EOS-04 product has also passed catalog search, capped download, package inspection,
-calibration, mask application, and strict COG validation. The operational ingest/catalog/API run
-is also complete. Staging product exposure is approved through the two fail-closed deployment
-gates; production exposure remains unchanged. A screenshot-backed staging smoke test is the
-remaining release-evidence step.
+Implementation status: phases 1–6, the operational ingest/catalog/API run, staging activation, and
+the screenshot-backed frontend smoke test are complete. A real approved-runtime EOS-04 product
+passed catalog search, capped download, package inspection, calibration, mask application, strict
+COG validation, object/pgSTAC registration, same-origin BFF dates/tiles, and deployed UI rendering.
+Production exposure remains unchanged.
+
+The next product phase is defined separately in
+`feature-eos04-field-crop-monitoring-1.md`: EOS-04 becomes a field-scoped supporting evidence layer
+for cloud-limited/stale optical monitoring, rather than remaining a full-scene farmer-facing source.
 
 - `akasha-ingestion` owns provider access, raw downloads, preparation, validation, object storage,
   pgSTAC registration, scheduler jobs, and private raster-serving APIs.
@@ -156,9 +159,13 @@ Staging activation requires, in order:
 6. Confirm ingestion dates and tile endpoints through API-key authentication. **Passed:** private
    dates returned one tile-available acquisition and an authenticated tile returned PNG 200.
 7. Confirm the product BFF returns same-origin dates/tiles and leaks no internal URLs or secrets.
+   **Passed.**
 8. Enable both EOS-04 gates in staging only after steps 1–7 pass; keep production unchanged.
-9. Complete a screenshot-backed frontend smoke test on the activated staging source. Routine
-   scheduling and production exposure remain separate operational decisions.
+   **Passed for staging; production unchanged.**
+9. Complete a screenshot-backed frontend smoke test on the activated staging source. **Passed:**
+   EOS-04 selection, the real 2026-07-17 date, Backscatter rendering, field intersection, and
+   same-origin PNG delivery were verified. Routine scheduling and production exposure remain
+   separate operational decisions.
 
 ## Validation commands
 

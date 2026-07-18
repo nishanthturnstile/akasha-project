@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Sprout, Zap } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Satellite, Sprout, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
-import { useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
+import { useFieldMonitoringEvidence, useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
 
@@ -33,6 +33,8 @@ interface IndexPanelProps {
   seasonIds?: string[];
   /** Called when user clicks "Show all" on the crop rotation card. */
   onShowAllCrops?: (seasonId?: string) => void;
+  radarEvidenceVisible?: boolean;
+  onRadarEvidenceVisibleChange?: (visible: boolean) => void;
 }
 
 const TAB_ITEMS: { value: AnalyticsTab; label: string }[] = [
@@ -84,6 +86,8 @@ export function IndexPanel({
   vegetationData,
   seasonIds,
   onShowAllCrops,
+  radarEvidenceVisible = false,
+  onRadarEvidenceVisibleChange,
 }: IndexPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('crop-info');
 
@@ -113,6 +117,13 @@ export function IndexPanel({
     endDate: trendEnd,
     cloudMask,
   });
+  const evidenceQ = useFieldMonitoringEvidence(selectedPlot?.id, {
+    sourceId,
+    indexType: activeIndexType,
+    enabled: Boolean(onRadarEvidenceVisibleChange),
+  });
+  const monitoringEvidence = evidenceQ.data;
+  const radarEvidence = monitoringEvidence?.radar;
 
   const statsResponse = statisticsQ.data;
   const stats = statsResponse?.statistics;
@@ -177,6 +188,42 @@ export function IndexPanel({
           onValueChange={ (next) => setActiveTab(next as AnalyticsTab) }
           className="px-4 pb-2 pt-1.5"
         >
+          { monitoringEvidence?.optical && monitoringEvidence.optical.status !== 'usable' && (
+            <div
+              className="mb-2 rounded-md border border-info/30 bg-info/10 p-2.5 text-[11px] leading-4"
+              data-testid="field-monitoring-radar-evidence"
+            >
+              <div className="flex items-start gap-2">
+                <Satellite className="mt-0.5 size-3.5 shrink-0 text-info" strokeWidth={ 1.75 } />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-foreground">Radar support for an optical gap</p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    { radarEvidence?.status === 'AVAILABLE'
+                      ? `EOS-04 observed this field on ${radarEvidence.acquisitionDate}. It provides structural and moisture-sensitive evidence, not NDVI.`
+                      : radarEvidence?.reason ?? radarEvidence?.triggerReason ?? 'Radar evidence is unavailable.' }
+                  </p>
+                  { radarEvidence?.status === 'AVAILABLE' && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground">
+                        { radarEvidence.coveragePercent?.toFixed(1) }% coverage · { radarEvidence.quality?.confidence ?? 'unknown' } confidence
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={ radarEvidenceVisible ? 'primary' : 'ghost' }
+                        className="h-6 px-2 text-[11px]"
+                        onClick={ () => onRadarEvidenceVisibleChange?.(!radarEvidenceVisible) }
+                        disabled={ !onRadarEvidenceVisibleChange }
+                        data-testid="toggle-radar-evidence"
+                      >
+                        { radarEvidenceVisible ? 'Show optical' : 'Show radar layer' }
+                      </Button>
+                    </div>
+                  ) }
+                </div>
+              </div>
+            </div>
+          ) }
           <TabsList
             className="grid w-full grid-cols-3 h-8"
             data-testid="index-panel-tabs"

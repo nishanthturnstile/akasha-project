@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { SourceSelector } from '@/components/layers/SourceSelector';
 import type { Source } from '@/types/api';
 
@@ -27,6 +27,7 @@ const sources: Source[] = [
     label: 'EOS-04 SAR MRS L2B',
     provider: 'ISRO/NRSC Bhoonidhi',
     kind: 'sar',
+    productRole: 'support',
     supportedIndices: [],
     displayModes: ['VV_GRAYSCALE'],
     defaultDisplayMode: 'VV_GRAYSCALE',
@@ -34,24 +35,12 @@ const sources: Source[] = [
 ];
 
 describe('SourceSelector', () => {
-  it('renders SAR as a separate source tab', () => {
-    const { getByTestId } = render(
+  it('keeps support-only SAR out of the primary imagery tabs', () => {
+    const { queryByTestId } = render(
       <SourceSelector sources={sources} value="resourcesat-2a-liss3-boa" onChange={vi.fn()} />,
     );
 
-    expect(getByTestId('source-tab-eos-04-sar-mrs-l2b').textContent).toContain(
-      'EOS-04 SAR MRS L2B',
-    );
-  });
-
-  it('calls onChange when the SAR tab is selected', () => {
-    const onChange = vi.fn();
-    const { getByTestId } = render(
-      <SourceSelector sources={sources} value="resourcesat-2a-liss3-boa" onChange={onChange} />,
-    );
-
-    fireEvent.click(getByTestId('source-tab-eos-04-sar-mrs-l2b'));
-    expect(onChange).toHaveBeenCalledWith('eos-04-sar-mrs-l2b');
+    expect(queryByTestId('source-tab-eos-04-sar-mrs-l2b')).toBeNull();
   });
 
   it('labels context sources in the tab title', () => {

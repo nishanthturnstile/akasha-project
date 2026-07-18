@@ -638,6 +638,21 @@ quantity, or yield impact. Crop-specific interpretation remains Phase 4.
 Production rollout repeats the staging gates. A synthetic passing test never substitutes for a
 real-data gate.
 
+### Staging acceptance record — 18 July 2026
+
+- Gates 3A through 3E passed for saved field `fe5a652b-4d33-4ff1-8801-a361f71c40b9`.
+- Six real, metadata-complete, descending scene-22 observations were prepared and registered:
+  17 July, 13 June, 27 May, 10 May, 23 April, and 6 April 2026.
+- All six observations returned 100% exact-field coverage and 100% valid pixels for the saved
+  field; the previous comparable date was 13 June 2026.
+- The current-versus-previous median deltas were -1.719 dB for HH and -2.189 dB for HV.
+- The five-prior median/MAD baseline returned `AVAILABLE`; robust deviations were -1.000 for HH,
+  -1.127 for HV, and 2.374 for the HH-minus-HV feature.
+- A cold real-field request completed in 0.599 seconds. A warm request completed in 0.123 seconds
+  and reused the five cached historical statistics records while retaining a distinct audit query.
+- Staging may therefore enable neutral temporal evidence (Gate 3D/3E). Scouting recommendations
+  remain disabled pending the separate Gate 3F review.
+
 ## 12. Exit criteria
 
 Phase 3 engineering is complete when:
@@ -668,5 +683,5 @@ Phase 3 engineering is complete when:
 9. Baseline UI only when the six-real-observation gate is met.
 10. Scouting policy as a separately approved activation.
 
-The next implementation task should be Step 1 plus the Gate 3A reprocessing test. It releases the
-scientific blocker without prematurely exposing temporal interpretation.
+The next implementation task is the Gate 3F review using field observations and scouting feedback.
+It remains a separate approval and must not be inferred from the completed engineering gates.

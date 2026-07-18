@@ -25,6 +25,8 @@ interface TimelineBarProps {
     marginalNote?: string | null;
     /** Surfaced for the nearest radar pass (SAR sources). */
     nearestPassNote?: string | null;
+    /** Non-valued radar observation events; never plotted on the optical index axis. */
+    radarEventDates?: string[];
     onPrefetchDate?: (acquisitionDate: string) => void;
     /** Inclusive lower bound (YYYY-MM-DD) for the visible filmstrip. */
     periodFrom?: string | null;
@@ -81,6 +83,7 @@ export function TimelineBar({
     onRetry,
     marginalNote,
     nearestPassNote,
+    radarEventDates = [],
     onPrefetchDate,
     periodFrom,
     periodTo,
@@ -260,7 +263,7 @@ export function TimelineBar({
                         disabled={ loading || ordered.length === 0 }
                     />
                 ) }
-                { (marginalNote || nearestPassNote) && (
+                { (marginalNote || nearestPassNote || radarEventDates.length > 0) && (
                     <div className="hidden max-w-[28vw] shrink-0 flex-col gap-1 lg:flex">
                         { marginalNote && (
                             <NoteRow testId="marginal-note" tone="warning">
@@ -270,6 +273,12 @@ export function TimelineBar({
                         { nearestPassNote && (
                             <NoteRow testId="nearest-pass-note" tone="info">
                                 { nearestPassNote }
+                            </NoteRow>
+                        ) }
+                        { radarEventDates.length > 0 && (
+                            <NoteRow testId="radar-event-dates" tone="info">
+                                Radar pass events: { radarEventDates.slice(0, 4).join(', ') }
+                                { radarEventDates.length > 4 ? ` +${radarEventDates.length - 4} more` : '' }
                             </NoteRow>
                         ) }
                     </div>

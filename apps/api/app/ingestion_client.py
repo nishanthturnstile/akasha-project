@@ -180,6 +180,13 @@ class FieldSarRequest(ApiModel):
     target_date: date
     window_days: int = Field(default=21, ge=1, le=31)
     minimum_coverage_percent: float = Field(default=95.0, ge=0, le=100)
+    include_history: bool = False
+    history_lookback_days: int = Field(default=180, ge=1, le=365)
+    maximum_history_observations: int = Field(default=8, ge=1, le=12)
+    comparison_policy_version: Literal["eos04-comparability-v1"] = (
+        "eos04-comparability-v1"
+    )
+    minimum_baseline_observations: int = Field(default=5, ge=3, le=12)
 
 
 class FieldSarBandStatistics(ApiModel):
@@ -204,6 +211,55 @@ class FieldSarQuality(ApiModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class FieldSarHistoryObservation(ApiModel):
+    acquisition_date: date
+    coverage_percent: float = Field(ge=0, le=100)
+    valid_pixel_count: int = Field(ge=1)
+    field_pixel_count: int = Field(ge=1)
+    bands: list[FieldSarBandStatistics]
+    features: dict[str, float] = Field(default_factory=dict)
+    quality: dict[str, Any] = Field(default_factory=dict)
+    comparable_to_current: bool
+
+
+class FieldSarComparisonExclusion(ApiModel):
+    acquisition_date: date
+    reason_codes: list[str]
+
+
+class FieldSarComparison(ApiModel):
+    status: Literal[
+        "AVAILABLE",
+        "INSUFFICIENT_BASELINE",
+        "DEGENERATE_BASELINE",
+        "NO_COMPARABLE_HISTORY",
+        "METADATA_INCOMPLETE",
+    ]
+    policy_version: str | None = None
+    current_key_hash: str | None = None
+    previous_comparable_date: date | None = None
+    comparable_observation_count: int = Field(ge=1)
+    excluded_observation_count: int = Field(ge=0)
+    exclusions: list[FieldSarComparisonExclusion] = Field(default_factory=list)
+
+
+class FieldSarChange(ApiModel):
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    reference_date: date | None = None
+    bands: list[dict[str, Any]] = Field(default_factory=list)
+    features: dict[str, float] = Field(default_factory=dict)
+
+
+class FieldSarBaseline(ApiModel):
+    status: Literal["AVAILABLE", "INSUFFICIENT_OBSERVATIONS", "DEGENERATE_BASELINE"]
+    required_prior_observations: int = Field(ge=3)
+    prior_observation_count: int = Field(ge=0)
+    window_start: date | None = None
+    window_end: date | None = None
+    bands: list[dict[str, Any]] = Field(default_factory=list)
+    features: dict[str, dict[str, float | None]] = Field(default_factory=dict)
+
+
 class FieldSarAvailableResponse(ApiModel):
     status: Literal["AVAILABLE"]
     query_id: str
@@ -222,6 +278,10 @@ class FieldSarAvailableResponse(ApiModel):
     quality: FieldSarQuality
     provenance: dict[str, Any] = Field(default_factory=dict)
     overlay_url: str
+    comparison: FieldSarComparison | None = None
+    history: list[FieldSarHistoryObservation] = Field(default_factory=list)
+    change: FieldSarChange | None = None
+    baseline: FieldSarBaseline | None = None
 
 
 class FieldSarUnavailableResponse(ApiModel):
@@ -1034,6 +1094,10 @@ def request_field_sar(
     target_date: str,
     window_days: int = 21,
     minimum_coverage_percent: float = 95.0,
+    include_history: bool = False,
+    history_lookback_days: int = 180,
+    maximum_history_observations: int = 8,
+    minimum_baseline_observations: int = 5,
     timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     try:
@@ -1046,6 +1110,11 @@ def request_field_sar(
                 "targetDate": target_date,
                 "windowDays": window_days,
                 "minimumCoveragePercent": minimum_coverage_percent,
+                "includeHistory": include_history,
+                "historyLookbackDays": history_lookback_days,
+                "maximumHistoryObservations": maximum_history_observations,
+                "comparisonPolicyVersion": "eos04-comparability-v1",
+                "minimumBaselineObservations": minimum_baseline_observations,
             }
         )
     except IngestionClientError as exc:

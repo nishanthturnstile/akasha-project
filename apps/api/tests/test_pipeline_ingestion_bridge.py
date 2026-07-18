@@ -340,6 +340,59 @@ def test_monitoring_evidence_uses_field_sar_for_optical_quality_gap(monkeypatch)
     assert calls[0]["geometry"] == _plot()["geometry"]
 
 
+def test_monitoring_evidence_exposes_temporal_radar_when_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(settings, "eos04_field_support_enabled", True)
+    monkeypatch.setattr(settings, "eos04_temporal_change_enabled", True)
+    monkeypatch.setattr(settings, "eos04_temporal_shadow_enabled", False)
+    monkeypatch.setattr(field_analytics, "_field_dates_response", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        field_analytics,
+        "_pipeline_dates",
+        lambda *_args, **_kwargs: [{"acquisitionDate": "2026-07-17"}],
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_field_sar(*_args, **kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "AVAILABLE",
+            "queryId": "private-query",
+            "acquisitionDate": "2026-07-17",
+            "coveragePercent": 100,
+            "comparison": {
+                "status": "INSUFFICIENT_BASELINE",
+                "previousComparableDate": "2026-06-13",
+                "comparableObservationCount": 2,
+            },
+            "history": [{"acquisitionDate": "2026-06-13"}],
+            "change": {
+                "status": "AVAILABLE",
+                "referenceDate": "2026-06-13",
+                "bands": [{"polarization": "HH", "medianDeltaDb": 1.2}],
+            },
+            "baseline": {
+                "status": "INSUFFICIENT_OBSERVATIONS",
+                "requiredPriorObservations": 5,
+                "priorObservationCount": 1,
+            },
+            "overlayUrl": "http://10.10.2.4:18080/private?sig=secret",
+        }
+
+    monkeypatch.setattr(field_analytics, "request_field_sar", fake_field_sar)
+    response = client.get(
+        "/api/fields/field-1/monitoring/evidence"
+        "?sourceId=sentinel-2-l2a&indexType=NDVI&targetDate=2026-07-18"
+    )
+
+    assert response.status_code == 200
+    radar = response.json()["radar"]
+    assert radar["comparison"]["previousComparableDate"] == "2026-06-13"
+    assert radar["change"]["bands"][0]["medianDeltaDb"] == 1.2
+    assert calls[0]["include_history"] is True
+    assert "private-query" not in json.dumps(radar)
+
+
 def test_field_sar_overlay_proxies_signed_png(monkeypatch) -> None:
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
     monkeypatch.setattr(settings, "eos04_field_support_enabled", True)

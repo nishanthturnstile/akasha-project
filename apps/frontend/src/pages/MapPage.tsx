@@ -835,6 +835,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     return `Nearest radar pass: ${selectedDate}.`;
   }, [monitoringEvidenceQ.data?.optical?.status, radarEvidence, selectedSource?.kind, selectedDate]);
 
+  const radarEventDates = useMemo(() => {
+    if (radarEvidence?.status !== 'AVAILABLE') return [];
+    return Array.from(new Set([
+      ...(radarEvidence.acquisitionDate ? [radarEvidence.acquisitionDate] : []),
+      ...(radarEvidence.history ?? []).map((observation) => observation.acquisitionDate),
+    ])).sort((a, b) => b.localeCompare(a));
+  }, [radarEvidence]);
+
   const requestMapTool = (owner: MapToolOwner): boolean => {
     setActiveMapTool(owner);
     return true;
@@ -1209,6 +1217,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
             onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
             marginalNote={ bestMode ? null : marginalNote }
             nearestPassNote={ bestMode ? null : nearestPassNote }
+            radarEventDates={ bestMode ? [] : radarEventDates }
             onPrefetchDate={ undefined }
             periodFrom={ periodFrom }
             periodTo={ periodTo }

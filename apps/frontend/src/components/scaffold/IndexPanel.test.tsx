@@ -93,6 +93,31 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                             acquisitionDate: '2026-07-17',
                             coveragePercent: 100,
                             quality: { qualified: true, confidence: 'high', warnings: [] },
+                            comparison: {
+                                status: 'INSUFFICIENT_BASELINE',
+                                previousComparableDate: '2026-06-13',
+                                comparableObservationCount: 2,
+                                excludedObservationCount: 0,
+                            },
+                            change: {
+                                status: 'AVAILABLE',
+                                referenceDate: '2026-06-13',
+                                bands: [
+                                    {
+                                        polarization: 'HH',
+                                        currentMedianDb: -8,
+                                        referenceMedianDb: -10,
+                                        medianDeltaDb: 2,
+                                    },
+                                ],
+                                features: {},
+                            },
+                            baseline: {
+                                status: 'INSUFFICIENT_OBSERVATIONS',
+                                requiredPriorObservations: 5,
+                                priorObservationCount: 1,
+                                bands: [],
+                            },
                             overlayUrl: '/api/fields/plot-1/sar/overlay.png?targetDate=2026-07-18',
                         },
                     }));
@@ -128,6 +153,9 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         );
 
         expect(await screen.findByText(/provides structural and moisture-sensitive evidence, not NDVI/i)).toBeTruthy();
+        expect(screen.getByTestId('radar-temporal-change').textContent).toContain('HH +2.00 dB');
+        expect(screen.getByTestId('radar-baseline-status').textContent).toContain('5 required');
+        expect(screen.getByText(/It is not NDVI or a diagnosis/i)).toBeTruthy();
         fireEvent.click(screen.getByTestId('toggle-radar-evidence'));
         expect(onRadarEvidenceVisibleChange).toHaveBeenCalledWith(true);
     });

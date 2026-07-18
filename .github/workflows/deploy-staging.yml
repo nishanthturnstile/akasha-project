@@ -146,8 +146,9 @@ jobs:
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
-      INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'false' }}
-      EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'false' }}
+      # Activated after the 2026-07-18 capped real-product acceptance run.
+      INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}
+      EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}
       ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository

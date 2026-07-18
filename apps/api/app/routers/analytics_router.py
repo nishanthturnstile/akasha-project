@@ -55,9 +55,11 @@ from ..routers.product_router import (
     _enforce_index_rate_limit,
     _filter_source_dates,
     _is_pipeline_source,
+    _natural_dates,
     _pipeline_bridge_enabled,
     _pipeline_dates,
     _requires_ingestion_pipeline,
+    _uses_natural_pipeline,
 )
 from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
 
@@ -959,6 +961,23 @@ async def get_field_dates(
 ) -> list[dict[str, Any]]:
     _enforce_index_rate_limit(request)
     plot = await _get_field_or_404(plot_id, user.id)
+    if _uses_natural_pipeline(sourceId):
+        try:
+            natural_dates = await asyncio.wait_for(
+                _run_blocking_cancellable(_natural_dates, sourceId),
+                timeout=settings.index_request_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Natural-source date availability exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+                timeoutSeconds=settings.index_request_timeout_seconds,
+            ) from exc
+        return _filter_source_dates(
+            natural_dates or [],
+            start_date=startDate,
+            end_date=endDate,
+            lookback_days=lookbackDays,
+        )
     index_type = _normalize_index(indexType)
     try:
         return await asyncio.wait_for(

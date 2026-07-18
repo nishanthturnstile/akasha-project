@@ -9,6 +9,8 @@ from app.ingestion_client import (
     FIELD_DATES_PATH,
     FIELD_INDEX_PATH,
     READINESS_PATH,
+    SOURCE_DATES_PATH,
+    SOURCE_TILE_PATH,
     FieldDatesRequest,
     FieldIndexAvailableResponse,
     FieldIndexRequest,
@@ -569,3 +571,73 @@ def test_url_or_key_not_configured(api_url: str, api_key: str, missing: list[str
 
     assert exc_info.value.code == "PIPELINE_NOT_CONFIGURED"
     assert exc_info.value.details == {"missing": missing}
+
+
+def test_natural_source_dates_use_authenticated_private_route() -> None:
+    source_id = "eos-04-sar-mrs-l2b"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == SOURCE_DATES_PATH.format(source_id=source_id)
+        assert request.url.params["aoiId"] == "bangalore"
+        assert request.headers["X-API-Key"] == API_KEY
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "sourceId": source_id,
+                    "aoiId": "bangalore",
+                    "dates": [
+                        {
+                            "acquisitionDate": "2026-07-11",
+                            "datetime": "2026-07-11T05:30:00Z",
+                            "tileAvailable": True,
+                            "sceneCount": 1,
+                            "polarizations": ["VV", "VH"],
+                        }
+                    ],
+                },
+                "error": None,
+            },
+            request=request,
+        )
+
+    result = _client_for(handler).natural_source_dates(
+        source_id=source_id,
+        aoi_id="bangalore",
+    )
+
+    assert result.dates[0].acquisition_date.isoformat() == "2026-07-11"
+    assert result.dates[0].polarizations == ["VV", "VH"]
+
+
+def test_natural_source_tile_proxies_binary_without_returning_private_url() -> None:
+    source_id = "eos-04-sar-mrs-l2b"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == SOURCE_TILE_PATH.format(
+            source_id=source_id,
+            acquisition_date="2026-07-11",
+            z=8,
+            x=182,
+            y=105,
+        )
+        assert request.headers["X-API-Key"] == API_KEY
+        return httpx.Response(
+            200,
+            content=b"png-bytes",
+            headers={"Content-Type": "image/png"},
+            request=request,
+        )
+
+    body, media_type = _client_for(handler).natural_source_tile(
+        source_id=source_id,
+        aoi_id="bangalore",
+        acquisition_date="2026-07-11",
+        z=8,
+        x=182,
+        y=105,
+    )
+
+    assert body == b"png-bytes"
+    assert media_type == "image/png"

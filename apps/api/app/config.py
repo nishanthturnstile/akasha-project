@@ -268,6 +268,12 @@ class Settings:
             "resourcesat-2a-liss3-boa",
         )
     )
+    ingestion_eos04_cutover_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_EOS04_CUTOVER_ENABLED", False)
+    )
+    eos04_product_enabled: bool = field(
+        default_factory=lambda: _get_bool("EOS04_PRODUCT_ENABLED", False)
+    )
     ingestion_field_index_source_id: str = field(
         default_factory=lambda: _get("INGESTION_FIELD_INDEX_SOURCE_ID", "sentinel-2-l2a")
     )

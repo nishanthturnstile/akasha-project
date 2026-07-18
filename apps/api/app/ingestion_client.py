@@ -25,6 +25,10 @@ FIELD_DATES_PATH = "/api/v1/analytics/field-dates"
 FIELD_DATES_MAX_CLOUD_PERCENTAGE = 20.0
 FIELD_DATES_MAX_BATCH_SIZE = 64
 READINESS_PATH = "/api/v1/analytics/readiness"
+SOURCE_DATES_PATH = "/api/v1/sources/{source_id}/dates"
+SOURCE_TILE_PATH = (
+    "/api/v1/sources/{source_id}/dates/{acquisition_date}/tiles/{z}/{x}/{y}.png"
+)
 MAX_RETRY_AFTER_SECONDS = 30
 _POINT_CACHE_TTL_SECONDS = 60.0
 _FIELD_INDEX_POINT_CACHE: dict[tuple[str, str, str, str], tuple[float, str, str]] = {}
@@ -167,6 +171,22 @@ class FieldDatesResponse(ApiModel):
     source_id: str
     index: str
     dates: list[FieldDateAvailability] = Field(default_factory=list)
+
+
+class NaturalSourceDate(ApiModel):
+    acquisition_date: date
+    datetime: datetime
+    tile_available: bool
+    scene_count: int = Field(ge=1)
+    bounds: list[float] | None = None
+    polarizations: list[str] = Field(default_factory=list)
+    unavailable_reason: str | None = None
+
+
+class NaturalSourceDatesResponse(ApiModel):
+    source_id: str
+    aoi_id: str
+    dates: list[NaturalSourceDate] = Field(default_factory=list)
 
 
 class Resolution(ApiModel):
@@ -476,6 +496,55 @@ class IngestionClient:
                 "Ingestion returned an invalid readiness response."
             ) from exc
 
+    def natural_source_dates(
+        self,
+        *,
+        source_id: str,
+        aoi_id: str,
+        request_id: str | None = None,
+    ) -> NaturalSourceDatesResponse:
+        data = self._request_json(
+            "GET",
+            SOURCE_DATES_PATH.format(source_id=urllib.parse.quote(source_id, safe="")),
+            params={"aoiId": aoi_id},
+            request_id=request_id,
+        )
+        try:
+            response = NaturalSourceDatesResponse.model_validate(data)
+        except ValidationError as exc:
+            raise self._invalid_response(
+                "Ingestion returned an invalid natural-source dates response."
+            ) from exc
+        if response.source_id != source_id or response.aoi_id != aoi_id:
+            raise self._invalid_response(
+                "Ingestion returned natural-source dates for an unexpected request."
+            )
+        return response
+
+    def natural_source_tile(
+        self,
+        *,
+        source_id: str,
+        aoi_id: str,
+        acquisition_date: str,
+        z: int,
+        x: int,
+        y: int,
+        request_id: str | None = None,
+    ) -> tuple[bytes, str]:
+        path = SOURCE_TILE_PATH.format(
+            source_id=urllib.parse.quote(source_id, safe=""),
+            acquisition_date=urllib.parse.quote(acquisition_date, safe=""),
+            z=z,
+            x=x,
+            y=y,
+        )
+        return self._request_binary_path(
+            path,
+            params={"aoiId": aoi_id},
+            request_id=request_id,
+        )
+
     def fetch_binary(
         self,
         url: str,
@@ -569,6 +638,46 @@ class IngestionClient:
             raise self._error_from_http_status(response.status_code, body, response.headers)
 
         return response
+
+    def _request_binary_path(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> tuple[bytes, str]:
+        self._ensure_configured()
+        url = f"{self.api_url.rstrip('/')}{path}"
+        headers = {"X-API-Key": self.api_key, "Accept": "image/png"}
+        if request_id:
+            headers["X-Request-ID"] = request_id
+        try:
+            response = self._send("GET", url, headers=headers, json=None, params=params)
+        except httpx.TimeoutException as exc:
+            raise IngestionClientError(
+                "PIPELINE_UPSTREAM_TIMEOUT",
+                "Ingestion pipeline request timed out.",
+                status_code=504,
+                retryable=True,
+                details={"timeoutSeconds": self.timeout_seconds},
+                api_key=self.api_key,
+            ) from exc
+        except httpx.TransportError as exc:
+            raise IngestionClientError(
+                "PIPELINE_UPSTREAM_UNAVAILABLE",
+                "Ingestion pipeline is unavailable.",
+                status_code=503,
+                retryable=True,
+                api_key=self.api_key,
+            ) from exc
+        if response.status_code >= 400:
+            body = None
+            try:
+                body = response.json()
+            except ValueError:
+                pass
+            raise self._error_from_http_status(response.status_code, body, response.headers)
+        return response.content, response.headers.get("Content-Type", "image/png")
 
     def _request_json(
         self,
@@ -828,6 +937,46 @@ def request_field_dates(
     except IngestionClientError as exc:
         _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_DATES_ERROR")
     return result.model_dump(mode="json", by_alias=True)
+
+
+def get_natural_source_dates(
+    settings_obj: Settings,
+    *,
+    source_id: str,
+    aoi_id: str,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    try:
+        result = _client_for(settings_obj, timeout_seconds).natural_source_dates(
+            source_id=source_id,
+            aoi_id=aoi_id,
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_SOURCE_DATES_ERROR")
+    return result.model_dump(mode="json", by_alias=True)
+
+
+def fetch_natural_source_tile(
+    settings_obj: Settings,
+    *,
+    source_id: str,
+    aoi_id: str,
+    acquisition_date: str,
+    z: int,
+    x: int,
+    y: int,
+) -> tuple[bytes, str]:
+    try:
+        return _client_for(settings_obj).natural_source_tile(
+            source_id=source_id,
+            aoi_id=aoi_id,
+            acquisition_date=acquisition_date,
+            z=z,
+            x=x,
+            y=y,
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_SOURCE_TILE_ERROR")
 
 
 def _validate_and_rewrite_signed_url(settings_obj: Settings, url: str) -> str:

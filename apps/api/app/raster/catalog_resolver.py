@@ -311,7 +311,9 @@ _SOURCE_REGISTRY.update(
             "dateMetricsKind": "radar",
             "defaultRescale": "-25,5",
             "tileRouteMode": "vv_grayscale",
-            "resolutionMeters": None,
+            # NRSC describes MRS at nominal 33 m ground resolution; the validated
+            # L2B ARD product grid is delivered at 18 m pixel spacing.
+            "resolutionMeters": 18,
             "analysisLevel": "context",
             "refreshPolicy": (
                 "Validated single-scene backscatter display only; no optical indices or cloud mask."
@@ -321,6 +323,7 @@ _SOURCE_REGISTRY.update(
                 "No cloud/SCL/ResourceSat threshold mask controls.",
                 "Date-level mosaics are unavailable until a SAR mosaic backend exists.",
                 "Catalog items must declare explicit SAR polarizations before tiles render.",
+                "MRS nominal ground resolution is about 33 m; L2B ARD pixel spacing is 18 m.",
             ],
             "maskMethod": None,
             "metricsProvisional": True,

@@ -695,7 +695,7 @@ describe('MapPage source defaults', () => {
       ],
     });
 
-    renderMapPage({ selectedPlotId: 'plot-1' });
+    renderMapPage({ selectedPlotId: 'plot-1', bestMode: true });
 
     fireEvent.click(await screen.findByTestId('layer-source-trigger'));
     fireEvent.click(await screen.findByTestId('source-tab-resourcesat-2a-awifs-boa'));

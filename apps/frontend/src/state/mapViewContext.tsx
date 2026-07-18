@@ -65,6 +65,7 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
                 displayMode: null,
                 compareEnabled: false,
                 compareDate: null,
+                bestMode: false,
             };
         case 'SET_DATE':
             if (action.date === state.selectedDate) return state;

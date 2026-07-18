@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Satellite, Search } from 'lucide-react';
-import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
+import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint, getFieldSarOverlayImage } from '@/lib/api';
 import {
   useConfig,
   useCreateField,
@@ -11,6 +11,7 @@ import {
   useDefaultLayer,
   useDeleteField,
   useFields,
+  useFieldMonitoringEvidence,
   useSources,
   useUpdateField,
 } from '@/lib/queries';
@@ -337,6 +338,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     overlaysVisible,
     focusNonce,
     bestMode,
+    radarEvidenceVisible,
   } = view;
 
   const effectiveSourceId = useMemo(
@@ -400,6 +402,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     enabled: !bestMode && Boolean(selectedPlot),
     fieldId: selectedPlot?.id,
     indexType: requestedTimelineIndex,
+  });
+  const monitoringEvidenceQ = useFieldMonitoringEvidence(selectedPlot?.id, {
+    sourceId: effectiveSourceId,
+    indexType: requestedTimelineIndex,
+    enabled: selectedSource?.productRole !== 'support',
   });
 
   useEffect(() => {
@@ -681,6 +688,43 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     indexOverlay && requestedIndexOverlayKey === indexOverlayRequestKey,
   );
 
+  const [radarOverlay, setRadarOverlay] = useState<IndexOverlay | null>(null);
+  const radarEvidence = monitoringEvidenceQ.data?.radar;
+  useEffect(() => {
+    let disposed = false;
+    if (
+      !radarEvidenceVisible ||
+      radarEvidence?.status !== 'AVAILABLE' ||
+      !selectedPlot ||
+      !monitoringEvidenceQ.data?.targetDate
+    ) {
+      setRadarOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return null;
+      });
+      return;
+    }
+    const corners = geometryBboxCorners(selectedPlot.geometry);
+    if (!corners) return;
+    void getFieldSarOverlayImage(
+      selectedPlot.id,
+      monitoringEvidenceQ.data.targetDate,
+      corners,
+    ).then((overlay) => {
+      if (disposed) {
+        if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
+        return;
+      }
+      setRadarOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return overlay;
+      });
+    }).catch(() => {
+      if (!disposed) setRadarOverlay(null);
+    });
+    return () => { disposed = true; };
+  }, [monitoringEvidenceQ.data?.targetDate, radarEvidence?.status, radarEvidenceVisible, selectedPlot]);
+
   useEffect(() => {
     let disposed = false;
     if (!requestedIndexOverlay) {
@@ -776,10 +820,20 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
 
   // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
   const nearestPassNote = useMemo<string | null>(() => {
+    if (
+      monitoringEvidenceQ.data?.optical?.status !== 'usable' &&
+      radarEvidence?.status === 'AVAILABLE' &&
+      radarEvidence.acquisitionDate
+    ) {
+      const offset = radarEvidence.daysFromTarget == null
+        ? ''
+        : ` · ${Math.abs(radarEvidence.daysFromTarget)} day offset`;
+      return `EOS-04 support: ${radarEvidence.acquisitionDate}${offset} · radar evidence, not NDVI.`;
+    }
     if (selectedSource?.kind !== 'sar') return null;
     if (!selectedDate) return null;
     return `Nearest radar pass: ${selectedDate}.`;
-  }, [selectedSource?.kind, selectedDate]);
+  }, [monitoringEvidenceQ.data?.optical?.status, radarEvidence, selectedSource?.kind, selectedDate]);
 
   const requestMapTool = (owner: MapToolOwner): boolean => {
     setActiveMapTool(owner);
@@ -898,7 +952,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const sourceAttribution = selectedSource?.attribution ?? selectedSource?.provider;
   const attribution =
     scene?.attribution ??
-    (indexOverlay
+    (radarEvidenceVisible && radarOverlay
+      ? 'ISRO/NRSC Bhoonidhi · EOS-04 field support'
+      : indexOverlay
       ? sourceAttribution
       : basemapResolution.basemapConfig.provider === 'osm'
         ? basemapResolution.basemapConfig.attribution
@@ -931,14 +987,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         zoom={ config.aoi.zoom }
         scene={ scene }
         sceneB={ sceneB }
-        indexOverlay={ indexOverlay }
+        indexOverlay={ radarEvidenceVisible && radarOverlay ? radarOverlay : indexOverlay }
         opacity={ opacity / 100 }
         visible={ visible }
         onBasemapError={ setBasemapRuntimeError }
         onMapReady={ setMap }
       />
       <FieldOverlayLoadingIndicator
-        loading={ overlaysVisible && isIndexLayer && indexOverlayLoading }
+        loading={ overlaysVisible && ((isIndexLayer && indexOverlayLoading) || (radarEvidenceVisible && radarEvidence?.status === 'AVAILABLE' && !radarOverlay)) }
         map={ map }
         plot={ selectedPlot }
       />

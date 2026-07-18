@@ -149,9 +149,7 @@ def test_sentinel_default_layer_uses_pipeline_readiness(monkeypatch) -> None:
         lambda latest, revisit: "2026-07-18" if latest == "2026-03-20" and revisit == 5 else None,
     )
 
-    response = client.get(
-        f"/api/layers/default?sourceId={catalog.SENTINEL_2_SOURCE_ID}"
-    )
+    response = client.get(f"/api/layers/default?sourceId={catalog.SENTINEL_2_SOURCE_ID}")
 
     assert response.status_code == 200
     body = response.json()
@@ -235,8 +233,7 @@ def test_field_dates_exclude_unusable_dates_and_recompute_latest(monkeypatch) ->
     monkeypatch.setattr(field_analytics, "request_field_dates", fake_field_dates)
 
     response = client.get(
-        "/api/fields/field-1/dates"
-        "?sourceId=sentinel-2-l2a&indexType=NDVI&lookbackDays=153"
+        "/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI&lookbackDays=153"
     )
 
     assert response.status_code == 200
@@ -260,12 +257,116 @@ def test_field_dates_reject_unknown_or_unowned_field(monkeypatch) -> None:
         lambda *_args, **_kwargs: pytest.fail("ingestion must not receive unowned geometry"),
     )
 
-    response = client.get(
-        "/api/fields/not-owned/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
-    )
+    response = client.get("/api/fields/not-owned/dates?sourceId=sentinel-2-l2a&indexType=NDVI")
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "FIELD_NOT_FOUND"
+
+
+def test_monitoring_evidence_skips_radar_when_optical_is_fresh(monkeypatch) -> None:
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(settings, "eos04_field_support_enabled", True)
+    monkeypatch.setattr(
+        field_analytics,
+        "_field_dates_response",
+        lambda **_kwargs: [{"acquisitionDate": "2026-07-15"}],
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "_pipeline_dates",
+        lambda *_args, **_kwargs: [{"acquisitionDate": "2026-07-15"}],
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "request_field_sar",
+        lambda *_args, **_kwargs: pytest.fail("fresh optical evidence must not request SAR"),
+    )
+
+    response = client.get(
+        "/api/fields/field-1/monitoring/evidence"
+        "?sourceId=sentinel-2-l2a&indexType=NDVI&targetDate=2026-07-18"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["optical"]["status"] == "usable"
+    assert response.json()["radar"]["status"] == "NOT_REQUESTED"
+
+
+def test_monitoring_evidence_uses_field_sar_for_optical_quality_gap(monkeypatch) -> None:
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(settings, "eos04_field_support_enabled", True)
+    monkeypatch.setattr(field_analytics, "_field_dates_response", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        field_analytics,
+        "_pipeline_dates",
+        lambda *_args, **_kwargs: [{"acquisitionDate": "2026-07-17"}],
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_field_sar(*_args, **kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "AVAILABLE",
+            "queryId": "private-query",
+            "sourceId": "eos-04-sar-mrs-l2b",
+            "requestedDate": "2026-07-18",
+            "acquisitionDate": "2026-07-17",
+            "daysFromTarget": -1,
+            "coveragePercent": 100,
+            "validPixelCount": 120,
+            "fieldPixelCount": 120,
+            "polarizations": ["HH", "HV"],
+            "displayedPolarization": "HH",
+            "bands": [],
+            "features": {"HH_MINUS_HV_DB": 5.2},
+            "quality": {"qualified": True, "confidence": "high", "warnings": []},
+            "provenance": {"unit": "dB", "rtcApplied": True},
+            "overlayUrl": "http://10.10.2.4:18080/private?sig=secret",
+        }
+
+    monkeypatch.setattr(field_analytics, "request_field_sar", fake_field_sar)
+    response = client.get(
+        "/api/fields/field-1/monitoring/evidence"
+        "?sourceId=sentinel-2-l2a&indexType=NDVI&targetDate=2026-07-18"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["optical"]["status"] == "quality_limited"
+    assert body["radar"]["status"] == "AVAILABLE"
+    assert body["radar"]["overlayUrl"].startswith("/api/fields/field-1/sar/overlay.png")
+    assert "private-query" not in json.dumps(body)
+    assert "10.10.2.4" not in json.dumps(body)
+    assert calls[0]["geometry"] == _plot()["geometry"]
+
+
+def test_field_sar_overlay_proxies_signed_png(monkeypatch) -> None:
+    monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(settings, "eos04_field_support_enabled", True)
+    monkeypatch.setattr(
+        field_analytics,
+        "request_field_sar",
+        lambda *_args, **_kwargs: {
+            "status": "AVAILABLE",
+            "overlayUrl": "http://10.10.2.4:18080/sar?sig=secret",
+        },
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "fetch_signed_ingestion_binary",
+        lambda *_args: (
+            b"sar-png",
+            "image/png",
+            {"X-Akasha-Overlay-Corners": "[[77,12],[77.1,12],[77.1,12.1],[77,12.1]]"},
+        ),
+    )
+
+    response = client.get("/api/fields/field-1/sar/overlay.png?targetDate=2026-07-18")
+
+    assert response.status_code == 200
+    assert response.content == b"sar-png"
+    assert response.headers["x-akasha-resolved-source"] == "eos-04-sar-mrs-l2b"
+    assert "secret" not in response.text
 
 
 def test_field_dates_use_expensive_index_rate_limit(monkeypatch) -> None:
@@ -273,12 +374,8 @@ def test_field_dates_use_expensive_index_rate_limit(monkeypatch) -> None:
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_args: _plot())
     monkeypatch.setattr(field_analytics, "_field_dates_response", lambda **_kwargs: [])
 
-    first = client.get(
-        "/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
-    )
-    second = client.get(
-        "/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
-    )
+    first = client.get("/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI")
+    second = client.get("/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI")
 
     assert first.status_code == 200
     assert second.status_code == 429
@@ -295,9 +392,7 @@ def test_field_dates_timeout_returns_without_waiting_for_blocking_worker(monkeyp
     monkeypatch.setattr(field_analytics, "_field_dates_response", slow_field_dates)
 
     started = time.monotonic()
-    response = client.get(
-        "/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI"
-    )
+    response = client.get("/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI")
     elapsed = time.monotonic() - started
 
     assert response.status_code == 504
@@ -306,8 +401,7 @@ def test_field_dates_timeout_returns_without_waiting_for_blocking_worker(monkeyp
 
 def test_field_dates_chunk_dense_timelines_without_dropping_dates(monkeypatch) -> None:
     acquisition_dates = [
-        (date(2026, 1, 1) + timedelta(days=offset)).isoformat()
-        for offset in range(65)
+        (date(2026, 1, 1) + timedelta(days=offset)).isoformat() for offset in range(65)
     ]
     monkeypatch.setattr(
         field_analytics,
@@ -481,15 +575,17 @@ def test_resourcesat_uses_native_catalog_until_cutover_enabled(monkeypatch) -> N
     monkeypatch.setattr(
         product_router.catalog,
         "list_dates",
-        lambda source_id: [
-            {
-                "acquisitionDate": "2026-03-19",
-                "tileAvailable": True,
-                "sceneCount": 1,
-            }
-        ]
-        if source_id == catalog.RESOURCESAT_LISS3_SOURCE_ID
-        else [],
+        lambda source_id: (
+            [
+                {
+                    "acquisitionDate": "2026-03-19",
+                    "tileAvailable": True,
+                    "sceneCount": 1,
+                }
+            ]
+            if source_id == catalog.RESOURCESAT_LISS3_SOURCE_ID
+            else []
+        ),
     )
 
     sources = client.get("/api/sources")
@@ -626,9 +722,7 @@ def test_resourcesat_root_statistics_route_does_not_use_native_compute(monkeypat
             "indexType": "NDVI",
             "geometry": {
                 "type": "Polygon",
-                "coordinates": [
-                    [[[77.0, 12.0], [77.01, 12.0], [77.01, 12.01], [77.0, 12.0]]]
-                ],
+                "coordinates": [[[[77.0, 12.0], [77.01, 12.0], [77.01, 12.01], [77.0, 12.0]]]],
             },
         },
     )

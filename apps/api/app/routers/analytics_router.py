@@ -28,6 +28,7 @@ from ..ingestion_client import (
     request_field_dates,
     request_field_index,
     request_field_index_point,
+    request_field_sar,
 )
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
@@ -72,6 +73,7 @@ router = APIRouter(
 )
 
 MAX_TREND_DAYS = 365
+EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -304,9 +306,7 @@ def _field_dates_response(
 
     _ensure_pipeline_index_supported(source_id, index_type)
     acquisition_dates = [
-        str(item["acquisitionDate"])
-        for item in windowed_dates
-        if item.get("acquisitionDate")
+        str(item["acquisitionDate"]) for item in windowed_dates if item.get("acquisitionDate")
     ]
     availability_dates: list[dict[str, Any]] = []
     for offset in range(0, len(acquisition_dates), FIELD_DATES_MAX_BATCH_SIZE):
@@ -351,6 +351,141 @@ def _field_dates_response(
         for item in filtered:
             item["isLatestUsable"] = item["acquisitionDate"] == newest
     return filtered
+
+
+def _field_monitoring_evidence(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    source_id: str,
+    index_type: str,
+    target_date: date,
+    optical_stale_days: int,
+    sar_window_days: int,
+    include_radar: bool,
+) -> dict[str, Any]:
+    source = catalog.get_source(source_id)
+    if source.get("kind") != "optical":
+        raise bad_request(
+            "Field monitoring evidence requires a primary optical source.",
+            code="OPTICAL_SOURCE_REQUIRED",
+            sourceId=source_id,
+        )
+    if index_type not in catalog.supported_indices(source_id):
+        raise bad_request(
+            f"Unsupported index '{index_type}' for source '{source_id}'.",
+            code="UNSUPPORTED_INDEX",
+            sourceId=source_id,
+            indexType=index_type,
+        )
+    start_date = target_date - timedelta(days=max(31, optical_stale_days * 3))
+    field_dates = _field_dates_response(
+        plot=plot,
+        source_id=source_id,
+        index_type=index_type,
+        start_date=start_date,
+        end_date=target_date,
+        lookback_days=None,
+        timeout_seconds=float(settings.index_request_timeout_seconds),
+    )
+    global_dates = (
+        _pipeline_dates(
+            source_id, timeout_seconds=float(settings.ingestion_request_timeout_seconds)
+        )
+        if _uses_pipeline(source_id)
+        else catalog.list_dates(source_id)
+    ) or []
+    candidate_dates = sorted(
+        date.fromisoformat(str(item["acquisitionDate"]))
+        for item in global_dates
+        if item.get("acquisitionDate")
+        and start_date <= date.fromisoformat(str(item["acquisitionDate"])) <= target_date
+    )
+    qualifying_dates = sorted(
+        date.fromisoformat(str(item["acquisitionDate"]))
+        for item in field_dates
+        if item.get("acquisitionDate")
+    )
+    latest_candidate = candidate_dates[-1] if candidate_dates else None
+    latest_qualifying = qualifying_dates[-1] if qualifying_dates else None
+    qualifying_age = (target_date - latest_qualifying).days if latest_qualifying else None
+
+    if (
+        latest_qualifying is not None
+        and qualifying_age is not None
+        and qualifying_age <= optical_stale_days
+    ):
+        optical_status = "usable"
+        trigger_reason = None
+    elif latest_candidate is not None and (
+        latest_qualifying is None or latest_candidate > latest_qualifying
+    ):
+        optical_status = "quality_limited"
+        trigger_reason = (
+            "The newest optical observation did not meet exact-field quality thresholds."
+        )
+    elif latest_qualifying is not None:
+        optical_status = "stale"
+        trigger_reason = "The latest qualifying optical observation is stale."
+    else:
+        optical_status = "unavailable"
+        trigger_reason = "No qualifying optical observation is available for this field."
+
+    should_request_radar = include_radar or optical_status != "usable"
+    radar: dict[str, Any] = {
+        "status": "NOT_REQUESTED",
+        "sourceId": EOS04_SOURCE_ID,
+        "triggered": should_request_radar,
+        "triggerReason": trigger_reason if should_request_radar else None,
+    }
+    if should_request_radar and not settings.eos04_field_support_enabled:
+        radar.update(
+            status="DISABLED",
+            reason="EOS-04 field support is not enabled in this environment.",
+        )
+    elif should_request_radar:
+        try:
+            result = request_field_sar(
+                settings,
+                geometry=plot["geometry"],
+                field_id=plot_id,
+                target_date=target_date.isoformat(),
+                window_days=sar_window_days,
+                timeout_seconds=float(settings.ingestion_request_timeout_seconds),
+            )
+        except AkashaError as exc:
+            radar.update(status="UNAVAILABLE", reason=exc.message, reasonCode=exc.code)
+        else:
+            result.pop("overlayUrl", None)
+            result.pop("queryId", None)
+            radar.update(result)
+            if result.get("status") == "AVAILABLE":
+                radar["overlayUrl"] = (
+                    f"/api/fields/{plot_id}/sar/overlay.png"
+                    f"?targetDate={target_date.isoformat()}&windowDays={sar_window_days}"
+                )
+            radar["triggered"] = True
+            radar["triggerReason"] = trigger_reason
+
+    return {
+        "fieldId": plot_id,
+        "targetDate": target_date.isoformat(),
+        "optical": {
+            "status": optical_status,
+            "sourceId": source_id,
+            "indexType": index_type,
+            "latestCandidateDate": latest_candidate.isoformat() if latest_candidate else None,
+            "latestQualifyingDate": latest_qualifying.isoformat() if latest_qualifying else None,
+            "ageDays": qualifying_age,
+            "staleAfterDays": optical_stale_days,
+            "requirements": {
+                "minimumCoveragePercent": 95,
+                "minimumUsablePixelPercent": 80,
+                "maximumCombinedCloudShadowPercent": 20,
+            },
+        },
+        "radar": radar,
+    }
 
 
 def _provisional_trend_point(requested_date: date, reason: str) -> FieldTrendPoint:
@@ -998,6 +1133,80 @@ async def get_field_dates(
             "Field-date availability exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
             timeoutSeconds=settings.index_request_timeout_seconds,
         ) from exc
+
+
+@router.get("/fields/{plot_id}/monitoring/evidence")
+async def get_field_monitoring_evidence(
+    plot_id: str,
+    sourceId: str = Query(default=settings.default_source_id),
+    indexType: str = Query(default=DEFAULT_INDEX),
+    targetDate: date | None = Query(default=None),
+    opticalStaleDays: int = Query(default=10, ge=1, le=31),
+    sarWindowDays: int = Query(default=21, ge=1, le=31),
+    includeRadar: bool = Query(default=False),
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    plot = await _get_field_or_404(plot_id, user.id)
+    normalized_index = _normalize_index(indexType)
+    requested_date = targetDate or datetime.now(UTC).date()
+    try:
+        return await asyncio.wait_for(
+            _run_blocking_cancellable(
+                _field_monitoring_evidence,
+                plot_id=plot_id,
+                plot=plot,
+                source_id=sourceId,
+                index_type=normalized_index,
+                target_date=requested_date,
+                optical_stale_days=opticalStaleDays,
+                sar_window_days=sarWindowDays,
+                include_radar=includeRadar,
+            ),
+            timeout=settings.index_request_timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise index_timeout(
+            "Field monitoring evidence exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+            timeoutSeconds=settings.index_request_timeout_seconds,
+        ) from exc
+
+
+@router.get("/fields/{plot_id}/sar/overlay.png")
+async def get_field_sar_overlay(
+    plot_id: str,
+    targetDate: date = Query(...),
+    windowDays: int = Query(default=21, ge=1, le=31),
+    user: CurrentUser = Depends(get_current_user),
+) -> Response:
+    if not settings.eos04_field_support_enabled:
+        raise not_found("EOS-04 field support is not enabled.", code="EOS04_FIELD_SUPPORT_DISABLED")
+    plot = await _get_field_or_404(plot_id, user.id)
+    result = await _run_blocking(
+        request_field_sar,
+        settings,
+        geometry=plot["geometry"],
+        field_id=plot_id,
+        target_date=targetDate.isoformat(),
+        window_days=windowDays,
+    )
+    if result.get("status") != "AVAILABLE" or not result.get("overlayUrl"):
+        raise not_found(
+            "EOS-04 evidence is unavailable for this field and date.",
+            code="EOS04_FIELD_EVIDENCE_UNAVAILABLE",
+            reason=result.get("reason"),
+        )
+    body, content_type, upstream_headers = await _run_blocking(
+        fetch_signed_ingestion_binary,
+        settings,
+        str(result["overlayUrl"]),
+    )
+    headers = {
+        name: upstream_headers[name]
+        for name in ("X-Akasha-Overlay-Corners", "X-Akasha-Overlay-Stretch")
+        if upstream_headers.get(name)
+    }
+    headers["X-Akasha-Resolved-Source"] = EOS04_SOURCE_ID
+    return Response(content=body, media_type=content_type, headers=headers)
 
 
 @router.post(

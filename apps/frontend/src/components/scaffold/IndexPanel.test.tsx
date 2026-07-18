@@ -61,6 +61,77 @@ afterEach(() => {
 });
 
 describe('IndexPanel tabbed analytics (Phase F)', () => {
+    it('presents field-clipped EOS-04 evidence as support, not NDVI', async () => {
+        const onRadarEvidenceVisibleChange = vi.fn();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path.startsWith('/api/fields/plot-1/monitoring/evidence')) {
+                    return Promise.resolve(jsonResponse({
+                        fieldId: 'plot-1',
+                        targetDate: '2026-07-18',
+                        optical: {
+                            status: 'quality_limited',
+                            sourceId: 'sentinel-2-l2a',
+                            indexType: 'NDVI',
+                            latestCandidateDate: '2026-07-17',
+                            latestQualifyingDate: null,
+                            ageDays: null,
+                            staleAfterDays: 10,
+                            requirements: {
+                                minimumCoveragePercent: 95,
+                                minimumUsablePixelPercent: 80,
+                                maximumCombinedCloudShadowPercent: 20,
+                            },
+                        },
+                        radar: {
+                            status: 'AVAILABLE',
+                            sourceId: 'eos-04-sar-mrs-l2b',
+                            triggered: true,
+                            triggerReason: 'Optical quality gap.',
+                            acquisitionDate: '2026-07-17',
+                            coveragePercent: 100,
+                            quality: { qualified: true, confidence: 'high', warnings: [] },
+                            overlayUrl: '/api/fields/plot-1/sar/overlay.png?targetDate=2026-07-18',
+                        },
+                    }));
+                }
+                if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'pipeline',
+                        sourceId: 'sentinel-2-l2a',
+                        indexType: 'NDVI',
+                        startDate: '2026-01-01',
+                        endDate: '2026-07-18',
+                        points: [],
+                        metadata: { bands: [] },
+                    }));
+                }
+                return Promise.resolve(jsonResponse({}));
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate={ null }
+                sourceId="sentinel-2-l2a"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+                onRadarEvidenceVisibleChange={ onRadarEvidenceVisibleChange }
+            />,
+        );
+
+        expect(await screen.findByText(/provides structural and moisture-sensitive evidence, not NDVI/i)).toBeTruthy();
+        fireEvent.click(screen.getByTestId('toggle-radar-evidence'));
+        expect(onRadarEvidenceVisibleChange).toHaveBeenCalledWith(true);
+    });
+
     it('renders the empty-state guidance when no field is selected', () => {
         renderPanel(
             <IndexPanel

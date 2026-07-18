@@ -496,6 +496,7 @@ def source_payload(source_id: str) -> dict[str, Any]:
         "label": source["label"],
         "provider": source["provider"],
         "kind": source["kind"],
+        "productRole": "support" if source["kind"] == "sar" else "primary",
         "collectionId": source["collectionId"],
         "expectedAssets": list(source["expectedAssets"]),
         "supportedIndices": supported_indices(source_id),

@@ -53,6 +53,8 @@ export interface MapViewState {
     mapFullscreen: boolean;
     /** Timeline uses the best available observation resolver instead of one source's dates. */
     bestMode: boolean;
+    /** Show field-clipped EOS-04 support evidence instead of the optical index overlay. */
+    radarEvidenceVisible: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -82,6 +84,7 @@ export const initialMapViewState: MapViewState = {
     focusNonce: 0,
     mapFullscreen: true,
     bestMode: false,
+    radarEvidenceVisible: false,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -108,6 +111,7 @@ export interface MapViewContextValue extends MapViewState {
     setFocusNonce: (nonce: number) => void;
     setMapFullscreen: (fullscreen: boolean) => void;
     setBestMode: (enabled: boolean) => void;
+    setRadarEvidenceVisible: (visible: boolean) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

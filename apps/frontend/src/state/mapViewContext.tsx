@@ -50,7 +50,8 @@ type MapViewAction =
     | { type: 'SET_PENDING_ACTION'; action: 'create-field' | null }
     | { type: 'SET_FOCUS_NONCE'; nonce: number }
     | { type: 'SET_MAP_FULLSCREEN'; fullscreen: boolean }
-    | { type: 'SET_BEST_MODE'; enabled: boolean };
+    | { type: 'SET_BEST_MODE'; enabled: boolean }
+    | { type: 'SET_RADAR_EVIDENCE_VISIBLE'; visible: boolean };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -66,6 +67,7 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
                 compareEnabled: false,
                 compareDate: null,
                 bestMode: false,
+                radarEvidenceVisible: false,
             };
         case 'SET_DATE':
             if (action.date === state.selectedDate) return state;
@@ -133,6 +135,9 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_BEST_MODE':
             if (action.enabled === state.bestMode) return state;
             return { ...state, bestMode: action.enabled };
+        case 'SET_RADAR_EVIDENCE_VISIBLE':
+            if (action.visible === state.radarEvidenceVisible) return state;
+            return { ...state, radarEvidenceVisible: action.visible };
         default:
             return state;
     }
@@ -246,6 +251,8 @@ export function MapViewProvider({
             setMapFullscreen: (fullscreen) =>
                 dispatch({ type: 'SET_MAP_FULLSCREEN', fullscreen }),
             setBestMode: (enabled) => dispatch({ type: 'SET_BEST_MODE', enabled }),
+            setRadarEvidenceVisible: (visible) =>
+                dispatch({ type: 'SET_RADAR_EVIDENCE_VISIBLE', visible }),
         }),
         [state],
     );

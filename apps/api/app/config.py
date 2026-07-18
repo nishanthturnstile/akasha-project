@@ -274,6 +274,9 @@ class Settings:
     eos04_product_enabled: bool = field(
         default_factory=lambda: _get_bool("EOS04_PRODUCT_ENABLED", False)
     )
+    eos04_field_support_enabled: bool = field(
+        default_factory=lambda: _get_bool("EOS04_FIELD_SUPPORT_ENABLED", False)
+    )
     ingestion_field_index_source_id: str = field(
         default_factory=lambda: _get("INGESTION_FIELD_INDEX_SOURCE_ID", "sentinel-2-l2a")
     )

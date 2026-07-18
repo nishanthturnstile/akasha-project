@@ -94,6 +94,7 @@ export interface PredefinedSeason {
 export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
 export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
 export type SourceAvailabilityStatus = 'active' | 'gated';
+export type SourceProductRole = 'primary' | 'support' | 'advanced';
 
 /** EOS-style grouped LAYER picker: a labelled category of display modes. */
 export interface LayerGroup {
@@ -106,6 +107,7 @@ export interface Source {
   label: string;
   provider: string;
   kind?: SourceKind;
+  productRole?: SourceProductRole;
   displayModes?: string[];
   defaultDisplayMode?: string;
   mapDisplayModes?: string[];
@@ -807,6 +809,50 @@ export interface FieldStatisticsRequest {
   indexType: string;
   cloudMask?: CloudMaskOptions;
   preferHighRes?: boolean;
+}
+
+export interface FieldMonitoringEvidence {
+  fieldId: string;
+  targetDate: string;
+  optical: {
+    status: 'usable' | 'quality_limited' | 'stale' | 'unavailable';
+    sourceId: string;
+    indexType: string;
+    latestCandidateDate: string | null;
+    latestQualifyingDate: string | null;
+    ageDays: number | null;
+    staleAfterDays: number;
+    requirements: {
+      minimumCoveragePercent: number;
+      minimumUsablePixelPercent: number;
+      maximumCombinedCloudShadowPercent: number;
+    };
+  };
+  radar: {
+    status: 'NOT_REQUESTED' | 'DISABLED' | 'AVAILABLE' | 'UNAVAILABLE';
+    sourceId: string;
+    triggered: boolean;
+    triggerReason: string | null;
+    reason?: string | null;
+    reasonCode?: string | null;
+    acquisitionDate?: string;
+    daysFromTarget?: number;
+    coveragePercent?: number;
+    polarizations?: string[];
+    displayedPolarization?: string;
+    bands?: Array<{
+      polarization: string;
+      mean: number | null;
+      median: number | null;
+      stdDev: number | null;
+      validPixelPercent: number;
+      unit: 'dB';
+    }>;
+    features?: Record<string, number>;
+    quality?: { qualified: boolean; confidence: 'none' | 'low' | 'medium' | 'high'; warnings: string[] };
+    provenance?: Record<string, unknown>;
+    overlayUrl?: string;
+  };
 }
 
 export interface FieldStatisticsResponse {

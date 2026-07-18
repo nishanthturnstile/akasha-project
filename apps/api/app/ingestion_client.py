@@ -22,13 +22,12 @@ T = TypeVar("T")
 
 FIELD_INDEX_PATH = "/api/v1/analytics/field-index"
 FIELD_DATES_PATH = "/api/v1/analytics/field-dates"
+FIELD_SAR_PATH = "/api/v1/analytics/field-sar"
 FIELD_DATES_MAX_CLOUD_PERCENTAGE = 20.0
 FIELD_DATES_MAX_BATCH_SIZE = 64
 READINESS_PATH = "/api/v1/analytics/readiness"
 SOURCE_DATES_PATH = "/api/v1/sources/{source_id}/dates"
-SOURCE_TILE_PATH = (
-    "/api/v1/sources/{source_id}/dates/{acquisition_date}/tiles/{z}/{x}/{y}.png"
-)
+SOURCE_TILE_PATH = "/api/v1/sources/{source_id}/dates/{acquisition_date}/tiles/{z}/{x}/{y}.png"
 MAX_RETRY_AFTER_SECONDS = 30
 _POINT_CACHE_TTL_SECONDS = 60.0
 _FIELD_INDEX_POINT_CACHE: dict[tuple[str, str, str, str], tuple[float, str, str]] = {}
@@ -171,6 +170,70 @@ class FieldDatesResponse(ApiModel):
     source_id: str
     index: str
     dates: list[FieldDateAvailability] = Field(default_factory=list)
+
+
+class FieldSarRequest(ApiModel):
+    geometry: dict[str, Any]
+    source_id: Literal["eos-04-sar-mrs-l2b"] = "eos-04-sar-mrs-l2b"
+    crs: Literal["EPSG:4326"] = "EPSG:4326"
+    field_id: str
+    target_date: date
+    window_days: int = Field(default=21, ge=1, le=31)
+    minimum_coverage_percent: float = Field(default=95.0, ge=0, le=100)
+
+
+class FieldSarBandStatistics(ApiModel):
+    polarization: str
+    min: float | None = None
+    max: float | None = None
+    mean: float | None = None
+    median: float | None = None
+    std_dev: float | None = None
+    p10: float | None = None
+    p25: float | None = None
+    p75: float | None = None
+    p90: float | None = None
+    valid_pixel_count: int = Field(default=0, ge=0)
+    valid_pixel_percent: float = Field(default=0, ge=0, le=100)
+    unit: Literal["dB"] = "dB"
+
+
+class FieldSarQuality(ApiModel):
+    qualified: bool
+    confidence: Literal["none", "low", "medium", "high"]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class FieldSarAvailableResponse(ApiModel):
+    status: Literal["AVAILABLE"]
+    query_id: str
+    field_id: str | None = None
+    source_id: Literal["eos-04-sar-mrs-l2b"]
+    requested_date: date
+    acquisition_date: date
+    days_from_target: int
+    coverage_percent: float = Field(ge=0, le=100)
+    valid_pixel_count: int = Field(ge=1)
+    field_pixel_count: int = Field(ge=1)
+    polarizations: list[str]
+    displayed_polarization: str
+    bands: list[FieldSarBandStatistics]
+    features: dict[str, float] = Field(default_factory=dict)
+    quality: FieldSarQuality
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    overlay_url: str
+
+
+class FieldSarUnavailableResponse(ApiModel):
+    status: Literal["UNAVAILABLE"]
+    field_id: str | None = None
+    source_id: Literal["eos-04-sar-mrs-l2b"]
+    requested_date: date
+    reason_code: Literal["no_scene", "no_overlap", "low_coverage", "processing_unavailable"]
+    reason: str
+
+
+FieldSarResponse = FieldSarAvailableResponse | FieldSarUnavailableResponse
 
 
 class NaturalSourceDate(ApiModel):
@@ -472,6 +535,30 @@ class IngestionClient:
                 "Ingestion returned field dates for an unexpected request."
             )
         return response
+
+    def field_sar(
+        self,
+        request: FieldSarRequest | dict[str, Any],
+        *,
+        request_id: str | None = None,
+    ) -> FieldSarResponse:
+        payload = FieldSarRequest.model_validate(request)
+        data = self._request_json(
+            "POST",
+            FIELD_SAR_PATH,
+            json=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+            request_id=request_id,
+        )
+        status = str(data.get("status", "")).upper() if isinstance(data, dict) else ""
+        model = FieldSarAvailableResponse if status == "AVAILABLE" else FieldSarUnavailableResponse
+        if status not in {"AVAILABLE", "UNAVAILABLE"}:
+            raise self._invalid_response("Ingestion returned an invalid field-SAR status.")
+        try:
+            return model.model_validate(data)
+        except ValidationError as exc:
+            raise self._invalid_response(
+                "Ingestion returned an invalid field-SAR response."
+            ) from exc
 
     def readiness(
         self,
@@ -936,6 +1023,33 @@ def request_field_dates(
         )
     except IngestionClientError as exc:
         _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_DATES_ERROR")
+    return result.model_dump(mode="json", by_alias=True)
+
+
+def request_field_sar(
+    settings_obj: Settings,
+    *,
+    geometry: dict[str, Any],
+    field_id: str,
+    target_date: str,
+    window_days: int = 21,
+    minimum_coverage_percent: float = 95.0,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    try:
+        result = _client_for(settings_obj, timeout_seconds).field_sar(
+            {
+                "geometry": geometry,
+                "sourceId": "eos-04-sar-mrs-l2b",
+                "crs": "EPSG:4326",
+                "fieldId": field_id,
+                "targetDate": target_date,
+                "windowDays": window_days,
+                "minimumCoveragePercent": minimum_coverage_percent,
+            }
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_SAR_ERROR")
     return result.model_dump(mode="json", by_alias=True)
 
 

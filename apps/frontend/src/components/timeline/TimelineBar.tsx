@@ -197,7 +197,7 @@ export function TimelineBar({
     } else if (ordered.length === 0) {
         content = (
             <p className="py-4 text-[14px] text-muted-foreground" data-testid="timeline-empty">
-                No acquisition dates available for this source.
+                No dates meet this field’s coverage and cloud-quality requirements.
             </p>
         );
     } else if (visible.length === 0) {

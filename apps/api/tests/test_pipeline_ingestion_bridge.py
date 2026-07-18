@@ -361,11 +361,41 @@ def test_field_dates_chunk_dense_timelines_without_dropping_dates(monkeypatch) -
     assert {item["acquisitionDate"] for item in response} == set(acquisition_dates)
 
 
-def test_field_dates_exclude_regional_awifs_from_small_field_timeline(monkeypatch) -> None:
-    def unexpected_pipeline_call(*_args, **_kwargs):
-        raise AssertionError("regional products must not enter field-date evaluation")
-
-    monkeypatch.setattr(field_analytics, "_pipeline_dates", unexpected_pipeline_call)
+def test_field_dates_include_field_qualified_regional_awifs(monkeypatch) -> None:
+    monkeypatch.setattr(
+        field_analytics,
+        "_pipeline_dates",
+        lambda *_args, **_kwargs: [
+            {
+                "acquisitionDate": "2026-03-15",
+                "datetime": "2026-03-15T00:00:00Z",
+                "tileAvailable": True,
+                "sensor": "AWiFS",
+                "resolutionMeters": 56,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "request_field_dates",
+        lambda *_args, **_kwargs: {
+            "sourceId": catalog.RESOURCESAT_AWIFS_SOURCE_ID,
+            "index": "NDVI",
+            "dates": [
+                {
+                    "acquisitionDate": "2026-03-15",
+                    "available": True,
+                    "selectedSceneDate": "2026-03-15",
+                    "usablePixelPercentage": 84.0,
+                    "cloudPercentage": 16.0,
+                    "fieldCoveragePercentage": 100.0,
+                    "shadowPercentage": 0.0,
+                    "obscuredPercentage": 16.0,
+                    "validPixelCount": 21,
+                }
+            ],
+        },
+    )
 
     response = field_analytics._field_dates_response(
         plot=_plot(),
@@ -376,7 +406,21 @@ def test_field_dates_exclude_regional_awifs_from_small_field_timeline(monkeypatc
         lookback_days=None,
     )
 
-    assert response == []
+    assert response == [
+        {
+            "acquisitionDate": "2026-03-15",
+            "datetime": "2026-03-15T00:00:00Z",
+            "tileAvailable": True,
+            "sensor": "AWiFS",
+            "resolutionMeters": 56,
+            "usablePixelPercent": 84.0,
+            "cloudMaskedPercent": 16.0,
+            "coveragePercent": 100.0,
+            "shadowPercent": 0.0,
+            "obscuredPercent": 16.0,
+            "isLatestUsable": True,
+        }
+    ]
 
 
 def test_resourcesat_sources_and_dates_use_pipeline_readiness(monkeypatch) -> None:

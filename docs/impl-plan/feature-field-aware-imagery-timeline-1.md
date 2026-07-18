@@ -2,7 +2,7 @@
 goal: Field-Aware Imagery Timeline Availability
 version: 1.0
 date_created: 2026-07-14
-last_updated: 2026-07-14
+last_updated: 2026-07-18
 owner: Akasha Engineering
 tags: [feature, satellite, timeline, cloud-filtering, sentinel-2, analytics]
 ---
@@ -63,6 +63,7 @@ Filter field analytics timeline dates using the selected field polygon and the s
 | TASK-010 | Pass the selected field ID from `MapPage` and `FieldAnalyticsPage`; preserve global dates when no field is selected. | Yes | 2026-07-14 |
 | TASK-011 | Add frontend API, query-cache, source-switch, field-switch, and timeline exclusion tests. | Yes | 2026-07-14 |
 | TASK-012 | Build, deploy ingestion first, deploy product second, then verify unavailable June dates are absent and a usable May date renders NDVI. | | |
+| TASK-013 | Evaluate source-specific AWiFS dates with the same field-quality gate while retaining its coarse label and best-observation exclusion; request every backend-published date instead of applying an arbitrary frontend lookback. | Yes | 2026-07-18 |
 
 ## 3. Alternatives
 

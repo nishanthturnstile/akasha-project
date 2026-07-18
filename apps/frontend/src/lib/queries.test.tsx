@@ -90,8 +90,8 @@ describe('date query keys', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
-      '/api/fields/field-1/dates?lookbackDays=153&sourceId=sentinel-2-l2a&indexType=NDVI',
-      '/api/fields/field-2/dates?lookbackDays=153&sourceId=sentinel-2-l2a&indexType=NDMI',
+      '/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI',
+      '/api/fields/field-2/dates?sourceId=sentinel-2-l2a&indexType=NDMI',
     ]);
   });
 });

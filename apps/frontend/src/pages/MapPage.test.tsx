@@ -683,6 +683,43 @@ describe('MapPage source defaults', () => {
     });
   });
 
+  it('loads AWiFS dates through the selected-field timeline route', async () => {
+    stubAkashaFetch({
+      plots: [FIELD_PLOT],
+      resourcesatDates: [
+        makeDate('2026-03-15', {
+          isLatestUsable: true,
+          metricsProvisional: true,
+          provenanceLabel: 'AWiFS · 56 m · coarse',
+        }),
+      ],
+    });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    fireEvent.click(await screen.findByTestId('layer-source-trigger'));
+    fireEvent.click(await screen.findByTestId('source-tab-resourcesat-2a-awifs-boa'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('layer-source-trigger').textContent).toContain(
+        'ResourceSat-2A AWiFS BOA',
+      );
+      expect(screen.getByTestId('date-chip-2026-03-15')).toBeTruthy();
+    });
+
+    const calls = (globalThis.fetch as unknown as {
+      mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+    }).mock.calls;
+    expect(
+      calls.some(([input]) => {
+        const url = String(input);
+        return url.startsWith('/api/fields/plot-1/dates?')
+          && url.includes('sourceId=resourcesat-2a-awifs-boa')
+          && url.includes('indexType=NDVI');
+      }),
+    ).toBe(true);
+  });
+
   it('ignores a late default-layer response from the previously selected source', async () => {
     const controls = stubAkashaFetch({ deferResourceSatDefaultLayer: true, plots: [FIELD_PLOT] });
 

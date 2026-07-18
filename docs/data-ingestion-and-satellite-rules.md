@@ -277,8 +277,9 @@ The BFF groups STAC items by `akasha:acquisition_date` or item datetime date.
   field window has at least 95% spatial coverage, at least 80% usable pixels, and strictly less
   than 20% combined cloud plus shadow. Provider scene-wide cloud metadata must not reject an
   otherwise processable download.
-- AWiFS is regional/coarse and is excluded from normal small-field timelines unless an explicit
-  coarse/regional workflow is selected.
+- A source-specific AWiFS timeline uses the same exact-date field-quality gate and labels the
+  56 m result as regional/coarse. AWiFS remains excluded from automatic small-field
+  best-observation ranking unless the caller explicitly enables coarse candidates.
 - `/api/layers/default` chooses the latest usable date and returns a same-origin
   tile template.
 - `/api/tiles/{sourceId}/{acquisitionDate}/FCC/{z}/{x}/{y}.png` serves

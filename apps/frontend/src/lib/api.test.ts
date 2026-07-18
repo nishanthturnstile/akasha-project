@@ -68,7 +68,7 @@ describe('api client error mapping', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/config', expect.anything());
   });
 
-  it('requests source dates with the five-month lookback window', async () => {
+  it('requests all source dates exposed by the backend', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -79,7 +79,7 @@ describe('api client error mapping', () => {
     await getDates('resourcesat-2a-liss3-boa');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/sources/resourcesat-2a-liss3-boa/dates?lookbackDays=153',
+      '/api/sources/resourcesat-2a-liss3-boa/dates',
       expect.anything(),
     );
   });
@@ -95,7 +95,7 @@ describe('api client error mapping', () => {
     await getDates('sentinel-2-l2a', { fieldId: 'field 1', indexType: 'NDVI' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/fields/field%201/dates?lookbackDays=153&sourceId=sentinel-2-l2a&indexType=NDVI',
+      '/api/fields/field%201/dates?sourceId=sentinel-2-l2a&indexType=NDVI',
       expect.anything(),
     );
   });

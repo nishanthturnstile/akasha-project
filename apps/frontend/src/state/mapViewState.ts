@@ -53,6 +53,8 @@ export interface MapViewState {
     mapFullscreen: boolean;
     /** Timeline uses the best available observation resolver instead of one source's dates. */
     bestMode: boolean;
+    /** Mirrors AppShell's Global View mode so MapPage can render all season fields. */
+    globalViewOpen: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -82,6 +84,7 @@ export const initialMapViewState: MapViewState = {
     focusNonce: 0,
     mapFullscreen: true,
     bestMode: false,
+    globalViewOpen: false,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -108,6 +111,7 @@ export interface MapViewContextValue extends MapViewState {
     setFocusNonce: (nonce: number) => void;
     setMapFullscreen: (fullscreen: boolean) => void;
     setBestMode: (enabled: boolean) => void;
+    setGlobalViewOpen: (open: boolean) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

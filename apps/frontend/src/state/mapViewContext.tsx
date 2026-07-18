@@ -50,7 +50,8 @@ type MapViewAction =
     | { type: 'SET_PENDING_ACTION'; action: 'create-field' | null }
     | { type: 'SET_FOCUS_NONCE'; nonce: number }
     | { type: 'SET_MAP_FULLSCREEN'; fullscreen: boolean }
-    | { type: 'SET_BEST_MODE'; enabled: boolean };
+    | { type: 'SET_BEST_MODE'; enabled: boolean }
+    | { type: 'SET_GLOBAL_VIEW_OPEN'; open: boolean };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -132,6 +133,9 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_BEST_MODE':
             if (action.enabled === state.bestMode) return state;
             return { ...state, bestMode: action.enabled };
+        case 'SET_GLOBAL_VIEW_OPEN':
+            if (action.open === state.globalViewOpen) return state;
+            return { ...state, globalViewOpen: action.open };
         default:
             return state;
     }
@@ -245,6 +249,7 @@ export function MapViewProvider({
             setMapFullscreen: (fullscreen) =>
                 dispatch({ type: 'SET_MAP_FULLSCREEN', fullscreen }),
             setBestMode: (enabled) => dispatch({ type: 'SET_BEST_MODE', enabled }),
+            setGlobalViewOpen: (open) => dispatch({ type: 'SET_GLOBAL_VIEW_OPEN', open }),
         }),
         [state],
     );

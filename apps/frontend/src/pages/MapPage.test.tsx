@@ -868,7 +868,8 @@ describe('MapPage native source behavior', () => {
         calls.some(
           (input) =>
             input.startsWith('/api/fields/plot-1/monitoring/evidence?') &&
-            input.includes('targetDate=2026-03-19'),
+            input.includes('targetDate=2026-03-19') &&
+            input.includes('includeRadar=true'),
         ),
       ).toBe(true);
     });

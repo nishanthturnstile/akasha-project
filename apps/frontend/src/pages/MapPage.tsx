@@ -536,6 +536,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     sourceId: effectiveSourceId,
     indexType: requestedTimelineIndex,
     targetDate: selectedDate,
+    includeRadar: true,
     enabled: selectedSource?.productRole !== 'support',
   });
 

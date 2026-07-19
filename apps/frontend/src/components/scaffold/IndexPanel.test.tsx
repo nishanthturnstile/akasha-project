@@ -200,7 +200,8 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
             (globalThis.fetch as unknown as { mock: { calls: Array<[RequestInfo | URL]> } })
                 .mock.calls.some(([input]) =>
                     String(input).includes('/monitoring/evidence?') &&
-                    String(input).includes('targetDate=2026-07-18')),
+                    String(input).includes('targetDate=2026-07-18') &&
+                    String(input).includes('includeRadar=true')),
         ).toBe(true);
         expect(screen.getByTestId('radar-temporal-change').textContent).toContain('HH +2.00 dB');
         expect(screen.getByTestId('radar-baseline-status').textContent).toContain('Field baseline (5 prior passes)');
@@ -208,6 +209,83 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.getByText(/It is not NDVI or a diagnosis/i)).toBeTruthy();
         fireEvent.click(screen.getByTestId('toggle-radar-evidence'));
         expect(onRadarEvidenceVisibleChange).toHaveBeenCalledWith(true);
+    });
+
+    it('shows selected NISAR evidence alongside a usable optical observation', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path.startsWith('/api/fields/plot-1/monitoring/evidence')) {
+                    return Promise.resolve(jsonResponse({
+                        fieldId: 'plot-1',
+                        targetDate: '2026-01-02',
+                        optical: { status: 'usable' },
+                        radar: {
+                            status: 'AVAILABLE',
+                            sourceId: 'nisar-ssar-beta-gcov',
+                            triggered: true,
+                            triggerReason: 'Radar evidence was explicitly requested.',
+                            acquisitionDate: '2026-01-03',
+                            coveragePercent: 100,
+                            displayedPolarization: 'HH',
+                            quality: { qualified: true, confidence: 'high', warnings: [] },
+                            overlayUrl: '/api/fields/plot-1/sar/overlay.png?sourceId=nisar-ssar-beta-gcov',
+                        },
+                    }));
+                }
+                if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'field',
+                        sourceId: 'sentinel-2-l2a',
+                        acquisitionDate: '2026-01-02',
+                        indexType: 'NDVI',
+                        cloudMask,
+                        statistics: null,
+                        pixelCounts: {
+                            totalPixels: 0,
+                            nodataPixels: 0,
+                            coveragePixels: 0,
+                            maskedPixels: 0,
+                            validPixels: 0,
+                        },
+                        metadata: { bands: [], warnings: [] },
+                    }));
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'pipeline',
+                        sourceId: 'sentinel-2-l2a',
+                        indexType: 'NDVI',
+                        startDate: '2025-07-06',
+                        endDate: '2026-01-02',
+                        points: [],
+                        metadata: { bands: [] },
+                    }));
+                }
+                return Promise.resolve(jsonResponse({}));
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-01-02"
+                sourceId="sentinel-2-l2a"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+                onRadarEvidenceVisibleChange={ vi.fn() }
+            />,
+        );
+
+        expect(await screen.findByText('Radar field evidence')).toBeTruthy();
+        expect(screen.getByText(/NISAR S-band radar evidence.*using HH/i)).toBeTruthy();
     });
 
     it('renders the empty-state guidance when no field is selected', () => {

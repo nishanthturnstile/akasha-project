@@ -286,7 +286,7 @@ field.
 | NISAR-503 | Add same-origin date/tile/field overlay proxying with source pinning. | Yes | 2026-07-19 |
 | NISAR-504 | Implement `radar-support-selection-v1`. | Yes | 2026-07-19 |
 | NISAR-505 | Generalize radar UI copy, display polarization, legend, and attribution. | Yes | 2026-07-19 |
-| NISAR-506 | Capture accepted desktop and narrow-layout staging screenshots. |  |  |
+| NISAR-506 | Capture accepted desktop and narrow-layout staging screenshots. | Yes | 2026-07-19 |
 
 ### Phase 6 — Automated verification
 
@@ -297,7 +297,7 @@ field.
 | NISAR-603 | Pipeline cap/idempotency/failure/recovery/redaction/catalog tests. | Yes | 2026-07-19 |
 | NISAR-604 | Ingestion dates/tiles/field/history/multi-scene/optical-rejection tests. | Yes | 2026-07-19 |
 | NISAR-605 | BFF flags/proxy/selection/tie/overlay/non-exposure tests. | Yes | 2026-07-19 |
-| NISAR-606 | Frontend copy/polarization/unavailable/disabled-control/EOS regression tests. | Partial | 2026-07-19 |
+| NISAR-606 | Frontend copy/polarization/unavailable/disabled-control/EOS regression tests. | Yes | 2026-07-19 |
 | NISAR-607 | Full lint, tests, and builds in both repositories. | Yes | 2026-07-19 |
 
 ## 10. Required automated cases
@@ -337,13 +337,13 @@ regressions.
 | 6 | Masked pixels and valid-pixel counts match independently. | Yes | 2026-07-19 |
 | 7 | Object storage, relational catalog, and pgSTAC each contain exactly one registration. | Yes | 2026-07-19 |
 | 8 | Authenticated ingestion dates, tiles, field statistics, and overlay pass. | Yes | 2026-07-19 |
-| 9 | Product BFF exposes only same-origin URLs. |  |  |
+| 9 | Product BFF exposes only same-origin URLs. | Yes | 2026-07-19 |
 | 10 | Saved field has at least 95% coverage and a non-empty clipped overlay. | Yes | 2026-07-19 |
-| 11 | EOS-04/NISAR automatic selection matches `radar-support-selection-v1`. |  |  |
-| 12 | Desktop and narrow screenshots pass. |  |  |
+| 11 | EOS-04/NISAR automatic selection matches `radar-support-selection-v1`. | Yes | 2026-07-19 |
+| 12 | Desktop and narrow screenshots pass. | Yes | 2026-07-19 |
 | 13 | Identical replay creates no duplicates. | Yes | 2026-07-19 |
-| 14 | Enable all three NISAR flags in staging only after Gates 1–13. |  |  |
-| 15 | Promote the exact accepted image to production with all three flags enabled; keep scheduled preload disabled. |  |  |
+| 14 | Enable all three NISAR flags in staging only after Gates 1–13. | Yes | 2026-07-19 |
+| 15 | Promote the exact accepted image to production with all three flags enabled; keep scheduled preload disabled. | Blocked — production service not provisioned | 2026-07-19 |
 
 ## 13. Assumptions and non-goals
 
@@ -363,7 +363,7 @@ regressions.
 - `akasha-ingestion`: Ruff passed; 311 tests passed; Docker Compose configuration validated.
 - Product API: 489 tests passed and 11 were skipped by their existing environment gates.
 - Product repository root: 942 tests passed and 1 was skipped.
-- Frontend: ESLint completed with four pre-existing warnings and no errors; 400 tests passed;
+- Frontend: ESLint completed with four pre-existing warnings and no errors; 402 tests passed;
   TypeScript and the Vite production build passed.
 - Slice 1 catalog validation: 227 checks passed and 0 failed.
 
@@ -388,5 +388,42 @@ regressions.
 - Authenticated dates and BACKSCATTER tile routes passed; NISAR history and optical NDVI requests
   returned typed HTTP 422 responses.
 
-Gates 9, 11, and 12 remain live product checks and must pass on the flag-enabled staging deployment
-before the immutable image is promoted to production.
+### 14.2 Live product and deployment acceptance evidence
+
+- The final accepted staging image is merge SHA
+  `0e4985b52a11adca32e0b8a86c67f511d608de8f`. The API and web containers reported that exact
+  immutable image revision and reached healthy state. The three staging NISAR flags are `true`;
+  scheduled preload remains disabled.
+- The authenticated BFF response exposed a same-origin overlay path only. Response inspection found
+  no ingestion origin, object key, signed URL, query ID, credential, or signature leakage.
+- With ResourceSat-2A AWiFS on 2026-01-02 as the usable optical observation, the resolver evaluated
+  both `eos-04-sar-mrs-l2b` and `nisar-ssar-beta-gcov`, qualified NISAR, and selected its 2026-01-03
+  pass under `radar-support-selection-v1`. The selected field had 100% common-band coverage and high
+  confidence, and the displayed polarization was HH.
+- The source-pinned same-origin overlay returned HTTP 200, `image/png`, a 5,804-byte payload, and a
+  valid PNG signature. The browser showed the radar overlay and did not silently switch sensors.
+- Accepted screenshot evidence:
+  [desktop 1440x1000](./evidence/nisar-ssar-beta-gcov-desktop.png) (SHA-256
+  `828db719e08e72120c96fc4df474e74a343afc67142404e2e26241814559da21`) and
+  [narrow 390x844](./evidence/nisar-ssar-beta-gcov-narrow.png) (SHA-256
+  `dec46f5da0f696016ba30e597dfcf7bb46b69a4d4159642f98f1a2474326022e`). Both show the NISAR
+  S-band label, HH display polarization, 100% coverage, high confidence, and non-NDVI/non-soil-
+  moisture explanatory copy.
+- A staging deployment fault was found and corrected: the workflow issued both an instant service
+  deployment and a generic deploy request, causing concurrent Compose recreates to collide on
+  PostGIS/MinIO container names. The generic trigger was removed, two stopped transient `Created`
+  containers were deleted without touching volumes or running services, deployment contract tests
+  passed 15/15, and the corrected single-trigger rollout succeeded.
+- The production workflow now supplies all three NISAR activation flags as `true`, while retaining
+  its exact approved-image SHA check and protected `production` environment.
+
+### 14.3 Production promotion blocker
+
+Gate 15 cannot be executed safely in the current infrastructure. Coolify contains only the
+`akasha-staging-compose` service; no `akasha-production-compose` service exists. The infrastructure
+runbook likewise describes `COOLIFY_PRODUCTION_SERVICE_UUID` as the UUID of a future production
+stack. The production workflow additionally requires an externally configured
+`COOLIFY_PRODUCTION_SERVICE_UUID`, `ESRI_WEB_IMAGE_APPROVED_SHA` equal to the accepted SHA above,
+`ESRI_WEB_IMAGE_CREDENTIAL_ID`, production-environment secrets, and environment approval. No
+production hostname or isolated production data stack is currently configured. Creating one by
+reusing the staging service would overwrite validated staging and is prohibited.

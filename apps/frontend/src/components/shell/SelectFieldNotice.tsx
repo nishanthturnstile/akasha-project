@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 interface SelectFieldNoticeProps {
     title: string;
@@ -15,12 +16,11 @@ export function SelectFieldNotice({ title, message }: SelectFieldNoticeProps) {
         <section className="rounded-xl border border-dashed border-border/80 bg-card/80 p-6 text-sm text-muted-foreground">
             <h1 className="text-lg font-semibold text-foreground">{ title }</h1>
             <p className="mt-2">{ message }</p>
-            <Link
-                to="/monitoring/field-analytics"
-                className="mt-4 inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            >
-                Go to Field analytics
-            </Link>
+            <Button asChild variant="primary" size="sm" className="mt-4">
+                <Link to="/monitoring/field-analytics">
+                    Go to Field analytics
+                </Link>
+            </Button>
         </section>
     );
 }

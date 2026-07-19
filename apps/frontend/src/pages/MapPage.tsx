@@ -1234,11 +1234,12 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
                 ? indexLookup
                 : undefined
             }
+            fieldGeometry={ selectedPlot?.geometry }
           />
         </div>
       ) }
 
-      { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
+      { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+1.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <LayerControlBar
           sources={ sourcesQ.data }
           activeSourceId={ effectiveSourceId }
@@ -1272,7 +1273,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       {/* Left: legend + navigation map controls (zoom / compass / locate / fullscreen),
         * stacked in a single bottom-left column so they never overlap each other.
         * Raised above the attribution line so the two never collide at any width. */ }
-      <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-toolbar flex flex-col items-start gap-2">
         { overlaysVisible && <MeasureTool
           activeTool={ activeMapTool }
           map={ map }

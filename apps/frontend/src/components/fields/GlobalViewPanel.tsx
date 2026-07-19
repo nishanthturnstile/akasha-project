@@ -152,10 +152,8 @@ export function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry
       }
       ctx.closePath();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-      ctx.fill();
     }
   }, [geometry, size]);
 
@@ -164,7 +162,7 @@ export function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry
       ref={canvasRef}
       width={size}
       height={size}
-      className="size-12 shrink-0 rounded-md border border-border/60 bg-card"
+      className="size-12 shrink-0 rounded-md bg-card"
       aria-hidden="true"
     />
   );
@@ -192,9 +190,19 @@ function FieldCard({
   seasonId?: string | null;
 }) {
   const seasonCycles = field.vegetationData?.filter((v) => v.seasonId === seasonId) ?? [];
-  const cropLabel = seasonCycles.length > 0
-    ? seasonCycles[seasonCycles.length - 1].cropName ?? 'Unknown crop'
-    : 'Unknown crop';
+  const latestVeg = useMemo(() => {
+    if (!field.vegetationData || field.vegetationData.length === 0) return null;
+    const sorted = [...field.vegetationData].sort((a, b) => {
+      const yearA = a.year ?? 0;
+      const yearB = b.year ?? 0;
+      if (yearB !== yearA) return yearB - yearA;
+      const dateA = a.sowingDate ? new Date(a.sowingDate).getTime() : 0;
+      const dateB = b.sowingDate ? new Date(b.sowingDate).getTime() : 0;
+      return dateB - dateA;
+    });
+    return sorted[0];
+  }, [field.vegetationData]);
+  const cropLabel = latestVeg?.cropName ?? 'Unknown crop';
   const allCrops = seasonCycles.map((c) => c.cropName ?? 'Unknown crop').join(', ');
   return (
     <div
@@ -354,7 +362,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
 
   return (
     <>
-      <div className="flex h-full w-80 flex-col border-l border-border bg-background/96">
+      <div className="flex h-full w-80 flex-col border-l border-border bg-muted/30">
         <header className="flex items-center justify-between border-b border-border/60 px-4 py-4">
           <div>
             <h2 className="font-display text-base font-semibold text-foreground">Global View</h2>
@@ -492,6 +500,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           }}
           saving={savingField}
           onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
+          initialSeasonId={ seasonId ?? undefined }
         />
       )}
 

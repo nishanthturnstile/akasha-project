@@ -63,7 +63,7 @@ export function FieldCreateOptionsDialog({
             <Dialog.Description>Choose how to add a field.</Dialog.Description>
           </VisuallyHidden>
 
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between gap-2">
             <h2 className="font-display text-lg font-semibold">Add field</h2>
             <button
               type="button"
@@ -74,7 +74,7 @@ export function FieldCreateOptionsDialog({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="mt-5 grid grid-cols-2 gap-3">
             { options.map((opt) => {
               const Icon = opt.icon;
               return (

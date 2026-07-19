@@ -159,6 +159,7 @@ export default function EditFieldDialog({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDeleteField, setConfirmDeleteField] = useState(false);
   const [confirmClearSeasonId, setConfirmClearSeasonId] = useState<string | null>(null);
+  const forceCloseRef = useRef(false);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
@@ -420,14 +421,28 @@ export default function EditFieldDialog({
 
   // Auto-expand seasons when dialog opens
   useEffect(() => {
-    if (open) {
-      if (initialSeasonId && field.seasonIds.includes(initialSeasonId)) {
-        setExpandedSeasons(new Set([initialSeasonId]));
-      } else {
-        setExpandedSeasons(new Set(field.seasonIds));
+    if (!open) return;
+    if (initialSeasonId && field.seasonIds.includes(initialSeasonId)) {
+      setExpandedSeasons(new Set([initialSeasonId]));
+      return;
+    }
+    const data = field.vegetationData;
+    if (data && data.length > 0) {
+      const sorted = [...data].sort((a, b) => {
+        if (b.year !== a.year) return b.year - a.year;
+        if (a.sowingDate && b.sowingDate) return b.sowingDate.localeCompare(a.sowingDate);
+        if (a.sowingDate) return -1;
+        if (b.sowingDate) return 1;
+        return 0;
+      });
+      const sid = sorted[0].seasonId;
+      if (field.seasonIds.includes(sid)) {
+        setExpandedSeasons(new Set([sid]));
+        return;
       }
     }
-  }, [open, field.seasonIds, initialSeasonId]);
+    setExpandedSeasons(new Set(field.seasonIds));
+  }, [open, field.seasonIds, initialSeasonId, field.vegetationData]);
 
   const toggleSeason = useCallback((seasonId: string) => {
     setExpandedSeasons((prev) => {
@@ -519,14 +534,28 @@ export default function EditFieldDialog({
     }
   }, [dirty, onOpenChange]);
 
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen && dirty && !forceCloseRef.current) {
+      setConfirmClose(true);
+    } else {
+      forceCloseRef.current = false;
+      onOpenChange(nextOpen);
+    }
+  }, [dirty, onOpenChange]);
+
+  useEffect(() => {
+    if (!confirmClose && forceCloseRef.current) {
+      forceCloseRef.current = false;
+      onOpenChange(false);
+    }
+  }, [confirmClose, onOpenChange]);
+
   return (
-    <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
+    <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
-          onInteractOutside={ (e) => e.preventDefault() }
-          onEscapeKeyDown={ (e) => e.preventDefault() }
           className="glass fixed left-1/2 top-[8vh] z-popover w-[min(72rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
         >
           <VisuallyHidden>
@@ -600,7 +629,7 @@ export default function EditFieldDialog({
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">Field name</label>
                     <input
-                      className="w-full rounded-lg border-2 border-border/60 bg-background px-4 py-2 text-sm h-9 focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm h-10 focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
                       value={ name }
                       onChange={ (e) => setName(e.target.value) }
                     />
@@ -646,10 +675,10 @@ export default function EditFieldDialog({
                           return (
                             <div key={ season.id } className="border-2 border-border/60 rounded-lg overflow-hidden">
                               <div className={ cn(
-                                'flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-gray-800',
+                                'flex w-full items-center justify-between px-4 py-3 text-sm font-medium',
                                 isExpanded
-                                  ? 'bg-gray-300/70 text-gray-900 border-l-2 border-primary'
-                                  : 'bg-gray-200/70 hover:bg-gray-100',
+                                  ? 'bg-accent/80 text-accent-foreground border-l-2 border-primary'
+                                  : 'bg-muted/50 hover:bg-accent/40 text-muted-foreground',
                               ) }>
                                 <button
                                   type="button"
@@ -657,14 +686,14 @@ export default function EditFieldDialog({
                                   className="flex items-center gap-2 flex-1 text-left"
                                 >
                                   { isExpanded
-                                    ? <ChevronDown className="size-4 text-gray-600 shrink-0" />
-                                    : <ChevronRight className="size-4 text-gray-600 shrink-0" /> }
+                                    ?                                   <ChevronDown className="size-4 text-muted-foreground shrink-0" />
+                                    : <ChevronRight className="size-4 text-muted-foreground shrink-0" /> }
                                   <span>{ season.name }</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={ () => handleClearSeason(season.id) }
-                                  className="rounded-md p-1 text-black hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                  className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                                   title="Remove all vegetation cycles"
                                 >
                                   <Trash2 className="size-4" />
@@ -675,7 +704,11 @@ export default function EditFieldDialog({
                                   { cycles.length === 0 && (
                                     <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
                                   ) }
-                                  { cycles.map((cycle) => (
+                                  { cycles.slice().sort((a, b) => {
+                                      const yearDiff = (b.year ?? 0) - (a.year ?? 0);
+                                      if (yearDiff !== 0) return yearDiff;
+                                      return b.plantingDate.localeCompare(a.plantingDate);
+                                    }).map((cycle) => (
                                     <CycleCard
                                       key={ `${cycle.id}-${cycle.cropName}` }
                                       cycle={ cycle }
@@ -759,7 +792,7 @@ export default function EditFieldDialog({
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={ () => setConfirmClose(false) }>Keep editing</AlertDialogCancel>
-            <AlertDialogAction onClick={ () => { setConfirmClose(false); onOpenChange(false); } }>
+            <AlertDialogAction onClick={ () => { forceCloseRef.current = true; setConfirmClose(false); } }>
               Discard
             </AlertDialogAction>
           </AlertDialogFooter>

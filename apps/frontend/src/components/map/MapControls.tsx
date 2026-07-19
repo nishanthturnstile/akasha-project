@@ -89,15 +89,19 @@ export function MapControls({
       <ControlButton label="Zoom out" testId="zoom-out-btn" onClick={ () => map?.zoomOut() }>
         <Minus className="size-5" strokeWidth={ 1.75 } />
       </ControlButton>
-      <div className="h-px w-full bg-border" />
-      <ControlButton
-        label="Reset bearing to north"
-        testId="compass-btn"
-        onClick={ () => map?.resetNorth() }
-        style={ { transform: `rotate(${-bearing}deg)` } }
-      >
-        <Compass className="size-5" strokeWidth={ 1.75 } />
-      </ControlButton>
+      { !simplified && (
+        <>
+          <div className="h-px w-full bg-border" />
+          <ControlButton
+            label="Reset bearing to north"
+            testId="compass-btn"
+            onClick={ () => map?.resetNorth() }
+            style={ { transform: `rotate(${-bearing}deg)` } }
+          >
+            <Compass className="size-5" strokeWidth={ 1.75 } />
+          </ControlButton>
+        </>
+      ) }
       { !simplified && (
         <>
           <div className="h-px w-full bg-border" />

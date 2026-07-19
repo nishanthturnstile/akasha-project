@@ -435,3 +435,18 @@
   font-size: 13px;
   color: hsl(var(--muted-foreground));
 }
+
+.scroll-visible::-webkit-scrollbar {
+  width: 5px;
+}
+.scroll-visible::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-visible::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 999px;
+}
+.scroll-visible {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}

@@ -1,9 +1,10 @@
-import { Map as MapIcon, Pencil } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
+import { FieldThumbnail } from '@/components/fields/GlobalViewPanel';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
@@ -50,6 +51,7 @@ export default function FieldAnalyticsPage() {
   const {
     selectedPlotId,
     setSelectedPlotId,
+    clearSelectedPlot,
     setFocusNonce,
     cloudMask,
     periodFrom,
@@ -76,6 +78,19 @@ export default function FieldAnalyticsPage() {
     if (!selectedPlotId || !fieldsQ.data) return null;
     return fieldsQ.data.find((f) => f.id === selectedPlotId) ?? null;
   }, [fieldsQ.data, selectedPlotId]);
+
+  const latestCrop = useMemo(() => {
+    if (!selectedField?.vegetationData || selectedField.vegetationData.length === 0) return null;
+    const sorted = [...selectedField.vegetationData].sort((a, b) => {
+      const yearA = a.year ?? 0;
+      const yearB = b.year ?? 0;
+      if (yearB !== yearA) return yearB - yearA;
+      const dateA = a.sowingDate ? new Date(a.sowingDate).getTime() : 0;
+      const dateB = b.sowingDate ? new Date(b.sowingDate).getTime() : 0;
+      return dateB - dateA;
+    });
+    return sorted[0];
+  }, [selectedField]);
 
   const effectiveSourceId = useMemo(
     () => selectEffectiveSourceId({
@@ -138,42 +153,70 @@ export default function FieldAnalyticsPage() {
   return (
     <div className="h-full flex flex-col gap-3 px-4 py-3 overflow-y-auto">
       { overlaysVisible && (
-        <div className="flex flex-col rounded-md border border-border bg-background shrink-0 sm:flex-row sm:items-stretch">
-          <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 min-w-0 flex-1 sm:gap-3 sm:px-4 sm:py-2">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary">
-              <MapIcon className="size-4" strokeWidth={ 1.75 } />
-            </div>
+        <div className="flex shrink-0 items-stretch rounded-md border border-border bg-muted/30 px-1.5 sm:px-2">
+          <div className="flex items-center py-1 sm:py-1.5">
+            <button
+              type="button"
+              onClick={ () => { clearSelectedPlot(); navigate('/monitoring/field-analytics'); } }
+              disabled={ !selectedField }
+              className="flex size-8 items-center justify-center rounded-md text-foreground/80 hover:bg-accent/60 disabled:opacity-40"
+              aria-label="Back to all fields"
+            >
+              <span aria-hidden="true" className="text-base leading-none">←</span>
+            </button>
+          </div>
 
-            <div className="hidden w-px self-stretch bg-border/60 sm:block" />
+          <div className="mx-1.5 w-px self-stretch bg-border/60" />
 
-            <span className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-foreground sm:flex-none">
+          <div className="flex items-center py-1 sm:py-1.5">
+            { selectedField ? (
+              <FieldThumbnail geometry={ selectedField.geometry } size={ 32 } />
+            ) : (
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/30">
+                <span className="text-xs text-muted-foreground">—</span>
+              </div>
+            ) }
+          </div>
+
+          <div className="mx-1.5 w-px self-stretch bg-border/60" />
+
+          <div className="flex items-center py-1 sm:py-1.5 ml-2 sm:ml-3">
+            <span className="truncate font-display text-sm font-semibold text-foreground">
               { selectedField?.name ?? 'No field selected' }
             </span>
-
-            { selectedField && (
-              <>
-                <div className="hidden w-px self-stretch bg-border/60 sm:block" />
-                <span className="shrink-0 rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground/80">
-                  { formatAreaHa(selectedField.areaHa) }
-                </span>
-              </>
-            ) }
-
-            <div className="hidden w-px self-stretch bg-border/60 sm:block" />
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={ !selectedField }
-              onClick={ () => setEditFieldOpen(true) }
-              className="h-8 shrink-0 gap-1.5 text-[12px]"
-            >
-              <Pencil className="size-3.5" strokeWidth={ 1.75 } />
-              Edit
-            </Button>
           </div>
-          <div className="flex items-center gap-2 border-t border-border/60 px-3 py-1.5 sm:border-t-0 sm:px-4 sm:py-2">
+
+          { selectedField && (
+            <>
+              <div className="mx-1.5 w-px self-stretch bg-border/60" />
+              <div className="flex items-center py-1 sm:py-1.5">
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="rounded border border-border/60 px-1.5 py-0.5 font-mono text-xs font-medium text-foreground/80 leading-none">
+                    { formatAreaHa(selectedField.areaHa) }
+                  </span>
+                  <span className="text-[10px] text-muted-foreground leading-none">
+                    { latestCrop?.cropName ?? 'Unknown crop' }
+                  </span>
+                </div>
+              </div>
+
+              <div className="mx-1.5 w-px self-stretch bg-border/60" />
+              <div className="flex items-center py-1 sm:py-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={ () => { setInitialVegSeasonId(seasonId ?? undefined); setEditFieldOpen(true); } }
+                  aria-label="Edit field"
+                  className="size-8"
+                >
+                  <Pencil className="size-4" strokeWidth={ 1.75 } />
+                </Button>
+              </div>
+            </>
+          ) }
+
+          <div className="ml-auto flex items-center gap-2 py-1 sm:py-1.5">
             <AddFieldDropdown
               fields={ seasonFields }
               onNavigate={ navigateWithImageryState }
@@ -181,6 +224,7 @@ export default function FieldAnalyticsPage() {
                 setSelectedPlotId(fieldId);
                 setFocusNonce(Date.now());
               } }
+              selectedFieldId={ selectedPlotId }
               defaultSeasonId={ seasonId }
               testId="analytics-add-field"
             />

@@ -53,6 +53,7 @@ export default function EditSeasonDialog({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmSeasonEdit, setConfirmSeasonEdit] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string>(CUSTOM);
+  const forceCloseRef = useRef(false);
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -233,14 +234,28 @@ export default function EditSeasonDialog({
     doSave();
   };
 
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen && dirty && !forceCloseRef.current) {
+      setConfirmClose(true);
+    } else {
+      forceCloseRef.current = false;
+      onOpenChange(nextOpen);
+    }
+  }, [dirty, onOpenChange]);
+
+  useEffect(() => {
+    if (!confirmClose && forceCloseRef.current) {
+      forceCloseRef.current = false;
+      onOpenChange(false);
+    }
+  }, [confirmClose, onOpenChange]);
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit season"
-          onInteractOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
           className="glass fixed left-1/2 top-[12vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg p-0"
         >
           <VisuallyHidden>
@@ -501,7 +516,7 @@ export default function EditSeasonDialog({
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
-            <AlertDialogAction className="cursor-pointer" onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
+            <AlertDialogAction className="cursor-pointer" onClick={() => { forceCloseRef.current = true; setConfirmClose(false); }}>
               Yes
             </AlertDialogAction>
           </AlertDialogFooter>

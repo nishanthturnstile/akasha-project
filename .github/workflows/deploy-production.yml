@@ -39,9 +39,11 @@ jobs:
       ESRI_WEB_IMAGE_CREDENTIAL_ID: ${{ vars.ESRI_WEB_IMAGE_CREDENTIAL_ID }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa' }}
-      INGESTION_NISAR_CUTOVER_ENABLED: ${{ vars.INGESTION_NISAR_CUTOVER_ENABLED || 'false' }}
-      NISAR_PRODUCT_ENABLED: ${{ vars.NISAR_PRODUCT_ENABLED || 'false' }}
-      NISAR_FIELD_SUPPORT_ENABLED: ${{ vars.NISAR_FIELD_SUPPORT_ENABLED || 'false' }}
+      # Production activation is still protected by the approved immutable image SHA
+      # and the GitHub production environment approval gate.
+      INGESTION_NISAR_CUTOVER_ENABLED: "true"
+      NISAR_PRODUCT_ENABLED: "true"
+      NISAR_FIELD_SUPPORT_ENABLED: "true"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

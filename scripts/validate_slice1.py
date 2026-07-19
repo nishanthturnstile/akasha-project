@@ -247,8 +247,17 @@ for source_id, sar_coll in sar_colls.items():
     check(sar_coll.get("akasha:source_kind") == "sar", f"{source_id} source kind == sar")
     check(sar_coll.get("akasha:supported_indices") == [], f"{source_id} analytics disabled")
     check(sar_coll.get("akasha:expected_assets") is None, f"{source_id} does not advertise optical asset expectations")
-    check(sar_coll.get("akasha:display_modes") == ["VV_GRAYSCALE"], f"{source_id} display mode == VV_GRAYSCALE")
-    check(sar_coll.get("akasha:default_display_mode") == "VV_GRAYSCALE", f"{source_id} default display mode == VV_GRAYSCALE")
+    expected_mode = (
+        "BACKSCATTER" if source_id == "nisar-ssar-beta-gcov" else "VV_GRAYSCALE"
+    )
+    check(
+        sar_coll.get("akasha:display_modes") == [expected_mode],
+        f"{source_id} display mode == {expected_mode}",
+    )
+    check(
+        sar_coll.get("akasha:default_display_mode") == expected_mode,
+        f"{source_id} default display mode == {expected_mode}",
+    )
     check(sar_coll.get("akasha:date_metrics_kind") == "radar", f"{source_id} date metrics kind == radar")
     check(sar_coll.get("akasha:analysis_level") == "context", f"{source_id} analysis level == context")
     sar_assets = sar_coll.get("item_assets") or {}

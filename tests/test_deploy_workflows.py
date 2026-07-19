@@ -181,6 +181,24 @@ def test_production_deploy_verifies_all_images_before_coolify_patch():
         assert image in verify_step["run"]
 
 
+def test_production_deploy_requires_and_renders_all_nisar_flags() -> None:
+    workflow = _workflow("deploy-production.yml")
+    deploy_job = workflow["jobs"]["deploy-production"]
+    render_step = _step(deploy_job, "Render Compose with approved image tag")
+
+    for name in (
+        "INGESTION_NISAR_CUTOVER_ENABLED",
+        "NISAR_PRODUCT_ENABLED",
+        "NISAR_FIELD_SUPPORT_ENABLED",
+    ):
+        assert deploy_job["env"][name] == f"${{{{ vars.{name} || 'false' }}}}"
+        assert f'("{name}",' in render_step["run"]
+    assert 'raise SystemExit(f"Production requires {name}=true")' in render_step["run"]
+    assert '${INGESTION_NISAR_CUTOVER_ENABLED:-false}' in render_step["run"]
+    assert '${NISAR_PRODUCT_ENABLED:-false}' in render_step["run"]
+    assert '${NISAR_FIELD_SUPPORT_ENABLED:-false}' in render_step["run"]
+
+
 def test_production_deploy_rejects_unapproved_esri_web_image_sha():
     workflow = _workflow("deploy-production.yml")
     validate_step = _step(

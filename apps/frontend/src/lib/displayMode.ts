@@ -16,6 +16,7 @@ export function modeLabel(mode: string): string {
         case 'FALSE_COLOR':
             return 'False colour';
         case 'VV_GRAYSCALE':
+        case 'BACKSCATTER':
             return 'Backscatter';
         case 'VH_GRAYSCALE':
             return 'VH';

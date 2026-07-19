@@ -174,7 +174,9 @@ class FieldDatesResponse(ApiModel):
 
 class FieldSarRequest(ApiModel):
     geometry: dict[str, Any]
-    source_id: Literal["eos-04-sar-mrs-l2b"] = "eos-04-sar-mrs-l2b"
+    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"] = (
+        "eos-04-sar-mrs-l2b"
+    )
     crs: Literal["EPSG:4326"] = "EPSG:4326"
     field_id: str
     target_date: date
@@ -264,7 +266,7 @@ class FieldSarAvailableResponse(ApiModel):
     status: Literal["AVAILABLE"]
     query_id: str
     field_id: str | None = None
-    source_id: Literal["eos-04-sar-mrs-l2b"]
+    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"]
     requested_date: date
     acquisition_date: date
     days_from_target: int
@@ -287,7 +289,7 @@ class FieldSarAvailableResponse(ApiModel):
 class FieldSarUnavailableResponse(ApiModel):
     status: Literal["UNAVAILABLE"]
     field_id: str | None = None
-    source_id: Literal["eos-04-sar-mrs-l2b"]
+    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"]
     requested_date: date
     reason_code: Literal["no_scene", "no_overlap", "low_coverage", "processing_unavailable"]
     reason: str
@@ -1091,6 +1093,7 @@ def request_field_sar(
     *,
     geometry: dict[str, Any],
     field_id: str,
+    source_id: str = "eos-04-sar-mrs-l2b",
     target_date: str,
     window_days: int = 21,
     minimum_coverage_percent: float = 95.0,
@@ -1104,7 +1107,7 @@ def request_field_sar(
         result = _client_for(settings_obj, timeout_seconds).field_sar(
             {
                 "geometry": geometry,
-                "sourceId": "eos-04-sar-mrs-l2b",
+                "sourceId": source_id,
                 "crs": "EPSG:4326",
                 "fieldId": field_id,
                 "targetDate": target_date,
@@ -1113,7 +1116,11 @@ def request_field_sar(
                 "includeHistory": include_history,
                 "historyLookbackDays": history_lookback_days,
                 "maximumHistoryObservations": maximum_history_observations,
-                "comparisonPolicyVersion": "eos04-comparability-v1",
+                **(
+                    {"comparisonPolicyVersion": "eos04-comparability-v1"}
+                    if source_id == "eos-04-sar-mrs-l2b"
+                    else {}
+                ),
                 "minimumBaselineObservations": minimum_baseline_observations,
             }
         )

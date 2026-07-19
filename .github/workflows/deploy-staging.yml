@@ -150,6 +150,10 @@ jobs:
       INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}
       EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}
       EOS04_FIELD_SUPPORT_ENABLED: ${{ vars.EOS04_FIELD_SUPPORT_ENABLED || 'true' }}
+      # Fail closed until NISAR real-product Gates 1-13 are recorded as passed.
+      INGESTION_NISAR_CUTOVER_ENABLED: ${{ vars.INGESTION_NISAR_CUTOVER_ENABLED || 'false' }}
+      NISAR_PRODUCT_ENABLED: ${{ vars.NISAR_PRODUCT_ENABLED || 'false' }}
+      NISAR_FIELD_SUPPORT_ENABLED: ${{ vars.NISAR_FIELD_SUPPORT_ENABLED || 'false' }}
       # Gate 3D activated after the six-scene real-field acceptance run on 2026-07-18.
       EOS04_TEMPORAL_CHANGE_ENABLED: ${{ vars.EOS04_TEMPORAL_CHANGE_ENABLED || 'true' }}
       EOS04_TEMPORAL_SHADOW_ENABLED: ${{ vars.EOS04_TEMPORAL_SHADOW_ENABLED || 'false' }}
@@ -221,6 +225,9 @@ jobs:
           ).lower()
           eos04_product = os.environ.get("EOS04_PRODUCT_ENABLED", "false").lower()
           eos04_field_support = os.environ.get("EOS04_FIELD_SUPPORT_ENABLED", "false").lower()
+          nisar_cutover = os.environ.get("INGESTION_NISAR_CUTOVER_ENABLED", "false").lower()
+          nisar_product = os.environ.get("NISAR_PRODUCT_ENABLED", "false").lower()
+          nisar_field_support = os.environ.get("NISAR_FIELD_SUPPORT_ENABLED", "false").lower()
           eos04_temporal_change = os.environ.get("EOS04_TEMPORAL_CHANGE_ENABLED", "false").lower()
           eos04_temporal_shadow = os.environ.get("EOS04_TEMPORAL_SHADOW_ENABLED", "false").lower()
           eos04_temporal_recommendations = os.environ.get(
@@ -230,6 +237,9 @@ jobs:
               ("INGESTION_EOS04_CUTOVER_ENABLED", eos04_cutover),
               ("EOS04_PRODUCT_ENABLED", eos04_product),
               ("EOS04_FIELD_SUPPORT_ENABLED", eos04_field_support),
+              ("INGESTION_NISAR_CUTOVER_ENABLED", nisar_cutover),
+              ("NISAR_PRODUCT_ENABLED", nisar_product),
+              ("NISAR_FIELD_SUPPORT_ENABLED", nisar_field_support),
               ("EOS04_TEMPORAL_CHANGE_ENABLED", eos04_temporal_change),
               ("EOS04_TEMPORAL_SHADOW_ENABLED", eos04_temporal_shadow),
               ("EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED", eos04_temporal_recommendations),
@@ -249,6 +259,14 @@ jobs:
           if eos04_temporal_change == "true" and eos04_field_support != "true":
               raise SystemExit(
                   "EOS04_TEMPORAL_CHANGE_ENABLED=true requires EOS04_FIELD_SUPPORT_ENABLED=true"
+              )
+          if nisar_product == "true" and nisar_cutover != "true":
+              raise SystemExit(
+                  "NISAR_PRODUCT_ENABLED=true requires INGESTION_NISAR_CUTOVER_ENABLED=true"
+              )
+          if nisar_field_support == "true" and nisar_cutover != "true":
+              raise SystemExit(
+                  "NISAR_FIELD_SUPPORT_ENABLED=true requires INGESTION_NISAR_CUTOVER_ENABLED=true"
               )
           if eos04_temporal_recommendations == "true" and eos04_temporal_change != "true":
               raise SystemExit(
@@ -277,6 +295,9 @@ jobs:
           )
           text = text.replace("${EOS04_PRODUCT_ENABLED:-false}", eos04_product)
           text = text.replace("${EOS04_FIELD_SUPPORT_ENABLED:-false}", eos04_field_support)
+          text = text.replace("${INGESTION_NISAR_CUTOVER_ENABLED:-false}", nisar_cutover)
+          text = text.replace("${NISAR_PRODUCT_ENABLED:-false}", nisar_product)
+          text = text.replace("${NISAR_FIELD_SUPPORT_ENABLED:-false}", nisar_field_support)
           text = text.replace("${EOS04_TEMPORAL_CHANGE_ENABLED:-false}", eos04_temporal_change)
           text = text.replace("${EOS04_TEMPORAL_SHADOW_ENABLED:-false}", eos04_temporal_shadow)
           text = text.replace(

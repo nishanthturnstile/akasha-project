@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldMonitoringEvidence, useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
+import { radarEvidenceDescription } from '@/lib/radarEvidence';
 import { cn } from '@/lib/utils';
 import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
 
@@ -199,7 +200,7 @@ export function IndexPanel({
                   <p className="font-medium text-foreground">Radar support for an optical gap</p>
                   <p className="mt-0.5 text-muted-foreground">
                     { radarEvidence?.status === 'AVAILABLE'
-                      ? `EOS-04 observed this field on ${radarEvidence.acquisitionDate}. It provides structural and moisture-sensitive evidence, not NDVI.`
+                      ? radarEvidenceDescription(radarEvidence.sourceId, radarEvidence.acquisitionDate, radarEvidence.displayedPolarization)
                       : radarEvidence?.reason ?? radarEvidence?.triggerReason ?? 'Radar evidence is unavailable.' }
                   </p>
                   { radarEvidence?.status === 'AVAILABLE' && (

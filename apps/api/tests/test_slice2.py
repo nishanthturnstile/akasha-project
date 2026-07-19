@@ -473,12 +473,12 @@ def test_phase5_collection_contracts_are_loadable():
     assert awifs.get("akasha:availability_status") == "active"
     assert awifs.get("akasha:gated_reason") is None
 
-    # EOS-04 / NISAR SAR collections are loadable and now active (display-only).
-    for source_id in ("eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"):
-        collection = catalog.get_collection(source_id)
-        assert collection["id"] == source_id
-        assert collection.get("akasha:availability_status") == "active"
-        assert collection.get("akasha:kind") == "sar"
+    eos04 = catalog.get_collection("eos-04-sar-mrs-l2b")
+    assert eos04.get("akasha:availability_status") == "active"
+    assert eos04.get("akasha:kind") == "sar"
+    nisar = catalog.get_collection("nisar-ssar-beta-gcov")
+    assert nisar.get("akasha:availability_status") == "gated"
+    assert nisar.get("akasha:kind") == "sar"
 
 
 def test_liss4_seed_collection_and_sample_item_contracts_are_loadable():
@@ -590,7 +590,7 @@ def test_latest_items_for_empty_registered_source_returns_typed_error(monkeypatc
     assert eos04["akasha:kind"] == "sar"
     assert eos04["akasha:supported_indices"] == []
     nisar = catalog.get_collection("nisar-ssar-beta-gcov")
-    assert nisar["akasha:default_display_mode"] == "VV_GRAYSCALE"
+    assert nisar["akasha:default_display_mode"] == "BACKSCATTER"
     cartosat = catalog.get_collection("cartosat-3-gated")
     assert cartosat["akasha:source_kind"] == "context"
     assert cartosat["akasha:expected_assets"] == ["visual"]
@@ -1672,7 +1672,7 @@ def test_eos04_sar_asset_resolution_rejects_generic_band_names(monkeypatch):
     assert exc.value.details["availableBands"] == ["B1"]
 
 
-def test_sar_vv_tile_route_uses_actual_vv_band_position(monkeypatch):
+def test_nisar_backscatter_route_uses_first_band_when_hh_is_absent(monkeypatch):
     from app.raster import catalog_resolver as catalog
     from app.raster import tiles
 
@@ -1699,12 +1699,12 @@ def test_sar_vv_tile_route_uses_actual_vv_band_position(monkeypatch):
 
     monkeypatch.setattr(tiles, "fetch_tile", fake_fetch_tile)
 
-    r = client.get("/api/tiles/nisar-ssar-beta-gcov/2026-04-26/VV_GRAYSCALE/3/4/5.png")
+    r = client.get("/api/tiles/nisar-ssar-beta-gcov/2026-04-26/BACKSCATTER/3/4/5.png")
 
     assert r.status_code == 200
     assert captured["url"] == (
         "http://titiler.internal:8000/cog/tiles/WebMercatorQuad/3/4/5.png?"
-        "url=s3%3A%2F%2Fakasha-cogs%2Fnisar%2Fa%2Fbackscatter.tif&bidx=2&"
+        "url=s3%3A%2F%2Fakasha-cogs%2Fnisar%2Fa%2Fbackscatter.tif&bidx=1&"
         "rescale=-25%2C5&colormap_name=gray"
     )
 

@@ -38,15 +38,17 @@
   },
   "akasha:source_kind": "sar",
   "akasha:kind": "sar",
-  "akasha:availability_status": "active",
+  "akasha:availability_status": "gated",
   "akasha:supported_indices": [],
-  "akasha:display_modes": ["VV_GRAYSCALE"],
-  "akasha:default_display_mode": "VV_GRAYSCALE",
+  "akasha:display_modes": ["BACKSCATTER"],
+  "akasha:default_display_mode": "BACKSCATTER",
   "akasha:date_metrics_kind": "radar",
   "akasha:analysis_level": "context",
-  "akasha:refresh_policy": "Backscatter display only; no optical indices or cloud mask.",
+  "akasha:refresh_policy": "Manual-only until real-product staging acceptance passes.",
   "akasha:limitations": [
-    "Not an optical vegetation-index source."
+    "S-band radar evidence; not an optical vegetation-index source.",
+    "Gamma0 backscatter is not a direct soil-moisture measurement.",
+    "Temporal comparison and cross-sensor baselines are disabled."
   ],
   "item_assets": {
     "backscatter": {

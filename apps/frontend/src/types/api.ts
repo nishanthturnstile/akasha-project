@@ -852,6 +852,13 @@ export interface FieldMonitoringEvidence {
     quality?: { qualified: boolean; confidence: 'none' | 'low' | 'medium' | 'high'; warnings: string[] };
     provenance?: Record<string, unknown>;
     overlayUrl?: string;
+    selection?: {
+      policyVersion: 'radar-support-selection-v1';
+      evaluatedSourceIds: string[];
+      qualifiedSourceIds: string[];
+      selectedSourceId: string | null;
+      rules?: string[];
+    };
     comparison?: {
       status: 'AVAILABLE' | 'INSUFFICIENT_BASELINE' | 'DEGENERATE_BASELINE' | 'NO_COMPARABLE_HISTORY' | 'METADATA_INCOMPLETE';
       policyVersion?: string | null;

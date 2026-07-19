@@ -53,7 +53,7 @@ export interface MapViewState {
     mapFullscreen: boolean;
     /** Timeline uses the best available observation resolver instead of one source's dates. */
     bestMode: boolean;
-    /** Show field-clipped EOS-04 support evidence instead of the optical index overlay. */
+    /** Show the selected field-clipped radar evidence instead of the optical index overlay. */
     radarEvidenceVisible: boolean;
 }
 

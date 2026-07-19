@@ -598,7 +598,11 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
     if _uses_ingestion_pipeline(source_id):
         source = _pipeline_source_payload(source_id) or catalog.source_payload(source_id)
         dates = _pipeline_dates(source_id) or []
-        date = next((d for d in dates if d["isLatestUsable"]), dates[0])
+        date = (
+            next((d for d in dates if d.get("tileAvailable")), dates[0])
+            if source_id == catalog.LANDSAT_SOURCE_ID
+            else next((d for d in dates if d["isLatestUsable"]), dates[0])
+        )
         acquisition_date = date["acquisitionDate"]
         display_mode = str(source["defaultDisplayMode"])
         natural_date = None

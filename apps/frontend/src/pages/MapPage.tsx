@@ -404,12 +404,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     fieldId: selectedPlot?.id,
     indexType: requestedTimelineIndex,
   });
-  const monitoringEvidenceQ = useFieldMonitoringEvidence(selectedPlot?.id, {
-    sourceId: effectiveSourceId,
-    indexType: requestedTimelineIndex,
-    enabled: selectedSource?.productRole !== 'support',
-  });
-
   useEffect(() => {
     if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
     if (!plotsQ.data.some((plot) => plot.id === selectedPlotId)) {
@@ -537,6 +531,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     });
     return def ? def.acquisitionDate : null;
   }, [activeTimelineDates, configQ.data, dateOverride, activeSourceKind]);
+
+  const monitoringEvidenceQ = useFieldMonitoringEvidence(selectedPlot?.id, {
+    sourceId: effectiveSourceId,
+    indexType: requestedTimelineIndex,
+    targetDate: selectedDate,
+    enabled: selectedSource?.productRole !== 'support',
+  });
 
   const basemapResolution = useMemo(() => {
     if (!configQ.data) return { basemapConfig: null, basemapError: null };

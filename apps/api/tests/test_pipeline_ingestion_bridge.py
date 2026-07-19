@@ -640,7 +640,7 @@ def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) 
     assert landsat["label"] == "Landsat 8/9 Collection 2 Level 2"
     assert landsat["resolutionMeters"] == 30
     assert landsat["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
-    assert landsat["displayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert landsat["displayModes"] == ["RGB", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
     assert "NDRE" not in landsat["displayModes"]
     assert landsat["maskMethod"] == "USGS Collection 2 QA_PIXEL and QA_RADSAT mask."
     assert landsat["availabilityStatus"] == "active"
@@ -650,6 +650,42 @@ def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) 
     assert dates.json()[0]["sensor"] == "Landsat 8/9"
     assert dates.json()[0]["provenanceLabel"] == "Landsat 8/9 · 30 m"
     assert dates.json()[0]["coveragePercent"] == pytest.approx(96.5)
+
+    monkeypatch.setattr(
+        product_router,
+        "get_natural_source_dates",
+        lambda *_args, **_kwargs: {
+            "dates": [
+                {
+                    "acquisitionDate": "2026-04-02",
+                    "tileAvailable": True,
+                    "bounds": [77.0, 12.0, 78.0, 13.0],
+                    "unavailableReason": None,
+                }
+            ]
+        },
+    )
+    default_layer = client.get(
+        "/api/layers/default",
+        params={"sourceId": catalog.LANDSAT_SOURCE_ID},
+    )
+    assert default_layer.status_code == 200
+    assert default_layer.json()["displayMode"] == "RGB"
+    assert default_layer.json()["tileAvailable"] is True
+    assert default_layer.json()["tileUrlTemplate"].endswith("/RGB/{z}/{x}/{y}.png")
+
+    tile_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        product_router,
+        "fetch_natural_source_tile",
+        lambda *_args, **kwargs: tile_calls.append(kwargs) or (b"landsat-rgb", "image/png"),
+    )
+    tile = client.get(
+        f"/api/tiles/{catalog.LANDSAT_SOURCE_ID}/2026-04-02/RGB/12/2930/1897.png"
+    )
+    assert tile.status_code == 200
+    assert tile.content == b"landsat-rgb"
+    assert tile_calls[0]["source_id"] == catalog.LANDSAT_SOURCE_ID
 
 
 def test_landsat_remains_hidden_when_either_product_gate_is_false(monkeypatch) -> None:

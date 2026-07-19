@@ -445,6 +445,15 @@ function stubAkashaFetch({
         return Promise.resolve(jsonResponse(fieldTrend));
       }
 
+      if (path.startsWith('/api/fields/plot-1/monitoring/evidence')) {
+        return Promise.resolve(jsonResponse({
+          fieldId: 'plot-1',
+          targetDate: new URL(path, 'https://akasha.test').searchParams.get('targetDate'),
+          optical: { status: 'usable' },
+          radar: { status: 'NOT_REQUESTED', triggered: false },
+        }));
+      }
+
       if (path.startsWith('/api/fields/plot-1/overlay/')) {
         if (deferOverlay) {
           return new Promise((resolve) => {
@@ -846,6 +855,25 @@ describe('MapPage pipeline point lookup', () => {
 });
 
 describe('MapPage native source behavior', () => {
+  it('evaluates radar support against the selected scene date', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL]> };
+      }).mock.calls.map(([input]) => String(input));
+      expect(
+        calls.some(
+          (input) =>
+            input.startsWith('/api/fields/plot-1/monitoring/evidence?') &&
+            input.includes('targetDate=2026-03-19'),
+        ),
+      ).toBe(true);
+    });
+  });
+
   it('shows the empty map state before a field is selected', async () => {
     stubAkashaFetch();
 

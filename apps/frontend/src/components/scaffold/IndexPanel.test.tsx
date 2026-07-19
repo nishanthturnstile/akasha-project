@@ -138,6 +138,34 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
                     }));
                 }
                 if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'field',
+                        sourceId: 'sentinel-2-l2a',
+                        acquisitionDate: '2026-07-18',
+                        indexType: 'NDVI',
+                        cloudMask,
+                        statistics: {
+                            min: 0.1,
+                            max: 0.8,
+                            mean: 0.5,
+                            stddev: 0.1,
+                            validPixelPercent: 90,
+                            cloudMaskedPercent: 5,
+                            coveragePercent: 95,
+                        },
+                        pixelCounts: {
+                            totalPixels: 100,
+                            nodataPixels: 5,
+                            coveragePixels: 95,
+                            maskedPixels: 5,
+                            validPixels: 90,
+                        },
+                        metadata: { bands: [], warnings: [] },
+                    }));
+                }
                 if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
                     return Promise.resolve(jsonResponse({
                         plotId: 'plot-1',
@@ -158,7 +186,7 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         renderPanel(
             <IndexPanel
                 selectedPlot={ plot }
-                selectedDate={ null }
+                selectedDate="2026-07-18"
                 sourceId="sentinel-2-l2a"
                 displayMode="NDVI"
                 supportedIndices={ ['NDVI'] }
@@ -168,6 +196,12 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         );
 
         expect(await screen.findByText(/provides structural and moisture-sensitive evidence, not NDVI/i)).toBeTruthy();
+        expect(
+            (globalThis.fetch as unknown as { mock: { calls: Array<[RequestInfo | URL]> } })
+                .mock.calls.some(([input]) =>
+                    String(input).includes('/monitoring/evidence?') &&
+                    String(input).includes('targetDate=2026-07-18')),
+        ).toBe(true);
         expect(screen.getByTestId('radar-temporal-change').textContent).toContain('HH +2.00 dB');
         expect(screen.getByTestId('radar-baseline-status').textContent).toContain('Field baseline (5 prior passes)');
         expect(screen.getByTestId('radar-baseline-status').textContent).toContain('HH -1.00 · HV -1.13 relative deviation');

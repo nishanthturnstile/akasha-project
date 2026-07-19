@@ -121,6 +121,7 @@ export function IndexPanel({
   const evidenceQ = useFieldMonitoringEvidence(selectedPlot?.id, {
     sourceId,
     indexType: activeIndexType,
+    targetDate: selectedDate,
     enabled: Boolean(onRadarEvidenceVisibleChange),
   });
   const monitoringEvidence = evidenceQ.data;

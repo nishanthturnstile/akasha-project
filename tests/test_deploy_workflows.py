@@ -191,7 +191,7 @@ def test_production_deploy_requires_and_renders_all_nisar_flags() -> None:
         "NISAR_PRODUCT_ENABLED",
         "NISAR_FIELD_SUPPORT_ENABLED",
     ):
-        assert deploy_job["env"][name] == f"${{{{ vars.{name} || 'false' }}}}"
+        assert deploy_job["env"][name] == "true"
         assert f'("{name}",' in render_step["run"]
     assert 'raise SystemExit(f"Production requires {name}=true")' in render_step["run"]
     assert '${INGESTION_NISAR_CUTOVER_ENABLED:-false}' in render_step["run"]
@@ -233,7 +233,7 @@ def test_production_deploy_rejects_unapproved_esri_web_image_sha():
         assert rejected.returncode != 0, f"{name}={invalid!r} was accepted"
 
 
-def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
+def test_staging_deploy_uses_single_instant_trigger_and_verifies_runtime_revision():
     workflow = _workflow("deploy-staging.yml")
     deploy_job = workflow["jobs"]["deploy-staging"]
     step_names = _step_names(deploy_job)
@@ -241,8 +241,8 @@ def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
     verify_step = _step(deploy_job, "Verify deployed image revisions")
 
     assert '"instant_deploy": True' in patch_step["run"]
-    assert "/deploy?" in patch_step["run"]
-    assert 'method="POST"' in patch_step["run"]
+    assert "/deploy?" not in patch_step["run"]
+    assert 'method="POST"' not in patch_step["run"]
     assert step_names.index("Patch Coolify service stack") < step_names.index(
         "Verify deployed image revisions"
     )

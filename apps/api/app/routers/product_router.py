@@ -376,6 +376,19 @@ def _pipeline_dates(
     provenance_label = (
         f"{sensor} · {resolution:g} m" if isinstance(resolution, (int, float)) else sensor
     )
+    natural_by_date: dict[str, dict[str, Any]] = {}
+    if source_id == catalog.LANDSAT_SOURCE_ID:
+        natural_response = get_natural_source_dates(
+            settings,
+            source_id=source_id,
+            aoi_id=settings.ingestion_aoi_id,
+            timeout_seconds=float(settings.ingestion_request_timeout_seconds),
+        )
+        natural_by_date = {
+            str(value.get("acquisitionDate")): value
+            for value in natural_response.get("dates", [])
+            if value.get("acquisitionDate")
+        }
     return [
         {
             "acquisitionDate": value,
@@ -385,8 +398,22 @@ def _pipeline_dates(
             "coveragePercent": ndvi_coverage.get("coveragePercent"),
             "isLatestUsable": value == newest,
             "metricsProvisional": bool(source.get("metricsProvisional", False)),
-            "tileAvailable": True,
-            "sceneCount": 1,
+            "tileAvailable": bool(natural_by_date[value].get("tileAvailable"))
+            if source_id == catalog.LANDSAT_SOURCE_ID and value in natural_by_date
+            else source_id != catalog.LANDSAT_SOURCE_ID,
+            "sceneCount": natural_by_date[value].get("sceneCount", 1)
+            if value in natural_by_date
+            else 0 if source_id == catalog.LANDSAT_SOURCE_ID else 1,
+            "bounds": natural_by_date[value].get("bounds")
+            if value in natural_by_date
+            else None,
+            "unavailableReason": natural_by_date[value].get("unavailableReason")
+            if value in natural_by_date
+            else (
+                "No prepared Landsat natural-imagery scene is registered for this date."
+                if source_id == catalog.LANDSAT_SOURCE_ID
+                else None
+            ),
             "sensor": sensor,
             "provenanceLabel": provenance_label,
             "resolvedSourceId": source_id,

@@ -630,6 +630,21 @@ def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) 
             "indexCoverage": {"NDVI": {"coveragePercent": 96.5}},
         },
     )
+    monkeypatch.setattr(
+        product_router,
+        "get_natural_source_dates",
+        lambda *_args, **_kwargs: {
+            "dates": [
+                {
+                    "acquisitionDate": "2026-04-02",
+                    "tileAvailable": True,
+                    "sceneCount": 1,
+                    "bounds": [77.0, 12.0, 78.0, 13.0],
+                    "unavailableReason": None,
+                }
+            ]
+        },
+    )
 
     sources = client.get("/api/sources")
     assert sources.status_code == 200
@@ -651,20 +666,6 @@ def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) 
     assert dates.json()[0]["provenanceLabel"] == "Landsat 8/9 · 30 m"
     assert dates.json()[0]["coveragePercent"] == pytest.approx(96.5)
 
-    monkeypatch.setattr(
-        product_router,
-        "get_natural_source_dates",
-        lambda *_args, **_kwargs: {
-            "dates": [
-                {
-                    "acquisitionDate": "2026-04-02",
-                    "tileAvailable": True,
-                    "bounds": [77.0, 12.0, 78.0, 13.0],
-                    "unavailableReason": None,
-                }
-            ]
-        },
-    )
     default_layer = client.get(
         "/api/layers/default",
         params={"sourceId": catalog.LANDSAT_SOURCE_ID},
@@ -708,6 +709,21 @@ def test_landsat_best_optical_flag_adds_readiness_candidates(monkeypatch) -> Non
         lambda *_args, **_kwargs: {
             "availableDates": ["2026-04-02"],
             "indexCoverage": {"NDVI": {"coveragePercent": 100.0}},
+        },
+    )
+    monkeypatch.setattr(
+        product_router,
+        "get_natural_source_dates",
+        lambda *_args, **_kwargs: {
+            "dates": [
+                {
+                    "acquisitionDate": "2026-04-02",
+                    "tileAvailable": True,
+                    "sceneCount": 1,
+                    "bounds": [77.0, 12.0, 78.0, 13.0],
+                    "unavailableReason": None,
+                }
+            ]
         },
     )
 

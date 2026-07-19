@@ -286,6 +286,15 @@ class Settings:
     nisar_field_support_enabled: bool = field(
         default_factory=lambda: _get_bool("NISAR_FIELD_SUPPORT_ENABLED", False)
     )
+    ingestion_landsat_cutover_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_LANDSAT_CUTOVER_ENABLED", False)
+    )
+    landsat_product_enabled: bool = field(
+        default_factory=lambda: _get_bool("LANDSAT_PRODUCT_ENABLED", False)
+    )
+    landsat_best_optical_enabled: bool = field(
+        default_factory=lambda: _get_bool("LANDSAT_BEST_OPTICAL_ENABLED", False)
+    )
     eos04_temporal_change_enabled: bool = field(
         default_factory=lambda: _get_bool("EOS04_TEMPORAL_CHANGE_ENABLED", False)
     )

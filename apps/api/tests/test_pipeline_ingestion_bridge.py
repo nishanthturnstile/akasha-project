@@ -618,6 +618,49 @@ def test_resourcesat_sources_and_dates_use_pipeline_readiness(monkeypatch) -> No
     assert body[0]["metricsProvisional"] is True
 
 
+def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_landsat_cutover_enabled", True)
+    monkeypatch.setattr(settings, "landsat_product_enabled", True)
+    monkeypatch.setattr(
+        product_router,
+        "get_readiness",
+        lambda *_args, **_kwargs: {
+            "availableDates": ["2026-04-02"],
+            "indexCoverage": {"NDVI": {"coveragePercent": 96.5}},
+        },
+    )
+
+    sources = client.get("/api/sources")
+    assert sources.status_code == 200
+    landsat = next(
+        item for item in sources.json() if item["id"] == catalog.LANDSAT_SOURCE_ID
+    )
+    assert landsat["pipelineBacked"] is True
+    assert landsat["label"] == "Landsat 8/9 Collection 2 Level 2"
+    assert landsat["resolutionMeters"] == 30
+    assert landsat["supportedIndices"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert landsat["displayModes"] == ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"]
+    assert "NDRE" not in landsat["displayModes"]
+    assert landsat["maskMethod"] == "USGS Collection 2 QA_PIXEL and QA_RADSAT mask."
+    assert landsat["availabilityStatus"] == "active"
+
+    dates = client.get(f"/api/sources/{catalog.LANDSAT_SOURCE_ID}/dates")
+    assert dates.status_code == 200
+    assert dates.json()[0]["sensor"] == "Landsat 8/9"
+    assert dates.json()[0]["provenanceLabel"] == "Landsat 8/9 · 30 m"
+    assert dates.json()[0]["coveragePercent"] == pytest.approx(96.5)
+
+
+def test_landsat_remains_hidden_when_either_product_gate_is_false(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_landsat_cutover_enabled", True)
+    monkeypatch.setattr(settings, "landsat_product_enabled", False)
+
+    sources = client.get("/api/sources")
+
+    assert sources.status_code == 200
+    assert catalog.LANDSAT_SOURCE_ID not in {item["id"] for item in sources.json()}
+
+
 def test_resourcesat_uses_native_catalog_until_cutover_enabled(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", False)
     monkeypatch.setattr(

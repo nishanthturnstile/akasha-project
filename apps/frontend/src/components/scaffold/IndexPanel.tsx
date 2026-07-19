@@ -122,6 +122,7 @@ export function IndexPanel({
     sourceId,
     indexType: activeIndexType,
     targetDate: selectedDate,
+    includeRadar: true,
     enabled: Boolean(onRadarEvidenceVisibleChange),
   });
   const monitoringEvidence = evidenceQ.data;
@@ -190,7 +191,9 @@ export function IndexPanel({
           onValueChange={ (next) => setActiveTab(next as AnalyticsTab) }
           className="px-4 pb-2 pt-1.5"
         >
-          { monitoringEvidence?.optical && monitoringEvidence.optical.status !== 'usable' && (
+          { monitoringEvidence?.optical && (
+            monitoringEvidence.optical.status !== 'usable' || radarEvidence?.status === 'AVAILABLE'
+          ) && (
             <div
               className="mb-2 rounded-md border border-info/30 bg-info/10 p-2.5 text-[11px] leading-4"
               data-testid="field-monitoring-radar-evidence"
@@ -198,7 +201,11 @@ export function IndexPanel({
               <div className="flex items-start gap-2">
                 <Satellite className="mt-0.5 size-3.5 shrink-0 text-info" strokeWidth={ 1.75 } />
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-foreground">Radar support for an optical gap</p>
+                  <p className="font-medium text-foreground">
+                    { monitoringEvidence.optical.status === 'usable'
+                      ? 'Radar field evidence'
+                      : 'Radar support for an optical gap' }
+                  </p>
                   <p className="mt-0.5 text-muted-foreground">
                     { radarEvidence?.status === 'AVAILABLE'
                       ? radarEvidenceDescription(radarEvidence.sourceId, radarEvidence.acquisitionDate, radarEvidence.displayedPolarization)

@@ -158,7 +158,16 @@ export const queryKeys = {
     sourceId: string,
     indexType: string,
     targetDate: string | null | undefined,
-  ) => ['fields', plotId, 'monitoring-evidence', sourceId, indexType, targetDate ?? 'latest'] as const,
+    includeRadar: boolean,
+  ) => [
+    'fields',
+    plotId,
+    'monitoring-evidence',
+    sourceId,
+    indexType,
+    targetDate ?? 'latest',
+    includeRadar,
+  ] as const,
   fieldLeaderboard: (filters: FieldLeaderboardFilters) =>
     ['reports', 'field-leaderboard', filters] as const,
   reportTemplates: ['reports', 'templates'] as const,
@@ -416,17 +425,25 @@ export function useFieldMonitoringEvidence(
     sourceId: string | undefined;
     indexType: string;
     targetDate?: string | null;
+    includeRadar?: boolean;
     enabled?: boolean;
   },
 ) {
   return useQuery({
     queryKey: plotId && options.sourceId
-      ? queryKeys.fieldMonitoringEvidence(plotId, options.sourceId, options.indexType, options.targetDate)
+      ? queryKeys.fieldMonitoringEvidence(
+          plotId,
+          options.sourceId,
+          options.indexType,
+          options.targetDate,
+          options.includeRadar ?? false,
+        )
       : (['fields', 'none', 'monitoring-evidence'] as const),
     queryFn: () => getFieldMonitoringEvidence(plotId as string, {
       sourceId: options.sourceId as string,
       indexType: options.indexType,
       targetDate: options.targetDate ?? undefined,
+      includeRadar: options.includeRadar,
     }),
     enabled: options.enabled !== false && Boolean(plotId && options.sourceId),
     staleTime: 60_000,

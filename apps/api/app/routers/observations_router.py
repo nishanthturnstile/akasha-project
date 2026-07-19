@@ -24,9 +24,12 @@ from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_team
+from ..config import settings
+from ..raster import catalog_resolver as catalog
 from ..raster.catalog_resolver import ObservationCandidate, resolve_best_observation
-from ..raster.errors import bad_request
+from ..raster.errors import AkashaError, bad_request
 from ..raster.models import Geometry
+from .product_router import _pipeline_dates, _pipeline_source_payload, _uses_ingestion_pipeline
 
 router = APIRouter(
     prefix="/api/observations",
@@ -105,6 +108,39 @@ def _validate_date_param(value: str | None, param_name: str) -> None:
         ) from exc
 
 
+def _best_source_ids() -> list[str]:
+    source_ids = catalog.selectable_source_ids()
+    if (
+        settings.landsat_best_optical_enabled
+        and _uses_ingestion_pipeline(catalog.LANDSAT_SOURCE_ID)
+        and catalog.LANDSAT_SOURCE_ID not in source_ids
+    ):
+        source_ids.append(catalog.LANDSAT_SOURCE_ID)
+    return source_ids
+
+
+def _best_source_loader(source_id: str) -> dict[str, Any]:
+    return _pipeline_source_payload(source_id) or catalog.get_source(source_id)
+
+
+def _best_date_loader(source_id: str) -> list[dict[str, Any]]:
+    if source_id == catalog.LANDSAT_SOURCE_ID:
+        try:
+            return _pipeline_dates(source_id) or []
+        except AkashaError:
+            return []
+    return catalog.list_dates(source_id)
+
+
+def _resolve_candidates(**kwargs: Any) -> list[ObservationCandidate]:
+    return resolve_best_observation(
+        **kwargs,
+        source_ids=_best_source_ids(),
+        source_loader=_best_source_loader,
+        date_loader=_best_date_loader,
+    )
+
+
 # ---------------------------------------------------------------------------
 # GET /api/observations/best
 # ---------------------------------------------------------------------------
@@ -158,7 +194,7 @@ async def get_best_observations(
     _validate_date_param(startDate, "startDate")
     _validate_date_param(endDate, "endDate")
 
-    candidates = resolve_best_observation(
+    candidates = _resolve_candidates(
         target_date=targetDate,
         start_date=startDate,
         end_date=endDate,
@@ -211,7 +247,7 @@ async def resolve_observation(
 
     use_case = payload.useCase if payload.useCase in ("field", "regional") else "field"
 
-    candidates = resolve_best_observation(
+    candidates = _resolve_candidates(
         target_date=payload.targetDate,
         start_date=payload.startDate,
         end_date=payload.endDate,

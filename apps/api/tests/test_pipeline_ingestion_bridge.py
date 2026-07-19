@@ -661,6 +661,35 @@ def test_landsat_remains_hidden_when_either_product_gate_is_false(monkeypatch) -
     assert catalog.LANDSAT_SOURCE_ID not in {item["id"] for item in sources.json()}
 
 
+def test_landsat_best_optical_flag_adds_readiness_candidates(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ingestion_landsat_cutover_enabled", True)
+    monkeypatch.setattr(settings, "landsat_product_enabled", True)
+    monkeypatch.setattr(settings, "landsat_best_optical_enabled", True)
+    monkeypatch.setattr(
+        product_router,
+        "get_readiness",
+        lambda *_args, **_kwargs: {
+            "availableDates": ["2026-04-02"],
+            "indexCoverage": {"NDVI": {"coveragePercent": 100.0}},
+        },
+    )
+
+    response = client.get(
+        "/api/observations/best",
+        params={"targetDate": "2026-04-02", "indexType": "NDVI", "windowDays": 3},
+    )
+
+    assert response.status_code == 200
+    landsat = next(
+        candidate
+        for candidate in response.json()["candidates"]
+        if candidate["sourceId"] == catalog.LANDSAT_SOURCE_ID
+    )
+    assert landsat["acquisitionDate"] == "2026-04-02"
+    assert landsat["resolutionMeters"] == 30
+    assert landsat["coveragePercent"] == pytest.approx(100.0)
+
+
 def test_resourcesat_uses_native_catalog_until_cutover_enabled(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ingestion_resourcesat_cutover_enabled", False)
     monkeypatch.setattr(

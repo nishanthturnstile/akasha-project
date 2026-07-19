@@ -291,6 +291,21 @@ def test_staging_deploy_has_independent_fail_closed_eos04_activation_gates():
     assert '${EOS04_PRODUCT_ENABLED:-false}' in render_step["run"]
 
 
+def test_staging_deploy_activates_complete_landsat_cutover_contract():
+    workflow = _workflow("deploy-staging.yml")
+    deploy_job = workflow["jobs"]["deploy-staging"]
+    render_step = _step(deploy_job, "Render Compose with immutable image tag")
+
+    assert deploy_job["env"]["INGESTION_LANDSAT_CUTOVER_ENABLED"] == "true"
+    assert deploy_job["env"]["LANDSAT_PRODUCT_ENABLED"] == "true"
+    assert deploy_job["env"]["LANDSAT_BEST_OPTICAL_ENABLED"] == "true"
+    assert "LANDSAT_PRODUCT_ENABLED=true requires" in render_step["run"]
+    assert "LANDSAT_BEST_OPTICAL_ENABLED=true requires" in render_step["run"]
+    assert '${INGESTION_LANDSAT_CUTOVER_ENABLED:-false}' in render_step["run"]
+    assert '${LANDSAT_PRODUCT_ENABLED:-false}' in render_step["run"]
+    assert '${LANDSAT_BEST_OPTICAL_ENABLED:-false}' in render_step["run"]
+
+
 def test_deploy_workflow_inline_python_snippets_compile():
     for workflow_name in DEPLOY_WORKFLOWS:
         workflow = _workflow(workflow_name)

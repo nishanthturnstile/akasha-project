@@ -154,6 +154,10 @@ jobs:
       INGESTION_NISAR_CUTOVER_ENABLED: "true"
       NISAR_PRODUCT_ENABLED: "true"
       NISAR_FIELD_SUPPORT_ENABLED: "true"
+      # Landsat is exposed only after standalone readiness is enabled and populated.
+      INGESTION_LANDSAT_CUTOVER_ENABLED: "true"
+      LANDSAT_PRODUCT_ENABLED: "true"
+      LANDSAT_BEST_OPTICAL_ENABLED: "true"
       # Gate 3D activated after the six-scene real-field acceptance run on 2026-07-18.
       EOS04_TEMPORAL_CHANGE_ENABLED: ${{ vars.EOS04_TEMPORAL_CHANGE_ENABLED || 'true' }}
       EOS04_TEMPORAL_SHADOW_ENABLED: ${{ vars.EOS04_TEMPORAL_SHADOW_ENABLED || 'false' }}
@@ -228,6 +232,13 @@ jobs:
           nisar_cutover = os.environ.get("INGESTION_NISAR_CUTOVER_ENABLED", "false").lower()
           nisar_product = os.environ.get("NISAR_PRODUCT_ENABLED", "false").lower()
           nisar_field_support = os.environ.get("NISAR_FIELD_SUPPORT_ENABLED", "false").lower()
+          landsat_cutover = os.environ.get(
+              "INGESTION_LANDSAT_CUTOVER_ENABLED", "false"
+          ).lower()
+          landsat_product = os.environ.get("LANDSAT_PRODUCT_ENABLED", "false").lower()
+          landsat_best_optical = os.environ.get(
+              "LANDSAT_BEST_OPTICAL_ENABLED", "false"
+          ).lower()
           eos04_temporal_change = os.environ.get("EOS04_TEMPORAL_CHANGE_ENABLED", "false").lower()
           eos04_temporal_shadow = os.environ.get("EOS04_TEMPORAL_SHADOW_ENABLED", "false").lower()
           eos04_temporal_recommendations = os.environ.get(
@@ -240,6 +251,9 @@ jobs:
               ("INGESTION_NISAR_CUTOVER_ENABLED", nisar_cutover),
               ("NISAR_PRODUCT_ENABLED", nisar_product),
               ("NISAR_FIELD_SUPPORT_ENABLED", nisar_field_support),
+              ("INGESTION_LANDSAT_CUTOVER_ENABLED", landsat_cutover),
+              ("LANDSAT_PRODUCT_ENABLED", landsat_product),
+              ("LANDSAT_BEST_OPTICAL_ENABLED", landsat_best_optical),
               ("EOS04_TEMPORAL_CHANGE_ENABLED", eos04_temporal_change),
               ("EOS04_TEMPORAL_SHADOW_ENABLED", eos04_temporal_shadow),
               ("EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED", eos04_temporal_recommendations),
@@ -267,6 +281,15 @@ jobs:
           if nisar_field_support == "true" and nisar_cutover != "true":
               raise SystemExit(
                   "NISAR_FIELD_SUPPORT_ENABLED=true requires INGESTION_NISAR_CUTOVER_ENABLED=true"
+              )
+          if landsat_product == "true" and landsat_cutover != "true":
+              raise SystemExit(
+                  "LANDSAT_PRODUCT_ENABLED=true requires "
+                  "INGESTION_LANDSAT_CUTOVER_ENABLED=true"
+              )
+          if landsat_best_optical == "true" and landsat_product != "true":
+              raise SystemExit(
+                  "LANDSAT_BEST_OPTICAL_ENABLED=true requires LANDSAT_PRODUCT_ENABLED=true"
               )
           if eos04_temporal_recommendations == "true" and eos04_temporal_change != "true":
               raise SystemExit(
@@ -298,6 +321,13 @@ jobs:
           text = text.replace("${INGESTION_NISAR_CUTOVER_ENABLED:-false}", nisar_cutover)
           text = text.replace("${NISAR_PRODUCT_ENABLED:-false}", nisar_product)
           text = text.replace("${NISAR_FIELD_SUPPORT_ENABLED:-false}", nisar_field_support)
+          text = text.replace(
+              "${INGESTION_LANDSAT_CUTOVER_ENABLED:-false}", landsat_cutover
+          )
+          text = text.replace("${LANDSAT_PRODUCT_ENABLED:-false}", landsat_product)
+          text = text.replace(
+              "${LANDSAT_BEST_OPTICAL_ENABLED:-false}", landsat_best_optical
+          )
           text = text.replace("${EOS04_TEMPORAL_CHANGE_ENABLED:-false}", eos04_temporal_change)
           text = text.replace("${EOS04_TEMPORAL_SHADOW_ENABLED:-false}", eos04_temporal_shadow)
           text = text.replace(

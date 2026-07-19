@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date as _date
 from datetime import timedelta
@@ -1359,6 +1360,7 @@ def resolve_best_resolution_source(
 _SOURCE_PRIORITY_MAP: dict[str, int] = {
     RESOURCESAT_LISS4_SOURCE_ID: 100,  # 5.8 m high-res field enhancement
     RESOURCESAT_LISS3_SOURCE_ID: 80,  # 24 m field-level production baseline
+    LANDSAT_SOURCE_ID: 60,  # 30 m native-QA fallback and historical coverage
     RESOURCESAT_AWIFS_SOURCE_ID: 20,  # 56 m regional (coarse)
 }
 _DEFAULT_SOURCE_PRIORITY: int = 10
@@ -1434,6 +1436,9 @@ def resolve_best_observation(
     field_geometry: dict[str, Any] | None = None,
     max_candidates: int = 10,
     window_days: int = 30,
+    source_ids: list[str] | None = None,
+    source_loader: Callable[[str], dict[str, Any]] | None = None,
+    date_loader: Callable[[str], list[dict[str, Any]]] | None = None,
 ) -> list[ObservationCandidate]:
     """Rank validated active observations across sources for best-observation selection.
 
@@ -1521,9 +1526,12 @@ def resolve_best_observation(
 
     candidates: list[ObservationCandidate] = []
 
-    for source_id in selectable_source_ids():
+    resolved_source_ids = source_ids if source_ids is not None else selectable_source_ids()
+    resolved_source_loader = source_loader or get_source
+    resolved_date_loader = date_loader or list_dates
+    for source_id in resolved_source_ids:
         try:
-            source = get_source(source_id)
+            source = resolved_source_loader(source_id)
         except Exception:  # noqa: BLE001
             continue
 
@@ -1556,7 +1564,7 @@ def resolve_best_observation(
         src_indices_list: list[str] = list(source.get("supportedIndices", []))
 
         try:
-            dates = list_dates(source_id)
+            dates = resolved_date_loader(source_id)
         except Exception:  # noqa: BLE001
             continue
 

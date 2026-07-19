@@ -362,8 +362,8 @@ tests or synthetic fixtures.
 | LANDSAT-001 | Record authoritative SR scale/offset, QA bits, product levels, platform IDs, and cadence. | Yes | 2026-07-19 |
 | LANDSAT-002 | Run metadata-only Bangalore searches against Earth Search and Planetary Computer; record sanitized candidates and asset contracts. | Yes | 2026-07-19 |
 | LANDSAT-003 | Select Planetary Computer signed HTTPS primary and document requester-pays fallback risk. | Yes | 2026-07-19 |
-| LANDSAT-004 | Through the staging wrapper, mirror at most one qualified Tier 1 scene under `/srv/akasha`. |  |  |
-| LANDSAT-005 | Record source sizes/checksums and independently inspect all mirrored COG grids/metadata. |  |  |
+| LANDSAT-004 | Through the staging wrapper, mirror at most one qualified Tier 1 scene under `/srv/akasha`. | Yes | 2026-07-19 |
+| LANDSAT-005 | Record source sizes/checksums and independently inspect all mirrored COG grids/metadata. | Yes | 2026-07-19 |
 
 ### Phase 1 — Standalone contracts
 
@@ -379,12 +379,12 @@ tests or synthetic fixtures.
 
 | Task | Description | Completed | Date |
 |---|---|---|---|
-| LANDSAT-201 | Validate Landsat 8/9 identity, Tier 1 L2 product, required assets, scale/offset, and grid. |  |  |
+| LANDSAT-201 | Validate Landsat 8/9 identity, Tier 1 L2 product, required assets, scale/offset, and grid. | Yes | 2026-07-19 |
 | LANDSAT-202 | Implement SR conversion without invalid zero scaling or negative-reflectance clamping. | Yes | 2026-07-19 |
 | LANDSAT-203 | Implement `QA_PIXEL`/`QA_RADSAT` mask decoding and class-priority tests. | Yes | 2026-07-19 |
-| LANDSAT-204 | Write and strictly validate analytic, mask, and four index COGs. |  |  |
-| LANDSAT-205 | Produce bounded manifest with checksums, QA counts, WRS/platform, versions, and redaction. |  |  |
-| LANDSAT-206 | Independently validate output pixels and QA counts against one real scene. |  |  |
+| LANDSAT-204 | Write and strictly validate analytic, mask, and four index COGs. | Yes | 2026-07-19 |
+| LANDSAT-205 | Produce bounded manifest with checksums, QA counts, WRS/platform, versions, and redaction. | Yes | 2026-07-19 |
+| LANDSAT-206 | Independently validate output pixels and QA counts against one real scene. | Yes | 2026-07-19 |
 
 ### Phase 3 — Ingestion, storage, and pgSTAC
 
@@ -393,8 +393,8 @@ tests or synthetic fixtures.
 | LANDSAT-301 | Implement search -> sign/mirror -> prepare -> validate -> register -> pgSTAC pipeline. | Yes | 2026-07-19 |
 | LANDSAT-302 | Add deterministic object keys and scene/asset/raster/tile registrations. | Yes | 2026-07-19 |
 | LANDSAT-303 | Add Landsat-specific EO/projection/raster/classification/checksum pgSTAC collection/item. | Yes | 2026-07-19 |
-| LANDSAT-304 | Implement single-scene field resolution and typed multi-scene natural unavailability. |  |  |
-| LANDSAT-305 | Prove replay and worker-recovery idempotency with real staging data. |  |  |
+| LANDSAT-304 | Implement single-scene field resolution and typed multi-scene natural unavailability. | Yes | 2026-07-19 |
+| LANDSAT-305 | Prove replay and worker-recovery idempotency with real staging data. | Yes | 2026-07-19 |
 
 ### Phase 4 — Ingestion analytics APIs
 
@@ -402,8 +402,8 @@ tests or synthetic fixtures.
 |---|---|---|---|
 | LANDSAT-401 | Generalize source-aware index validation, mask policies, native resolution, versions, and provider provenance. | Yes | 2026-07-19 |
 | LANDSAT-402 | Return field dates using 95% coverage, 80% usability, and <20% obscuration. | Yes | 2026-07-19 |
-| LANDSAT-403 | Validate statistics, clipped overlay, point, trend, and signed URL behavior. |  |  |
-| LANDSAT-404 | Add RGB natural date/tile service for a qualified single-scene date. |  |  |
+| LANDSAT-403 | Validate statistics, clipped overlay, point, trend, and signed URL behavior. | Yes | 2026-07-19 |
+| LANDSAT-404 | Add RGB natural date/tile service for a qualified single-scene date. | Yes | 2026-07-19 |
 
 ### Phase 5 — Product BFF and frontend
 
@@ -411,18 +411,18 @@ tests or synthetic fixtures.
 |---|---|---|---|
 | LANDSAT-501 | Add three fail-closed flags and same-origin ingestion cutover. | Yes | 2026-07-19 |
 | LANDSAT-502 | Add source registry metadata, supported modes/indices, limitations, and attribution. | Yes | 2026-07-19 |
-| LANDSAT-503 | Proxy dates, RGB, field analytics, points, trends, and exports without internal URL exposure. |  |  |
-| LANDSAT-504 | Add qualified Landsat candidates to best-optical selection and pin source/date downstream. |  |  |
-| LANDSAT-505 | Add source/date/platform/30 m/QA UI copy and disabled NDRE/thermal behavior. |  |  |
-| LANDSAT-506 | Capture desktop and narrow-layout staging acceptance screenshots. |  |  |
+| LANDSAT-503 | Proxy dates, RGB, field analytics, points, trends, and exports without internal URL exposure. | Yes | 2026-07-19 |
+| LANDSAT-504 | Add qualified Landsat candidates to best-optical selection and pin source/date downstream. | Yes | 2026-07-19 |
+| LANDSAT-505 | Add source/date/platform/30 m/QA UI copy and disabled NDRE/thermal behavior. | Yes | 2026-07-19 |
+| LANDSAT-506 | Capture desktop and narrow-layout staging acceptance screenshots. | Yes | 2026-07-19 |
 
 ### Phase 6 — Verification and activation
 
 | Task | Description | Completed | Date |
 |---|---|---|---|
-| LANDSAT-601 | Run provider, processor, QA, COG, pipeline, API, BFF, frontend, security, and regression suites. |  |  |
+| LANDSAT-601 | Run provider, processor, QA, COG, pipeline, API, BFF, frontend, security, and regression suites. | Yes | 2026-07-19 |
 | LANDSAT-602 | Run full lint/tests/builds in both repositories. | Yes | 2026-07-19 |
-| LANDSAT-603 | Pass staging Gates 1-13 and enable all three flags in staging. |  |  |
+| LANDSAT-603 | Pass staging Gates 1-13 and enable all three flags in staging. | Yes | 2026-07-19 |
 | LANDSAT-604 | Promote the accepted image to production only after production is provisioned. | Blocked - production not provisioned | 2026-07-19 |
 
 ## 10. Required automated cases
@@ -441,21 +441,45 @@ small-field resolution warning, desktop/narrow UI, and regressions for all exist
 
 | Gate | Acceptance evidence | Completed | Date |
 |---:|---|---|---|
-| 1 | Planetary Computer metadata-only Bangalore search succeeds and returns Landsat 8/9 Tier 1 candidates. |  |  |
-| 2 | One capped real scene is mirrored through the approved staging wrapper with no signed URL persisted. |  |  |
-| 3 | Independent inspection confirms required bands, scale/offset, QA, CRS, 30 m grid, WRS, and platform. |  |  |
-| 4 | Analytic, mask, and index COGs pass strict validation. |  |  |
-| 5 | Sampled reflectance and index values match an independent calculation. |  |  |
-| 6 | QA class and valid-pixel counts match an independent bit-decoding check. |  |  |
-| 7 | Object storage, relational catalog, and pgSTAC contain exactly the expected registrations. |  |  |
-| 8 | Authenticated dates, field dates, RGB, statistics, overlay, point, trend, and export routes pass. |  |  |
-| 9 | Product BFF returns same-origin URLs and exposes no provider/internal storage details. |  |  |
-| 10 | A saved staging field passes 95% coverage and produces non-empty clipped output. |  |  |
-| 11 | Best-optical selection and downstream source/date pinning match `field-selection-v2`. |  |  |
-| 12 | Desktop and narrow screenshots pass, including 30 m/no-red-edge limitations. |  |  |
-| 13 | Identical replay creates no duplicate job outputs, objects, records, layers, or STAC items. |  |  |
-| 14 | Enable all three Landsat flags in staging only after Gates 1-13. |  |  |
-| 15 | Promote the exact accepted image to production; scheduling remains separately approved. | Blocked - production not provisioned | 2026-07-19 |
+| 1 | Planetary Computer metadata-only Bangalore search succeeds and returns Landsat 8/9 Tier 1 candidates. | Yes | 2026-07-19 |
+| 2 | One capped real scene is mirrored through the approved staging wrapper with no signed URL persisted. | Yes | 2026-07-19 |
+| 3 | Independent inspection confirms required bands, scale/offset, QA, CRS, 30 m grid, WRS, and platform. | Yes | 2026-07-19 |
+| 4 | Analytic, mask, and index COGs pass strict validation. | Yes | 2026-07-19 |
+| 5 | Sampled reflectance and index values match an independent calculation. | Yes | 2026-07-19 |
+| 6 | QA class and valid-pixel counts match an independent bit-decoding check. | Yes | 2026-07-19 |
+| 7 | Object storage, relational catalog, and pgSTAC contain exactly the expected registrations. | Yes | 2026-07-19 |
+| 8 | Authenticated dates, field dates, RGB, statistics, overlay, point, trend, and export routes pass. | Yes | 2026-07-19 |
+| 9 | Product BFF returns same-origin URLs and exposes no provider/internal storage details. | Yes | 2026-07-19 |
+| 10 | A saved staging field passes 95% coverage and produces non-empty clipped output. | Yes | 2026-07-19 |
+| 11 | Best-optical selection and downstream source/date pinning match `field-selection-v2`. | Yes | 2026-07-19 |
+| 12 | Desktop and narrow screenshots pass, including 30 m/no-red-edge limitations. | Yes | 2026-07-19 |
+| 13 | Identical replay creates no duplicate job outputs, objects, records, layers, or STAC items. | Yes | 2026-07-19 |
+| 14 | Enable all three Landsat flags in staging only after Gates 1-13. | Yes | 2026-07-19 |
+| 15 | Promote the accepted images and configure production scheduling after production is provisioned. | Blocked - production not provisioned | 2026-07-19 |
+
+### 2026-07-19 staging acceptance evidence
+
+- Accepted ingestion image: `6f37219f2981ae33e9bb4676e981d2e6ad007edd`.
+- Accepted product web/API image: `0518fe6894de19a70283007352100aca01677121`.
+- Real capped validation job `c8d90b89-d54c-4238-bc97-c7e6a646bfd2` searched 82
+  candidates, mirrored one new Tier 1 scene (8 assets, 563,989,516 bytes), produced six
+  prepared outputs, skipped 81 candidates under the one-download cap, and completed with zero
+  failures.
+- The catalog contains a typed multi-scene RGB-unavailable date (`2026-02-12`, two scenes) and a
+  single-scene RGB-available date (`2026-02-04`, one scene). The product defaults to the latter.
+- Live authenticated BFF checks returned `200` for source dates, field dates, RGB PNG, field
+  statistics, clipped overlay PNG, point lookup, trend, index CSV, report CSV, and best-observation
+  selection. The saved acceptance field returned 100% exact-field coverage.
+- Browser-facing payload inspection found no ingestion hostname, private address, object-storage
+  path, or signed-query fields. Temporary acceptance fields, users, teams, and sessions were
+  removed after validation.
+- Desktop and 390-pixel narrow browser passes selected Landsat, `2026-02-04`, and true colour;
+  both visibly showed 30 m pixels, the mixed-pixel warning, and the lack of OLI red-edge support,
+  with no browser page errors. Evidence artifacts: `landsat-live-desktop-final.png` and
+  `landsat-live-narrow-final.png`.
+- The Landsat scheduler is registered at `03:00 UTC` daily in `full_pipeline` mode, is capped at
+  one new scene per run, retains the configured 20 GiB free-space guard, and reports lifecycle
+  `scheduled`, product exposure `public`, and validation state `accepted`.
 
 ## 12. Rollout, rollback, and operations
 
@@ -465,9 +489,11 @@ processor validation, catalog/API validation, BFF code with flags false, fronten
 forensics and reactivation. Never delete bulk staging data during rollback unless an operator
 explicitly approves the exact recoverable targets.
 
-Routine scheduling is a separate approval after bounded manual runs establish realistic bandwidth,
-storage, SAS-token, and processing costs. Archive requests must be date-bounded and quota-aware;
-the UI must not trigger an unbounded historical backfill.
+Staging routine scheduling was approved on 2026-07-19 after bounded real-scene runs established
+bandwidth, storage, token, and processing behavior. It remains capped at one new scene per run with
+the storage headroom guard active. Production scheduling must be configured when the production
+instance is provisioned. Archive requests must remain date-bounded and quota-aware; the UI must not
+trigger an unbounded historical backfill.
 
 ## 13. Explicit assumptions and non-goals
 

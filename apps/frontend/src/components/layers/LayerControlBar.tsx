@@ -66,7 +66,7 @@ interface PopoverButtonProps {
 const POPOVER_SAFE_TOP_PX = 96;
 const POPOVER_GAP_PX = 8;
 const POPOVER_MIN_HEIGHT_PX = 96;
-const POPOVER_MAX_HEIGHT_PX = 224;
+const POPOVER_MAX_HEIGHT_PX = 480;
 
 /** Lightweight click-outside-closing popover. Avoids pulling in a new Radix dep. */
 function PopoverButton({

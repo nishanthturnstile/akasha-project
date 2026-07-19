@@ -626,7 +626,7 @@ def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) 
         product_router,
         "get_readiness",
         lambda *_args, **_kwargs: {
-            "availableDates": ["2026-04-02"],
+            "availableDates": ["2026-04-02", "2026-04-03"],
             "indexCoverage": {"NDVI": {"coveragePercent": 96.5}},
         },
     )
@@ -635,6 +635,13 @@ def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) 
         "get_natural_source_dates",
         lambda *_args, **_kwargs: {
             "dates": [
+                {
+                    "acquisitionDate": "2026-04-03",
+                    "tileAvailable": False,
+                    "sceneCount": 2,
+                    "bounds": [77.0, 12.0, 78.0, 13.0],
+                    "unavailableReason": "Multiple same-date Landsat scenes require a mosaic.",
+                },
                 {
                     "acquisitionDate": "2026-04-02",
                     "tileAvailable": True,
@@ -671,6 +678,7 @@ def test_landsat_source_is_selectable_only_after_all_cutover_gates(monkeypatch) 
         params={"sourceId": catalog.LANDSAT_SOURCE_ID},
     )
     assert default_layer.status_code == 200
+    assert default_layer.json()["acquisitionDate"] == "2026-04-02"
     assert default_layer.json()["displayMode"] == "RGB"
     assert default_layer.json()["tileAvailable"] is True
     assert default_layer.json()["tileUrlTemplate"].endswith("/RGB/{z}/{x}/{y}.png")

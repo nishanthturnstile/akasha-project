@@ -24,11 +24,12 @@ The first release will:
 - return one-date, exact-field HH/HV (or the actual available polarization set) statistics and a
   signed, field-clipped overlay;
 - automatically choose the best qualified EOS-04 or NISAR observation without combining sensors;
-- remain hidden and manual-only until the complete staging gate is passed.
+- remain hidden and manual-only until the complete staging gate is passed, then promote the exact
+  staging-validated image to production.
 
-Production exposure, scheduled preload, multi-scene mosaics, NISAR history, temporal/cross-sensor
-comparison, recommendations, scouting decisions, biomass inference, and soil-moisture retrieval are
-not part of this release.
+Scheduled preload, multi-scene mosaics, NISAR history, temporal/cross-sensor comparison,
+recommendations, scouting decisions, biomass inference, and soil-moisture retrieval are not part of
+this release.
 
 ## 2. External evidence and fixed identifiers
 
@@ -85,8 +86,9 @@ collection mapping and a separately validated processing-profile version.
 
 ### 3.3 Activation state
 
-Code completion does not activate the product. NISAR remains hidden, unscheduled, and disabled by
-default in every deployment template. No flag may be enabled until Gates 1–13 in section 12 pass.
+Code completion alone does not activate the product. The application defaults remain fail-closed
+and scheduling remains disabled. Staging activation is authorized only after the real-product gates
+recorded below; production must use the same immutable product image accepted in staging.
 
 ## 4. HDF5 processing contract
 
@@ -222,12 +224,12 @@ release work; code completion alone does not complete real-product or activation
 
 | Task | Description | Completed | Date |
 |---|---|---|---|
-| NISAR-001 | Metadata-only Bangalore AOI search; record count, dates, footprints, online state, and sanitized IDs. |  |  |
-| NISAR-002 | Download at most one intersecting product through the staging wrapper under `/srv/akasha`. |  |  |
-| NISAR-003 | Record archive byte size and SHA-256 without committing product data. |  |  |
-| NISAR-004 | Inspect with `h5ls`, `h5dump`, `gdalinfo`, and a bounded Python inspector. |  |  |
-| NISAR-005 | Prove the science file contains `/science/SSAR/GCOV`, not only QA/browse content. |  |  |
-| NISAR-006 | Record identification, polarizations, covariance, masks, grid, CRS, resolution, Gamma0, RTC, versions, orbit, track/frame, and interval. |  |  |
+| NISAR-001 | Metadata-only Bangalore AOI search; record count, dates, footprints, online state, and sanitized IDs. | Yes | 2026-07-19 |
+| NISAR-002 | Download at most one intersecting product through the staging wrapper under `/srv/akasha`. | Yes | 2026-07-19 |
+| NISAR-003 | Record archive byte size and SHA-256 without committing product data. | Yes | 2026-07-19 |
+| NISAR-004 | Inspect with `h5ls`, `h5dump`, `gdalinfo`, and a bounded Python inspector. | Yes | 2026-07-19 |
+| NISAR-005 | Prove the science file contains `/science/SSAR/GCOV`, not only QA/browse content. | Yes | 2026-07-19 |
+| NISAR-006 | Record identification, polarizations, covariance, masks, grid, CRS, resolution, Gamma0, RTC, versions, orbit, track/frame, and interval. | Yes | 2026-07-19 |
 
 If Bangalore has no scene, a bounded Indian validation AOI may validate the processor. Product
 activation still requires a real scene overlapping the configured product AOI and a saved staging
@@ -254,7 +256,7 @@ field.
 | NISAR-204 | Enforce RTC/Gamma0 and linear-power-to-dB numeric rules. | Yes | 2026-07-19 |
 | NISAR-205 | Enforce native mask, shared grid, validated coordinates, and product CRS. | Yes | 2026-07-19 |
 | NISAR-206 | Write windowed multiband COG and bounded audit manifest. | Yes | 2026-07-19 |
-| NISAR-207 | Validate processor against a real Bhoonidhi HDF5 product. |  |  |
+| NISAR-207 | Validate processor against a real Bhoonidhi HDF5 product. | Yes | 2026-07-19 |
 
 ### Phase 3 — Ingestion, storage, and catalog
 
@@ -263,7 +265,7 @@ field.
 | NISAR-301 | Implement capped search-to-pgSTAC NISAR service. | Yes | 2026-07-19 |
 | NISAR-302 | Add deterministic raw/prepared object keys and registrations. | Yes | 2026-07-19 |
 | NISAR-303 | Add SAR-safe NISAR pgSTAC collection and item. | Yes | 2026-07-19 |
-| NISAR-304 | Prove no-duplicate replay using a real staging product. |  |  |
+| NISAR-304 | Prove no-duplicate replay using a real staging product. | Yes | 2026-07-19 |
 | NISAR-305 | Keep schedule manual and source hidden after code completion. | Yes | 2026-07-19 |
 
 ### Phase 4 — APIs and field evidence
@@ -273,7 +275,7 @@ field.
 | NISAR-401 | Generalize natural dates/tiles through per-source SAR profiles. | Yes | 2026-07-19 |
 | NISAR-402 | Generalize field-SAR source union and reject NISAR history. | Yes | 2026-07-19 |
 | NISAR-403 | Return source-specific polarization statistics, features, and provenance. | Yes | 2026-07-19 |
-| NISAR-404 | Validate dates, tile, statistics, and overlay with a saved staging field. |  |  |
+| NISAR-404 | Validate dates, tile, statistics, and overlay with a saved staging field. | Yes | 2026-07-19 |
 
 ### Phase 5 — Product BFF and frontend
 
@@ -327,21 +329,21 @@ regressions.
 
 | Gate | Acceptance evidence | Completed | Date |
 |---|---|---|---|
-| 1 | Metadata-only provider search succeeds. |  |  |
-| 2 | One capped real-product download passes integrity checks. |  |  |
-| 3 | Independent inspection confirms HDF5 structure and metadata. |  |  |
-| 4 | Prepared COG passes strict validation. |  |  |
-| 5 | Sampled dB values match independent raw-HDF calculation. |  |  |
-| 6 | Masked pixels and valid-pixel counts match independently. |  |  |
-| 7 | Object storage, relational catalog, and pgSTAC each contain exactly one registration. |  |  |
-| 8 | Authenticated ingestion dates, tiles, field statistics, and overlay pass. |  |  |
+| 1 | Metadata-only provider search succeeds. | Yes | 2026-07-19 |
+| 2 | One capped real-product download passes integrity checks. | Yes | 2026-07-19 |
+| 3 | Independent inspection confirms HDF5 structure and metadata. | Yes | 2026-07-19 |
+| 4 | Prepared COG passes strict validation. | Yes | 2026-07-19 |
+| 5 | Sampled dB values match independent raw-HDF calculation. | Yes | 2026-07-19 |
+| 6 | Masked pixels and valid-pixel counts match independently. | Yes | 2026-07-19 |
+| 7 | Object storage, relational catalog, and pgSTAC each contain exactly one registration. | Yes | 2026-07-19 |
+| 8 | Authenticated ingestion dates, tiles, field statistics, and overlay pass. | Yes | 2026-07-19 |
 | 9 | Product BFF exposes only same-origin URLs. |  |  |
-| 10 | Saved field has at least 95% coverage and a non-empty clipped overlay. |  |  |
+| 10 | Saved field has at least 95% coverage and a non-empty clipped overlay. | Yes | 2026-07-19 |
 | 11 | EOS-04/NISAR automatic selection matches `radar-support-selection-v1`. |  |  |
 | 12 | Desktop and narrow screenshots pass. |  |  |
-| 13 | Identical replay creates no duplicates. |  |  |
+| 13 | Identical replay creates no duplicates. | Yes | 2026-07-19 |
 | 14 | Enable all three NISAR flags in staging only after Gates 1–13. |  |  |
-| 15 | Production flags and scheduled preload remain disabled. | Yes | 2026-07-19 |
+| 15 | Promote the exact accepted image to production with all three flags enabled; keep scheduled preload disabled. |  |  |
 
 ## 13. Assumptions and non-goals
 
@@ -358,12 +360,33 @@ regressions.
 
 ## 14. Implementation verification recorded on 2026-07-19
 
-- `akasha-ingestion`: Ruff passed; 309 tests passed; Docker Compose configuration validated.
+- `akasha-ingestion`: Ruff passed; 311 tests passed; Docker Compose configuration validated.
 - Product API: 489 tests passed and 11 were skipped by their existing environment gates.
 - Product repository root: 942 tests passed and 1 was skipped.
 - Frontend: ESLint completed with four pre-existing warnings and no errors; 400 tests passed;
   TypeScript and the Vite production build passed.
 - Slice 1 catalog validation: 227 checks passed and 0 failed.
 
-These results validate the implementation and synthetic contracts only. They do not satisfy Phase
-0 or staging Gates 1–14, which require one real Bhoonidhi product and a saved staging field.
+### 14.1 Real-product acceptance evidence
+
+- Metadata-only job `ab6e6f67-9130-4e13-b2df-e885a6ca2fff` found one online,
+  AOI-intersecting scene acquired on 2026-01-03.
+- The provider object is a direct HDF5 product of 11,352,015,126 bytes with SHA-256
+  `2d9151d1be77e0af99a2a8d75201508daee81ba3697f79a681babcad234eb89f`.
+- Independent tools confirmed S-band L2 GCOV, HH/HV diagonal terms, EPSG:32644, 10 m spacing,
+  Gamma0 input, RTC, ascending track 84/frame 9, and product specification 1.2.1.
+- Full-pipeline job `59786314-393e-4420-94a4-70386c5891f5` completed one search, download,
+  preparation, validation, storage, relational registration, and pgSTAC registration.
+- The 5,796,290,993-byte BigTIFF COG passes strict validation without warnings. It has Float32
+  HH/HV bands, `-9999.0` nodata, 512-pixel DEFLATE tiles, and six average-overview levels.
+- Same-pixel raw-to-COG comparisons matched within `2.6e-7 dB`; mask-255 pixels remained nodata.
+  Full-grid independent counts matched at 623,274,430 valid pixels per band with zero mismatches.
+- Catalog counts are exactly one scene, one backscatter asset, and one NISAR pgSTAC item. An
+  identical replay returned the original completed job and left all counts at one.
+- The saved staging validation field returned 100% coverage over 496 common valid pixels, high
+  confidence, HH/HV statistics, `HH_MINUS_HV_DB`, and a non-empty signed clipped PNG overlay.
+- Authenticated dates and BACKSCATTER tile routes passed; NISAR history and optical NDVI requests
+  returned typed HTTP 422 responses.
+
+Gates 9, 11, and 12 remain live product checks and must pass on the flag-enabled staging deployment
+before the immutable image is promoted to production.

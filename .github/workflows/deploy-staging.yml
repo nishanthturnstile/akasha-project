@@ -150,10 +150,10 @@ jobs:
       INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}
       EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}
       EOS04_FIELD_SUPPORT_ENABLED: ${{ vars.EOS04_FIELD_SUPPORT_ENABLED || 'true' }}
-      # Fail closed until NISAR real-product Gates 1-13 are recorded as passed.
-      INGESTION_NISAR_CUTOVER_ENABLED: ${{ vars.INGESTION_NISAR_CUTOVER_ENABLED || 'false' }}
-      NISAR_PRODUCT_ENABLED: ${{ vars.NISAR_PRODUCT_ENABLED || 'false' }}
-      NISAR_FIELD_SUPPORT_ENABLED: ${{ vars.NISAR_FIELD_SUPPORT_ENABLED || 'false' }}
+      # Activated after the 2026-07-19 capped real-product acceptance run.
+      INGESTION_NISAR_CUTOVER_ENABLED: "true"
+      NISAR_PRODUCT_ENABLED: "true"
+      NISAR_FIELD_SUPPORT_ENABLED: "true"
       # Gate 3D activated after the six-scene real-field acceptance run on 2026-07-18.
       EOS04_TEMPORAL_CHANGE_ENABLED: ${{ vars.EOS04_TEMPORAL_CHANGE_ENABLED || 'true' }}
       EOS04_TEMPORAL_SHADOW_ENABLED: ${{ vars.EOS04_TEMPORAL_SHADOW_ENABLED || 'false' }}

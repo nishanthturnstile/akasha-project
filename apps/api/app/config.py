@@ -277,6 +277,15 @@ class Settings:
     eos04_field_support_enabled: bool = field(
         default_factory=lambda: _get_bool("EOS04_FIELD_SUPPORT_ENABLED", False)
     )
+    ingestion_nisar_cutover_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_NISAR_CUTOVER_ENABLED", False)
+    )
+    nisar_product_enabled: bool = field(
+        default_factory=lambda: _get_bool("NISAR_PRODUCT_ENABLED", False)
+    )
+    nisar_field_support_enabled: bool = field(
+        default_factory=lambda: _get_bool("NISAR_FIELD_SUPPORT_ENABLED", False)
+    )
     eos04_temporal_change_enabled: bool = field(
         default_factory=lambda: _get_bool("EOS04_TEMPORAL_CHANGE_ENABLED", False)
     )

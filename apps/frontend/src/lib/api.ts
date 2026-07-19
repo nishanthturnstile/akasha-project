@@ -524,8 +524,9 @@ export const getFieldSarOverlayImage = async (
   plotId: string,
   targetDate: string,
   fallbackCoordinates: ImageCorners,
+  sourceId = 'eos-04-sar-mrs-l2b',
 ): Promise<FieldIndexOverlayImage> => {
-  const params = new URLSearchParams({ targetDate });
+  const params = new URLSearchParams({ targetDate, sourceId });
   const sourceUrl = `/api/fields/${encodeURIComponent(plotId)}/sar/overlay.png?${params.toString()}`;
   const res = await fetchApi(sourceUrl, { headers: new Headers({ Accept: 'image/png' }) });
   const blob = await res.blob();
@@ -535,7 +536,7 @@ export const getFieldSarOverlayImage = async (
     sourceUrl,
     coordinates: parseOverlayCorners(res.headers.get('X-Akasha-Overlay-Corners')) ?? fallbackCoordinates,
     stretch: parseOverlayStretch(res.headers.get('X-Akasha-Overlay-Stretch')),
-    resolvedSourceId: res.headers.get('X-Akasha-Resolved-Source') ?? 'eos-04-sar-mrs-l2b',
+    resolvedSourceId: res.headers.get('X-Akasha-Resolved-Source') ?? sourceId,
     resolutionMeters: 18,
     enhanced: false,
     basisDate: null,

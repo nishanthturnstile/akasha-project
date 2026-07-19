@@ -74,6 +74,8 @@ router = APIRouter(
 
 MAX_TREND_DAYS = 365
 EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
+NISAR_SOURCE_ID = "nisar-ssar-beta-gcov"
+RADAR_SELECTION_POLICY_VERSION = "radar-support-selection-v1"
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -432,53 +434,111 @@ def _field_monitoring_evidence(
         trigger_reason = "No qualifying optical observation is available for this field."
 
     should_request_radar = include_radar or optical_status != "usable"
+    enabled_radar_sources: list[str] = []
+    if settings.eos04_field_support_enabled:
+        enabled_radar_sources.append(EOS04_SOURCE_ID)
+    if (
+        settings.nisar_field_support_enabled
+        and settings.ingestion_nisar_cutover_enabled
+        and settings.ingestion_api_url
+    ):
+        enabled_radar_sources.append(NISAR_SOURCE_ID)
+
     radar: dict[str, Any] = {
         "status": "NOT_REQUESTED",
-        "sourceId": EOS04_SOURCE_ID,
+        "sourceId": enabled_radar_sources[0] if enabled_radar_sources else EOS04_SOURCE_ID,
         "triggered": should_request_radar,
         "triggerReason": trigger_reason if should_request_radar else None,
     }
-    if should_request_radar and not settings.eos04_field_support_enabled:
+    if should_request_radar and not enabled_radar_sources:
         radar.update(
             status="DISABLED",
-            reason="EOS-04 field support is not enabled in this environment.",
+            reason="Radar field support is not enabled in this environment.",
         )
     elif should_request_radar:
-        include_temporal = (
-            settings.eos04_temporal_change_enabled
-            or settings.eos04_temporal_shadow_enabled
-        )
-        try:
-            result = request_field_sar(
-                settings,
-                geometry=plot["geometry"],
-                field_id=plot_id,
-                target_date=target_date.isoformat(),
-                window_days=sar_window_days,
-                include_history=include_temporal,
-                history_lookback_days=settings.eos04_temporal_lookback_days,
-                maximum_history_observations=settings.eos04_temporal_max_observations,
-                minimum_baseline_observations=(
-                    settings.eos04_temporal_min_baseline_observations
-                ),
-                timeout_seconds=float(settings.ingestion_request_timeout_seconds),
+        candidates: list[dict[str, Any]] = []
+        failures: list[dict[str, Any]] = []
+        for radar_source_id in enabled_radar_sources:
+            include_temporal = radar_source_id == EOS04_SOURCE_ID and (
+                settings.eos04_temporal_change_enabled
+                or settings.eos04_temporal_shadow_enabled
             )
-        except AkashaError as exc:
-            radar.update(status="UNAVAILABLE", reason=exc.message, reasonCode=exc.code)
-        else:
+            try:
+                result = request_field_sar(
+                    settings,
+                    geometry=plot["geometry"],
+                    field_id=plot_id,
+                    source_id=radar_source_id,
+                    target_date=target_date.isoformat(),
+                    window_days=sar_window_days,
+                    include_history=include_temporal,
+                    history_lookback_days=settings.eos04_temporal_lookback_days,
+                    maximum_history_observations=settings.eos04_temporal_max_observations,
+                    minimum_baseline_observations=(
+                        settings.eos04_temporal_min_baseline_observations
+                    ),
+                    timeout_seconds=float(settings.ingestion_request_timeout_seconds),
+                )
+            except AkashaError as exc:
+                failures.append(
+                    {"sourceId": radar_source_id, "reason": exc.message, "reasonCode": exc.code}
+                )
+                continue
+
             result.pop("overlayUrl", None)
             result.pop("queryId", None)
+            result.setdefault("sourceId", radar_source_id)
             if include_temporal and not settings.eos04_temporal_change_enabled:
                 for field in ("comparison", "history", "change", "baseline"):
                     result.pop(field, None)
-            radar.update(result)
-            if result.get("status") == "AVAILABLE":
-                radar["overlayUrl"] = (
-                    f"/api/fields/{plot_id}/sar/overlay.png"
-                    f"?targetDate={target_date.isoformat()}&windowDays={sar_window_days}"
-                )
-            radar["triggered"] = True
-            radar["triggerReason"] = trigger_reason
+            if (
+                result.get("status") == "AVAILABLE"
+                and float(result.get("coveragePercent", 0)) >= 95.0
+                and bool(result.get("quality", {}).get("qualified", True))
+            ):
+                candidates.append(result)
+            else:
+                failures.append(result)
+
+        if candidates:
+            source_priority = {EOS04_SOURCE_ID: 0, NISAR_SOURCE_ID: 1}
+            selected = min(
+                candidates,
+                key=lambda item: (
+                    abs(int(item.get("daysFromTarget", 10_000))),
+                    -float(item.get("coveragePercent", 0)),
+                    source_priority.get(str(item.get("sourceId")), 99),
+                ),
+            )
+            radar.update(selected)
+            selected_source_id = str(selected["sourceId"])
+            radar["overlayUrl"] = (
+                f"/api/fields/{plot_id}/sar/overlay.png"
+                f"?targetDate={target_date.isoformat()}&windowDays={sar_window_days}"
+                f"&sourceId={selected_source_id}"
+            )
+            radar["selection"] = {
+                "policyVersion": RADAR_SELECTION_POLICY_VERSION,
+                "evaluatedSourceIds": enabled_radar_sources,
+                "qualifiedSourceIds": [str(item["sourceId"]) for item in candidates],
+                "selectedSourceId": selected_source_id,
+                "rules": ["nearest-date", "higher-coverage", "eos04-maturity-tie-break"],
+            }
+        else:
+            failure = failures[0] if failures else {}
+            radar.update(
+                status="UNAVAILABLE",
+                reason=failure.get("reason", "No qualified radar observation is available."),
+                reasonCode=failure.get("reasonCode", failure.get("reason_code")),
+            )
+            radar["selection"] = {
+                "policyVersion": RADAR_SELECTION_POLICY_VERSION,
+                "evaluatedSourceIds": enabled_radar_sources,
+                "qualifiedSourceIds": [],
+                "selectedSourceId": None,
+            }
+        radar["triggered"] = True
+        radar["triggerReason"] = trigger_reason
 
     return {
         "fieldId": plot_id,
@@ -1189,23 +1249,35 @@ async def get_field_sar_overlay(
     plot_id: str,
     targetDate: date = Query(...),
     windowDays: int = Query(default=21, ge=1, le=31),
+    sourceId: str = Query(default=EOS04_SOURCE_ID),
     user: CurrentUser = Depends(get_current_user),
 ) -> Response:
-    if not settings.eos04_field_support_enabled:
-        raise not_found("EOS-04 field support is not enabled.", code="EOS04_FIELD_SUPPORT_DISABLED")
+    source_enabled = {
+        EOS04_SOURCE_ID: settings.eos04_field_support_enabled,
+        NISAR_SOURCE_ID: (
+            settings.nisar_field_support_enabled
+            and settings.ingestion_nisar_cutover_enabled
+            and bool(settings.ingestion_api_url)
+        ),
+    }
+    if sourceId not in source_enabled:
+        raise not_found("Radar source is not supported.", code="RADAR_SOURCE_UNSUPPORTED")
+    if not source_enabled[sourceId]:
+        raise not_found("Radar field support is not enabled.", code="RADAR_FIELD_SUPPORT_DISABLED")
     plot = await _get_field_or_404(plot_id, user.id)
     result = await _run_blocking(
         request_field_sar,
         settings,
         geometry=plot["geometry"],
         field_id=plot_id,
+        source_id=sourceId,
         target_date=targetDate.isoformat(),
         window_days=windowDays,
     )
     if result.get("status") != "AVAILABLE" or not result.get("overlayUrl"):
         raise not_found(
-            "EOS-04 evidence is unavailable for this field and date.",
-            code="EOS04_FIELD_EVIDENCE_UNAVAILABLE",
+            "Radar evidence is unavailable for this field and date.",
+            code="RADAR_FIELD_EVIDENCE_UNAVAILABLE",
             reason=result.get("reason"),
         )
     body, content_type, upstream_headers = await _run_blocking(
@@ -1218,7 +1290,7 @@ async def get_field_sar_overlay(
         for name in ("X-Akasha-Overlay-Corners", "X-Akasha-Overlay-Stretch")
         if upstream_headers.get(name)
     }
-    headers["X-Akasha-Resolved-Source"] = EOS04_SOURCE_ID
+    headers["X-Akasha-Resolved-Source"] = sourceId
     return Response(content=body, media_type=content_type, headers=headers)
 
 

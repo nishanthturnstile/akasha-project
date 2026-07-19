@@ -107,6 +107,11 @@ describe('Legend', () => {
         expect(legend.textContent).toContain('Backscatter (dB)');
     });
 
+    it('renders the SAR backscatter ramp for the NISAR BACKSCATTER token', () => {
+        const { getByTestId } = render(<Legend displayMode="BACKSCATTER" sourceKind="sar" />);
+        expect(getByTestId('map-legend').textContent).toContain('Backscatter (dB)');
+    });
+
     it('falls back to an index ramp for unknown non-RGB optical modes', () => {
         const { getByTestId } = render(<Legend displayMode="SOMETHING_ELSE" sourceKind="optical" />);
         expect(getByTestId('map-legend').textContent).toContain('Index');

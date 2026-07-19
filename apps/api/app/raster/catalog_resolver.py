@@ -343,22 +343,26 @@ _SOURCE_REGISTRY.update(
             "supportedIndices": [],
             "bandRoleMapping": {},
             "maskAsset": None,
-            "displayModes": ["VV_GRAYSCALE"],
-            "defaultDisplayMode": "VV_GRAYSCALE",
+            "displayModes": ["BACKSCATTER"],
+            "defaultDisplayMode": "BACKSCATTER",
             "description": "NISAR S-band GCOV radar backscatter (display-only; cloud-penetrating).",
             "attribution": "ISRO/NRSC, Bhoonidhi",
             "dateMetricsKind": "radar",
             "defaultRescale": "-25,5",
-            "tileRouteMode": "vv_grayscale",
+            "tileRouteMode": "backscatter",
             "resolutionMeters": None,
             "analysisLevel": "context",
             "refreshPolicy": "Backscatter display only; no optical indices or cloud mask.",
-            "limitations": ["Not an optical vegetation-index source."],
+            "limitations": [
+                "S-band radar evidence; not an optical vegetation-index source.",
+                "Beta GCOV values are Gamma0 backscatter, not direct soil moisture.",
+                "Temporal comparison and cross-sensor baselines are not enabled.",
+            ],
             "maskMethod": None,
             "metricsProvisional": True,
             "availabilityStatus": "gated",
             "gatedReason": (
-                "NISAR GCOV remains data-gated until calibrated ARD products are validated."
+                "NISAR GCOV remains hidden until the real-product staging gates pass."
             ),
         },
         "cartosat-3-gated": {

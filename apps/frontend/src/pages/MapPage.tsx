@@ -17,6 +17,7 @@ import {
 } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
+import { radarSensorLabel } from '@/lib/radarEvidence';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
@@ -710,6 +711,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       selectedPlot.id,
       monitoringEvidenceQ.data.targetDate,
       corners,
+      radarEvidence.sourceId,
     ).then((overlay) => {
       if (disposed) {
         if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
@@ -723,7 +725,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (!disposed) setRadarOverlay(null);
     });
     return () => { disposed = true; };
-  }, [monitoringEvidenceQ.data?.targetDate, radarEvidence?.status, radarEvidenceVisible, selectedPlot]);
+  }, [monitoringEvidenceQ.data?.targetDate, radarEvidence?.sourceId, radarEvidence?.status, radarEvidenceVisible, selectedPlot]);
 
   useEffect(() => {
     let disposed = false;
@@ -828,7 +830,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       const offset = radarEvidence.daysFromTarget == null
         ? ''
         : ` · ${Math.abs(radarEvidence.daysFromTarget)} day offset`;
-      return `EOS-04 support: ${radarEvidence.acquisitionDate}${offset} · radar evidence, not NDVI.`;
+      const sensor = radarSensorLabel(radarEvidence.sourceId);
+      return `${sensor} support: ${radarEvidence.acquisitionDate}${offset} · radar evidence, not NDVI or direct soil moisture.`;
     }
     if (selectedSource?.kind !== 'sar') return null;
     if (!selectedDate) return null;
@@ -961,7 +964,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const attribution =
     scene?.attribution ??
     (radarEvidenceVisible && radarOverlay
-      ? 'ISRO/NRSC Bhoonidhi · EOS-04 field support'
+      ? `ISRO/NRSC Bhoonidhi · ${radarSensorLabel(radarEvidence?.sourceId)} field support`
       : indexOverlay
       ? sourceAttribution
       : basemapResolution.basemapConfig.provider === 'osm'

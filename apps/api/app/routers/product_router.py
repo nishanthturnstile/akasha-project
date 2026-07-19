@@ -64,6 +64,8 @@ _PIPELINE_SOURCE_IDS = frozenset(
     {catalog.SENTINEL_2_SOURCE_ID, *catalog.RESOURCESAT_BOA_SOURCE_IDS}
 )
 _EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
+_NISAR_SOURCE_ID = "nisar-ssar-beta-gcov"
+_NATURAL_SOURCE_IDS = frozenset({_EOS04_SOURCE_ID, _NISAR_SOURCE_ID})
 
 
 def _is_pipeline_source(source_id: str) -> bool:
@@ -107,12 +109,14 @@ def _pipeline_bridge_enabled() -> bool:
 
 def _uses_natural_pipeline(source_id: str) -> bool:
     """Return whether display-only natural imagery is active for this source."""
-    return (
-        source_id == _EOS04_SOURCE_ID
-        and settings.eos04_product_enabled
-        and settings.ingestion_eos04_cutover_enabled
-        and is_ingestion_configured(settings)
+    enabled = (
+        settings.eos04_product_enabled and settings.ingestion_eos04_cutover_enabled
+        if source_id == _EOS04_SOURCE_ID
+        else settings.nisar_product_enabled and settings.ingestion_nisar_cutover_enabled
+        if source_id == _NISAR_SOURCE_ID
+        else False
     )
+    return enabled and is_ingestion_configured(settings)
 
 
 def _natural_source_payload(source_id: str) -> dict[str, Any] | None:
@@ -145,6 +149,12 @@ def _natural_dates(source_id: str) -> list[dict[str, Any]] | None:
         None,
     )
     dates: list[dict[str, Any]] = []
+    sensor = "NISAR S-SAR" if source_id == _NISAR_SOURCE_ID else "EOS-04 SAR"
+    provenance_label = (
+        "NISAR S-band · Gamma0 radar backscatter"
+        if source_id == _NISAR_SOURCE_ID
+        else "EOS-04 · radar backscatter"
+    )
     for index, value in enumerate(source_dates):
         dates.append(
             {
@@ -160,8 +170,8 @@ def _natural_dates(source_id: str) -> list[dict[str, Any]] | None:
                 "tileAvailable": bool(value.get("tileAvailable")),
                 "unavailableReason": value.get("unavailableReason"),
                 "metricsProvisional": False,
-                "sensor": "EOS-04 SAR",
-                "provenanceLabel": "EOS-04 · radar backscatter",
+                "sensor": sensor,
+                "provenanceLabel": provenance_label,
             }
         )
     return dates
@@ -287,9 +297,10 @@ async def get_sources() -> list[dict[str, Any]]:
         payload = _pipeline_source_payload(source_id)
         if payload:
             replaced.append(payload)
-    natural_payload = _natural_source_payload(_EOS04_SOURCE_ID)
-    if natural_payload and _EOS04_SOURCE_ID not in seen:
-        replaced.append(natural_payload)
+    for source_id in sorted(_NATURAL_SOURCE_IDS - seen):
+        natural_payload = _natural_source_payload(source_id)
+        if natural_payload:
+            replaced.append(natural_payload)
     return replaced
 
 
@@ -722,15 +733,18 @@ def _sar_display_band_position(
 ) -> int:
     """Resolve the backscatter band to render in grayscale.
 
-    Prefer VV when present (Sentinel-1, quad-pol NISAR); otherwise fall back to
-    the first backscatter band so single-/dual-pol products without VV (e.g.
-    EOS-04 SAR-MRS HH/HV) still render. SAR display is polarization-agnostic
-    grayscale backscatter and the href stays internal (proxied via the BFF).
+    NISAR prefers HH and otherwise uses the first registered polarization. Legacy
+    VV_GRAYSCALE sources retain their VV preference. The href remains internal.
     """
     band_names = [str(name) for name in assets.get("bandNames", [])]
+    preferred = "HH" if source_id == _NISAR_SOURCE_ID else "VV"
     for index, name in enumerate(band_names, start=1):
         normalized = name.strip().upper()
-        if normalized == "VV" or normalized.startswith("VV_") or normalized.startswith("VV-"):
+        if (
+            normalized == preferred
+            or normalized.startswith(f"{preferred}_")
+            or normalized.startswith(f"{preferred}-")
+        ):
             return index
     if band_names:
         return 1
@@ -947,7 +961,7 @@ async def get_display_mode_tile(
         return await _render_rgb_tile(source_id, acquisition_date, z, x, y)
     if normalized_mode == "FCC":
         return await _render_fcc_tile(source_id, acquisition_date, z, x, y)
-    if normalized_mode == "VV_GRAYSCALE":
+    if normalized_mode in {"VV_GRAYSCALE", "BACKSCATTER"}:
         return await _render_sar_vv_grayscale_tile(source_id, acquisition_date, z, x, y)
     if normalized_mode in catalog.supported_indices(source_id):
         return await _render_index_tile(source_id, acquisition_date, normalized_mode, z, x, y)

@@ -216,19 +216,23 @@ def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
         return None
     payload = catalog.source_payload(source_id)
     index_modes = _pipeline_index_modes(payload)
+    is_landsat = source_id == catalog.LANDSAT_SOURCE_ID
+    display_modes = ["RGB", *index_modes] if is_landsat else index_modes
     configured_default_mode = str(payload.get("defaultMapDisplayMode") or "")
     default_mode = (
-        configured_default_mode if configured_default_mode in index_modes else index_modes[0]
+        configured_default_mode
+        if configured_default_mode in display_modes
+        else display_modes[0]
     )
     payload.update(
         {
             "pipelineBacked": True,
-            "displayModes": index_modes,
+            "displayModes": display_modes,
             "defaultDisplayMode": default_mode,
-            "mapDisplayModes": index_modes,
+            "mapDisplayModes": display_modes,
             "defaultMapDisplayMode": default_mode,
-            "layerGroups": _pipeline_layer_groups(payload, index_modes),
-            "tileRouteMode": "field-overlay",
+            "layerGroups": _pipeline_layer_groups(payload, display_modes),
+            "tileRouteMode": "source-aware" if is_landsat else "field-overlay",
             "refreshPolicy": payload.get("refreshPolicy") or "Standalone ingestion pipeline.",
             "resolutionMeters": payload.get("resolutionMeters") or 10,
             "availabilityStatus": "active",
@@ -570,6 +574,23 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         date = next((d for d in dates if d["isLatestUsable"]), dates[0])
         acquisition_date = date["acquisitionDate"]
         display_mode = str(source["defaultDisplayMode"])
+        natural_date = None
+        if source_id == catalog.LANDSAT_SOURCE_ID:
+            response = get_natural_source_dates(
+                settings,
+                source_id=source_id,
+                aoi_id=settings.ingestion_aoi_id,
+                timeout_seconds=float(settings.ingestion_request_timeout_seconds),
+            )
+            natural_date = next(
+                (
+                    value
+                    for value in response.get("dates", [])
+                    if value.get("acquisitionDate") == acquisition_date
+                ),
+                None,
+            )
+        tile_available = bool(natural_date and natural_date.get("tileAvailable"))
         return {
             "sourceId": source_id,
             "acquisitionDate": acquisition_date,
@@ -580,8 +601,12 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
             "mapDisplayModes": source.get("mapDisplayModes", source["displayModes"]),
             "defaultMapDisplayMode": source.get("defaultMapDisplayMode", display_mode),
             "kind": source["kind"],
-            "tileUrlTemplate": None,
-            "bounds": None,
+            "tileUrlTemplate": (
+                f"/api/tiles/{source_id}/{acquisition_date}/RGB/{{z}}/{{x}}/{{y}}.png"
+                if tile_available
+                else None
+            ),
+            "bounds": natural_date.get("bounds") if natural_date else None,
             "minzoom": 8,
             "maxzoom": 14,
             "attribution": source["attribution"],
@@ -590,9 +615,15 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
             "cloudMaskedPercent": date.get("cloudMaskedPercent"),
             "coveragePercent": date.get("coveragePercent"),
             "metricsProvisional": bool(date.get("metricsProvisional", False)),
-            "tileAvailable": False,
-            "unavailableReason": None,
-            "tileRouteMode": "field-overlay",
+            "tileAvailable": tile_available,
+            "unavailableReason": (
+                natural_date.get("unavailableReason")
+                if natural_date
+                else None
+            ),
+            "tileRouteMode": (
+                "natural-pipeline" if tile_available else "field-overlay"
+            ),
             "pipelineBacked": True,
         }
     source = catalog.get_source(source_id)
@@ -930,6 +961,24 @@ async def get_display_mode_tile(
     source_id: str, acquisition_date: str, display_mode: str, z: int, x: int, y: int
 ) -> Response:
     """Display-mode-aware same-origin tile route."""
+    if (
+        source_id == catalog.LANDSAT_SOURCE_ID
+        and _requires_ingestion_pipeline(source_id)
+        and display_mode.upper() == "RGB"
+    ):
+        body, content_type = await anyio.to_thread.run_sync(
+            partial(
+                fetch_natural_source_tile,
+                settings,
+                source_id=source_id,
+                aoi_id=settings.ingestion_aoi_id,
+                acquisition_date=acquisition_date,
+                z=z,
+                x=x,
+                y=y,
+            )
+        )
+        return Response(content=body, media_type=content_type)
     if _uses_natural_pipeline(source_id):
         normalized_mode = display_mode.upper()
         source = _natural_source_payload(source_id) or catalog.source_payload(source_id)

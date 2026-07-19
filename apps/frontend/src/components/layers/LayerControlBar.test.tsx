@@ -22,6 +22,21 @@ const sources: Source[] = [
         metricsProvisional: true,
     },
     {
+        id: 'landsat-c2-l2',
+        label: 'Landsat 8/9 Collection 2 Level 2',
+        provider: 'Microsoft Planetary Computer / USGS',
+        kind: 'optical',
+        resolutionMeters: 30,
+        description: 'Landsat 8/9 harmonized 30 m surface reflectance.',
+        limitations: [
+            '30 m pixels can mix crop, soil, paths, and field boundaries in small plots.',
+            'NDRE and RECI are unavailable because Landsat OLI has no red-edge band.',
+        ],
+        displayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        defaultDisplayMode: 'NDVI',
+        supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+    },
+    {
         id: 'eos-04-sar-mrs-l2b',
         label: 'EOS-04 SAR MRS L2B',
         provider: 'ISRO/NRSC Bhoonidhi',
@@ -154,6 +169,26 @@ describe('LayerControlBar', () => {
         const sarTab = screen.getByTestId('source-tab-eos-04-sar-mrs-l2b');
         fireEvent.click(sarTab);
         expect(props.onSelectSource).toHaveBeenCalledWith('eos-04-sar-mrs-l2b');
+    });
+
+    it('shows the active Landsat resolution and red-edge limitations in the source popover', () => {
+        renderBar(
+            <LayerControlBar
+                { ...baseProps({
+                    activeSourceId: 'landsat-c2-l2',
+                    exportSourceId: 'landsat-c2-l2',
+                }) }
+            />,
+        );
+
+        fireEvent.click(screen.getByTestId('layer-source-trigger'));
+
+        expect(screen.getByTestId('active-source-details').textContent).toContain(
+            '30 m native pixels',
+        );
+        expect(screen.getByTestId('active-source-limitations').textContent).toContain(
+            'no red-edge band',
+        );
     });
 
     it('collapses the bar via the explicit collapse trigger', () => {

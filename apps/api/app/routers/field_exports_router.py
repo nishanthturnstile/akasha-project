@@ -25,6 +25,9 @@ from ..routers.analytics_router import (
     _field_statistics,
     _native_trend_response,
     _normalize_index,
+    _pipeline_statistics_response,
+    _pipeline_trend_response,
+    _uses_pipeline,
     _validate_range,
 )
 
@@ -91,6 +94,15 @@ def _statistics_for_export(
     index_type: str,
     cloud_mask: CloudMaskOptions,
 ):
+    if _uses_pipeline(source_id):
+        return _pipeline_statistics_response(
+            plot_id=plot_id,
+            plot=plot,
+            source_id=source_id,
+            acquisition_date=acquisition_date.isoformat(),
+            index_type=index_type,
+            cloud_mask=cloud_mask,
+        )
     return _field_statistics(
         plot_id=plot_id,
         plot=plot,
@@ -298,17 +310,29 @@ async def export_field_report_csv(
     plot = await _get_field_or_404(plot_id, user.id)
     index_type = _normalize_index(indexType)
     cloud_mask = CloudMaskOptions(clouds=clouds, cloud_shadows=cloudShadows, cirrus=cirrus)
-    response = await _run_blocking(
-        _native_trend_response,
-        plot_id=plot_id,
-        plot=plot,
-        source_id=sourceId,
-        index_type=index_type,
-        date_start=date_start,
-        date_end=date_end,
-        cloud_mask=cloud_mask,
-        reason="Native Akasha masked-raster report export is in use.",
-    )
+    if _uses_pipeline(sourceId):
+        response = await _run_blocking(
+            _pipeline_trend_response,
+            plot_id=plot_id,
+            plot=plot,
+            source_id=sourceId,
+            index_type=index_type,
+            date_start=date_start,
+            date_end=date_end,
+            cloud_mask=cloud_mask,
+        )
+    else:
+        response = await _run_blocking(
+            _native_trend_response,
+            plot_id=plot_id,
+            plot=plot,
+            source_id=sourceId,
+            index_type=index_type,
+            date_start=date_start,
+            date_end=date_end,
+            cloud_mask=cloud_mask,
+            reason="Native Akasha masked-raster report export is in use.",
+        )
 
     filename = f"{_safe_filename(str(plot.get('name') or plot_id))}_{index_type}_analytics.csv"
     return Response(

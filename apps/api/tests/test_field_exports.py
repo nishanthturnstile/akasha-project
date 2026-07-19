@@ -156,6 +156,61 @@ def test_report_csv_export_uses_native_trend_points(monkeypatch):
         assert leak not in r.text
 
 
+def test_pipeline_index_and_report_exports_use_pipeline_analytics(monkeypatch):
+    monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: _plot())
+    monkeypatch.setattr(
+        field_exports,
+        "_uses_pipeline",
+        lambda source_id: source_id == "landsat-c2-l2",
+    )
+    stats_calls: list[dict[str, Any]] = []
+    trend_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        field_exports,
+        "_pipeline_statistics_response",
+        lambda **kwargs: stats_calls.append(kwargs)
+        or field_analytics.FieldStatisticsResponse.model_validate(
+            {
+                "plotId": "plot-1",
+                "provider": "pipeline",
+                "scope": "field",
+                "cloudMask": {"clouds": True, "cloudShadows": True, "cirrus": True},
+                **_stats_response(),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        field_exports,
+        "_pipeline_trend_response",
+        lambda **kwargs: trend_calls.append(kwargs)
+        or field_analytics.FieldTrendResponse(
+            plotId="plot-1",
+            provider="pipeline",
+            scope="pipeline",
+            sourceId="landsat-c2-l2",
+            indexType="NDVI",
+            startDate="2026-06-01",
+            endDate="2026-06-30",
+            points=[],
+            metadata={"provider": "pipeline"},
+        ),
+    )
+
+    index_response = client.get(
+        "/api/fields/plot-1/exports/index"
+        "?format=csv&sourceId=landsat-c2-l2&acquisitionDate=2026-06-01&indexType=NDVI"
+    )
+    report_response = client.get(
+        "/api/fields/plot-1/exports/report.csv"
+        "?sourceId=landsat-c2-l2&indexType=NDVI&startDate=2026-06-01&endDate=2026-06-30"
+    )
+
+    assert index_response.status_code == 200
+    assert report_response.status_code == 200
+    assert stats_calls[0]["source_id"] == "landsat-c2-l2"
+    assert trend_calls[0]["source_id"] == "landsat-c2-l2"
+
+
 def test_index_export_missing_date_and_field_are_sanitized(monkeypatch):
     monkeypatch.setattr(field_exports.fields_repo, "get_field", lambda *_: None)
     missing = client.get("/api/fields/missing/exports/index?format=csv&acquisitionDate=2026-06-01")

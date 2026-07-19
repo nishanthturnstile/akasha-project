@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date as _date
 from datetime import timedelta
@@ -28,6 +29,7 @@ RESOURCESAT_LISS3_SOURCE_ID = "resourcesat-2a-liss3-boa"
 RESOURCESAT_AWIFS_SOURCE_ID = "resourcesat-2a-awifs-boa"
 RESOURCESAT_LISS4_SOURCE_ID = "resourcesat-2a-liss4-mx70-l2"
 EOS04_SAR_SOURCE_ID = "eos-04-sar-mrs-l2b"
+LANDSAT_SOURCE_ID = "landsat-c2-l2"
 RESOURCESAT_BOA_SOURCE_IDS = {
     RESOURCESAT_LISS3_SOURCE_ID,
     RESOURCESAT_AWIFS_SOURCE_ID,
@@ -159,6 +161,62 @@ _SOURCE_REGISTRY: dict[str, dict[str, Any]] = {
 
 _SOURCE_REGISTRY.update(
     {
+        LANDSAT_SOURCE_ID: {
+            "id": LANDSAT_SOURCE_ID,
+            "label": "Landsat 8/9 Collection 2 Level 2",
+            "provider": "USGS via Microsoft Planetary Computer",
+            "kind": "optical",
+            "collectionId": "landsat-c2-l2",
+            "expectedAssets": ["analytic", "mask"],
+            "supportedIndices": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+            "bandRoleMapping": {
+                "BLUE": "B2",
+                "GREEN": "B3",
+                "RED": "B4",
+                "NIR": "B5",
+                "SWIR1": "B6",
+                "SWIR2": "B7",
+            },
+            "maskAsset": "mask",
+            "maskMethod": "USGS Collection 2 QA_PIXEL and QA_RADSAT mask.",
+            "excludedMaskClasses": [0, 2, 3, 5],
+            "nodataPolicy": "selected_band_and_native_qa",
+            "displayModes": ["RGB", "NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+            "defaultDisplayMode": "RGB",
+            "mapDisplayModes": ["NDVI", "MSAVI", "NDMI", "NDWI_GREEN_NIR"],
+            "defaultMapDisplayMode": "NDVI",
+            "layerGroups": [
+                {"label": "Imagery", "modes": ["RGB"]},
+                {"label": "Vegetation Indices", "modes": ["NDVI", "MSAVI"]},
+                {"label": "Moisture Indices", "modes": ["NDMI"]},
+                {"label": "Water Index", "modes": ["NDWI_GREEN_NIR"]},
+            ],
+            "description": (
+                "Landsat 8/9 harmonized 30 m surface reflectance with native Collection 2 "
+                "cloud, shadow, snow, saturation, and water quality screening."
+            ),
+            "attribution": "USGS Landsat; Microsoft Planetary Computer",
+            "dateMetricsKind": "optical",
+            "defaultRescale": "0,0.4",
+            "tileRouteMode": "field-overlay",
+            "resolutionMeters": 30,
+            "analysisLevel": "field",
+            "revisitDays": 8,
+            "refreshPolicy": (
+                "Manual standalone-ingestion backfill; scheduling remains disabled until "
+                "real-scene staging validation passes."
+            ),
+            "limitations": [
+                "30 m pixels can mix crop, soil, paths, and field boundaries in small plots.",
+                "NDRE and RECI are unavailable because Landsat OLI has no red-edge band.",
+                "NDMI indicates canopy moisture sensitivity; it is not direct soil moisture.",
+                "Thermal surface temperature is outside the first Landsat release.",
+            ],
+            "availableMaskOptions": [],
+            "metricsProvisional": False,
+            "availabilityStatus": "gated",
+            "gatedReason": "Landsat remains hidden until real-scene staging gates pass.",
+        },
         "resourcesat-2a-awifs-boa": {
             "id": "resourcesat-2a-awifs-boa",
             "label": "ResourceSat-2A AWiFS BOA",
@@ -1302,6 +1360,7 @@ def resolve_best_resolution_source(
 _SOURCE_PRIORITY_MAP: dict[str, int] = {
     RESOURCESAT_LISS4_SOURCE_ID: 100,  # 5.8 m high-res field enhancement
     RESOURCESAT_LISS3_SOURCE_ID: 80,  # 24 m field-level production baseline
+    LANDSAT_SOURCE_ID: 60,  # 30 m native-QA fallback and historical coverage
     RESOURCESAT_AWIFS_SOURCE_ID: 20,  # 56 m regional (coarse)
 }
 _DEFAULT_SOURCE_PRIORITY: int = 10
@@ -1377,6 +1436,9 @@ def resolve_best_observation(
     field_geometry: dict[str, Any] | None = None,
     max_candidates: int = 10,
     window_days: int = 30,
+    source_ids: list[str] | None = None,
+    source_loader: Callable[[str], dict[str, Any]] | None = None,
+    date_loader: Callable[[str], list[dict[str, Any]]] | None = None,
 ) -> list[ObservationCandidate]:
     """Rank validated active observations across sources for best-observation selection.
 
@@ -1464,9 +1526,12 @@ def resolve_best_observation(
 
     candidates: list[ObservationCandidate] = []
 
-    for source_id in selectable_source_ids():
+    resolved_source_ids = source_ids if source_ids is not None else selectable_source_ids()
+    resolved_source_loader = source_loader or get_source
+    resolved_date_loader = date_loader or list_dates
+    for source_id in resolved_source_ids:
         try:
-            source = get_source(source_id)
+            source = resolved_source_loader(source_id)
         except Exception:  # noqa: BLE001
             continue
 
@@ -1499,7 +1564,7 @@ def resolve_best_observation(
         src_indices_list: list[str] = list(source.get("supportedIndices", []))
 
         try:
-            dates = list_dates(source_id)
+            dates = resolved_date_loader(source_id)
         except Exception:  # noqa: BLE001
             continue
 

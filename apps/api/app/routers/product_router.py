@@ -61,7 +61,11 @@ _RATE_BUCKETS: dict[str, list[float]] = {}
 logger = logging.getLogger("akasha.api.product")
 
 _PIPELINE_SOURCE_IDS = frozenset(
-    {catalog.SENTINEL_2_SOURCE_ID, *catalog.RESOURCESAT_BOA_SOURCE_IDS}
+    {
+        catalog.SENTINEL_2_SOURCE_ID,
+        catalog.LANDSAT_SOURCE_ID,
+        *catalog.RESOURCESAT_BOA_SOURCE_IDS,
+    }
 )
 _EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
 _NISAR_SOURCE_ID = "nisar-ssar-beta-gcov"
@@ -69,11 +73,19 @@ _NATURAL_SOURCE_IDS = frozenset({_EOS04_SOURCE_ID, _NISAR_SOURCE_ID})
 
 
 def _is_pipeline_source(source_id: str) -> bool:
-    return source_id == catalog.SENTINEL_2_SOURCE_ID or _requires_ingestion_pipeline(source_id)
+    return source_id in {catalog.SENTINEL_2_SOURCE_ID, catalog.LANDSAT_SOURCE_ID} or (
+        _requires_ingestion_pipeline(source_id)
+    )
 
 
 def _requires_ingestion_pipeline(source_id: str) -> bool:
-    """ResourceSat sources explicitly cut over from app-native COGs to ingestion."""
+    """Return whether a source is explicitly and safely cut over to ingestion."""
+    if source_id == catalog.LANDSAT_SOURCE_ID:
+        return (
+            settings.ingestion_landsat_cutover_enabled
+            and settings.landsat_product_enabled
+            and _pipeline_bridge_enabled()
+        )
     cutover_sources = {
         value.strip()
         for value in settings.ingestion_resourcesat_cutover_source_ids.split(",")
@@ -200,7 +212,7 @@ def _pipeline_layer_groups(payload: dict[str, Any], index_modes: list[str]) -> l
 def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
     if not _is_pipeline_source(source_id):
         return None
-    if not _requires_ingestion_pipeline(source_id) and not _pipeline_bridge_enabled():
+    if not _uses_ingestion_pipeline(source_id):
         return None
     payload = catalog.source_payload(source_id)
     index_modes = _pipeline_index_modes(payload)
@@ -219,6 +231,8 @@ def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
             "tileRouteMode": "field-overlay",
             "refreshPolicy": payload.get("refreshPolicy") or "Standalone ingestion pipeline.",
             "resolutionMeters": payload.get("resolutionMeters") or 10,
+            "availabilityStatus": "active",
+            "gatedReason": None,
         }
     )
     return payload
@@ -311,7 +325,7 @@ def _pipeline_dates(
 ) -> list[dict[str, Any]] | None:
     if not _is_pipeline_source(source_id):
         return None
-    if not _requires_ingestion_pipeline(source_id) and not _pipeline_bridge_enabled():
+    if not _uses_ingestion_pipeline(source_id):
         return None
     try:
         readiness = get_readiness(
@@ -379,6 +393,8 @@ def _pipeline_dates(
 
 
 def _sensor_label(source_id: str) -> str:
+    if source_id == catalog.LANDSAT_SOURCE_ID:
+        return "Landsat 8/9"
     if source_id == catalog.SENTINEL_2_SOURCE_ID:
         return "S2"
     if source_id == catalog.RESOURCESAT_LISS4_SOURCE_ID:

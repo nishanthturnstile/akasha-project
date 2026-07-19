@@ -72,7 +72,7 @@ def _index_statistics_model(stats: dict[str, Any]) -> IndexStatisticsModel:
         stddev=_float_or_none(stats.get("stdDev")),
         validPixelPercent=_float_or_default(stats.get("usablePixelPercentage")),
         cloudMaskedPercent=_float_or_default(stats.get("cloudPercentage")),
-        coveragePercent=0.0,
+        coveragePercent=_float_or_default(stats.get("fieldCoveragePercentage")),
     )
 
 
@@ -140,7 +140,7 @@ def field_index_to_trend_point(result: dict[str, Any]) -> FieldTrendPoint:
         stddev=_float_or_none(stats.get("stdDev")),
         valid_pixel_percent=_float_or_none(stats.get("usablePixelPercentage")),
         cloud_masked_percent=_float_or_none(stats.get("cloudPercentage")),
-        coverage_percent=0.0,
+        coverage_percent=_float_or_none(stats.get("fieldCoveragePercentage")),
         cloud_percent=_float_or_none(stats.get("cloudPercentage")),
         metrics_provisional=False,
     )

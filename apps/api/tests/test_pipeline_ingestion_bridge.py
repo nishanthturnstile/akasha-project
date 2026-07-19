@@ -82,6 +82,7 @@ def _available_result(
             "stdDev": 0.08,
             "usablePixelPercentage": 91.5,
             "cloudPercentage": 3.25,
+            "fieldCoveragePercentage": 98.75,
         },
         "resolution": {"displayMeters": display_meters},
         "selection": {"validPixelCount": 42, "coveragePixelCount": 50},
@@ -908,7 +909,7 @@ def test_statistics_uses_pipeline_adapter_and_no_signed_url_leaks(monkeypatch) -
     assert body["statistics"]["stddev"] == pytest.approx(0.08)
     assert body["statistics"]["validPixelPercent"] == pytest.approx(91.5)
     assert body["statistics"]["cloudMaskedPercent"] == pytest.approx(3.25)
-    assert body["statistics"]["coveragePercent"] == pytest.approx(0.0)
+    assert body["statistics"]["coveragePercent"] == pytest.approx(98.75)
     assert body["pixelCounts"]["validPixels"] == 42
     assert set(body["metadata"]) == {"provider", "scope", "queryId", "providerRoute", "versions"}
     _assert_no_leaks(body)

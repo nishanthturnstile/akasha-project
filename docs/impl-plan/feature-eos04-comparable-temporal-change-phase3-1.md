@@ -635,6 +635,12 @@ quantity, or yield impact. Crop-specific interpretation remains Phase 4.
 - requires field observations/scouting feedback, an approved generic policy version, false-alert
   review, and separate flag activation.
 
+**Deferred — 19 July 2026:** field scouting observations and feedback are not currently available.
+Gate 3F is therefore intentionally deferred, not failed or completed. EOS-04 neutral temporal
+evidence may remain available under the completed Gates 3A–3E, but scouting recommendations must
+remain disabled. Reopen Gate 3F when sufficiently dated, field-linked ground observations are
+available for false-alert and policy validation.
+
 Production rollout repeats the staging gates. A synthetic passing test never substitutes for a
 real-data gate.
 
@@ -683,5 +689,7 @@ Phase 3 engineering is complete when:
 9. Baseline UI only when the six-real-observation gate is met.
 10. Scouting policy as a separately approved activation.
 
-The next implementation task is the Gate 3F review using field observations and scouting feedback.
-It remains a separate approval and must not be inferred from the completed engineering gates.
+Gate 3F was deferred on 19 July 2026 because field observations and scouting feedback are not yet
+available. It remains a separate approval and must not be inferred from the completed engineering
+gates. Satellite integration work may proceed independently while the project waits for suitable
+ground observations.

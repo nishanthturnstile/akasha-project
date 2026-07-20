@@ -236,6 +236,33 @@ def create_season(
         )
 
 
+def _clamp_vegetation_cycle_dates(
+    session: Any,
+    season_id: uuid.UUID,
+    new_start: date | None,
+    new_end: date | None,
+    start_changed: bool,
+    end_changed: bool,
+) -> None:
+    if not start_changed and not end_changed:
+        return
+    cycles = (
+        session.query(VegetationCycle)
+        .filter(VegetationCycle.season_id == season_id)
+        .all()
+    )
+    modified = False
+    for vc in cycles:
+        if start_changed and new_start and vc.sowing_date and vc.sowing_date < new_start:
+            vc.sowing_date = new_start
+            modified = True
+        if end_changed and new_end and vc.harvesting_date and vc.harvesting_date > new_end:
+            vc.harvesting_date = new_end
+            modified = True
+    if modified:
+        session.flush()
+
+
 def update_season(
     season_id: str,
     user_id: str | None = None,
@@ -255,6 +282,9 @@ def update_season(
         if user_id is not None and season.user_id != _uuid(user_id):
             return None
 
+        old_start = season.start_date
+        old_end = season.end_date
+
         field_uuids = None
         if "fieldIds" in values:
             field_uuids = _normalize_field_ids(values["fieldIds"])
@@ -272,6 +302,16 @@ def update_season(
                     FieldSeason(id=uuid.uuid4(), season_id=season.season_id, field_id=field_uuid)
                 )
             session.flush()
+
+        season_uuid = _uuid(season_id)
+        _clamp_vegetation_cycle_dates(
+            session,
+            season_uuid,
+            season.start_date,
+            season.end_date,
+            start_changed="start_date" in values and values["start_date"] != old_start,
+            end_changed="end_date" in values and values["end_date"] != old_end,
+        )
 
         session.refresh(season)
         field_ids_result = _season_field_ids(session, season.user_id, season.season_id)

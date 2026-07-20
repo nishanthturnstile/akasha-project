@@ -51,6 +51,7 @@ export default function EditSeasonDialog({
   const [endDate, setEndDate] = useState(season.endDate ?? '');
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmSeasonEdit, setConfirmSeasonEdit] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string>(CUSTOM);
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -153,6 +154,14 @@ export default function EditSeasonDialog({
     || endDate !== initialSnapshot.endDate
     || JSON.stringify([...selectedFieldIds].sort()) !== JSON.stringify([...initialSnapshot.fieldIds].sort());
 
+  const hasVegData = useMemo(
+    () => allFields.some((f) => f.vegetationData?.some((vc) => vc.seasonId === season.id)),
+    [allFields, season.id],
+  );
+
+  const datesDirty = startDate !== initialSnapshot.startDate
+    || endDate !== initialSnapshot.endDate;
+
   const endDateMin = useMemo(() => {
     if (!startDate) return undefined;
     const d = new Date(startDate + 'T00:00:00');
@@ -201,11 +210,7 @@ export default function EditSeasonDialog({
     return removed.filter((f) => f.name.toLocaleLowerCase().includes(q));
   }, [allFields, removedFieldIds, removedSearch]);
 
-  const handleSave = () => {
-    if (!name.trim()) {
-      setError('Season name is required');
-      return;
-    }
+  const doSave = () => {
     setError(null);
     onSave?.(season.id, {
       name: name.trim(),
@@ -214,6 +219,18 @@ export default function EditSeasonDialog({
       fieldIds: selectedFieldIds,
     });
     onOpenChange(false);
+  };
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      setError('Season name is required');
+      return;
+    }
+    if (hasVegData && datesDirty) {
+      setConfirmSeasonEdit(true);
+      return;
+    }
+    doSave();
   };
 
   return (
@@ -486,6 +503,25 @@ export default function EditSeasonDialog({
             <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
             <AlertDialogAction className="cursor-pointer" onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
               Yes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
+
+      <AlertDialogRoot open={confirmSeasonEdit} onOpenChange={setConfirmSeasonEdit}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Edit season start/end dates</AlertDialogTitle>
+          <AlertDialogDescription>
+            This season already contains vegetation data.{'\n\n'}
+            Updating the season dates will automatically update the vegetation cycle start date and end date for all vegetation records that fall outside the new season duration.{'\n\n'}
+            Do you want to continue?
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmSeasonEdit(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction className="cursor-pointer" onClick={() => { setConfirmSeasonEdit(false); doSave(); }}>
+              Save
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

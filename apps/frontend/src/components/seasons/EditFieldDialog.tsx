@@ -107,21 +107,41 @@ function getOverlapRanges(
 function getBlockedRanges(
   currentCycleId: string,
   allCycles: VegetationCycleForm[],
+  seasonStartDate?: string,
   seasonEndDate?: string,
 ): DateRange[] {
   const idx = allCycles.findIndex((c) => c.id === currentCycleId);
-  if (idx === -1 || idx >= allCycles.length - 1 || !seasonEndDate) return [];
-  const next = allCycles[idx + 1];
-  if (!next.harvestingDate) return [];
-  const [y, m, d] = next.harvestingDate.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + 1);
-  const yy = dt.getFullYear();
-  const mm = String(dt.getMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getDate()).padStart(2, '0');
-  const start = `${yy}-${mm}-${dd}`;
-  if (start > seasonEndDate) return [];
-  return [{ start, end: seasonEndDate }];
+  if (idx === -1) return [];
+  const ranges: DateRange[] = [];
+
+  // Block from next cycle's end+1 to season end (for earlier cycles)
+  if (idx < allCycles.length - 1 && seasonEndDate) {
+    const next = allCycles[idx + 1];
+    const end = next.harvestingDate || next.plantingDate;
+    if (end) {
+      const [y, m, d] = end.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + 1);
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      const start = `${yy}-${mm}-${dd}`;
+      if (start <= seasonEndDate) {
+        ranges.push({ start, end: seasonEndDate });
+      }
+    }
+  }
+
+  // Block from season start to previous cycle's end (for later cycles)
+  if (idx > 0 && seasonStartDate) {
+    const prev = allCycles[idx - 1];
+    const end = prev.harvestingDate || prev.plantingDate;
+    if (end && end >= seasonStartDate) {
+      ranges.push({ start: seasonStartDate, end });
+    }
+  }
+
+  return ranges;
 }
 
 export default function EditFieldDialog({
@@ -885,8 +905,8 @@ function CycleCard({
 
   const overlapRanges = useMemo(() => getOverlapRanges(cycle.id, allCycles), [cycle.id, allCycles]);
   const blockedRanges = useMemo(
-    () => getBlockedRanges(cycle.id, allCycles, seasonEndDate),
-    [cycle.id, allCycles, seasonEndDate],
+    () => getBlockedRanges(cycle.id, allCycles, seasonStartDate, seasonEndDate),
+    [cycle.id, allCycles, seasonStartDate, seasonEndDate],
   );
 
   useEffect(() => {

@@ -132,9 +132,11 @@ export function AppShell() {
   const [seasonSheetOpen, setSeasonSheetOpen] = useState(false);
   const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
-  const [globalViewOpen, setGlobalViewOpen] = useState(
-    !isAdminIngestionRoute && !location.pathname.includes('/field/'),
-  );
+  // `globalViewOpen` lives in the shared mapViewContext (not local state) so
+  // that descendants like MapPage -- which needs to close Global View when
+  // the user clicks a field directly on the map -- can toggle the same
+  // single source of truth AppShell reads for its own rendering.
+  const initialGlobalViewOpen = !isAdminIngestionRoute && !location.pathname.includes('/field/');
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
@@ -143,7 +145,7 @@ export function AppShell() {
   const [utilityOpen, setUtilityOpen] = useState(false);
 
   const setGlobalViewMode = (isGlobalView: boolean) => {
-    setGlobalViewOpen(isGlobalView);
+    view.setGlobalViewOpen(isGlobalView);
     view.setOverlaysVisible(!isGlobalView);
   };
 
@@ -163,9 +165,10 @@ export function AppShell() {
   const updateSeason = useUpdateSeason();
   const fieldsQ = useFields();
 
-  // Sync overlaysVisible with initial globalViewOpen on mount (no lag frame after page refresh)
+  // Seed the shared globalViewOpen/overlaysVisible state on mount (no lag frame after page refresh)
   useEffect(() => {
-    view.setOverlaysVisible(!globalViewOpen);
+    view.setOverlaysVisible(!initialGlobalViewOpen);
+    view.setGlobalViewOpen(initialGlobalViewOpen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -248,7 +251,7 @@ export function AppShell() {
   const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
-  const showGlobalViewPanel = !isAdminIngestionRoute && globalViewOpen;
+  const showGlobalViewPanel = !isAdminIngestionRoute && view.globalViewOpen;
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
@@ -326,10 +329,10 @@ export function AppShell() {
 
   // When Global View closes, re-expand the active nav group so its dropdown
   // is open and the active item (e.g. Field Analytics) is visible/highlighted.
-  const [prevGlobalViewOpen, setPrevGlobalViewOpen] = useState(globalViewOpen);
-  if (globalViewOpen !== prevGlobalViewOpen) {
-    setPrevGlobalViewOpen(globalViewOpen);
-    if (!globalViewOpen && activeGroupLabel && !expandedGroups.has(activeGroupLabel)) {
+  const [prevGlobalViewOpen, setPrevGlobalViewOpen] = useState(view.globalViewOpen);
+  if (view.globalViewOpen !== prevGlobalViewOpen) {
+    setPrevGlobalViewOpen(view.globalViewOpen);
+    if (!view.globalViewOpen && activeGroupLabel && !expandedGroups.has(activeGroupLabel)) {
       setExpandedGroups(new Set([activeGroupLabel]));
     }
   }
@@ -398,7 +401,7 @@ export function AppShell() {
                       className={ ({ isActive }) =>
                         cn(
                           'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
-                          (item.globalView ? isActive && globalViewOpen : isActive) && 'bg-primary/15 text-foreground shadow-e1',
+                          (item.globalView ? isActive && view.globalViewOpen : isActive) && 'bg-primary/15 text-foreground shadow-e1',
                         )
                       }
                     >
@@ -759,8 +762,8 @@ export function AppShell() {
                                   cn(
                                     'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                                     item.globalView
-                                      ? isActive && globalViewOpen && 'text-primary font-semibold'
-                                      : isActive && !globalViewOpen && 'text-primary font-semibold',
+                                      ? isActive && view.globalViewOpen && 'text-primary font-semibold'
+                                      : isActive && !view.globalViewOpen && 'text-primary font-semibold',
                                   )
                                 }
                               >
@@ -824,8 +827,8 @@ export function AppShell() {
                               cn(
                                 'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                                 item.globalView
-                                  ? isActive && globalViewOpen && 'text-primary font-semibold'
-                                  : isActive && !globalViewOpen && 'text-primary font-semibold',
+                                  ? isActive && view.globalViewOpen && 'text-primary font-semibold'
+                                  : isActive && !view.globalViewOpen && 'text-primary font-semibold',
                               )
                             }
                           >

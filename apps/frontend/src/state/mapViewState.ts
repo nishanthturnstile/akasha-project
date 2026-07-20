@@ -53,6 +53,8 @@ export interface MapViewState {
     mapFullscreen: boolean;
     /** Timeline uses the best available observation resolver instead of one source's dates. */
     bestMode: boolean;
+    /** Mirrors AppShell's Global View mode so MapPage can render all season fields. */
+    globalViewOpen: boolean;
     /** Show the selected field-clipped radar evidence instead of the optical index overlay. */
     radarEvidenceVisible: boolean;
 }
@@ -84,6 +86,7 @@ export const initialMapViewState: MapViewState = {
     focusNonce: 0,
     mapFullscreen: true,
     bestMode: false,
+    globalViewOpen: false,
     radarEvidenceVisible: false,
 };
 
@@ -111,6 +114,7 @@ export interface MapViewContextValue extends MapViewState {
     setFocusNonce: (nonce: number) => void;
     setMapFullscreen: (fullscreen: boolean) => void;
     setBestMode: (enabled: boolean) => void;
+    setGlobalViewOpen: (open: boolean) => void;
     setRadarEvidenceVisible: (visible: boolean) => void;
 }
 

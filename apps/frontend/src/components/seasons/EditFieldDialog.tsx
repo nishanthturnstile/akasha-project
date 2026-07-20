@@ -286,6 +286,11 @@ export default function EditFieldDialog({
               },
             }),
             new TerraDrawSelectMode({
+              // See the matching comment in FieldDrawController.tsx: TerraDraw's
+              // default 40px vertex/midpoint hit-tolerance covers most of a
+              // modest-sized field's interior, making whole-shape dragging hard
+              // to trigger reliably. Tightened here to match.
+              pointerDistance: 20,
               styles: {
                 selectedPolygonColor: '#3b82f6',
                 selectedPolygonFillOpacity: 0.25,
@@ -295,6 +300,7 @@ export default function EditFieldDialog({
               flags: {
                 polygon: {
                   feature: {
+                    draggable: true,
                     coordinates: {
                       draggable: true,
                       midpoints: { draggable: true },

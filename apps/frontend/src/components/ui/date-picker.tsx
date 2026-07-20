@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -6,6 +7,11 @@ import { cn } from '@/lib/utils';
 export interface DatePickerHandle {
   open: () => void;
   setViewDate: (year: number, month: number) => void;
+}
+
+export interface DateRange {
+  start: string;
+  end: string;
 }
 
 interface DatePickerProps {
@@ -17,6 +23,9 @@ interface DatePickerProps {
   minDate?: string;
   maxDate?: string;
   onOpenChange?: (open: boolean) => void;
+  overlapRanges?: DateRange[];
+  blockedRanges?: DateRange[];
+  showLegend?: boolean;
 }
 
 const MONTHS = [
@@ -54,7 +63,11 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
   minDate,
   maxDate,
   onOpenChange,
+  overlapRanges,
+  blockedRanges,
+  showLegend = false,
 }, ref) {
+  const hasLegend = showLegend && (!!minDate || !!maxDate || (overlapRanges && overlapRanges.length > 0));
   const [open, setOpen] = React.useState(false);
 
   const handleOpenChange = React.useCallback((next: boolean) => {
@@ -103,6 +116,25 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
     return () => {
       window.removeEventListener('pointerdown', onPointer);
       window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Recalculate fixed position when opened, close on scroll
+  const [fixedStyle, setFixedStyle] = React.useState<React.CSSProperties>({});
+  React.useEffect(() => {
+    if (!open) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setFixedStyle({
+        top: rect.bottom + 4,
+        left: rect.left,
+        minWidth: Math.max(rect.width, 280),
+      });
+    }
+    const onScroll = () => setOpen(false);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [open]);
 
@@ -161,6 +193,22 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
     return false;
   };
 
+  const isOverlapDay = (day: number): boolean => {
+    if (!overlapRanges?.length) return false;
+    const month = String(viewDate.month + 1).padStart(2, '0');
+    const dayStr = String(day).padStart(2, '0');
+    const dateStr = `${viewDate.year}-${month}-${dayStr}`;
+    return overlapRanges.some((r) => dateStr >= r.start && dateStr <= r.end);
+  };
+
+  const isBlockedDay = (day: number): boolean => {
+    if (!blockedRanges?.length) return false;
+    const month = String(viewDate.month + 1).padStart(2, '0');
+    const dayStr = String(day).padStart(2, '0');
+    const dateStr = `${viewDate.year}-${month}-${dayStr}`;
+    return blockedRanges.some((r) => dateStr >= r.start && dateStr <= r.end);
+  };
+
   const handleSelect = (day: number) => {
     if (isDisabled(day)) return;
     const month = String(viewDate.month + 1).padStart(2, '0');
@@ -186,6 +234,149 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
     );
   };
 
+  const calendarContent = (
+    <div
+      ref={calendarRef}
+      role="dialog"
+      aria-label="Pick a date"
+      className="fixed z-[999] rounded-md border border-border bg-popover p-3 shadow-e2 pointer-events-auto"
+      style={fixedStyle}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          disabled={prevDisabled}
+          onClick={handlePrevMonth}
+          className={cn(
+            'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+            prevDisabled
+              ? 'cursor-not-allowed text-muted-foreground/30'
+              : 'hover:bg-accent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        <span className="text-sm font-medium text-foreground">
+          {MONTHS[viewDate.month]} {viewDate.year}
+        </span>
+        <button
+          type="button"
+          disabled={nextDisabled}
+          onClick={handleNextMonth}
+          className={cn(
+            'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+            nextDisabled
+              ? 'cursor-not-allowed text-muted-foreground/30'
+              : 'hover:bg-accent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+
+      {/* Day headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS.map((d) => (
+          <div
+            key={d}
+            className="text-center text-[11px] font-medium text-muted-foreground py-1"
+          >
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Days grid */}
+      <div className="grid grid-cols-7 gap-0.5">
+        {/* Previous month padding */}
+        {Array.from({ length: firstDay }, (_, i) => {
+          const day = prevMonthDays - firstDay + i + 1;
+          return (
+            <button
+              key={`prev-${i}`}
+              type="button"
+              disabled
+              className="h-8 w-8 rounded-md text-sm text-muted-foreground/40 flex items-center justify-center"
+            >
+              {day}
+            </button>
+          );
+        })}
+
+        {/* Current month days */}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const selected = isSelected(day);
+          const today = isToday(day);
+          const outsideSeason = isDisabled(day);
+          const overlap = !outsideSeason && isOverlapDay(day);
+          const blocked = !outsideSeason && !overlap && isBlockedDay(day);
+          return (
+            <button
+              key={day}
+              type="button"
+              disabled={outsideSeason || overlap || blocked}
+              onClick={() => handleSelect(day)}
+              className={cn(
+                dayButtonClass,
+                outsideSeason && 'cursor-not-allowed text-muted-foreground/40',
+                overlap && 'cursor-not-allowed text-amber-600/50',
+                blocked && 'cursor-not-allowed text-muted-foreground/40',
+                !outsideSeason && !overlap && !blocked && selected && 'bg-primary text-primary-foreground font-medium',
+                !outsideSeason && !overlap && !blocked && !selected && today && 'border border-primary/50 text-foreground font-medium',
+                !outsideSeason && !overlap && !blocked && !selected && !today && 'text-foreground hover:bg-accent',
+              )}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      {hasLegend && (
+        <div className="border-t border-border/60 pt-2 pb-1 space-y-1">
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="inline-block size-3 rounded-full bg-muted-foreground/40" />
+            Dates are outside your season
+          </div>
+          {overlapRanges && overlapRanges.length > 0 && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span className="inline-block size-3 rounded-full bg-amber-600/50" />
+              Dates overlap with another crop
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => handleOpenChange(false)}
+          className="h-7 px-2 text-[12px]"
+        >
+          Cancel
+        </Button>
+        {value && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onChange('');
+              handleOpenChange(false);
+            }}
+            className="h-7 px-2 text-[12px] text-destructive hover:text-destructive"
+          >
+            Clear
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div ref={wrapperRef} className={cn('relative', className)}>
       <button
@@ -204,127 +395,7 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
         <CalendarIcon className="size-4 text-muted-foreground" />
       </button>
 
-      {open && (
-        <div
-          ref={calendarRef}
-          role="dialog"
-          aria-label="Pick a date"
-          className="absolute left-0 top-full z-[999] mt-1 rounded-md border border-border bg-popover p-3 shadow-e2 pointer-events-auto"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-3">
-            <button
-              type="button"
-              disabled={prevDisabled}
-              onClick={handlePrevMonth}
-              className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-                prevDisabled
-                  ? 'cursor-not-allowed text-muted-foreground/30'
-                  : 'hover:bg-accent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <ChevronLeft className="size-4" />
-            </button>
-            <span className="text-sm font-medium text-foreground">
-              {MONTHS[viewDate.month]} {viewDate.year}
-            </span>
-            <button
-              type="button"
-              disabled={nextDisabled}
-              onClick={handleNextMonth}
-              className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-                nextDisabled
-                  ? 'cursor-not-allowed text-muted-foreground/30'
-                  : 'hover:bg-accent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <ChevronRight className="size-4" />
-            </button>
-          </div>
-
-          {/* Day headers */}
-          <div className="grid grid-cols-7 mb-1">
-            {DAYS.map((d) => (
-              <div
-                key={d}
-                className="text-center text-[11px] font-medium text-muted-foreground py-1"
-              >
-                {d}
-              </div>
-            ))}
-          </div>
-
-          {/* Days grid */}
-          <div className="grid grid-cols-7 gap-0.5">
-            {/* Previous month padding */}
-            {Array.from({ length: firstDay }, (_, i) => {
-              const day = prevMonthDays - firstDay + i + 1;
-              return (
-                <button
-                  key={`prev-${i}`}
-                  type="button"
-                  disabled
-                  className="h-8 w-8 rounded-md text-sm text-muted-foreground/40 flex items-center justify-center"
-                >
-                  {day}
-                </button>
-              );
-            })}
-
-            {/* Current month days */}
-            {Array.from({ length: daysInMonth }, (_, i) => {
-              const day = i + 1;
-              const selected = isSelected(day);
-              const today = isToday(day);
-              const disabled = isDisabled(day);
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => handleSelect(day)}
-                  className={cn(
-                    dayButtonClass,
-                    disabled && 'cursor-not-allowed text-muted-foreground/40',
-                    !disabled && selected && 'bg-primary text-primary-foreground font-medium',
-                    !disabled && !selected && today && 'border border-primary/50 text-foreground font-medium',
-                    !disabled && !selected && !today && 'text-foreground hover:bg-accent',
-                  )}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Footer */}
-          <div className="mt-3 flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleOpenChange(false)}
-              className="h-7 px-2 text-[12px]"
-            >
-              Cancel
-            </Button>
-            {value && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  onChange('');
-                  handleOpenChange(false);
-                }}
-                className="h-7 px-2 text-[12px] text-destructive hover:text-destructive"
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
+      {open ? (createPortal(calendarContent, document.body) as React.ReactNode) : null}
     </div>
   );
 });

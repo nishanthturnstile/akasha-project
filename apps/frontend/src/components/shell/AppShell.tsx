@@ -250,6 +250,15 @@ export function AppShell() {
 
   const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
 
+  // Reset currentSeasonId if the selected season was deleted
+  useEffect(() => {
+    if (!currentSeasonId) return;
+    const exists = sortedSeasons.some((s) => s.id === currentSeasonId);
+    if (!exists) {
+      setCurrentSeasonId(null);
+    }
+  }, [currentSeasonId, sortedSeasons]);
+
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
   const showGlobalViewPanel = !isAdminIngestionRoute && view.globalViewOpen;
 

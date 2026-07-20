@@ -701,6 +701,9 @@ class Crop(Base):
     )
     bbch_mode: Mapped[str | None] = mapped_column(Text)
     characteristic: Mapped[str | None] = mapped_column(Text)
+    has_variety: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
 
 class Variety(Base):

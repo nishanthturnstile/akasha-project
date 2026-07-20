@@ -17,6 +17,17 @@ import type { VegetationCycleCreate } from '@/types/api';
 const ONBOARDING_SEASON_KEY = 'akasha.onboarding.seasonId';
 const ONBOARDING_FIELD_KEY = 'akasha.onboarding.fieldId';
 
+function dateLabel(crop: { seedingTypeId?: number | null } | null): string {
+  switch (crop?.seedingTypeId) {
+    case 1: return 'Sowing date';
+    case 2: return 'Planting date';
+    case 3: return 'Planting date';
+    case 4: return 'Bud swelling start date';
+    case 5: return 'Bud sprouting start date';
+    default: return 'Start date';
+  }
+}
+
 /**
  * Onboarding step 3 – add crop details.
  * Shows crop name dropdown (populated from the /api/crops endpoint) and
@@ -33,6 +44,7 @@ export default function OnboardingStep3() {
 
   const [cropName, setCropName] = useState('');
   const [startDate, setStartDate] = useState('');
+  const selectedCrop = cropsQ.data?.find((c) => c.name === cropName) ?? null;
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -135,7 +147,7 @@ export default function OnboardingStep3() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Start date</label>
+            <label className="text-sm font-medium">{ dateLabel(selectedCrop) }</label>
             <DatePicker
               value={ startDate }
               onChange={ setStartDate }

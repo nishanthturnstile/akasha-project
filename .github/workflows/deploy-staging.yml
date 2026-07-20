@@ -146,6 +146,22 @@ jobs:
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
+      # Activated after the 2026-07-18 capped real-product acceptance run.
+      INGESTION_EOS04_CUTOVER_ENABLED: ${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}
+      EOS04_PRODUCT_ENABLED: ${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}
+      EOS04_FIELD_SUPPORT_ENABLED: ${{ vars.EOS04_FIELD_SUPPORT_ENABLED || 'true' }}
+      # Activated after the 2026-07-19 capped real-product acceptance run.
+      INGESTION_NISAR_CUTOVER_ENABLED: "true"
+      NISAR_PRODUCT_ENABLED: "true"
+      NISAR_FIELD_SUPPORT_ENABLED: "true"
+      # Landsat is exposed only after standalone readiness is enabled and populated.
+      INGESTION_LANDSAT_CUTOVER_ENABLED: "true"
+      LANDSAT_PRODUCT_ENABLED: "true"
+      LANDSAT_BEST_OPTICAL_ENABLED: "true"
+      # Gate 3D activated after the six-scene real-field acceptance run on 2026-07-18.
+      EOS04_TEMPORAL_CHANGE_ENABLED: ${{ vars.EOS04_TEMPORAL_CHANGE_ENABLED || 'true' }}
+      EOS04_TEMPORAL_SHADOW_ENABLED: ${{ vars.EOS04_TEMPORAL_SHADOW_ENABLED || 'false' }}
+      EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED: ${{ vars.EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED || 'false' }}
       ESRI_BASEMAP_USAGE_MODEL: ${{ vars.ESRI_BASEMAP_USAGE_MODEL || 'session' }}
     steps:
       - name: Check out repository
@@ -208,6 +224,78 @@ jobs:
               raise SystemExit(
                   "Staging ResourceSat cutover must contain exactly all three source IDs"
               )
+          eos04_cutover = os.environ.get(
+              "INGESTION_EOS04_CUTOVER_ENABLED", "false"
+          ).lower()
+          eos04_product = os.environ.get("EOS04_PRODUCT_ENABLED", "false").lower()
+          eos04_field_support = os.environ.get("EOS04_FIELD_SUPPORT_ENABLED", "false").lower()
+          nisar_cutover = os.environ.get("INGESTION_NISAR_CUTOVER_ENABLED", "false").lower()
+          nisar_product = os.environ.get("NISAR_PRODUCT_ENABLED", "false").lower()
+          nisar_field_support = os.environ.get("NISAR_FIELD_SUPPORT_ENABLED", "false").lower()
+          landsat_cutover = os.environ.get(
+              "INGESTION_LANDSAT_CUTOVER_ENABLED", "false"
+          ).lower()
+          landsat_product = os.environ.get("LANDSAT_PRODUCT_ENABLED", "false").lower()
+          landsat_best_optical = os.environ.get(
+              "LANDSAT_BEST_OPTICAL_ENABLED", "false"
+          ).lower()
+          eos04_temporal_change = os.environ.get("EOS04_TEMPORAL_CHANGE_ENABLED", "false").lower()
+          eos04_temporal_shadow = os.environ.get("EOS04_TEMPORAL_SHADOW_ENABLED", "false").lower()
+          eos04_temporal_recommendations = os.environ.get(
+              "EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED", "false"
+          ).lower()
+          for name, value in (
+              ("INGESTION_EOS04_CUTOVER_ENABLED", eos04_cutover),
+              ("EOS04_PRODUCT_ENABLED", eos04_product),
+              ("EOS04_FIELD_SUPPORT_ENABLED", eos04_field_support),
+              ("INGESTION_NISAR_CUTOVER_ENABLED", nisar_cutover),
+              ("NISAR_PRODUCT_ENABLED", nisar_product),
+              ("NISAR_FIELD_SUPPORT_ENABLED", nisar_field_support),
+              ("INGESTION_LANDSAT_CUTOVER_ENABLED", landsat_cutover),
+              ("LANDSAT_PRODUCT_ENABLED", landsat_product),
+              ("LANDSAT_BEST_OPTICAL_ENABLED", landsat_best_optical),
+              ("EOS04_TEMPORAL_CHANGE_ENABLED", eos04_temporal_change),
+              ("EOS04_TEMPORAL_SHADOW_ENABLED", eos04_temporal_shadow),
+              ("EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED", eos04_temporal_recommendations),
+          ):
+              if value not in {"true", "false"}:
+                  raise SystemExit(f"{name} must be true or false")
+          if eos04_product == "true" and eos04_cutover != "true":
+              raise SystemExit(
+                  "EOS04_PRODUCT_ENABLED=true requires "
+                  "INGESTION_EOS04_CUTOVER_ENABLED=true"
+              )
+          if eos04_field_support == "true" and eos04_cutover != "true":
+              raise SystemExit(
+                  "EOS04_FIELD_SUPPORT_ENABLED=true requires "
+                  "INGESTION_EOS04_CUTOVER_ENABLED=true"
+              )
+          if eos04_temporal_change == "true" and eos04_field_support != "true":
+              raise SystemExit(
+                  "EOS04_TEMPORAL_CHANGE_ENABLED=true requires EOS04_FIELD_SUPPORT_ENABLED=true"
+              )
+          if nisar_product == "true" and nisar_cutover != "true":
+              raise SystemExit(
+                  "NISAR_PRODUCT_ENABLED=true requires INGESTION_NISAR_CUTOVER_ENABLED=true"
+              )
+          if nisar_field_support == "true" and nisar_cutover != "true":
+              raise SystemExit(
+                  "NISAR_FIELD_SUPPORT_ENABLED=true requires INGESTION_NISAR_CUTOVER_ENABLED=true"
+              )
+          if landsat_product == "true" and landsat_cutover != "true":
+              raise SystemExit(
+                  "LANDSAT_PRODUCT_ENABLED=true requires "
+                  "INGESTION_LANDSAT_CUTOVER_ENABLED=true"
+              )
+          if landsat_best_optical == "true" and landsat_product != "true":
+              raise SystemExit(
+                  "LANDSAT_BEST_OPTICAL_ENABLED=true requires LANDSAT_PRODUCT_ENABLED=true"
+              )
+          if eos04_temporal_recommendations == "true" and eos04_temporal_change != "true":
+              raise SystemExit(
+                  "EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED=true requires "
+                  "EOS04_TEMPORAL_CHANGE_ENABLED=true"
+              )
           esri_usage_model = os.environ.get("ESRI_BASEMAP_USAGE_MODEL", "session").lower()
           if esri_usage_model not in {"session", "tile"}:
               raise SystemExit("ESRI_BASEMAP_USAGE_MODEL must be session or tile")
@@ -224,6 +312,27 @@ jobs:
           text = text.replace(
               "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}",
               ",".join(sorted(resourcesat_sources)),
+          )
+          text = text.replace(
+              "${INGESTION_EOS04_CUTOVER_ENABLED:-false}", eos04_cutover
+          )
+          text = text.replace("${EOS04_PRODUCT_ENABLED:-false}", eos04_product)
+          text = text.replace("${EOS04_FIELD_SUPPORT_ENABLED:-false}", eos04_field_support)
+          text = text.replace("${INGESTION_NISAR_CUTOVER_ENABLED:-false}", nisar_cutover)
+          text = text.replace("${NISAR_PRODUCT_ENABLED:-false}", nisar_product)
+          text = text.replace("${NISAR_FIELD_SUPPORT_ENABLED:-false}", nisar_field_support)
+          text = text.replace(
+              "${INGESTION_LANDSAT_CUTOVER_ENABLED:-false}", landsat_cutover
+          )
+          text = text.replace("${LANDSAT_PRODUCT_ENABLED:-false}", landsat_product)
+          text = text.replace(
+              "${LANDSAT_BEST_OPTICAL_ENABLED:-false}", landsat_best_optical
+          )
+          text = text.replace("${EOS04_TEMPORAL_CHANGE_ENABLED:-false}", eos04_temporal_change)
+          text = text.replace("${EOS04_TEMPORAL_SHADOW_ENABLED:-false}", eos04_temporal_shadow)
+          text = text.replace(
+              "${EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED:-false}",
+              eos04_temporal_recommendations,
           )
           text = text.replace("${ESRI_BASEMAP_USAGE_MODEL:-session}", esri_usage_model)
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
@@ -245,7 +354,6 @@ jobs:
           import base64
           import json
           import os
-          import urllib.parse
           import urllib.request
 
           api_url = os.environ["COOLIFY_API_URL"].rstrip("/")
@@ -265,18 +373,6 @@ jobs:
               headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
           )
           with urllib.request.urlopen(req, timeout=60) as response:  # noqa: S310
-              print(response.status, response.read().decode(errors="replace"))
-
-          deploy_query = urllib.parse.urlencode(
-              {"uuid": service_uuid, "force": "true"}
-          )
-          deploy_req = urllib.request.Request(
-              f"{api_url}/deploy?{deploy_query}",
-              data=b"",
-              method="POST",
-              headers={"Authorization": f"Bearer {token}"},
-          )
-          with urllib.request.urlopen(deploy_req, timeout=60) as response:  # noqa: S310
               print(response.status, response.read().decode(errors="replace"))
           PY
 

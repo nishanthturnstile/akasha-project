@@ -94,6 +94,7 @@ export interface PredefinedSeason {
 export type SourceKind = 'optical' | 'sar' | 'context' | 'archive';
 export type SourceAnalysisLevel = 'field' | 'regional' | 'context' | 'archive';
 export type SourceAvailabilityStatus = 'active' | 'gated';
+export type SourceProductRole = 'primary' | 'support' | 'advanced';
 
 /** EOS-style grouped LAYER picker: a labelled category of display modes. */
 export interface LayerGroup {
@@ -106,6 +107,7 @@ export interface Source {
   label: string;
   provider: string;
   kind?: SourceKind;
+  productRole?: SourceProductRole;
   displayModes?: string[];
   defaultDisplayMode?: string;
   mapDisplayModes?: string[];
@@ -513,6 +515,8 @@ export interface SceneDate {
   usablePixelPercent: number | null;
   cloudMaskedPercent: number | null;
   coveragePercent: number | null;
+  shadowPercent?: number | null;
+  obscuredPercent?: number | null;
   isLatestUsable: boolean;
   metricsProvisional: boolean;
   tileAvailable: boolean;
@@ -805,6 +809,106 @@ export interface FieldStatisticsRequest {
   indexType: string;
   cloudMask?: CloudMaskOptions;
   preferHighRes?: boolean;
+}
+
+export interface FieldMonitoringEvidence {
+  fieldId: string;
+  targetDate: string;
+  optical: {
+    status: 'usable' | 'quality_limited' | 'stale' | 'unavailable';
+    sourceId: string;
+    indexType: string;
+    latestCandidateDate: string | null;
+    latestQualifyingDate: string | null;
+    ageDays: number | null;
+    staleAfterDays: number;
+    requirements: {
+      minimumCoveragePercent: number;
+      minimumUsablePixelPercent: number;
+      maximumCombinedCloudShadowPercent: number;
+    };
+  };
+  radar: {
+    status: 'NOT_REQUESTED' | 'DISABLED' | 'AVAILABLE' | 'UNAVAILABLE';
+    sourceId: string;
+    triggered: boolean;
+    triggerReason: string | null;
+    reason?: string | null;
+    reasonCode?: string | null;
+    acquisitionDate?: string;
+    daysFromTarget?: number;
+    coveragePercent?: number;
+    polarizations?: string[];
+    displayedPolarization?: string;
+    bands?: Array<{
+      polarization: string;
+      mean: number | null;
+      median: number | null;
+      stdDev: number | null;
+      validPixelPercent: number;
+      unit: 'dB';
+    }>;
+    features?: Record<string, number>;
+    quality?: { qualified: boolean; confidence: 'none' | 'low' | 'medium' | 'high'; warnings: string[] };
+    provenance?: Record<string, unknown>;
+    overlayUrl?: string;
+    selection?: {
+      policyVersion: 'radar-support-selection-v1';
+      evaluatedSourceIds: string[];
+      qualifiedSourceIds: string[];
+      selectedSourceId: string | null;
+      rules?: string[];
+    };
+    comparison?: {
+      status: 'AVAILABLE' | 'INSUFFICIENT_BASELINE' | 'DEGENERATE_BASELINE' | 'NO_COMPARABLE_HISTORY' | 'METADATA_INCOMPLETE';
+      policyVersion?: string | null;
+      currentKeyHash?: string | null;
+      previousComparableDate?: string | null;
+      comparableObservationCount: number;
+      excludedObservationCount: number;
+      exclusions?: Array<{ acquisitionDate: string; reasonCodes: string[] }>;
+    };
+    history?: Array<{
+      acquisitionDate: string;
+      coveragePercent: number;
+      validPixelCount: number;
+      fieldPixelCount: number;
+      bands: Array<{
+        polarization: string;
+        median: number | null;
+        mean: number | null;
+        validPixelPercent: number;
+        unit: 'dB';
+      }>;
+      features: Record<string, number>;
+      comparableToCurrent: true;
+    }>;
+    change?: {
+      status: 'AVAILABLE' | 'UNAVAILABLE';
+      referenceDate?: string | null;
+      bands: Array<{
+        polarization: string;
+        currentMedianDb: number;
+        referenceMedianDb: number;
+        medianDeltaDb: number;
+      }>;
+      features: Record<string, number>;
+    };
+    baseline?: {
+      status: 'AVAILABLE' | 'INSUFFICIENT_OBSERVATIONS' | 'DEGENERATE_BASELINE';
+      requiredPriorObservations: number;
+      priorObservationCount: number;
+      windowStart?: string | null;
+      windowEnd?: string | null;
+      bands: Array<{
+        polarization: string;
+        currentValue: number;
+        baselineMedian: number;
+        mad: number;
+        robustDeviation: number | null;
+      }>;
+    };
+  };
 }
 
 export interface FieldStatisticsResponse {

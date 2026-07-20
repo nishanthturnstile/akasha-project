@@ -146,11 +146,14 @@ def test_next_expected_acquisition_omits_invalid_or_unknown_cadence(
     latest: str | None,
     revisit_days: int | None,
 ) -> None:
-    assert product_router._next_expected_acquisition_date(
-        latest,
-        revisit_days,
-        today=date(2026, 7, 14),
-    ) is None
+    assert (
+        product_router._next_expected_acquisition_date(
+            latest,
+            revisit_days,
+            today=date(2026, 7, 14),
+        )
+        is None
+    )
 
 
 def test_native_default_layer_projects_from_newest_source_date_not_older_usable(
@@ -176,8 +179,10 @@ def test_native_default_layer_projects_from_newest_source_date_not_older_usable(
     monkeypatch.setattr(
         product_router,
         "_expected_acquisition_payload",
-        lambda _source, latest: projection_bases.append(latest)
-        or {"revisitDays": 24, "nextExpectedAcquisitionDate": "2026-07-12"},
+        lambda _source, latest: (
+            projection_bases.append(latest)
+            or {"revisitDays": 24, "nextExpectedAcquisitionDate": "2026-07-12"}
+        ),
     )
 
     payload = asyncio.run(product_router.get_default_layer(RESOURCESAT_LISS3_SOURCE_ID))
@@ -211,6 +216,7 @@ def test_eos04_source_payload_is_display_only_sar_contract() -> None:
     eos04 = catalog.source_payload("eos-04-sar-mrs-l2b")
 
     assert eos04["kind"] == "sar"
+    assert eos04["productRole"] == "support"
     assert eos04["availabilityStatus"] == "gated"
     assert eos04["expectedAssets"] == ["backscatter"]
     assert eos04["supportedIndices"] == []

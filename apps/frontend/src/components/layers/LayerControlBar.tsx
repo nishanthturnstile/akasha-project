@@ -66,7 +66,7 @@ interface PopoverButtonProps {
 const POPOVER_SAFE_TOP_PX = 96;
 const POPOVER_GAP_PX = 8;
 const POPOVER_MIN_HEIGHT_PX = 96;
-const POPOVER_MAX_HEIGHT_PX = 224;
+const POPOVER_MAX_HEIGHT_PX = 480;
 
 /** Lightweight click-outside-closing popover. Avoids pulling in a new Radix dep. */
 function PopoverButton({
@@ -366,11 +366,49 @@ export function LayerControlBar({
                         Source
                     </p>
                     { sources && sources.length > 0 ? (
-                        <SourceSelector
-                            sources={ sources }
-                            value={ activeSourceId }
-                            onChange={ onSelectSource }
-                        />
+                        <div className="flex flex-col gap-3">
+                            <SourceSelector
+                                sources={ sources }
+                                value={ activeSourceId }
+                                onChange={ onSelectSource }
+                            />
+                            { activeSource && (
+                                <div
+                                    className="flex flex-col gap-2 border-t border-border/60 pt-2 text-[12px]"
+                                    data-testid="active-source-details"
+                                >
+                                    <p className="font-semibold text-foreground">
+                                        { activeSource.label }
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                        { [
+                                            activeSource.provider,
+                                            activeSource.resolutionMeters != null
+                                                ? `${activeSource.resolutionMeters} m native pixels`
+                                                : null,
+                                        ].filter(Boolean).join(' · ') }
+                                    </p>
+                                    { activeSource.description && (
+                                        <p className="leading-4 text-muted-foreground">
+                                            { activeSource.description }
+                                        </p>
+                                    ) }
+                                    { (activeSource.limitations?.length ?? 0) > 0 && (
+                                        <div
+                                            className="rounded-md border border-border/60 bg-card/35 px-2.5 py-2"
+                                            data-testid="active-source-limitations"
+                                        >
+                                            <p className="font-semibold text-foreground">Limitations</p>
+                                            <ul className="mt-1 list-disc space-y-1 pl-4 leading-4 text-muted-foreground">
+                                                { activeSource.limitations?.map((limitation) => (
+                                                    <li key={ limitation }>{ limitation }</li>
+                                                )) }
+                                            </ul>
+                                        </div>
+                                    ) }
+                                </div>
+                            ) }
+                        </div>
                     ) : (
                         <p className="text-[12px] text-muted-foreground">No sources available.</p>
                     ) }

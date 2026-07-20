@@ -142,6 +142,7 @@ function rampFor(displayMode: string, sourceKind?: SourceKind): RampSpec | null 
             return NDWI_RAMP;
         case 'VV_GRAYSCALE':
         case 'VH_GRAYSCALE':
+        case 'BACKSCATTER':
             return SAR_RAMP;
         case 'FCC':
         case 'FALSE_COLOR':

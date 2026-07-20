@@ -22,9 +22,12 @@ T = TypeVar("T")
 
 FIELD_INDEX_PATH = "/api/v1/analytics/field-index"
 FIELD_DATES_PATH = "/api/v1/analytics/field-dates"
+FIELD_SAR_PATH = "/api/v1/analytics/field-sar"
 FIELD_DATES_MAX_CLOUD_PERCENTAGE = 20.0
 FIELD_DATES_MAX_BATCH_SIZE = 64
 READINESS_PATH = "/api/v1/analytics/readiness"
+SOURCE_DATES_PATH = "/api/v1/sources/{source_id}/dates"
+SOURCE_TILE_PATH = "/api/v1/sources/{source_id}/dates/{acquisition_date}/tiles/{z}/{x}/{y}.png"
 MAX_RETRY_AFTER_SECONDS = 30
 _POINT_CACHE_TTL_SECONDS = 60.0
 _FIELD_INDEX_POINT_CACHE: dict[tuple[str, str, str, str], tuple[float, str, str]] = {}
@@ -122,6 +125,9 @@ class FieldDateAvailability(ApiModel):
         ge=0,
         le=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
     )
+    field_coverage_percentage: float | None = Field(default=None, ge=0, le=100)
+    shadow_percentage: float | None = Field(default=None, ge=0, le=100)
+    obscured_percentage: float | None = Field(default=None, ge=0, le=100)
     valid_pixel_count: int = Field(default=0, ge=0)
     reason: str | None = None
 
@@ -132,14 +138,28 @@ class FieldDateAvailability(ApiModel):
                 raise ValueError("available field dates must select the exact acquisition date")
             if self.usable_pixel_percentage is None or self.valid_pixel_count <= 0:
                 raise ValueError("available field dates require usable pixels")
-            if self.cloud_percentage is None:
-                raise ValueError("available field dates require cloud percentage")
+            if any(
+                value is None
+                for value in (
+                    self.cloud_percentage,
+                    self.field_coverage_percentage,
+                    self.shadow_percentage,
+                    self.obscured_percentage,
+                )
+            ):
+                raise ValueError("available field dates require field quality percentages")
             if self.reason is not None:
                 raise ValueError("available field dates cannot include an unavailable reason")
             return self
         if self.selected_scene_date is not None or self.usable_pixel_percentage is not None:
             raise ValueError("unavailable field dates cannot include selected-scene metrics")
-        if self.cloud_percentage is not None or self.valid_pixel_count != 0:
+        quality_values = (
+            self.cloud_percentage,
+            self.field_coverage_percentage,
+            self.shadow_percentage,
+            self.obscured_percentage,
+        )
+        if any(value is not None for value in quality_values) or self.valid_pixel_count != 0:
             raise ValueError("unavailable field dates cannot include raster metrics")
         if not self.reason or not self.reason.strip():
             raise ValueError("unavailable field dates require a reason")
@@ -150,6 +170,148 @@ class FieldDatesResponse(ApiModel):
     source_id: str
     index: str
     dates: list[FieldDateAvailability] = Field(default_factory=list)
+
+
+class FieldSarRequest(ApiModel):
+    geometry: dict[str, Any]
+    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"] = (
+        "eos-04-sar-mrs-l2b"
+    )
+    crs: Literal["EPSG:4326"] = "EPSG:4326"
+    field_id: str
+    target_date: date
+    window_days: int = Field(default=21, ge=1, le=31)
+    minimum_coverage_percent: float = Field(default=95.0, ge=0, le=100)
+    include_history: bool = False
+    history_lookback_days: int = Field(default=180, ge=1, le=365)
+    maximum_history_observations: int = Field(default=8, ge=1, le=12)
+    comparison_policy_version: Literal["eos04-comparability-v1"] = (
+        "eos04-comparability-v1"
+    )
+    minimum_baseline_observations: int = Field(default=5, ge=3, le=12)
+
+
+class FieldSarBandStatistics(ApiModel):
+    polarization: str
+    min: float | None = None
+    max: float | None = None
+    mean: float | None = None
+    median: float | None = None
+    std_dev: float | None = None
+    p10: float | None = None
+    p25: float | None = None
+    p75: float | None = None
+    p90: float | None = None
+    valid_pixel_count: int = Field(default=0, ge=0)
+    valid_pixel_percent: float = Field(default=0, ge=0, le=100)
+    unit: Literal["dB"] = "dB"
+
+
+class FieldSarQuality(ApiModel):
+    qualified: bool
+    confidence: Literal["none", "low", "medium", "high"]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class FieldSarHistoryObservation(ApiModel):
+    acquisition_date: date
+    coverage_percent: float = Field(ge=0, le=100)
+    valid_pixel_count: int = Field(ge=1)
+    field_pixel_count: int = Field(ge=1)
+    bands: list[FieldSarBandStatistics]
+    features: dict[str, float] = Field(default_factory=dict)
+    quality: dict[str, Any] = Field(default_factory=dict)
+    comparable_to_current: bool
+
+
+class FieldSarComparisonExclusion(ApiModel):
+    acquisition_date: date
+    reason_codes: list[str]
+
+
+class FieldSarComparison(ApiModel):
+    status: Literal[
+        "AVAILABLE",
+        "INSUFFICIENT_BASELINE",
+        "DEGENERATE_BASELINE",
+        "NO_COMPARABLE_HISTORY",
+        "METADATA_INCOMPLETE",
+    ]
+    policy_version: str | None = None
+    current_key_hash: str | None = None
+    previous_comparable_date: date | None = None
+    comparable_observation_count: int = Field(ge=1)
+    excluded_observation_count: int = Field(ge=0)
+    exclusions: list[FieldSarComparisonExclusion] = Field(default_factory=list)
+
+
+class FieldSarChange(ApiModel):
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    reference_date: date | None = None
+    bands: list[dict[str, Any]] = Field(default_factory=list)
+    features: dict[str, float] = Field(default_factory=dict)
+
+
+class FieldSarBaseline(ApiModel):
+    status: Literal["AVAILABLE", "INSUFFICIENT_OBSERVATIONS", "DEGENERATE_BASELINE"]
+    required_prior_observations: int = Field(ge=3)
+    prior_observation_count: int = Field(ge=0)
+    window_start: date | None = None
+    window_end: date | None = None
+    bands: list[dict[str, Any]] = Field(default_factory=list)
+    features: dict[str, dict[str, float | None]] = Field(default_factory=dict)
+
+
+class FieldSarAvailableResponse(ApiModel):
+    status: Literal["AVAILABLE"]
+    query_id: str
+    field_id: str | None = None
+    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"]
+    requested_date: date
+    acquisition_date: date
+    days_from_target: int
+    coverage_percent: float = Field(ge=0, le=100)
+    valid_pixel_count: int = Field(ge=1)
+    field_pixel_count: int = Field(ge=1)
+    polarizations: list[str]
+    displayed_polarization: str
+    bands: list[FieldSarBandStatistics]
+    features: dict[str, float] = Field(default_factory=dict)
+    quality: FieldSarQuality
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    overlay_url: str
+    comparison: FieldSarComparison | None = None
+    history: list[FieldSarHistoryObservation] = Field(default_factory=list)
+    change: FieldSarChange | None = None
+    baseline: FieldSarBaseline | None = None
+
+
+class FieldSarUnavailableResponse(ApiModel):
+    status: Literal["UNAVAILABLE"]
+    field_id: str | None = None
+    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"]
+    requested_date: date
+    reason_code: Literal["no_scene", "no_overlap", "low_coverage", "processing_unavailable"]
+    reason: str
+
+
+FieldSarResponse = FieldSarAvailableResponse | FieldSarUnavailableResponse
+
+
+class NaturalSourceDate(ApiModel):
+    acquisition_date: date
+    datetime: datetime
+    tile_available: bool
+    scene_count: int = Field(ge=1)
+    bounds: list[float] | None = None
+    polarizations: list[str] = Field(default_factory=list)
+    unavailable_reason: str | None = None
+
+
+class NaturalSourceDatesResponse(ApiModel):
+    source_id: str
+    aoi_id: str
+    dates: list[NaturalSourceDate] = Field(default_factory=list)
 
 
 class Resolution(ApiModel):
@@ -172,6 +334,9 @@ class FieldIndexStatistics(ApiModel):
     std_dev: float | None = None
     usable_pixel_percentage: float | None = None
     cloud_percentage: float | None = None
+    field_coverage_percentage: float | None = None
+    shadow_percentage: float | None = None
+    obscured_percentage: float | None = None
 
 
 class ClassStatistic(ApiModel):
@@ -433,6 +598,30 @@ class IngestionClient:
             )
         return response
 
+    def field_sar(
+        self,
+        request: FieldSarRequest | dict[str, Any],
+        *,
+        request_id: str | None = None,
+    ) -> FieldSarResponse:
+        payload = FieldSarRequest.model_validate(request)
+        data = self._request_json(
+            "POST",
+            FIELD_SAR_PATH,
+            json=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
+            request_id=request_id,
+        )
+        status = str(data.get("status", "")).upper() if isinstance(data, dict) else ""
+        model = FieldSarAvailableResponse if status == "AVAILABLE" else FieldSarUnavailableResponse
+        if status not in {"AVAILABLE", "UNAVAILABLE"}:
+            raise self._invalid_response("Ingestion returned an invalid field-SAR status.")
+        try:
+            return model.model_validate(data)
+        except ValidationError as exc:
+            raise self._invalid_response(
+                "Ingestion returned an invalid field-SAR response."
+            ) from exc
+
     def readiness(
         self,
         *,
@@ -455,6 +644,55 @@ class IngestionClient:
             raise self._invalid_response(
                 "Ingestion returned an invalid readiness response."
             ) from exc
+
+    def natural_source_dates(
+        self,
+        *,
+        source_id: str,
+        aoi_id: str,
+        request_id: str | None = None,
+    ) -> NaturalSourceDatesResponse:
+        data = self._request_json(
+            "GET",
+            SOURCE_DATES_PATH.format(source_id=urllib.parse.quote(source_id, safe="")),
+            params={"aoiId": aoi_id},
+            request_id=request_id,
+        )
+        try:
+            response = NaturalSourceDatesResponse.model_validate(data)
+        except ValidationError as exc:
+            raise self._invalid_response(
+                "Ingestion returned an invalid natural-source dates response."
+            ) from exc
+        if response.source_id != source_id or response.aoi_id != aoi_id:
+            raise self._invalid_response(
+                "Ingestion returned natural-source dates for an unexpected request."
+            )
+        return response
+
+    def natural_source_tile(
+        self,
+        *,
+        source_id: str,
+        aoi_id: str,
+        acquisition_date: str,
+        z: int,
+        x: int,
+        y: int,
+        request_id: str | None = None,
+    ) -> tuple[bytes, str]:
+        path = SOURCE_TILE_PATH.format(
+            source_id=urllib.parse.quote(source_id, safe=""),
+            acquisition_date=urllib.parse.quote(acquisition_date, safe=""),
+            z=z,
+            x=x,
+            y=y,
+        )
+        return self._request_binary_path(
+            path,
+            params={"aoiId": aoi_id},
+            request_id=request_id,
+        )
 
     def fetch_binary(
         self,
@@ -549,6 +787,46 @@ class IngestionClient:
             raise self._error_from_http_status(response.status_code, body, response.headers)
 
         return response
+
+    def _request_binary_path(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> tuple[bytes, str]:
+        self._ensure_configured()
+        url = f"{self.api_url.rstrip('/')}{path}"
+        headers = {"X-API-Key": self.api_key, "Accept": "image/png"}
+        if request_id:
+            headers["X-Request-ID"] = request_id
+        try:
+            response = self._send("GET", url, headers=headers, json=None, params=params)
+        except httpx.TimeoutException as exc:
+            raise IngestionClientError(
+                "PIPELINE_UPSTREAM_TIMEOUT",
+                "Ingestion pipeline request timed out.",
+                status_code=504,
+                retryable=True,
+                details={"timeoutSeconds": self.timeout_seconds},
+                api_key=self.api_key,
+            ) from exc
+        except httpx.TransportError as exc:
+            raise IngestionClientError(
+                "PIPELINE_UPSTREAM_UNAVAILABLE",
+                "Ingestion pipeline is unavailable.",
+                status_code=503,
+                retryable=True,
+                api_key=self.api_key,
+            ) from exc
+        if response.status_code >= 400:
+            body = None
+            try:
+                body = response.json()
+            except ValueError:
+                pass
+            raise self._error_from_http_status(response.status_code, body, response.headers)
+        return response.content, response.headers.get("Content-Type", "image/png")
 
     def _request_json(
         self,
@@ -808,6 +1086,87 @@ def request_field_dates(
     except IngestionClientError as exc:
         _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_DATES_ERROR")
     return result.model_dump(mode="json", by_alias=True)
+
+
+def request_field_sar(
+    settings_obj: Settings,
+    *,
+    geometry: dict[str, Any],
+    field_id: str,
+    source_id: str = "eos-04-sar-mrs-l2b",
+    target_date: str,
+    window_days: int = 21,
+    minimum_coverage_percent: float = 95.0,
+    include_history: bool = False,
+    history_lookback_days: int = 180,
+    maximum_history_observations: int = 8,
+    minimum_baseline_observations: int = 5,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    try:
+        result = _client_for(settings_obj, timeout_seconds).field_sar(
+            {
+                "geometry": geometry,
+                "sourceId": source_id,
+                "crs": "EPSG:4326",
+                "fieldId": field_id,
+                "targetDate": target_date,
+                "windowDays": window_days,
+                "minimumCoveragePercent": minimum_coverage_percent,
+                "includeHistory": include_history,
+                "historyLookbackDays": history_lookback_days,
+                "maximumHistoryObservations": maximum_history_observations,
+                **(
+                    {"comparisonPolicyVersion": "eos04-comparability-v1"}
+                    if source_id == "eos-04-sar-mrs-l2b"
+                    else {}
+                ),
+                "minimumBaselineObservations": minimum_baseline_observations,
+            }
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_FIELD_SAR_ERROR")
+    return result.model_dump(mode="json", by_alias=True)
+
+
+def get_natural_source_dates(
+    settings_obj: Settings,
+    *,
+    source_id: str,
+    aoi_id: str,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    try:
+        result = _client_for(settings_obj, timeout_seconds).natural_source_dates(
+            source_id=source_id,
+            aoi_id=aoi_id,
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_SOURCE_DATES_ERROR")
+    return result.model_dump(mode="json", by_alias=True)
+
+
+def fetch_natural_source_tile(
+    settings_obj: Settings,
+    *,
+    source_id: str,
+    aoi_id: str,
+    acquisition_date: str,
+    z: int,
+    x: int,
+    y: int,
+) -> tuple[bytes, str]:
+    try:
+        return _client_for(settings_obj).natural_source_tile(
+            source_id=source_id,
+            aoi_id=aoi_id,
+            acquisition_date=acquisition_date,
+            z=z,
+            x=x,
+            y=y,
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_SOURCE_TILE_ERROR")
 
 
 def _validate_and_rewrite_signed_url(settings_obj: Settings, url: str) -> str:

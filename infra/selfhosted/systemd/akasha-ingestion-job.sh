@@ -30,6 +30,7 @@ Subcommands:
   job-artifact <job_id> <request|status|coverage|download|result|log> [--operator]
   schedule-plan --source SOURCE --aoi AOI [--json]
   schedule-next --source SOURCE --aoi AOI
+  discover-source-dates --source SOURCE --aoi AOI --window-start DATE --window-end DATE
   doctor                       Check staging-side prerequisites.
   prune                        Delete old terminal job directories.
 EOF
@@ -485,15 +486,22 @@ schedule_inspect() {
   if [[ -n "${AKASHA_COMPOSE_PROJECT:-}" ]]; then
     compose_args=(-p "${AKASHA_COMPOSE_PROJECT}")
   fi
+  local worker_service="${AKASHA_COMPOSE_SERVICE:-ingestion-worker}"
+  local compose_services
+  compose_services="$(docker compose "${compose_args[@]}" -f "${compose_file}" config --services)"
+  grep -Fxq "${worker_service}" <<<"${compose_services}" \
+    || die "compose service not found: ${worker_service}; set AKASHA_COMPOSE_SERVICE"
 
   local worker_cmd=("${subcommand}" "$@")
   if [[ "${subcommand}" == "schedule-plan" ]]; then
     worker_cmd+=(--json)
+  elif [[ "${subcommand}" == "discover-source-dates" ]]; then
+    worker_cmd+=(--approved-runtime --json)
   fi
 
   docker compose "${compose_args[@]}" -f "${compose_file}" \
     run --rm --pull "${AKASHA_SYNC_PULL_POLICY:-never}" \
-    ingestion-worker \
+    "${worker_service}" \
     python worker.py "${worker_cmd[@]}"
 }
 
@@ -531,7 +539,7 @@ case "${1:-}" in
     shift
     job_artifact "$@"
     ;;
-  schedule-plan|schedule-next)
+  schedule-plan|schedule-next|discover-source-dates)
     subcommand="$1"
     shift
     schedule_inspect "${subcommand}" "$@"

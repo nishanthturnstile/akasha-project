@@ -42,4 +42,24 @@ describe('SourceMetadata', () => {
             'Regional gated',
         );
     });
+
+    it('labels an enabled Landsat source as optical with its provider', () => {
+        const source: Source = {
+            id: 'landsat-c2-l2',
+            label: 'Landsat 8/9 Collection 2 Level 2',
+            provider: 'USGS via Microsoft Planetary Computer',
+            kind: 'optical',
+            analysisLevel: 'field',
+            availabilityStatus: 'active',
+            resolutionMeters: 30,
+            supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            displayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+        };
+
+        const { getByTestId } = render(<SourceMetadata source={ source } />);
+
+        expect(getByTestId('source-meta-landsat-c2-l2').textContent).toContain(
+            'Optical · USGS via Microsoft Planetary Computer',
+        );
+    });
 });

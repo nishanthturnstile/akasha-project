@@ -45,6 +45,8 @@
   "akasha:default_display_mode": "VV_GRAYSCALE",
   "akasha:date_metrics_kind": "radar",
   "akasha:analysis_level": "context",
+  "akasha:pixel_spacing_meters": 18,
+  "akasha:nominal_ground_resolution_meters": 33,
   "akasha:refresh_policy": "Backscatter display only; no optical indices or cloud mask.",
   "akasha:limitations": [
     "Not an optical vegetation-index source."

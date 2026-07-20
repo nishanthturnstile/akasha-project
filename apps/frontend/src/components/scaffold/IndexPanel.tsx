@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Sprout, Zap } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Satellite, Sprout, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
-import { useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
+import { useFieldMonitoringEvidence, useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
+import { radarEvidenceDescription } from '@/lib/radarEvidence';
 import { cn } from '@/lib/utils';
 import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
 
@@ -33,6 +34,8 @@ interface IndexPanelProps {
   seasonIds?: string[];
   /** Called when user clicks "Show all" on the crop rotation card. */
   onShowAllCrops?: (seasonId?: string) => void;
+  radarEvidenceVisible?: boolean;
+  onRadarEvidenceVisibleChange?: (visible: boolean) => void;
 }
 
 const TAB_ITEMS: { value: AnalyticsTab; label: string }[] = [
@@ -84,6 +87,8 @@ export function IndexPanel({
   vegetationData,
   seasonIds,
   onShowAllCrops,
+  radarEvidenceVisible = false,
+  onRadarEvidenceVisibleChange,
 }: IndexPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('crop-info');
 
@@ -113,6 +118,15 @@ export function IndexPanel({
     endDate: trendEnd,
     cloudMask,
   });
+  const evidenceQ = useFieldMonitoringEvidence(selectedPlot?.id, {
+    sourceId,
+    indexType: activeIndexType,
+    targetDate: selectedDate,
+    includeRadar: true,
+    enabled: Boolean(onRadarEvidenceVisibleChange),
+  });
+  const monitoringEvidence = evidenceQ.data;
+  const radarEvidence = monitoringEvidence?.radar;
 
   const statsResponse = statisticsQ.data;
   const stats = statsResponse?.statistics;
@@ -177,6 +191,99 @@ export function IndexPanel({
           onValueChange={ (next) => setActiveTab(next as AnalyticsTab) }
           className="px-4 pb-2 pt-1.5"
         >
+          { monitoringEvidence?.optical && (
+            monitoringEvidence.optical.status !== 'usable' || radarEvidence?.status === 'AVAILABLE'
+          ) && (
+            <div
+              className="mb-2 rounded-md border border-info/30 bg-info/10 p-2.5 text-[11px] leading-4"
+              data-testid="field-monitoring-radar-evidence"
+            >
+              <div className="flex items-start gap-2">
+                <Satellite className="mt-0.5 size-3.5 shrink-0 text-info" strokeWidth={ 1.75 } />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-foreground">
+                    { monitoringEvidence.optical.status === 'usable'
+                      ? 'Radar field evidence'
+                      : 'Radar support for an optical gap' }
+                  </p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    { radarEvidence?.status === 'AVAILABLE'
+                      ? radarEvidenceDescription(radarEvidence.sourceId, radarEvidence.acquisitionDate, radarEvidence.displayedPolarization)
+                      : radarEvidence?.reason ?? radarEvidence?.triggerReason ?? 'Radar evidence is unavailable.' }
+                  </p>
+                  { radarEvidence?.status === 'AVAILABLE' && (
+                    <div className="mt-1.5 space-y-1.5">
+                      { radarEvidence.change?.status === 'AVAILABLE' && radarEvidence.change.referenceDate && (
+                        <div className="rounded border border-info/20 bg-background/30 px-2 py-1" data-testid="radar-temporal-change">
+                          <p className="font-medium text-foreground">
+                            Compared with { radarEvidence.change.referenceDate }
+                          </p>
+                          <p className="text-muted-foreground">
+                            { radarEvidence.change.bands.map((band) => (
+                              `${band.polarization} ${band.medianDeltaDb >= 0 ? '+' : ''}${band.medianDeltaDb.toFixed(2)} dB`
+                            )).join(' · ') }
+                          </p>
+                        </div>
+                      ) }
+                      { radarEvidence.baseline?.status === 'INSUFFICIENT_OBSERVATIONS' && (
+                        <p className="text-muted-foreground" data-testid="radar-baseline-status">
+                          { radarEvidence.baseline.priorObservationCount } comparable prior observation{ radarEvidence.baseline.priorObservationCount === 1 ? '' : 's' } available; { radarEvidence.baseline.requiredPriorObservations } required for a field baseline.
+                        </p>
+                      ) }
+                      { radarEvidence.baseline?.status === 'AVAILABLE' && (
+                        <div className="rounded border border-info/20 bg-background/30 px-2 py-1" data-testid="radar-baseline-status">
+                          <p className="font-medium text-foreground">
+                            Field baseline ({ radarEvidence.baseline.priorObservationCount } prior passes)
+                          </p>
+                          <p className="text-muted-foreground">
+                            { radarEvidence.baseline.bands
+                                .flatMap((band) => band.robustDeviation === null
+                                  ? []
+                                  : [`${band.polarization} ${band.robustDeviation >= 0 ? '+' : ''}${band.robustDeviation.toFixed(2)}`])
+                                .join(' · ') } relative deviation
+                          </p>
+                        </div>
+                      ) }
+                      { radarEvidence.comparison?.status === 'METADATA_INCOMPLETE' && (
+                        <p className="text-muted-foreground" data-testid="radar-comparison-status">
+                          This pass can be viewed, but its acquisition metadata is incomplete for temporal comparison.
+                        </p>
+                      ) }
+                      { radarEvidence.comparison?.status === 'NO_COMPARABLE_HISTORY' && (
+                        <p className="text-muted-foreground" data-testid="radar-comparison-status">
+                          No earlier pass with compatible acquisition geometry is available.
+                        </p>
+                      ) }
+                      { radarEvidence.baseline?.status === 'DEGENERATE_BASELINE' && (
+                        <p className="text-muted-foreground" data-testid="radar-baseline-status">
+                          The historical spread is too small to calculate a reliable field-relative deviation.
+                        </p>
+                      ) }
+                      <p className="text-muted-foreground">
+                        Radar change can reflect crop structure, surface condition, or acquisition effects. It is not NDVI or a diagnosis.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-muted-foreground">
+                          { radarEvidence.coveragePercent?.toFixed(1) }% coverage · { radarEvidence.quality?.confidence ?? 'unknown' } confidence
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={ radarEvidenceVisible ? 'primary' : 'ghost' }
+                          className="h-6 px-2 text-[11px]"
+                          onClick={ () => onRadarEvidenceVisibleChange?.(!radarEvidenceVisible) }
+                          disabled={ !onRadarEvidenceVisibleChange }
+                          data-testid="toggle-radar-evidence"
+                        >
+                          { radarEvidenceVisible ? 'Show optical' : 'Show radar layer' }
+                        </Button>
+                      </div>
+                    </div>
+                  ) }
+                </div>
+              </div>
+            </div>
+          ) }
           <TabsList
             className="grid w-full grid-cols-3 h-8"
             data-testid="index-panel-tabs"

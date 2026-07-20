@@ -5,6 +5,7 @@ import {
   exportFieldIndex,
   exportFieldReportCsv,
   getFieldStatistics,
+  getFieldMonitoringEvidence,
   getFieldTrend,
   createReportTemplate,
   createFieldActivity,
@@ -152,6 +153,21 @@ export const queryKeys = {
       cloudMask.cloudShadows,
       cloudMask.cirrus,
     ] as const,
+  fieldMonitoringEvidence: (
+    plotId: string,
+    sourceId: string,
+    indexType: string,
+    targetDate: string | null | undefined,
+    includeRadar: boolean,
+  ) => [
+    'fields',
+    plotId,
+    'monitoring-evidence',
+    sourceId,
+    indexType,
+    targetDate ?? 'latest',
+    includeRadar,
+  ] as const,
   fieldLeaderboard: (filters: FieldLeaderboardFilters) =>
     ['reports', 'field-leaderboard', filters] as const,
   reportTemplates: ['reports', 'templates'] as const,
@@ -400,6 +416,37 @@ export function useFieldStatistics(
         preferHighRes: options.preferHighRes,
       }),
     enabled: Boolean(plotId && options.sourceId && options.acquisitionDate),
+  });
+}
+
+export function useFieldMonitoringEvidence(
+  plotId: string | null | undefined,
+  options: {
+    sourceId: string | undefined;
+    indexType: string;
+    targetDate?: string | null;
+    includeRadar?: boolean;
+    enabled?: boolean;
+  },
+) {
+  return useQuery({
+    queryKey: plotId && options.sourceId
+      ? queryKeys.fieldMonitoringEvidence(
+          plotId,
+          options.sourceId,
+          options.indexType,
+          options.targetDate,
+          options.includeRadar ?? false,
+        )
+      : (['fields', 'none', 'monitoring-evidence'] as const),
+    queryFn: () => getFieldMonitoringEvidence(plotId as string, {
+      sourceId: options.sourceId as string,
+      indexType: options.indexType,
+      targetDate: options.targetDate ?? undefined,
+      includeRadar: options.includeRadar,
+    }),
+    enabled: options.enabled !== false && Boolean(plotId && options.sourceId),
+    staleTime: 60_000,
   });
 }
 

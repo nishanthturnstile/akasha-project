@@ -181,6 +181,24 @@ def test_production_deploy_verifies_all_images_before_coolify_patch():
         assert image in verify_step["run"]
 
 
+def test_production_deploy_requires_and_renders_all_nisar_flags() -> None:
+    workflow = _workflow("deploy-production.yml")
+    deploy_job = workflow["jobs"]["deploy-production"]
+    render_step = _step(deploy_job, "Render Compose with approved image tag")
+
+    for name in (
+        "INGESTION_NISAR_CUTOVER_ENABLED",
+        "NISAR_PRODUCT_ENABLED",
+        "NISAR_FIELD_SUPPORT_ENABLED",
+    ):
+        assert deploy_job["env"][name] == "true"
+        assert f'("{name}",' in render_step["run"]
+    assert 'raise SystemExit(f"Production requires {name}=true")' in render_step["run"]
+    assert '${INGESTION_NISAR_CUTOVER_ENABLED:-false}' in render_step["run"]
+    assert '${NISAR_PRODUCT_ENABLED:-false}' in render_step["run"]
+    assert '${NISAR_FIELD_SUPPORT_ENABLED:-false}' in render_step["run"]
+
+
 def test_production_deploy_rejects_unapproved_esri_web_image_sha():
     workflow = _workflow("deploy-production.yml")
     validate_step = _step(
@@ -215,7 +233,7 @@ def test_production_deploy_rejects_unapproved_esri_web_image_sha():
         assert rejected.returncode != 0, f"{name}={invalid!r} was accepted"
 
 
-def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
+def test_staging_deploy_uses_single_instant_trigger_and_verifies_runtime_revision():
     workflow = _workflow("deploy-staging.yml")
     deploy_job = workflow["jobs"]["deploy-staging"]
     step_names = _step_names(deploy_job)
@@ -223,8 +241,8 @@ def test_staging_deploy_explicitly_triggers_and_verifies_runtime_revision():
     verify_step = _step(deploy_job, "Verify deployed image revisions")
 
     assert '"instant_deploy": True' in patch_step["run"]
-    assert "/deploy?" in patch_step["run"]
-    assert 'method="POST"' in patch_step["run"]
+    assert "/deploy?" not in patch_step["run"]
+    assert 'method="POST"' not in patch_step["run"]
     assert step_names.index("Patch Coolify service stack") < step_names.index(
         "Verify deployed image revisions"
     )
@@ -252,6 +270,40 @@ def test_staging_deploy_requires_complete_resourcesat_cutover():
     )
     assert "ESRI_BASEMAP_USAGE_MODEL must be session or tile" in render_step["run"]
     assert '${ESRI_BASEMAP_USAGE_MODEL:-session}' in render_step["run"]
+
+
+def test_staging_deploy_has_independent_fail_closed_eos04_activation_gates():
+    workflow = _workflow("deploy-staging.yml")
+    deploy_job = workflow["jobs"]["deploy-staging"]
+    render_step = _step(deploy_job, "Render Compose with immutable image tag")
+
+    assert deploy_job["env"]["INGESTION_EOS04_CUTOVER_ENABLED"] == (
+        "${{ vars.INGESTION_EOS04_CUTOVER_ENABLED || 'true' }}"
+    )
+    assert deploy_job["env"]["EOS04_PRODUCT_ENABLED"] == (
+        "${{ vars.EOS04_PRODUCT_ENABLED || 'true' }}"
+    )
+    assert 'f"{name} must be true or false"' in render_step["run"]
+    assert 'if eos04_product == "true" and eos04_cutover != "true"' in render_step["run"]
+    assert "EOS04_PRODUCT_ENABLED=true requires" in render_step["run"]
+    assert "INGESTION_EOS04_CUTOVER_ENABLED=true" in render_step["run"]
+    assert '${INGESTION_EOS04_CUTOVER_ENABLED:-false}' in render_step["run"]
+    assert '${EOS04_PRODUCT_ENABLED:-false}' in render_step["run"]
+
+
+def test_staging_deploy_activates_complete_landsat_cutover_contract():
+    workflow = _workflow("deploy-staging.yml")
+    deploy_job = workflow["jobs"]["deploy-staging"]
+    render_step = _step(deploy_job, "Render Compose with immutable image tag")
+
+    assert deploy_job["env"]["INGESTION_LANDSAT_CUTOVER_ENABLED"] == "true"
+    assert deploy_job["env"]["LANDSAT_PRODUCT_ENABLED"] == "true"
+    assert deploy_job["env"]["LANDSAT_BEST_OPTICAL_ENABLED"] == "true"
+    assert "LANDSAT_PRODUCT_ENABLED=true requires" in render_step["run"]
+    assert "LANDSAT_BEST_OPTICAL_ENABLED=true requires" in render_step["run"]
+    assert '${INGESTION_LANDSAT_CUTOVER_ENABLED:-false}' in render_step["run"]
+    assert '${LANDSAT_PRODUCT_ENABLED:-false}' in render_step["run"]
+    assert '${LANDSAT_BEST_OPTICAL_ENABLED:-false}' in render_step["run"]
 
 
 def test_deploy_workflow_inline_python_snippets_compile():

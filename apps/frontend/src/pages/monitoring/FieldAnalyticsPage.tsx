@@ -59,6 +59,8 @@ export default function FieldAnalyticsPage() {
     displayMode,
     overlaysVisible,
     mapFullscreen,
+    radarEvidenceVisible,
+    setRadarEvidenceVisible,
   } = useMapView();
   const fieldsQ = useFields();
   const configQ = useConfig();
@@ -98,7 +100,7 @@ export default function FieldAnalyticsPage() {
     ? activeDisplayMode
     : supportedIndices[0] ?? 'NDVI';
   const datesQ = useDates(effectiveSourceId, {
-    enabled: !selectedPlotId || Boolean(selectedField),
+    enabled: Boolean(selectedField),
     fieldId: selectedField?.id,
     indexType: timelineIndexType,
   });
@@ -209,6 +211,8 @@ export default function FieldAnalyticsPage() {
             vegetationData={ selectedField?.vegetationData }
             seasonIds={ selectedField?.seasonIds }
             onShowAllCrops={ (seasonId) => { setInitialVegSeasonId(seasonId); setEditFieldOpen(true); } }
+            radarEvidenceVisible={ radarEvidenceVisible }
+            onRadarEvidenceVisibleChange={ setRadarEvidenceVisible }
           />
         </div>
       ) }

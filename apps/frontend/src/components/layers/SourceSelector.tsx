@@ -9,6 +9,7 @@ interface SourceSelectorProps {
 
 /** Segmented control of imagery sources. Active = saffron underline (not a fill). */
 export function SourceSelector({ sources, value, onChange }: SourceSelectorProps) {
+  const primarySources = sources.filter((source) => source.productRole !== 'support');
   return (
     <div
       role="tablist"
@@ -16,7 +17,7 @@ export function SourceSelector({ sources, value, onChange }: SourceSelectorProps
       className="flex max-w-full flex-wrap items-center gap-1 overflow-hidden"
       data-testid="source-selector"
     >
-      { sources.map((s) => {
+      { primarySources.map((s) => {
         const active = s.id === value;
         const sourceKind =
           s.kind === 'sar'

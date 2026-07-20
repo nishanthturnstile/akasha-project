@@ -107,6 +107,39 @@ describe('SourceCard', () => {
         expect(queryByTestId('source-limitations')).toBeNull();
     });
 
+    it('shows only supported Landsat index controls and the 30 m limitation', () => {
+        const landsat: Source = {
+            id: 'landsat-c2-l2',
+            label: 'Landsat 8/9 Collection 2 Level 2',
+            provider: 'USGS via Microsoft Planetary Computer',
+            kind: 'optical',
+            analysisLevel: 'field',
+            availabilityStatus: 'active',
+            resolutionMeters: 30,
+            supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            displayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            mapDisplayModes: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
+            defaultDisplayMode: 'NDVI',
+            description: 'Landsat 8/9 harmonized 30 m surface reflectance.',
+            limitations: [
+                '30 m pixels can mix crop, soil, paths, and field boundaries in small plots.',
+                'NDRE and RECI are unavailable because Landsat OLI has no red-edge band.',
+            ],
+        };
+
+        const { getByTestId, queryByTestId } = renderCard({
+            source: landsat,
+            displayMode: 'NDVI',
+        });
+
+        expect(getByTestId('display-mode-NDVI')).not.toBeNull();
+        expect(getByTestId('display-mode-MSAVI')).not.toBeNull();
+        expect(getByTestId('display-mode-NDMI')).not.toBeNull();
+        expect(getByTestId('display-mode-NDWI_GREEN_NIR')).not.toBeNull();
+        expect(queryByTestId('display-mode-NDRE')).toBeNull();
+        expect(getByTestId('source-limitations').textContent).toContain('30 m pixels');
+    });
+
     it('forwards selection from the compact card button', () => {
         const { props, getByTestId } = renderCard({ active: false });
 

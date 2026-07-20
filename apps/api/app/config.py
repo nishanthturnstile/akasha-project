@@ -268,6 +268,51 @@ class Settings:
             "resourcesat-2a-liss3-boa",
         )
     )
+    ingestion_eos04_cutover_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_EOS04_CUTOVER_ENABLED", False)
+    )
+    eos04_product_enabled: bool = field(
+        default_factory=lambda: _get_bool("EOS04_PRODUCT_ENABLED", False)
+    )
+    eos04_field_support_enabled: bool = field(
+        default_factory=lambda: _get_bool("EOS04_FIELD_SUPPORT_ENABLED", False)
+    )
+    ingestion_nisar_cutover_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_NISAR_CUTOVER_ENABLED", False)
+    )
+    nisar_product_enabled: bool = field(
+        default_factory=lambda: _get_bool("NISAR_PRODUCT_ENABLED", False)
+    )
+    nisar_field_support_enabled: bool = field(
+        default_factory=lambda: _get_bool("NISAR_FIELD_SUPPORT_ENABLED", False)
+    )
+    ingestion_landsat_cutover_enabled: bool = field(
+        default_factory=lambda: _get_bool("INGESTION_LANDSAT_CUTOVER_ENABLED", False)
+    )
+    landsat_product_enabled: bool = field(
+        default_factory=lambda: _get_bool("LANDSAT_PRODUCT_ENABLED", False)
+    )
+    landsat_best_optical_enabled: bool = field(
+        default_factory=lambda: _get_bool("LANDSAT_BEST_OPTICAL_ENABLED", False)
+    )
+    eos04_temporal_change_enabled: bool = field(
+        default_factory=lambda: _get_bool("EOS04_TEMPORAL_CHANGE_ENABLED", False)
+    )
+    eos04_temporal_shadow_enabled: bool = field(
+        default_factory=lambda: _get_bool("EOS04_TEMPORAL_SHADOW_ENABLED", False)
+    )
+    eos04_temporal_recommendations_enabled: bool = field(
+        default_factory=lambda: _get_bool("EOS04_TEMPORAL_RECOMMENDATIONS_ENABLED", False)
+    )
+    eos04_temporal_lookback_days: int = field(
+        default_factory=lambda: _get_int("EOS04_TEMPORAL_LOOKBACK_DAYS", 180)
+    )
+    eos04_temporal_max_observations: int = field(
+        default_factory=lambda: _get_int("EOS04_TEMPORAL_MAX_OBSERVATIONS", 8)
+    )
+    eos04_temporal_min_baseline_observations: int = field(
+        default_factory=lambda: _get_int("EOS04_TEMPORAL_MIN_BASELINE_OBSERVATIONS", 5)
+    )
     ingestion_field_index_source_id: str = field(
         default_factory=lambda: _get("INGESTION_FIELD_INDEX_SOURCE_ID", "sentinel-2-l2a")
     )

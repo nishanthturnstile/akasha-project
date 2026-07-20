@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Satellite, Search } from 'lucide-react';
-import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint } from '@/lib/api';
+import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint, getFieldSarOverlayImage } from '@/lib/api';
 import {
   useConfig,
   useCreateField,
@@ -11,11 +11,13 @@ import {
   useDefaultLayer,
   useDeleteField,
   useFields,
+  useFieldMonitoringEvidence,
   useSources,
   useUpdateField,
 } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
+import { radarSensorLabel } from '@/lib/radarEvidence';
 import { selectDefaultDate } from '@/lib/selectDefaultDate';
 import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
@@ -355,6 +357,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     focusNonce,
     bestMode,
     globalViewOpen,
+    radarEvidenceVisible,
   } = view;
   const { seasonId } = useSeasonContext();
 
@@ -382,7 +385,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     allowCoarse: false,
     maxCandidates: 30,
   }), [periodFrom, periodTo, bestObservationIndexType]);
-  const bestObsQ = useBestObservations(bestObsParams, { enabled: bestMode });
+  const bestObsQ = useBestObservations(bestObsParams, {
+    enabled: bestMode && Boolean(selectedPlotId),
+  });
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -424,11 +429,10 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     selectedSource?.supportedIndices?.[0] ?? configQ.data?.defaultIndex ?? 'NDVI',
   );
   const datesQ = useDates(effectiveSourceId, {
-    enabled: !bestMode && (!selectedPlotId || Boolean(selectedPlot)),
+    enabled: !bestMode && Boolean(selectedPlot),
     fieldId: selectedPlot?.id,
     indexType: requestedTimelineIndex,
   });
-
   useEffect(() => {
     if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
     if (!plotsQ.data.some((plot) => plot.id === selectedPlotId)) {
@@ -609,6 +613,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     return def ? def.acquisitionDate : null;
   }, [activeTimelineDates, configQ.data, dateOverride, activeSourceKind]);
 
+  const monitoringEvidenceQ = useFieldMonitoringEvidence(selectedPlot?.id, {
+    sourceId: effectiveSourceId,
+    indexType: requestedTimelineIndex,
+    targetDate: selectedDate,
+    includeRadar: true,
+    enabled: selectedSource?.productRole !== 'support',
+  });
+
   const basemapResolution = useMemo(() => {
     if (!configQ.data) return { basemapConfig: null, basemapError: null };
     try {
@@ -760,6 +772,44 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     indexOverlay && requestedIndexOverlayKey === indexOverlayRequestKey,
   );
 
+  const [radarOverlay, setRadarOverlay] = useState<IndexOverlay | null>(null);
+  const radarEvidence = monitoringEvidenceQ.data?.radar;
+  useEffect(() => {
+    let disposed = false;
+    if (
+      !radarEvidenceVisible ||
+      radarEvidence?.status !== 'AVAILABLE' ||
+      !selectedPlot ||
+      !monitoringEvidenceQ.data?.targetDate
+    ) {
+      setRadarOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return null;
+      });
+      return;
+    }
+    const corners = geometryBboxCorners(selectedPlot.geometry);
+    if (!corners) return;
+    void getFieldSarOverlayImage(
+      selectedPlot.id,
+      monitoringEvidenceQ.data.targetDate,
+      corners,
+      radarEvidence.sourceId,
+    ).then((overlay) => {
+      if (disposed) {
+        if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
+        return;
+      }
+      setRadarOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return overlay;
+      });
+    }).catch(() => {
+      if (!disposed) setRadarOverlay(null);
+    });
+    return () => { disposed = true; };
+  }, [monitoringEvidenceQ.data?.targetDate, radarEvidence?.sourceId, radarEvidence?.status, radarEvidenceVisible, selectedPlot]);
+
   useEffect(() => {
     let disposed = false;
     if (!requestedIndexOverlay) {
@@ -855,10 +905,29 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
 
   // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
   const nearestPassNote = useMemo<string | null>(() => {
+    if (
+      monitoringEvidenceQ.data?.optical?.status !== 'usable' &&
+      radarEvidence?.status === 'AVAILABLE' &&
+      radarEvidence.acquisitionDate
+    ) {
+      const offset = radarEvidence.daysFromTarget == null
+        ? ''
+        : ` · ${Math.abs(radarEvidence.daysFromTarget)} day offset`;
+      const sensor = radarSensorLabel(radarEvidence.sourceId);
+      return `${sensor} support: ${radarEvidence.acquisitionDate}${offset} · radar evidence, not NDVI or direct soil moisture.`;
+    }
     if (selectedSource?.kind !== 'sar') return null;
     if (!selectedDate) return null;
     return `Nearest radar pass: ${selectedDate}.`;
-  }, [selectedSource?.kind, selectedDate]);
+  }, [monitoringEvidenceQ.data?.optical?.status, radarEvidence, selectedSource?.kind, selectedDate]);
+
+  const radarEventDates = useMemo(() => {
+    if (radarEvidence?.status !== 'AVAILABLE') return [];
+    return Array.from(new Set([
+      ...(radarEvidence.acquisitionDate ? [radarEvidence.acquisitionDate] : []),
+      ...(radarEvidence.history ?? []).map((observation) => observation.acquisitionDate),
+    ])).sort((a, b) => b.localeCompare(a));
+  }, [radarEvidence]);
 
   const requestMapTool = (owner: MapToolOwner): boolean => {
     setActiveMapTool(owner);
@@ -977,7 +1046,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const sourceAttribution = selectedSource?.attribution ?? selectedSource?.provider;
   const attribution =
     scene?.attribution ??
-    (indexOverlay
+    (radarEvidenceVisible && radarOverlay
+      ? `ISRO/NRSC Bhoonidhi · ${radarSensorLabel(radarEvidence?.sourceId)} field support`
+      : indexOverlay
       ? sourceAttribution
       : basemapResolution.basemapConfig.provider === 'osm'
         ? basemapResolution.basemapConfig.attribution
@@ -1010,14 +1081,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         zoom={ config.aoi.zoom }
         scene={ scene }
         sceneB={ sceneB }
-        indexOverlay={ indexOverlay }
+        indexOverlay={ radarEvidenceVisible && radarOverlay ? radarOverlay : indexOverlay }
         opacity={ opacity / 100 }
         visible={ visible }
         onBasemapError={ setBasemapRuntimeError }
         onMapReady={ setMap }
       />
       <FieldOverlayLoadingIndicator
-        loading={ overlaysVisible && isIndexLayer && indexOverlayLoading }
+        loading={ overlaysVisible && ((isIndexLayer && indexOverlayLoading) || (radarEvidenceVisible && radarEvidence?.status === 'AVAILABLE' && !radarOverlay)) }
         map={ map }
         plot={ selectedPlot }
       />
@@ -1232,7 +1303,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         </div>
       ) }
 
-      {/* Bottom: temporal filmstrip — always visible */ }
+      {/* Field-quality timeline appears only after a persisted field is selected. */ }
+      { selectedPlot && (
       <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
         <div id="timeline-bar" className="min-w-0 flex-1">
           <TimelineBar
@@ -1255,6 +1327,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
             onRetry={ bestMode ? () => void bestObsQ.refetch() : () => void datesQ.refetch() }
             marginalNote={ bestMode ? null : marginalNote }
             nearestPassNote={ bestMode ? null : nearestPassNote }
+            radarEventDates={ bestMode ? [] : radarEventDates }
             onPrefetchDate={ undefined }
             periodFrom={ periodFrom }
             periodTo={ periodTo }
@@ -1287,6 +1360,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           </div>
         ) }
       </div>
+      ) }
 
       <AlertDialogRoot
         open={ !!deleteFieldTarget }

@@ -25,6 +25,7 @@ function isIndexMode(mode: string): boolean {
     'FALSE_COLOR_URBAN',
     'VV_GRAYSCALE',
     'VH_GRAYSCALE',
+    'BACKSCATTER',
   ].includes(mode.toUpperCase());
 }
 

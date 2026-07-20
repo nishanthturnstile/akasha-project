@@ -39,6 +39,11 @@ jobs:
       ESRI_WEB_IMAGE_CREDENTIAL_ID: ${{ vars.ESRI_WEB_IMAGE_CREDENTIAL_ID }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS || 'resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa' }}
+      # Production activation is still protected by the approved immutable image SHA
+      # and the GitHub production environment approval gate.
+      INGESTION_NISAR_CUTOVER_ENABLED: "true"
+      NISAR_PRODUCT_ENABLED: "true"
+      NISAR_FIELD_SUPPORT_ENABLED: "true"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -101,6 +106,22 @@ jobs:
               raise SystemExit(
                   "Production ResourceSat cutover must contain exactly all three source IDs"
               )
+          nisar_cutover = os.environ.get(
+              "INGESTION_NISAR_CUTOVER_ENABLED", "false"
+          ).lower()
+          nisar_product = os.environ.get("NISAR_PRODUCT_ENABLED", "false").lower()
+          nisar_field_support = os.environ.get(
+              "NISAR_FIELD_SUPPORT_ENABLED", "false"
+          ).lower()
+          for name, value in (
+              ("INGESTION_NISAR_CUTOVER_ENABLED", nisar_cutover),
+              ("NISAR_PRODUCT_ENABLED", nisar_product),
+              ("NISAR_FIELD_SUPPORT_ENABLED", nisar_field_support),
+          ):
+              if value not in {"true", "false"}:
+                  raise SystemExit(f"{name} must be true or false")
+              if value != "true":
+                  raise SystemExit(f"Production requires {name}=true")
           app_data_root = os.environ.get("APP_DATA_ROOT", "/data/akasha").rstrip("/")
           if not app_data_root.startswith("/"):
               raise SystemExit("APP_DATA_ROOT must be an absolute host path")
@@ -113,6 +134,13 @@ jobs:
           text = text.replace(
               "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}",
               ",".join(sorted(resourcesat_sources)),
+          )
+          text = text.replace(
+              "${INGESTION_NISAR_CUTOVER_ENABLED:-false}", nisar_cutover
+          )
+          text = text.replace("${NISAR_PRODUCT_ENABLED:-false}", nisar_product)
+          text = text.replace(
+              "${NISAR_FIELD_SUPPORT_ENABLED:-false}", nisar_field_support
           )
           text = text.replace("${APP_DATA_ROOT:-/data/akasha}", app_data_root)
           Path(os.environ["RENDERED_COMPOSE"]).write_text(text)

@@ -55,6 +55,8 @@ export interface MapViewState {
     bestMode: boolean;
     /** Mirrors AppShell's Global View mode so MapPage can render all season fields. */
     globalViewOpen: boolean;
+    /** Show the selected field-clipped radar evidence instead of the optical index overlay. */
+    radarEvidenceVisible: boolean;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -85,6 +87,7 @@ export const initialMapViewState: MapViewState = {
     mapFullscreen: true,
     bestMode: false,
     globalViewOpen: false,
+    radarEvidenceVisible: false,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -112,6 +115,7 @@ export interface MapViewContextValue extends MapViewState {
     setMapFullscreen: (fullscreen: boolean) => void;
     setBestMode: (enabled: boolean) => void;
     setGlobalViewOpen: (open: boolean) => void;
+    setRadarEvidenceVisible: (visible: boolean) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

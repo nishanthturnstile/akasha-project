@@ -87,16 +87,17 @@ Uploads to
 ## Step 4 — Verify
 
 - COG: band count >= 1 with band-1 overviews.
-- API: `GET /api/sources` lists `nisar-ssar-beta-gcov` active;
+- API after all staging gates are enabled: `GET /api/sources` lists
+  `nisar-ssar-beta-gcov` active;
   `GET /api/sources/nisar-ssar-beta-gcov/dates` returns the ingested date (null
   optical metrics);
-  `GET /api/tiles/nisar-ssar-beta-gcov/<date>/VV_GRAYSCALE/{z}/{x}/{y}.png`
-  returns a PNG (prefers VV when present; otherwise renders the first band).
+  `GET /api/tiles/nisar-ssar-beta-gcov/<date>/BACKSCATTER/{z}/{x}/{y}.png`
+  returns a PNG (prefers HH when present; otherwise renders the first registered band).
 - UI: grayscale backscatter renders with no NDVI/cloud controls.
 
 ## Notes
 
-- Already registered and activated (display-only) in
+- Registered but gated and disabled until real-product staging acceptance in
   `apps/api/app/raster/catalog_resolver.py` and
   `data/seed/stac/nisar-ssar-beta-gcov-collection.json`.
 - If a GCOV HDF5 sample reveals a different group/layer layout than the diagonal

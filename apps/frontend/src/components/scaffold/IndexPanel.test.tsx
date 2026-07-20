@@ -61,6 +61,233 @@ afterEach(() => {
 });
 
 describe('IndexPanel tabbed analytics (Phase F)', () => {
+    it('presents field-clipped EOS-04 evidence as support, not NDVI', async () => {
+        const onRadarEvidenceVisibleChange = vi.fn();
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path.startsWith('/api/fields/plot-1/monitoring/evidence')) {
+                    return Promise.resolve(jsonResponse({
+                        fieldId: 'plot-1',
+                        targetDate: '2026-07-18',
+                        optical: {
+                            status: 'quality_limited',
+                            sourceId: 'sentinel-2-l2a',
+                            indexType: 'NDVI',
+                            latestCandidateDate: '2026-07-17',
+                            latestQualifyingDate: null,
+                            ageDays: null,
+                            staleAfterDays: 10,
+                            requirements: {
+                                minimumCoveragePercent: 95,
+                                minimumUsablePixelPercent: 80,
+                                maximumCombinedCloudShadowPercent: 20,
+                            },
+                        },
+                        radar: {
+                            status: 'AVAILABLE',
+                            sourceId: 'eos-04-sar-mrs-l2b',
+                            triggered: true,
+                            triggerReason: 'Optical quality gap.',
+                            acquisitionDate: '2026-07-17',
+                            coveragePercent: 100,
+                            quality: { qualified: true, confidence: 'high', warnings: [] },
+                            comparison: {
+                                status: 'INSUFFICIENT_BASELINE',
+                                previousComparableDate: '2026-06-13',
+                                comparableObservationCount: 2,
+                                excludedObservationCount: 0,
+                            },
+                            change: {
+                                status: 'AVAILABLE',
+                                referenceDate: '2026-06-13',
+                                bands: [
+                                    {
+                                        polarization: 'HH',
+                                        currentMedianDb: -8,
+                                        referenceMedianDb: -10,
+                                        medianDeltaDb: 2,
+                                    },
+                                ],
+                                features: {},
+                            },
+                            baseline: {
+                                status: 'AVAILABLE',
+                                requiredPriorObservations: 5,
+                                priorObservationCount: 5,
+                                bands: [
+                                    {
+                                        polarization: 'HH',
+                                        currentValue: -7.22,
+                                        baselineMedian: -6.47,
+                                        mad: 0.5,
+                                        robustDeviation: -1,
+                                    },
+                                    {
+                                        polarization: 'HV',
+                                        currentValue: -14.74,
+                                        baselineMedian: -13.43,
+                                        mad: 0.78,
+                                        robustDeviation: -1.13,
+                                    },
+                                ],
+                            },
+                            overlayUrl: '/api/fields/plot-1/sar/overlay.png?targetDate=2026-07-18',
+                        },
+                    }));
+                }
+                if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'field',
+                        sourceId: 'sentinel-2-l2a',
+                        acquisitionDate: '2026-07-18',
+                        indexType: 'NDVI',
+                        cloudMask,
+                        statistics: {
+                            min: 0.1,
+                            max: 0.8,
+                            mean: 0.5,
+                            stddev: 0.1,
+                            validPixelPercent: 90,
+                            cloudMaskedPercent: 5,
+                            coveragePercent: 95,
+                        },
+                        pixelCounts: {
+                            totalPixels: 100,
+                            nodataPixels: 5,
+                            coveragePixels: 95,
+                            maskedPixels: 5,
+                            validPixels: 90,
+                        },
+                        metadata: { bands: [], warnings: [] },
+                    }));
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'pipeline',
+                        sourceId: 'sentinel-2-l2a',
+                        indexType: 'NDVI',
+                        startDate: '2026-01-01',
+                        endDate: '2026-07-18',
+                        points: [],
+                        metadata: { bands: [] },
+                    }));
+                }
+                return Promise.resolve(jsonResponse({}));
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-07-18"
+                sourceId="sentinel-2-l2a"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+                onRadarEvidenceVisibleChange={ onRadarEvidenceVisibleChange }
+            />,
+        );
+
+        expect(await screen.findByText(/provides structural and moisture-sensitive evidence, not NDVI/i)).toBeTruthy();
+        expect(
+            (globalThis.fetch as unknown as { mock: { calls: Array<[RequestInfo | URL]> } })
+                .mock.calls.some(([input]) =>
+                    String(input).includes('/monitoring/evidence?') &&
+                    String(input).includes('targetDate=2026-07-18') &&
+                    String(input).includes('includeRadar=true')),
+        ).toBe(true);
+        expect(screen.getByTestId('radar-temporal-change').textContent).toContain('HH +2.00 dB');
+        expect(screen.getByTestId('radar-baseline-status').textContent).toContain('Field baseline (5 prior passes)');
+        expect(screen.getByTestId('radar-baseline-status').textContent).toContain('HH -1.00 · HV -1.13 relative deviation');
+        expect(screen.getByText(/It is not NDVI or a diagnosis/i)).toBeTruthy();
+        fireEvent.click(screen.getByTestId('toggle-radar-evidence'));
+        expect(onRadarEvidenceVisibleChange).toHaveBeenCalledWith(true);
+    });
+
+    it('shows selected NISAR evidence alongside a usable optical observation', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path.startsWith('/api/fields/plot-1/monitoring/evidence')) {
+                    return Promise.resolve(jsonResponse({
+                        fieldId: 'plot-1',
+                        targetDate: '2026-01-02',
+                        optical: { status: 'usable' },
+                        radar: {
+                            status: 'AVAILABLE',
+                            sourceId: 'nisar-ssar-beta-gcov',
+                            triggered: true,
+                            triggerReason: 'Radar evidence was explicitly requested.',
+                            acquisitionDate: '2026-01-03',
+                            coveragePercent: 100,
+                            displayedPolarization: 'HH',
+                            quality: { qualified: true, confidence: 'high', warnings: [] },
+                            overlayUrl: '/api/fields/plot-1/sar/overlay.png?sourceId=nisar-ssar-beta-gcov',
+                        },
+                    }));
+                }
+                if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'field',
+                        sourceId: 'sentinel-2-l2a',
+                        acquisitionDate: '2026-01-02',
+                        indexType: 'NDVI',
+                        cloudMask,
+                        statistics: null,
+                        pixelCounts: {
+                            totalPixels: 0,
+                            nodataPixels: 0,
+                            coveragePixels: 0,
+                            maskedPixels: 0,
+                            validPixels: 0,
+                        },
+                        metadata: { bands: [], warnings: [] },
+                    }));
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'pipeline',
+                        scope: 'pipeline',
+                        sourceId: 'sentinel-2-l2a',
+                        indexType: 'NDVI',
+                        startDate: '2025-07-06',
+                        endDate: '2026-01-02',
+                        points: [],
+                        metadata: { bands: [] },
+                    }));
+                }
+                return Promise.resolve(jsonResponse({}));
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-01-02"
+                sourceId="sentinel-2-l2a"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+                onRadarEvidenceVisibleChange={ vi.fn() }
+            />,
+        );
+
+        expect(await screen.findByText('Radar field evidence')).toBeTruthy();
+        expect(screen.getByText(/NISAR S-band radar evidence.*using HH/i)).toBeTruthy();
+    });
+
     it('renders the empty-state guidance when no field is selected', () => {
         renderPanel(
             <IndexPanel

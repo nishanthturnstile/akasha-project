@@ -9,6 +9,7 @@ import type {
   FieldReportExportOptions,
   FieldStatisticsRequest,
   FieldStatisticsResponse,
+  FieldMonitoringEvidence,
   FieldTrendResponse,
   FileDownload,
   FieldLeaderboardFilters,
@@ -358,14 +359,12 @@ export const getConfig = (): Promise<AppConfig> => request<AppConfig>('/api/conf
 
 export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sources');
 
-const SOURCE_DATE_LOOKBACK_DAYS = 153;
-
 export const getDates = (
   sourceId: string,
   options: { fieldId?: string; indexType?: string } = {},
 ): Promise<SceneDate[]> => {
-  const params = new URLSearchParams({ lookbackDays: String(SOURCE_DATE_LOOKBACK_DAYS) });
   if (options.fieldId) {
+    const params = new URLSearchParams();
     params.set('sourceId', sourceId);
     params.set('indexType', options.indexType ?? 'NDVI');
     return request<SceneDate[]>(
@@ -373,7 +372,7 @@ export const getDates = (
     );
   }
   return request<SceneDate[]>(
-    `/api/sources/${encodeURIComponent(sourceId)}/dates?${params.toString()}`,
+    `/api/sources/${encodeURIComponent(sourceId)}/dates`,
   );
 };
 
@@ -507,6 +506,41 @@ export const getFieldTrend = (
   return request<FieldTrendResponse>(
     `/api/fields/${encodeURIComponent(plotId)}/analytics/trend?${params.toString()}`,
   );
+};
+
+export const getFieldMonitoringEvidence = (
+  plotId: string,
+  options: { sourceId: string; indexType: string; targetDate?: string; includeRadar?: boolean },
+): Promise<FieldMonitoringEvidence> => {
+  const params = new URLSearchParams({ sourceId: options.sourceId, indexType: options.indexType });
+  if (options.targetDate) params.set('targetDate', options.targetDate);
+  if (options.includeRadar) params.set('includeRadar', 'true');
+  return request<FieldMonitoringEvidence>(
+    `/api/fields/${encodeURIComponent(plotId)}/monitoring/evidence?${params.toString()}`,
+  );
+};
+
+export const getFieldSarOverlayImage = async (
+  plotId: string,
+  targetDate: string,
+  fallbackCoordinates: ImageCorners,
+  sourceId = 'eos-04-sar-mrs-l2b',
+): Promise<FieldIndexOverlayImage> => {
+  const params = new URLSearchParams({ targetDate, sourceId });
+  const sourceUrl = `/api/fields/${encodeURIComponent(plotId)}/sar/overlay.png?${params.toString()}`;
+  const res = await fetchApi(sourceUrl, { headers: new Headers({ Accept: 'image/png' }) });
+  const blob = await res.blob();
+  const typedBlob = blob.type ? blob : new Blob([blob], { type: 'image/png' });
+  return {
+    url: URL.createObjectURL(typedBlob),
+    sourceUrl,
+    coordinates: parseOverlayCorners(res.headers.get('X-Akasha-Overlay-Corners')) ?? fallbackCoordinates,
+    stretch: parseOverlayStretch(res.headers.get('X-Akasha-Overlay-Stretch')),
+    resolvedSourceId: res.headers.get('X-Akasha-Resolved-Source') ?? sourceId,
+    resolutionMeters: 18,
+    enhanced: false,
+    basisDate: null,
+  };
 };
 
 export const getFieldIndexOverlayImage = async (

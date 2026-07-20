@@ -28,6 +28,7 @@ import { useConfig, useCrops, useFieldGroups, useFields, useIrrigationTypes, use
 import { useVegetationCycles, type VegetationCycleForm } from '@/hooks/useVegetationCycles';
 import { resolveBasemapConfig } from '@/map/basemap';
 import { polygonAreaMeters } from '@/lib/measure';
+import type { DateRange } from '@/components/ui/date-picker';
 import type maplibregl from 'maplibre-gl';
 import type { TerraDraw } from 'terra-draw';
 import type { Crop, Field, IrrigationType, PlotGeometry, TillageType, VegetationCycleCreate } from '@/types/api';
@@ -82,6 +83,45 @@ function latestPolygon(draw: TerraDraw): PlotGeometry | null {
 
 function isPolygonGeometry(geometry: PlotGeometry | undefined): geometry is PlotGeometry & { type: 'Polygon' } {
   return geometry?.type === 'Polygon';
+}
+
+function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
+function getOverlapRanges(
+  currentCycleId: string,
+  allCycles: VegetationCycleForm[],
+): DateRange[] {
+  const ranges: DateRange[] = [];
+  for (const other of allCycles) {
+    if (other.id === currentCycleId) continue;
+    const oStart = other.plantingDate;
+    if (!oStart) continue;
+    const oEnd = other.harvestingDate || oStart;
+    ranges.push({ start: oStart, end: oEnd });
+  }
+  return ranges;
+}
+
+function getBlockedRanges(
+  currentCycleId: string,
+  allCycles: VegetationCycleForm[],
+  seasonEndDate?: string,
+): DateRange[] {
+  const idx = allCycles.findIndex((c) => c.id === currentCycleId);
+  if (idx === -1 || idx >= allCycles.length - 1 || !seasonEndDate) return [];
+  const next = allCycles[idx + 1];
+  if (!next.harvestingDate) return [];
+  const [y, m, d] = next.harvestingDate.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + 1);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const start = `${yy}-${mm}-${dd}`;
+  if (start > seasonEndDate) return [];
+  return [{ start, end: seasonEndDate }];
 }
 
 export default function EditFieldDialog({
@@ -372,6 +412,24 @@ export default function EditFieldDialog({
     });
   }, []);
 
+  const hasAnyOverlap = useMemo(() => {
+    for (const cycles of Object.values(vegetationCycles)) {
+      for (let i = 0; i < cycles.length; i++) {
+        for (let j = i + 1; j < cycles.length; j++) {
+          const a = cycles[i];
+          const b = cycles[j];
+          const aStart = a.plantingDate;
+          const bStart = b.plantingDate;
+          if (!aStart || !bStart) continue;
+          const aEnd = a.harvestingDate || aStart;
+          const bEnd = b.harvestingDate || bStart;
+          if (rangesOverlap(aStart, aEnd, bStart, bEnd)) return true;
+        }
+      }
+    }
+    return false;
+  }, [vegetationCycles]);
+
   const handleClearSeason = useCallback((seasonId: string) => {
     setConfirmClearSeasonId(seasonId);
   }, []);
@@ -595,7 +653,10 @@ export default function EditFieldDialog({
                                     <CycleCard
                                       key={ `${cycle.id}-${cycle.cropName}` }
                                       cycle={ cycle }
+                                      allCycles={ cycles }
                                       seasonId={ season.id }
+                                      seasonStartDate={ season.startDate ?? undefined }
+                                      seasonEndDate={ season.endDate ?? undefined }
                                       cropsData={ cropsQ.data }
                                       irrigationTypesData={ irrigationTypesQ.data }
                                       tillageTypesData={ tillageTypesQ.data }
@@ -605,7 +666,21 @@ export default function EditFieldDialog({
                                   )) }
                                   <button
                                     type="button"
-                                    onClick={ () => addCycle(season.id) }
+                                    onClick={ () => {
+                                    const existing = vegetationCycles[season.id] ?? [];
+                                    const last = existing[existing.length - 1];
+                                    let defaultDate = season.startDate ?? '';
+                                    if (last?.harvestingDate) {
+                                      const [y, m, d] = last.harvestingDate.split('-').map(Number);
+                                      const dt = new Date(y, m - 1, d);
+                                      dt.setDate(dt.getDate() + 1);
+                                      const yy = dt.getFullYear();
+                                      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+                                      const dd = String(dt.getDate()).padStart(2, '0');
+                                      defaultDate = `${yy}-${mm}-${dd}`;
+                                    }
+                                    addCycle(season.id, defaultDate || undefined);
+                                  } }
                                     className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                                   >
                                     <Plus className="size-4" strokeWidth={ 1.75 } />
@@ -639,7 +714,7 @@ export default function EditFieldDialog({
                   <Button variant="outline" size="lg" className="min-w-[120px]" onClick={ handleCancel }>
                     Cancel
                   </Button>
-                  <Button variant="primary" size="lg" onClick={ handleSave } disabled={ saving } className="min-w-[120px]">
+                  <Button variant="primary" size="lg" onClick={ handleSave } disabled={ saving || hasAnyOverlap } className="min-w-[120px]">
                     { saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null }
                     { saving ? 'Saving…' : 'Save' }
                   </Button>
@@ -718,7 +793,10 @@ function sowingDateLabel(seedingTypeId: number | null | undefined, isCutOff: boo
 
 function CycleCard({
   cycle,
+  allCycles,
   seasonId,
+  seasonStartDate,
+  seasonEndDate,
   cropsData,
   irrigationTypesData,
   tillageTypesData,
@@ -726,7 +804,10 @@ function CycleCard({
   onRemoveCycle,
 }: {
   cycle: VegetationCycleForm;
+  allCycles: VegetationCycleForm[];
   seasonId: string;
+  seasonStartDate?: string;
+  seasonEndDate?: string;
   cropsData: Crop[] | undefined;
   irrigationTypesData: IrrigationType[] | undefined;
   tillageTypesData: TillageType[] | undefined;
@@ -802,6 +883,12 @@ function CycleCard({
   const dateLabel = sowingDateLabel(selectedCrop?.seedingTypeId, cycle.isCutOff);
   const isPlantingCutting = selectedCrop?.seedingTypeId === 3;
 
+  const overlapRanges = useMemo(() => getOverlapRanges(cycle.id, allCycles), [cycle.id, allCycles]);
+  const blockedRanges = useMemo(
+    () => getBlockedRanges(cycle.id, allCycles, seasonEndDate),
+    [cycle.id, allCycles, seasonEndDate],
+  );
+
   useEffect(() => {
     if (maturitySingle && cycle.maturity !== maturityOpts[0]) {
       onUpdateCycle(seasonId, cycle.id, 'maturity', maturityOpts[0]);
@@ -835,9 +922,10 @@ function CycleCard({
               const sel = cropsData.find((c) => c.name === cycle.cropName);
               if (!sel) return null;
               const badges: React.ReactNode[] = [];
-              if (sel.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
-              if (sel.maturityOptions && sel.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
-              if (sel.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
+              const ENABLE = false;
+              if (ENABLE && sel.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
+              if (ENABLE && sel.maturityOptions && sel.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
+              if (ENABLE && sel.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
               return badges.length > 0 ? (
                 <span className="ml-auto flex items-center gap-1">
                   { badges }
@@ -848,9 +936,10 @@ function CycleCard({
           <SelectContent>
             { (cropsData ?? []).map((crop) => {
               const badges: React.ReactNode[] = [];
-              if (crop.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
-              if (crop.maturityOptions && crop.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
-              if (crop.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
+              const ENABLE = false;
+              if (ENABLE && crop.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
+              if (ENABLE && crop.maturityOptions && crop.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
+              if (ENABLE && crop.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
               return (
                 <SelectItem key={ crop.id } value={ crop.name }>
                   <span className="flex items-center gap-2">
@@ -938,6 +1027,11 @@ function CycleCard({
           <DatePicker
             value={ cycle.plantingDate }
             onChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'plantingDate', v) }
+            minDate={ seasonStartDate }
+            maxDate={ seasonEndDate }
+            overlapRanges={ overlapRanges }
+            blockedRanges={ blockedRanges }
+            showLegend
           />
         </div>
         <div>
@@ -947,10 +1041,19 @@ function CycleCard({
             onChange={ (v) => onUpdateCycle(seasonId, cycle.id, 'harvestingDate', v) }
             disabled={ !cycle.plantingDate }
             minDate={ cycle.plantingDate ? (() => {
-              const d = new Date(cycle.plantingDate + 'T00:00:00');
-              d.setDate(d.getDate() + 1);
-              return d.toISOString().split('T')[0];
-            })() : undefined }
+              const [y, m, d] = cycle.plantingDate.split('-').map(Number);
+              const dt = new Date(y, m - 1, d);
+              dt.setDate(dt.getDate() + 1);
+              const yy = dt.getFullYear();
+              const mm = String(dt.getMonth() + 1).padStart(2, '0');
+              const dd = String(dt.getDate()).padStart(2, '0');
+              const min = `${yy}-${mm}-${dd}`;
+              return seasonStartDate && min < seasonStartDate ? seasonStartDate : min;
+            })() : seasonStartDate }
+            maxDate={ seasonEndDate }
+            overlapRanges={ overlapRanges }
+            blockedRanges={ blockedRanges }
+            showLegend
           />
         </div>
 

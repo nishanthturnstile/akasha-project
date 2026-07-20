@@ -212,3 +212,17 @@ Defined in `scripts/data/irrigation-types.json`.
 | Possible match (alias/ambiguous) | 10 |
 | Not matched (new crops) | 10 |
 | **Total** | **76** |
+
+---
+
+## 8. Crop Selection Icons (hidden)
+
+Crop badges (Sprout, Timer, Scissors) shown next to crop names in the vegetation cycle `Select` dropdown (`EditFieldDialog.tsx`) are currently hidden behind `const ENABLE = false;` in the `CycleCard` function.
+
+To restore: flip both occurrences to `const ENABLE = true;` — one in the `SelectTrigger` block and one in the `SelectContent` `.map()` block.
+
+| Icon | Component | Condition |
+|------|-----------|-----------|
+| `Sprout` | `hasVariety` | `crop.hasVariety` |
+| `Timer` | `maturityOptions` | `crop.maturityOptions.length > 0` |
+| `Scissors` | `seedingTypeId === 3` | `crop.seedingTypeId === 3` (planting/cutting crops)

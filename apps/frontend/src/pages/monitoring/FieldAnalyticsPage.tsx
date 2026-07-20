@@ -1,5 +1,5 @@
 import { Pencil } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -61,9 +61,18 @@ export default function FieldAnalyticsPage() {
     displayMode,
     overlaysVisible,
     mapFullscreen,
+    globalViewOpen,
     radarEvidenceVisible,
     setRadarEvidenceVisible,
+    setMapFullscreen,
   } = useMapView();
+
+  useEffect(() => {
+    if (selectedPlotId) {
+      setMapFullscreen(false);
+    }
+  }, [selectedPlotId, setMapFullscreen]);
+
   const fieldsQ = useFields();
   const configQ = useConfig();
   const sourcesQ = useSources();
@@ -151,7 +160,7 @@ export default function FieldAnalyticsPage() {
   }, [displayMode, effectiveSourceId, navigate, periodFrom, periodTo, selectedDate]);
 
   return (
-    <div className="h-full flex flex-col gap-3 px-4 py-3 overflow-y-auto">
+    <div className="h-full flex flex-col gap-3 px-4 py-3 overflow-hidden">
       { overlaysVisible && (
         <div className="flex shrink-0 items-stretch rounded-md border border-border bg-muted/30 px-1.5 sm:px-2">
           <div className="flex items-center py-1 sm:py-1.5">
@@ -233,13 +242,13 @@ export default function FieldAnalyticsPage() {
       ) }
 
       {/* Map card */ }
-      <div className={ cn('rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'h-[50vh] min-h-75' : 'flex-1 min-h-0') }>
+      <div className={ cn('rounded-md border border-border overflow-hidden', overlaysVisible && !mapFullscreen ? 'h-[60vh] shrink-0 min-h-0' : 'flex-1 min-h-0') }>
         <MapPage hidePlotToolbar simplifiedMapControls topLeftCoords showFullscreen />
       </div>
 
       {/* Analytics panel */ }
       { selectedField && overlaysVisible && !mapFullscreen && (
-        <div className="animate-panel-in rounded-md border border-border bg-background overflow-y-auto max-h-[50vh]">
+        <div className="animate-panel-in rounded-md border border-border bg-background overflow-y-auto min-h-0 flex-1">
           <IndexPanel
             className="w-full max-w-none rounded-none border-0 bg-transparent shadow-none"
             selectedPlot={ selectedField }

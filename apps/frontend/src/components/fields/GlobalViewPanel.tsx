@@ -371,6 +371,9 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
                 ? `${currentSeason.name} (${seasonFields.length} field${seasonFields.length !== 1 ? 's' : ''})`
                 : `${seasonFields.length} field${seasonFields.length !== 1 ? 's' : ''}`}
             </p>
+            <p className="text-xs text-muted-foreground">
+              {seasonFields.reduce((sum, f) => sum + (f.areaHa ?? 0), 0).toFixed(1)} ha total
+            </p>
           </div>
           <button
             type="button"

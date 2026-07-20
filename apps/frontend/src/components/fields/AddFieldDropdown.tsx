@@ -89,7 +89,7 @@ export function AddFieldDropdown({
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 w-80 rounded-md border border-border bg-popover shadow-e2 flex flex-col max-h-[70vh]"
+          className="absolute right-0 top-full z-popover mt-1 w-80 rounded-md border border-border bg-popover shadow-e2 flex flex-col max-h-[calc(100vh-12rem)]"
           data-testid={`${testId}-panel`}
         >
           <div className="p-2 shrink-0">

@@ -52,7 +52,8 @@ type MapViewAction =
     | { type: 'SET_MAP_FULLSCREEN'; fullscreen: boolean }
     | { type: 'SET_BEST_MODE'; enabled: boolean }
     | { type: 'SET_GLOBAL_VIEW_OPEN'; open: boolean }
-    | { type: 'SET_RADAR_EVIDENCE_VISIBLE'; visible: boolean };
+    | { type: 'SET_RADAR_EVIDENCE_VISIBLE'; visible: boolean }
+    | { type: 'SET_HOVERED_FIELD_ID'; fieldId: string | null };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -142,6 +143,9 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_RADAR_EVIDENCE_VISIBLE':
             if (action.visible === state.radarEvidenceVisible) return state;
             return { ...state, radarEvidenceVisible: action.visible };
+        case 'SET_HOVERED_FIELD_ID':
+            if (action.fieldId === state.hoveredFieldId) return state;
+            return { ...state, hoveredFieldId: action.fieldId };
         default:
             return state;
     }
@@ -258,6 +262,8 @@ export function MapViewProvider({
             setGlobalViewOpen: (open) => dispatch({ type: 'SET_GLOBAL_VIEW_OPEN', open }),
             setRadarEvidenceVisible: (visible) =>
                 dispatch({ type: 'SET_RADAR_EVIDENCE_VISIBLE', visible }),
+            setHoveredFieldId: (fieldId) =>
+                dispatch({ type: 'SET_HOVERED_FIELD_ID', fieldId }),
         }),
         [state],
     );

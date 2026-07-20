@@ -358,6 +358,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     bestMode,
     globalViewOpen,
     radarEvidenceVisible,
+    hoveredFieldId,
   } = view;
   const { seasonId } = useSeasonContext();
 
@@ -460,19 +461,55 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     prevFocusNonce.current = focusNonce;
   }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, view]);
 
-  // Fit the map to every field in the season when Global View turns on (or the
-  // season changes while it's already on), so all of them are visible at once.
+  // Fit the map to the selected field when Global View is on, or to all fields
+  // if none is selected, so the highlighted field is in focus.
   const prevGlobalViewFitKey = useRef<string | null>(null);
   useEffect(() => {
     if (!map || !globalViewOpen || seasonFields.length === 0) {
       prevGlobalViewFitKey.current = null;
       return;
     }
-    const fitKey = `${seasonId ?? ''}:${seasonFields.length}`;
-    if (prevGlobalViewFitKey.current === fitKey) return;
-    prevGlobalViewFitKey.current = fitKey;
-    focusPlots(map, seasonFields);
-  }, [map, globalViewOpen, seasonFields, seasonId]);
+    if (selectedPlot) {
+      const fitKey = `selected:${selectedPlot.id}`;
+      if (prevGlobalViewFitKey.current === fitKey) return;
+      prevGlobalViewFitKey.current = fitKey;
+      focusPlot(map, selectedPlot);
+    } else {
+      const fitKey = `${seasonId ?? ''}:${seasonFields.length}`;
+      if (prevGlobalViewFitKey.current === fitKey) return;
+      prevGlobalViewFitKey.current = fitKey;
+      focusPlots(map, seasonFields);
+    }
+  }, [map, globalViewOpen, seasonFields, seasonId, selectedPlot]);
+
+  // Style field boundaries in Global View: grey fill by default, highlight on hover.
+  // Uses persistent styledata/idle listeners so the styling survives layer
+  // re-creation when navigating back from field analytics to global view.
+  useEffect(() => {
+    if (!map || !globalViewOpen || seasonFields.length === 0) return;
+    const applyStyles = () => {
+      for (const field of seasonFields) {
+        const fillLayer = `${field.id}akasha-field-boundary-fill-layer`;
+        const outlineLayer = `${field.id}akasha-field-boundary-outline-layer`;
+        if (!map.getLayer(fillLayer)) continue;
+        const isHovered = field.id === hoveredFieldId;
+        map.setPaintProperty(fillLayer, 'fill-color', isHovered ? '#3b82f6' : '#1f2937');
+        map.setPaintProperty(fillLayer, 'fill-opacity', isHovered ? 0.35 : 0.35);
+        if (map.getLayer(outlineLayer)) {
+          map.setPaintProperty(outlineLayer, 'line-color', isHovered ? '#ffffff' : '#9ca3af');
+          map.setPaintProperty(outlineLayer, 'line-opacity', 0.7);
+        }
+      }
+    };
+    map.on('styledata', applyStyles);
+    map.on('idle', applyStyles);
+    // Fire immediately in case layers already exist.
+    applyStyles();
+    return () => {
+      map.off('styledata', applyStyles);
+      map.off('idle', applyStyles);
+    };
+  }, [map, globalViewOpen, seasonFields, hoveredFieldId]);
 
   // Field boundary interactions on the map:
   //  - continuously reflect whether the pointer is over the field so the cursor is the
@@ -509,7 +546,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (fieldMode) return;
       const feature = fieldAtPoint(e);
       canvas.style.cursor = feature ? hoverCursor : '';
+      const plotId = feature?.properties?.plotId as string | undefined;
       if (globalViewOpen) {
+        view.setHoveredFieldId(plotId ?? null);
         const name = feature?.properties?.name as string | undefined;
         pendingHoveredField.current = name ? { name, x: e.point.x, y: e.point.y } : null;
         if (hoveredFieldFrame.current === null) {
@@ -522,6 +561,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     };
     const leaveHandler = () => {
       canvas.style.cursor = '';
+      view.setHoveredFieldId(null);
       pendingHoveredField.current = null;
       setHoveredField(null);
     };

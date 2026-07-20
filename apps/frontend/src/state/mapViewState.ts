@@ -57,6 +57,8 @@ export interface MapViewState {
     globalViewOpen: boolean;
     /** Show the selected field-clipped radar evidence instead of the optical index overlay. */
     radarEvidenceVisible: boolean;
+    /** Field id hovered in the Global View panel, so the map can highlight it. */
+    hoveredFieldId: string | null;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -88,6 +90,7 @@ export const initialMapViewState: MapViewState = {
     bestMode: false,
     globalViewOpen: false,
     radarEvidenceVisible: false,
+    hoveredFieldId: null,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -116,6 +119,7 @@ export interface MapViewContextValue extends MapViewState {
     setBestMode: (enabled: boolean) => void;
     setGlobalViewOpen: (open: boolean) => void;
     setRadarEvidenceVisible: (visible: boolean) => void;
+    setHoveredFieldId: (fieldId: string | null) => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

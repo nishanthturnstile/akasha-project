@@ -169,6 +169,14 @@ export default function FieldCreatePage() {
   const fieldsQ = useFields();
   const allSeasons = useMemo(() => seasonsQ.data ?? [], [seasonsQ.data]);
 
+  // Existing saved fields for the season, shown as background reference
+  // outlines while drawing new ones -- purely visual, not part of TerraDraw's
+  // own feature store, so they can't be selected/dragged/interfere with draw.
+  const existingSeasonFields = useMemo(() => {
+    if (!selectedSeasonId) return [];
+    return (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(selectedSeasonId));
+  }, [selectedSeasonId, fieldsQ.data]);
+
   const requestMapTool = useCallback((owner: MapToolOwner): boolean => {
     setActiveMapTool((current) => {
       if (!current || current === owner) return owner;
@@ -503,6 +511,18 @@ export default function FieldCreatePage() {
               name="Draft field"
             />
           ) }
+
+          { existingSeasonFields.map((field) => (
+            <FieldBoundaryLayer
+              key={ field.id }
+              map={ map }
+              plot={ field }
+              featureId={ field.id }
+              name={ field.name }
+              layerPrefix={ field.id }
+              keepOnTop={ false }
+            />
+          )) }
 
           <FieldDrawController
             activeTool={ activeMapTool }

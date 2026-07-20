@@ -1,7 +1,8 @@
 # Whole-field dragging (move entire shape, not just vertices)
 
-**Date:** 2026-07-18
-**Status:** Implemented and confirmed working by the user.
+**Date:** 2026-07-18, follow-up fix 2026-07-20.
+**Status:** Implemented and confirmed working by the user, including a
+follow-up precision fix.
 **Files touched:** [`apps/frontend/src/components/fields/FieldDrawController.tsx`](../apps/frontend/src/components/fields/FieldDrawController.tsx), [`apps/frontend/src/components/seasons/EditFieldDialog.tsx`](../apps/frontend/src/components/seasons/EditFieldDialog.tsx)
 
 Related: [field-create-terradraw-edit-fix.md](field-create-terradraw-edit-fix.md)
@@ -102,3 +103,49 @@ separate change.
   [field-create-terradraw-edit-fix.md](field-create-terradraw-edit-fix.md).
 - **Confirmed working by the user** with real mouse input: dragging from
   inside a field's body now moves the whole shape.
+
+## Follow-up fix: drag kept grabbing a vertex instead of the body
+
+**Symptom:** even after the fix above, users (and this session's own testing)
+found that a drag intended to move the whole field frequently ended up
+moving a single vertex, or inserting a new vertex at an edge midpoint,
+instead of translating the shape — reported after drawing two fields and
+trying to drag either one.
+
+**Root cause:** confirmed by reading TerraDraw's own minified source
+(`node_modules/terra-draw/dist/terra-draw.module.js`) — the base mode class
+defaults `pointerDistance = 40` (pixels). This value is the hit-tolerance
+radius used for *both* vertex-grab and midpoint-grab detection
+(`this.pixelDistance.measure(...) < this.pointerDistance` gating both
+`DragCoordinateBehavior` and midpoint-insert detection), and it takes
+priority over whole-feature body-drag detection. For a realistically-sized
+field (not a huge test shape spanning most of the screen), a 40px circle
+around *every* vertex plus *every* edge midpoint can cover most of the
+polygon's interior, leaving little safe "body-only" area — so a click aimed
+at the middle of the field very often lands within some vertex's or
+midpoint's tolerance zone instead.
+
+**Fix:** set `pointerDistance: 20` (half the default) on both `TerraDrawSelectMode`
+configs (`FieldDrawController.tsx` and `EditFieldDialog.tsx`), tightening the
+vertex/midpoint grab radius so more of a field's interior is free for
+reliable whole-shape dragging, while vertices/midpoints remain easily
+grabbable when clicked precisely (20px is still a comfortable tolerance for
+mouse or touch input, just less prone to false-positive "near miss" hits).
+
+```ts
+new TerraDrawSelectMode({
+  pointerDistance: 20, // NEW — was TerraDraw's 40px default
+  styles: { /* ... unchanged ... */ },
+  flags: { /* ... unchanged ... */ },
+})
+```
+
+**Verified live:** drew two fields (matching the reported scenario) and
+tested dragging. This session's own synthetic drag testing continued to hit
+the Browser pane's known drag-precision limitations (see the "Debugging
+playbook" in [field-create-terradraw-edit-fix.md](field-create-terradraw-edit-fix.md))
+— clicks aimed at a shape's center still occasionally landed on a vertex, and
+one drag attempt was interpreted as a map pan/zoom rather than a feature
+drag. **Confirmed working by the user** with real mouse input: dragging from
+inside a field's body now reliably translates the whole shape instead of
+moving/inserting a vertex.

@@ -22,6 +22,16 @@ export interface FieldBoundaryLayerProps {
   name?: string;
   plot: Plot | null;
   layerPrefix?: string;
+  /**
+   * Keep re-asserting this layer to the very top of the style on every
+   * styledata/idle event. Defaults to true (existing behavior) for a single
+   * draft/selected/edited field. Set to false for passive background
+   * reference layers (e.g. rendering many other fields alongside an actively
+   * drawn/edited one) -- multiple instances all fighting to stay on top would
+   * otherwise perpetually bury whichever field is actively being edited,
+   * hiding its fill/outline under the background layers.
+   */
+  keepOnTop?: boolean;
 }
 
 export function FieldBoundaryLayer({
@@ -31,6 +41,7 @@ export function FieldBoundaryLayer({
   name = 'Draft field',
   plot,
   layerPrefix = '',
+  keepOnTop = true,
 }: FieldBoundaryLayerProps) {
   useEffect(() => {
     if (!map) return undefined;
@@ -47,6 +58,8 @@ export function FieldBoundaryLayer({
 
     upsertFieldBoundaryLayer(map, plot, geometry, featureId, name, layerPrefix);
 
+    if (!keepOnTop) return undefined;
+
     const keepBoundaryOnTop = () => ensureFieldBoundaryOrder(map, layerPrefix);
     map.on('styledata', keepBoundaryOnTop);
     map.on('idle', keepBoundaryOnTop);
@@ -55,7 +68,7 @@ export function FieldBoundaryLayer({
       map.off('styledata', keepBoundaryOnTop);
       map.off('idle', keepBoundaryOnTop);
     };
-  }, [featureId, geometry, map, name, plot, layerPrefix]);
+  }, [featureId, geometry, map, name, plot, layerPrefix, keepOnTop]);
 
   return null;
 }

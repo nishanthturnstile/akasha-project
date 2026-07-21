@@ -75,6 +75,7 @@ import {
   createField,
   updateField,
   deleteField,
+  getNextFieldName,
 } from '@/lib/api';
 import type {
   CloudMaskOptions,
@@ -867,6 +868,15 @@ export function useDeleteField() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
     },
+  });
+}
+
+export function useNextFieldName() {
+  return useQuery({
+    queryKey: [...queryKeys.fields, 'next-name'] as const,
+    queryFn: getNextFieldName,
+    staleTime: 30_000,
+    retry: false,
   });
 }
 

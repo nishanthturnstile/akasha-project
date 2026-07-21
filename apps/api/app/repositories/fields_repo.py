@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from geoalchemy2.shape import from_shape, to_shape
@@ -12,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..db import session_scope
 from ..models import (
+    AppSetting,
     Crop,
     Field,
     FieldGroup,
@@ -397,6 +400,43 @@ def _validate_field_name_unique(
             f'A field named "{name}" already exists.',
             409,
         )
+
+
+def get_next_field_number(user_id: str) -> int:
+    """Return the next auto-incremented field number for naming (Field N).
+
+    The counter is stored in ``app_settings`` keyed by user so it persists
+    across field deletions — numbers are never reused for the same user.
+    """
+    key = f"max_field_number:{user_id}"
+    with session_scope() as session:
+        setting = session.execute(
+            select(AppSetting).where(AppSetting.key == key)
+        ).scalar_one_or_none()
+        stored_max: int = setting.value if setting else 0
+
+        # Scan existing fields for highest number used
+        real_max = 0
+        for f in session.execute(
+            select(Field).where(Field.user_id == _uuid(user_id))
+        ).scalars().all():
+            if f.name == "Field":
+                real_max = max(real_max, 0)
+            else:
+                m = re.match(r"^Field (\d+)$", f.name)
+                if m:
+                    real_max = max(real_max, int(m.group(1)))
+
+        next_number = max(stored_max, real_max) + 1
+
+        if setting is None:
+            setting = AppSetting(key=key, value=next_number)
+            session.add(setting)
+        else:
+            setting.value = next_number
+            setting.updated_at = datetime.now(timezone.utc)
+
+        return next_number
 
 
 def create_field(

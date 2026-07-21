@@ -9,7 +9,7 @@ import { MapControls } from '@/components/map/MapControls';
 import { PlotToolbar } from '@/components/scaffold/PlotToolbar';
 import { polygonAreaMeters } from '@/lib/measure';
 import { getField } from '@/lib/api';
-import { useConfig, useCreateField, useUpdateField } from '@/lib/queries';
+import { useConfig, useCreateField, useFields, useNextFieldName, useUpdateField } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 
 import type maplibregl from 'maplibre-gl';
@@ -54,6 +54,20 @@ export default function OnboardingFieldCreate() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
   const [initialised, setInitialised] = useState(false);
+
+  const fieldsQ = useFields();
+  const nextNameQ = useNextFieldName();
+
+  // Derive the suggested field name — use server-side if available, else compute locally
+  const suggestedFieldName = useMemo(() => {
+    if (nextNameQ.data?.name) return nextNameQ.data.name;
+    let maxNum = 0;
+    for (const f of (fieldsQ.data ?? [])) {
+      const m = f.name.match(/^Field (\d+)$/);
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+    }
+    return `Field ${maxNum + 1}`;
+  }, [nextNameQ.data, fieldsQ.data]);
 
   const seasonId = sessionStorage.getItem(ONBOARDING_SEASON_KEY);
 
@@ -159,7 +173,7 @@ export default function OnboardingFieldCreate() {
       }
       const areaMeters = polygonAreaMeters(toLngLatRing(polygon.coordinates[0] ?? []));
       const payload = {
-        name: fieldName.trim() || 'Field',
+        name: fieldName.trim() || suggestedFieldName,
         geometry: {
           type: 'Polygon' as const,
           coordinates: polygon.coordinates,
@@ -269,7 +283,7 @@ export default function OnboardingFieldCreate() {
             <div className="rounded-lg border border-border bg-card p-4 shadow-lg space-y-3">
               <input
                 placeholder="Field name"
-                value={ fieldName }
+                value={ fieldName || (!editingFieldId && suggestedFieldName) || '' }
                 onChange={ (e) => setFieldName(e.target.value) }
                 className="w-full rounded-md border border-border bg-background px-3 py-2"
                 autoFocus

@@ -83,6 +83,7 @@ vi.mock('@/lib/queries', () => ({
     useCreateField: () => ({ isPending: false, mutateAsync: vi.fn() }),
     useFields: () => ({ data: [] }),
     useSeasons: () => ({ data: [] }),
+    useNextFieldName: () => ({ data: { name: 'Field 1' } }),
 }));
 
 function config(usageModel: string) {

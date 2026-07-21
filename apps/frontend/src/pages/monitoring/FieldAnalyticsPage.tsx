@@ -90,8 +90,9 @@ export default function FieldAnalyticsPage() {
   }, [fieldsQ.data, selectedPlotId]);
 
   const latestCrop = useMemo(() => {
-    if (!selectedField?.vegetationData || selectedField.vegetationData.length === 0) return null;
-    const sorted = [...selectedField.vegetationData].sort((a, b) => {
+    const seasonCycles = selectedField?.vegetationData?.filter((v) => v.seasonId === seasonId) ?? [];
+    if (seasonCycles.length === 0) return null;
+    const sorted = [...seasonCycles].sort((a, b) => {
       const yearA = a.year ?? 0;
       const yearB = b.year ?? 0;
       if (yearB !== yearA) return yearB - yearA;
@@ -100,7 +101,7 @@ export default function FieldAnalyticsPage() {
       return dateB - dateA;
     });
     return sorted[0];
-  }, [selectedField]);
+  }, [selectedField, seasonId]);
 
   const effectiveSourceId = useMemo(
     () => selectEffectiveSourceId({

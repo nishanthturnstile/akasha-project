@@ -176,6 +176,13 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Clear persisted field selection on mount (unless deep-linked to a specific field)
+  useLayoutEffect(() => {
+    if (!location.pathname.includes('/field/')) {
+      view.clearSelectedPlot();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sortedSeasons = useMemo(() => {
     const data = seasonsQ.data;
     if (!Array.isArray(data)) return [];
@@ -245,15 +252,7 @@ export function AppShell() {
     [editSeasonId, sortedSeasons],
   );
 
-  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(() => {
-    try { return sessionStorage.getItem('akasha.seasonId'); } catch { return null; }
-  });
-
-  useEffect(() => {
-    if (currentSeasonId) {
-      try { sessionStorage.setItem('akasha.seasonId', currentSeasonId); } catch { /* storage unavailable */ }
-    }
-  }, [currentSeasonId]);
+  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
 
   // Reset currentSeasonId if the selected season was deleted
   useEffect(() => {

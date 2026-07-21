@@ -1,5 +1,5 @@
 import { Pencil } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -66,8 +66,10 @@ export default function FieldAnalyticsPage() {
     setMapFullscreen,
   } = useMapView();
 
+  const prevPlotId = useRef<string | null>(null);
   useEffect(() => {
-    if (selectedPlotId) {
+    if (selectedPlotId && selectedPlotId !== prevPlotId.current) {
+      prevPlotId.current = selectedPlotId;
       setMapFullscreen(false);
     }
   }, [selectedPlotId, setMapFullscreen]);

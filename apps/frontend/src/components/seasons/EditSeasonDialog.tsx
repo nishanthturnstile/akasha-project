@@ -171,12 +171,8 @@ export default function EditSeasonDialog({
   }, [startDate]);
 
   const handleCancel = useCallback(() => {
-    if (dirty) {
-      setConfirmClose(true);
-    } else {
-      onOpenChange(false);
-    }
-  }, [dirty, onOpenChange]);
+    setConfirmClose(true);
+  }, []);
 
   const removedFieldIds = useMemo(
     () => seasonFieldIds.filter((id) => !selectedFieldIds.includes(id)),
@@ -235,13 +231,14 @@ export default function EditSeasonDialog({
   };
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen && dirty && !forceCloseRef.current) {
+    if (!nextOpen && !forceCloseRef.current) {
+      if (confirmSeasonEdit) return;
       setConfirmClose(true);
     } else {
       forceCloseRef.current = false;
       onOpenChange(nextOpen);
     }
-  }, [dirty, onOpenChange]);
+  }, [onOpenChange, confirmSeasonEdit]);
 
   useEffect(() => {
     if (!confirmClose && forceCloseRef.current) {
@@ -510,14 +507,18 @@ export default function EditSeasonDialog({
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
-          <AlertDialogTitle>Save the changes?</AlertDialogTitle>
+          <AlertDialogTitle>{dirty ? 'Unsaved changes' : 'Cancel editing?'}</AlertDialogTitle>
           <AlertDialogDescription>
-            All unsaved changes will be lost.
+            {dirty
+              ? 'You have unsaved changes. Are you sure you want to discard them?'
+              : 'Are you sure you want to cancel editing? All unsaved changes will be lost.'}
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
+            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>
+              {dirty ? 'Keep editing' : 'No, keep editing'}
+            </AlertDialogCancel>
             <AlertDialogAction className="cursor-pointer" onClick={() => { forceCloseRef.current = true; setConfirmClose(false); }}>
-              Yes
+              {dirty ? 'Discard' : 'Yes, cancel'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

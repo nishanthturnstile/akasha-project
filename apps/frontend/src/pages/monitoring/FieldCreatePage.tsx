@@ -337,7 +337,13 @@ export default function FieldCreatePage() {
       }
 
       queryClient.setQueryData<Field[]>(queryKeys.fields, (old) => [...(old ?? []), ...createdFields]);
-      navigate(`/monitoring/field-analytics/field/${createdFields[0].id}${returnImagerySearch(searchParams)}`);
+
+      const imagerySearch = returnImagerySearch(searchParams);
+      const baseUrl = `/monitoring/field-analytics/field/${createdFields[0].id}`;
+      const allParams = new URLSearchParams(imagerySearch.startsWith('?') ? imagerySearch.slice(1) : '');
+      if (selectedSeasonId) allParams.set('seasonId', selectedSeasonId);
+      const queryString = allParams.toString();
+      navigate(queryString ? `${baseUrl}?${queryString}` : baseUrl);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save fields';
       setBatchError(message);

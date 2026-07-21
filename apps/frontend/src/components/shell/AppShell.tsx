@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
 import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
-import GlobalViewPanel from '@/components/fields/GlobalViewPanel';
+import GlobalViewPanel, { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
@@ -280,7 +280,29 @@ export function AppShell() {
       if (belongsToCurrentSeason) return;
       view.clearSelectedPlot();
     }
-  }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId, view]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId]);
+
+  // Auto-select the latest field in the current season when entering Global View
+  // (covers page refresh and navigation to the analytics route).
+  useEffect(() => {
+    if (!view.globalViewOpen || !effectiveSeasonId) return;
+    const fields = fieldsQ.data;
+    if (!Array.isArray(fields) || fields.length === 0) return;
+
+    const seasonFields = fields.filter((f) => f.seasonIds?.includes(effectiveSeasonId));
+    if (seasonFields.length === 0) return;
+
+    const latest = seasonFields.reduce((a, b) =>
+      new Date(b.createdAt ?? 0).getTime() > new Date(a.createdAt ?? 0).getTime() ? b : a,
+    );
+
+    if (view.selectedPlotId !== latest.id) {
+      view.setSelectedPlotId(latest.id);
+      setLastFieldForSeason(effectiveSeasonId, latest.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.globalViewOpen, effectiveSeasonId, fieldsQ.data]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -569,9 +591,19 @@ export function AppShell() {
                             onClick={ () => {
                               setCurrentSeasonId(season.id);
                               setSeasonSheetOpen(false);
-                              view.clearSelectedPlot();
                               setGlobalViewMode(true);
                               navigate('/monitoring/field-analytics');
+                              const fields = fieldsQ.data;
+                              if (Array.isArray(fields)) {
+                                const seasonFields = fields.filter((f) => f.seasonIds?.includes(season.id));
+                                if (seasonFields.length > 0) {
+                                  const latest = seasonFields.reduce((a, b) =>
+                                    new Date(b.createdAt ?? 0).getTime() > new Date(a.createdAt ?? 0).getTime() ? b : a,
+                                  );
+                                  view.setSelectedPlotId(latest.id);
+                                  setLastFieldForSeason(season.id, latest.id);
+                                }
+                              }
                             } }
                           >
                             <CardHeader className="pb-2">

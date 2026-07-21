@@ -698,28 +698,6 @@ export default function EditFieldDialog({
                               </div>
                               { isExpanded && (
                                 <div className="border-t-2 border-border/60 p-4 space-y-4">
-                                  { cycles.length === 0 && (
-                                    <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
-                                  ) }
-                                  { cycles.slice().sort((a, b) => {
-                                      const yearDiff = (b.year ?? 0) - (a.year ?? 0);
-                                      if (yearDiff !== 0) return yearDiff;
-                                      return b.plantingDate.localeCompare(a.plantingDate);
-                                    }).map((cycle) => (
-                                    <CycleCard
-                                      key={ `${cycle.id}-${cycle.cropName}` }
-                                      cycle={ cycle }
-                                      allCycles={ cycles }
-                                      seasonId={ season.id }
-                                      seasonStartDate={ season.startDate ?? undefined }
-                                      seasonEndDate={ season.endDate ?? undefined }
-                                      cropsData={ cropsQ.data }
-                                      irrigationTypesData={ irrigationTypesQ.data }
-                                      tillageTypesData={ tillageTypesQ.data }
-                                      onUpdateCycle={ updateCycle }
-                                      onRemoveCycle={ removeCycle }
-                                    />
-                                  )) }
                                   <button
                                     type="button"
                                     onClick={ () => {
@@ -742,6 +720,28 @@ export default function EditFieldDialog({
                                     <Plus className="size-4" strokeWidth={ 1.75 } />
                                     Add vegetation cycle
                                   </button>
+                                  { cycles.length === 0 && (
+                                    <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
+                                  ) }
+                                  { cycles.slice().sort((a, b) => {
+                                      const yearDiff = (b.year ?? 0) - (a.year ?? 0);
+                                      if (yearDiff !== 0) return yearDiff;
+                                      return b.plantingDate.localeCompare(a.plantingDate);
+                                    }).map((cycle) => (
+                                    <CycleCard
+                                      key={ `${cycle.id}-${cycle.cropName}` }
+                                      cycle={ cycle }
+                                      allCycles={ cycles }
+                                      seasonId={ season.id }
+                                      seasonStartDate={ season.startDate ?? undefined }
+                                      seasonEndDate={ season.endDate ?? undefined }
+                                      cropsData={ cropsQ.data }
+                                      irrigationTypesData={ irrigationTypesQ.data }
+                                      tillageTypesData={ tillageTypesQ.data }
+                                      onUpdateCycle={ updateCycle }
+                                      onRemoveCycle={ removeCycle }
+                                    />
+                                  )) }
                                 </div>
                               ) }
                             </div>

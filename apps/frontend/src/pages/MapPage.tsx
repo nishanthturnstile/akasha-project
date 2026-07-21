@@ -456,29 +456,31 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     if (!focusTarget) return;
     const nonceBumped = focusNonce !== prevFocusNonce.current;
     if (!nonceBumped && prevFocusedPlotId.current === selectedPlotId) return;
+    // Skip auto-selection in Global View — Effect B handles the initial fit.
+    if (!nonceBumped && globalViewOpen) return;
     focusPlot(map, focusTarget);
     prevFocusedPlotId.current = selectedPlotId;
     prevFocusNonce.current = focusNonce;
-  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, view]);
+  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, globalViewOpen, view]);
 
   // Fit the map to the selected field when Global View is on, or to all fields
   // if none is selected, so the highlighted field is in focus.
+  // On initial entry always fit to ALL fields; only refit to a single field
+  // when the user explicitly selects one (which bumps focusNonce).
   const prevGlobalViewFitKey = useRef<string | null>(null);
   useEffect(() => {
     if (!map || !globalViewOpen || seasonFields.length === 0) {
       prevGlobalViewFitKey.current = null;
       return;
     }
-    if (selectedPlot) {
+    if (prevGlobalViewFitKey.current === null) {
+      prevGlobalViewFitKey.current = `${seasonId ?? ''}:${seasonFields.length}`;
+      focusPlots(map, seasonFields);
+    } else if (selectedPlot) {
       const fitKey = `selected:${selectedPlot.id}`;
       if (prevGlobalViewFitKey.current === fitKey) return;
       prevGlobalViewFitKey.current = fitKey;
       focusPlot(map, selectedPlot);
-    } else {
-      const fitKey = `${seasonId ?? ''}:${seasonFields.length}`;
-      if (prevGlobalViewFitKey.current === fitKey) return;
-      prevGlobalViewFitKey.current = fitKey;
-      focusPlots(map, seasonFields);
     }
   }, [map, globalViewOpen, seasonFields, seasonId, selectedPlot]);
 
@@ -578,6 +580,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         view.setSelectedPlotId(plotId);
         view.setFocusNonce(Date.now());
         view.setGlobalViewOpen(false);
+        view.setOverlaysVisible(true);
       }
       navigate(`/monitoring/field-analytics/field/${plotId}`);
     };

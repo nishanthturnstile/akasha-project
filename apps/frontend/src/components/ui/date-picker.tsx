@@ -84,6 +84,13 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
     return { year: now.getFullYear(), month: now.getMonth() };
   });
 
+  const [yearPickerOpen, setYearPickerOpen] = React.useState(false);
+  const decadeStart = Math.floor(viewDate.year / 10) * 10;
+  const yearPickerYears = React.useMemo(
+    () => Array.from({ length: 10 }, (_, i) => decadeStart + i),
+    [decadeStart],
+  );
+
   React.useImperativeHandle(ref, () => ({
     open: () => handleOpenChange(true),
     setViewDate: (year: number, month: number) => setViewDate({ year, month }),
@@ -244,98 +251,159 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <button
-          type="button"
-          disabled={prevDisabled}
-          onClick={handlePrevMonth}
-          className={cn(
-            'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-            prevDisabled
-              ? 'cursor-not-allowed text-muted-foreground/30'
-              : 'hover:bg-accent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <ChevronLeft className="size-4" />
-        </button>
-        <span className="text-sm font-medium text-foreground">
-          {MONTHS[viewDate.month]} {viewDate.year}
-        </span>
-        <button
-          type="button"
-          disabled={nextDisabled}
-          onClick={handleNextMonth}
-          className={cn(
-            'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-            nextDisabled
-              ? 'cursor-not-allowed text-muted-foreground/30'
-              : 'hover:bg-accent text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <ChevronRight className="size-4" />
-        </button>
-      </div>
-
-      {/* Day headers */}
-      <div className="grid grid-cols-7 mb-1">
-        {DAYS.map((d) => (
-          <div
-            key={d}
-            className="text-center text-[11px] font-medium text-muted-foreground py-1"
-          >
-            {d}
-          </div>
-        ))}
-      </div>
-
-      {/* Days grid */}
-      <div className="grid grid-cols-7 gap-0.5">
-        {/* Previous month padding */}
-        {Array.from({ length: firstDay }, (_, i) => {
-          const day = prevMonthDays - firstDay + i + 1;
-          return (
+        {yearPickerOpen ? (
+          <>
             <button
-              key={`prev-${i}`}
               type="button"
-              disabled
-              className="h-8 w-8 rounded-md text-sm text-muted-foreground/40 flex items-center justify-center"
+              onClick={() =>
+                setViewDate((prev) => ({ ...prev, year: prev.year - 10 }))
+              }
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent text-muted-foreground hover:text-foreground"
             >
-              {day}
+              <ChevronLeft className="size-4" />
             </button>
-          );
-        })}
-
-        {/* Current month days */}
-        {Array.from({ length: daysInMonth }, (_, i) => {
-          const day = i + 1;
-          const selected = isSelected(day);
-          const today = isToday(day);
-          const outsideSeason = isDisabled(day);
-          const overlap = !outsideSeason && isOverlapDay(day);
-          const blocked = !outsideSeason && !overlap && isBlockedDay(day);
-          return (
             <button
-              key={day}
               type="button"
-              disabled={outsideSeason || overlap || blocked}
-              onClick={() => handleSelect(day)}
+              onClick={() => setYearPickerOpen(false)}
+              className="text-sm font-medium text-foreground hover:bg-accent/40 rounded px-2 py-1 transition-colors"
+            >
+              {decadeStart} – {decadeStart + 9}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setViewDate((prev) => ({ ...prev, year: prev.year + 10 }))
+              }
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent text-muted-foreground hover:text-foreground"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={prevDisabled}
+              onClick={handlePrevMonth}
               className={cn(
-                dayButtonClass,
-                outsideSeason && 'cursor-not-allowed text-muted-foreground/40',
-                overlap && 'cursor-not-allowed text-amber-600/50',
-                blocked && 'cursor-not-allowed text-muted-foreground/40',
-                !outsideSeason && !overlap && !blocked && selected && 'bg-primary text-primary-foreground font-medium',
-                !outsideSeason && !overlap && !blocked && !selected && today && 'border border-primary/50 text-foreground font-medium',
-                !outsideSeason && !overlap && !blocked && !selected && !today && 'text-foreground hover:bg-accent',
+                'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+                prevDisabled
+                  ? 'cursor-not-allowed text-muted-foreground/30'
+                  : 'hover:bg-accent text-muted-foreground hover:text-foreground',
               )}
             >
-              {day}
+              <ChevronLeft className="size-4" />
             </button>
-          );
-        })}
+            <button
+              type="button"
+              onClick={() => setYearPickerOpen(true)}
+              className="text-sm font-medium text-foreground hover:bg-accent/40 rounded px-2 py-1 transition-colors"
+            >
+              {MONTHS[viewDate.month]} {viewDate.year}
+            </button>
+            <button
+              type="button"
+              disabled={nextDisabled}
+              onClick={handleNextMonth}
+              className={cn(
+                'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+                nextDisabled
+                  ? 'cursor-not-allowed text-muted-foreground/30'
+                  : 'hover:bg-accent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </>
+        )}
       </div>
 
+      {yearPickerOpen ? (
+        <div className="grid grid-cols-5 gap-1 pb-2">
+          {yearPickerYears.map((y) => (
+            <button
+              key={y}
+              type="button"
+              onClick={() => {
+                setViewDate((prev) => ({ ...prev, year: y }));
+                setYearPickerOpen(false);
+              }}
+              className={cn(
+                'h-9 w-full rounded-md text-sm transition-colors',
+                y === viewDate.year
+                  ? 'bg-primary text-primary-foreground font-medium'
+                  : 'text-foreground hover:bg-accent',
+              )}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          {/* Day headers */}
+          <div className="grid grid-cols-7 mb-1">
+            {DAYS.map((d) => (
+              <div
+                key={d}
+                className="text-center text-[11px] font-medium text-muted-foreground py-1"
+              >
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Days grid */}
+          <div className="grid grid-cols-7 gap-0.5">
+            {/* Previous month padding */}
+            {Array.from({ length: firstDay }, (_, i) => {
+              const day = prevMonthDays - firstDay + i + 1;
+              return (
+                <button
+                  key={`prev-${i}`}
+                  type="button"
+                  disabled
+                  className="h-8 w-8 rounded-md text-sm text-muted-foreground/40 flex items-center justify-center"
+                >
+                  {day}
+                </button>
+              );
+            })}
+
+            {/* Current month days */}
+            {Array.from({ length: daysInMonth }, (_, i) => {
+              const day = i + 1;
+              const selected = isSelected(day);
+              const today = isToday(day);
+              const outsideSeason = isDisabled(day);
+              const overlap = !outsideSeason && isOverlapDay(day);
+              const blocked = !outsideSeason && !overlap && isBlockedDay(day);
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  disabled={outsideSeason || overlap || blocked}
+                  onClick={() => handleSelect(day)}
+                  className={cn(
+                    dayButtonClass,
+                    outsideSeason && 'cursor-not-allowed text-muted-foreground/40',
+                    overlap && 'cursor-not-allowed text-amber-600/50',
+                    blocked && 'cursor-not-allowed text-muted-foreground/40',
+                    !outsideSeason && !overlap && !blocked && selected && 'bg-primary text-primary-foreground font-medium',
+                    !outsideSeason && !overlap && !blocked && !selected && today && 'border border-primary/50 text-foreground font-medium',
+                    !outsideSeason && !overlap && !blocked && !selected && !today && 'text-foreground hover:bg-accent',
+                  )}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
       {/* Legend */}
-      {hasLegend && (
+      {!yearPickerOpen && hasLegend && (
         <div className="border-t border-border/60 pt-2 pb-1 space-y-1">
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <span className="inline-block size-3 rounded-full bg-muted-foreground/40" />

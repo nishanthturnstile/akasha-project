@@ -43,6 +43,7 @@ function useRoutedMapUrlState(): void {
     const navigate = useNavigate();
     const [search] = useSearchParams();
     const params = useParams();
+    const urlPlotId = normalizeIdParam(params.plotId);
 
     // Hydration runs once: route/search params win over persisted state on first mount
     // so a shared link always shows the linked scene rather than a stale local one.
@@ -98,8 +99,9 @@ function useRoutedMapUrlState(): void {
         if (view.displayMode) next.set('layer', view.displayMode);
 
         const queryString = next.toString();
-        const basePath = view.selectedPlotId
-            ? `/monitoring/field-analytics/field/${view.selectedPlotId}`
+        const effectivePlotId = view.selectedPlotId ?? urlPlotId;
+        const basePath = effectivePlotId
+            ? `/monitoring/field-analytics/field/${effectivePlotId}`
             : '/monitoring/field-analytics';
         const targetUrl = queryString ? `${basePath}?${queryString}` : basePath;
 
@@ -114,6 +116,7 @@ function useRoutedMapUrlState(): void {
         view.periodTo,
         view.activeSourceId,
         view.displayMode,
+        urlPlotId,
         navigate,
     ]);
 }

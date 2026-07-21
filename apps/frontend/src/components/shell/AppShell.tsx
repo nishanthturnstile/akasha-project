@@ -176,13 +176,6 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Clear persisted field selection on mount (unless deep-linked to a specific field)
-  useLayoutEffect(() => {
-    if (!location.pathname.includes('/field/')) {
-      view.clearSelectedPlot();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const sortedSeasons = useMemo(() => {
     const data = seasonsQ.data;
     if (!Array.isArray(data)) return [];
@@ -252,7 +245,15 @@ export function AppShell() {
     [editSeasonId, sortedSeasons],
   );
 
-  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
+  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('akasha.seasonId'); } catch { return null; }
+  });
+
+  useEffect(() => {
+    if (currentSeasonId) {
+      try { sessionStorage.setItem('akasha.seasonId', currentSeasonId); } catch { /* storage unavailable */ }
+    }
+  }, [currentSeasonId]);
 
   // Reset currentSeasonId if the selected season was deleted
   useEffect(() => {
@@ -286,27 +287,6 @@ export function AppShell() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId]);
-
-  // Auto-select the latest field in the current season when entering Global View
-  // (covers page refresh and navigation to the analytics route).
-  useEffect(() => {
-    if (!view.globalViewOpen || !effectiveSeasonId) return;
-    const fields = fieldsQ.data;
-    if (!Array.isArray(fields) || fields.length === 0) return;
-
-    const seasonFields = fields.filter((f) => f.seasonIds?.includes(effectiveSeasonId));
-    if (seasonFields.length === 0) return;
-
-    const latest = seasonFields.reduce((a, b) =>
-      new Date(b.createdAt ?? 0).getTime() > new Date(a.createdAt ?? 0).getTime() ? b : a,
-    );
-
-    if (view.selectedPlotId !== latest.id) {
-      view.setSelectedPlotId(latest.id);
-      setLastFieldForSeason(effectiveSeasonId, latest.id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.globalViewOpen, effectiveSeasonId, fieldsQ.data]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

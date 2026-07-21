@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   CalendarRange,
@@ -165,15 +165,19 @@ export function AppShell() {
   const updateSeason = useUpdateSeason();
   const fieldsQ = useFields();
 
-  // Seed the shared globalViewOpen/overlaysVisible state on mount (no lag frame after page refresh)
-  useEffect(() => {
+  // Seed the shared globalViewOpen/overlaysVisible/mapFullscreen state on mount
+  // (useLayoutEffect so state is correct before the first paint — no flash of empty map).
+  useLayoutEffect(() => {
     view.setOverlaysVisible(!initialGlobalViewOpen);
     view.setGlobalViewOpen(initialGlobalViewOpen);
+    if (!initialGlobalViewOpen) {
+      view.setMapFullscreen(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Clear persisted field selection on mount (unless deep-linked to a specific field)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!location.pathname.includes('/field/')) {
       view.clearSelectedPlot();
     }

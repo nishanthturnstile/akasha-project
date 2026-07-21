@@ -726,7 +726,9 @@ export default function EditFieldDialog({
                                   { cycles.slice().sort((a, b) => {
                                       const yearDiff = (b.year ?? 0) - (a.year ?? 0);
                                       if (yearDiff !== 0) return yearDiff;
-                                      return b.plantingDate.localeCompare(a.plantingDate);
+                                      const aDate = a.plantingDate || '9999-12-31';
+                                      const bDate = b.plantingDate || '9999-12-31';
+                                      return bDate.localeCompare(aDate);
                                     }).map((cycle) => (
                                     <CycleCard
                                       key={ `${cycle.id}-${cycle.cropName}` }

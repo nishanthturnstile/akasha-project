@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import {
     useInRouterContext,
     useNavigate,
@@ -49,7 +49,7 @@ function useRoutedMapUrlState(): void {
     // so a shared link always shows the linked scene rather than a stale local one.
     const hydrated = useRef(false);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (hydrated.current) return;
         hydrated.current = true;
 

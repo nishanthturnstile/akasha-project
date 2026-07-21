@@ -793,7 +793,6 @@ describe('IndexPanel — LISS-4 provenance UI (Phase E)', () => {
                 supportedIndices={ ['NDVI', 'NDMI'] }
                 cloudMask={ cloudMask }
                 preferHighRes
-                onPreferHighResChange={ () => undefined }
             />,
         );
 
@@ -882,7 +881,6 @@ describe('IndexPanel — LISS-4 provenance UI (Phase E)', () => {
                 supportedIndices={ ['NDVI', 'NDMI'] }
                 cloudMask={ cloudMask }
                 preferHighRes
-                onPreferHighResChange={ () => undefined }
             />,
         );
 

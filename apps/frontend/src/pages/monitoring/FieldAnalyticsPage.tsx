@@ -61,7 +61,6 @@ export default function FieldAnalyticsPage() {
     displayMode,
     overlaysVisible,
     mapFullscreen,
-    globalViewOpen,
     radarEvidenceVisible,
     setRadarEvidenceVisible,
     setMapFullscreen,

@@ -20,6 +20,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
@@ -142,6 +143,7 @@ def generate_crops(session: Session) -> int:
         return 0
 
     if db_count > 0:
+        session.execute(text("DELETE FROM akasha.vegetation_cycles"))
         session.query(Variety).delete()
         session.query(Crop).delete()
         session.flush()

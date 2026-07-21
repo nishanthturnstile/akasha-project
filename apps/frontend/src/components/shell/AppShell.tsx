@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
 import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
-import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
+import GlobalViewPanel from '@/components/fields/GlobalViewPanel';
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
@@ -267,42 +267,18 @@ export function AppShell() {
     [effectiveSeasonId, sortedSeasons],
   );
 
-  // Auto-select the last-viewed field for the current season on initial load
-  // and when switching between seasons.
+  // Validate the currently selected field still belongs to the current season.
+  // Does NOT auto-select fields — that only happens when the URL targets a
+  // specific field (deep-link). Season switching always lands in Global View.
   useEffect(() => {
     const fields = fieldsQ.data;
     if (!fields || fields.length === 0 || !effectiveSeasonId) return;
 
-    // If there is a currently selected field, verify it belongs to the current
-    // season. If the user switched to a season that has no fields, clear the
-    // stale selection so no polygon from another season lingers on the map.
     if (view.selectedPlotId) {
       const selectedField = fields.find((f) => f.id === view.selectedPlotId);
       const belongsToCurrentSeason = selectedField && selectedField.seasonIds?.includes(effectiveSeasonId);
       if (belongsToCurrentSeason) return;
       view.clearSelectedPlot();
-    }
-
-    const savedFields = getLastFieldPerSeason();
-    const savedFieldId = savedFields[effectiveSeasonId];
-    const savedField = savedFieldId
-      ? fields.find((f) => f.id === savedFieldId && f.seasonIds?.includes(effectiveSeasonId))
-      : undefined;
-
-    if (savedField) {
-      view.setSelectedPlotId(savedField.id);
-      view.setFocusNonce(Date.now());
-      setTimeout(() => setGlobalViewMode(false), 0);
-    } else {
-      const firstField = fields.find((f) => f.seasonIds?.includes(effectiveSeasonId));
-      if (firstField) {
-        view.setSelectedPlotId(firstField.id);
-        view.setFocusNonce(Date.now());
-        setTimeout(() => setGlobalViewMode(false), 0);
-      } else {
-        // Season has no fields — keep Global View open to show the empty state
-        setTimeout(() => setGlobalViewMode(true), 0);
-      }
     }
   }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId, view]);
 
@@ -362,7 +338,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={ 200 }>
-      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); setGlobalViewMode(true); } } />
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); view.clearSelectedPlot(); setGlobalViewMode(true); } } />
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
@@ -591,25 +567,11 @@ export function AppShell() {
                               isCurrent && 'border-primary/50 ring-1 ring-primary/20',
                             ) }
                             onClick={ () => {
-                              const savedFields = getLastFieldPerSeason();
-                              const savedFieldId = savedFields[season.id];
-                              const fields = fieldsQ.data ?? [];
-                              const savedField = savedFieldId ? fields.find((f) => f.id === savedFieldId && f.seasonIds?.includes(season.id)) : undefined;
-                              if (savedField) {
-                                view.setSelectedPlotId(savedField.id);
-                                view.setFocusNonce(Date.now());
-                              } else {
-                                view.clearSelectedPlot();
-                              }
                               setCurrentSeasonId(season.id);
                               setSeasonSheetOpen(false);
-                              const seasonHasFields = fields.some((f) => f.seasonIds?.includes(season.id));
-                              setGlobalViewMode(!seasonHasFields);
-                              if (savedField) {
-                                navigate(`/monitoring/field-analytics/field/${savedField.id}`);
-                              } else {
-                                navigate('/monitoring/field-analytics');
-                              }
+                              view.clearSelectedPlot();
+                              setGlobalViewMode(true);
+                              navigate('/monitoring/field-analytics');
                             } }
                           >
                             <CardHeader className="pb-2">

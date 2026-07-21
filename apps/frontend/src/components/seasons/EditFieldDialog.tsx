@@ -527,21 +527,18 @@ export default function EditFieldDialog({
   };
 
   const handleCancel = useCallback(() => {
-    if (dirty) {
-      setConfirmClose(true);
-    } else {
-      onOpenChange(false);
-    }
-  }, [dirty, onOpenChange]);
+    setConfirmClose(true);
+  }, []);
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen && dirty && !forceCloseRef.current) {
+    if (!nextOpen && !forceCloseRef.current) {
+      if (confirmDeleteField || confirmClearSeasonId) return;
       setConfirmClose(true);
     } else {
       forceCloseRef.current = false;
       onOpenChange(nextOpen);
     }
-  }, [dirty, onOpenChange]);
+  }, [onOpenChange, confirmDeleteField, confirmClearSeasonId]);
 
   useEffect(() => {
     if (!confirmClose && forceCloseRef.current) {
@@ -786,14 +783,16 @@ export default function EditFieldDialog({
 
       <AlertDialogRoot open={ confirmClose } onOpenChange={ setConfirmClose }>
         <AlertDialogContent>
-          <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+          <AlertDialogTitle>{ dirty ? 'Unsaved changes' : 'Cancel editing?' }</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved changes. Are you sure you want to discard them?
+            { dirty
+              ? 'You have unsaved changes. Are you sure you want to discard them?'
+              : 'Are you sure you want to cancel editing? All unsaved changes will be lost.' }
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={ () => setConfirmClose(false) }>Keep editing</AlertDialogCancel>
+            <AlertDialogCancel onClick={ () => setConfirmClose(false) }>{ dirty ? 'Keep editing' : 'No, keep editing' }</AlertDialogCancel>
             <AlertDialogAction onClick={ () => { forceCloseRef.current = true; setConfirmClose(false); } }>
-              Discard
+              { dirty ? 'Discard' : 'Yes, cancel' }
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

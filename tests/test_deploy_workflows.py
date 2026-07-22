@@ -339,6 +339,20 @@ def test_selfhosted_env_documents_admin_ingestion_live_trigger_gate():
     assert 'ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "false"' in compose
 
 
+def test_staging_crop_map_flags_are_explicit_and_rendered():
+    compose = _text("infra/selfhosted/coolify-compose.yml")
+    workflow = _text(".github/workflows/deploy-staging.yml")
+
+    for name in (
+        "CROP_MAP_SPLIT_ENABLED",
+        "CROP_MAP_CONTRAST_ENABLED",
+        "LATEST_IMAGERY_ENABLED",
+    ):
+        assert f'{name}: "${{{name}:-false}}"' in compose
+        assert f"vars.{name} || 'true'" in workflow
+        assert f'text.replace("${{{name}:-false}}"' in workflow
+
+
 def test_selfhosted_compose_forwards_validated_basemap_runtime_without_public_key():
     env = _text("infra/selfhosted/env.example")
     compose = _text("infra/selfhosted/coolify-compose.yml")

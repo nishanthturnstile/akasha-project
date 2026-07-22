@@ -1376,6 +1376,7 @@ describe('MapPage best-available mode', () => {
     expect(screen.getByLabelText('Left vegetation index')).toBeTruthy();
     expect(screen.getByLabelText('Right vegetation index')).toBeTruthy();
     expect(screen.queryByTestId('layer-control-bar')).toBeNull();
+    expect(screen.queryByTestId('coordinate-readout-mock')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Single View' }));
 

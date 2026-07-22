@@ -1556,7 +1556,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           /> }
         </div>) }
 
-      { overlaysVisible && topLeftCoords && (
+      { overlaysVisible && topLeftCoords && !splitEnabled && (
         <div className="pointer-events-none absolute inset-0 z-popover">
           <CoordinateReadout
             map={ map }

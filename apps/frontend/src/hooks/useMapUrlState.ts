@@ -99,7 +99,7 @@ function useRoutedMapUrlState(): void {
         if (view.displayMode) next.set('layer', view.displayMode);
 
         const queryString = next.toString();
-        const effectivePlotId = view.selectedPlotId ?? urlPlotId;
+        const effectivePlotId = view.selectedPlotId;
         const basePath = effectivePlotId
             ? `/monitoring/field-analytics/field/${effectivePlotId}`
             : '/monitoring/field-analytics';

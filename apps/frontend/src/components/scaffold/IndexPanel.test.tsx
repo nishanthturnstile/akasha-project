@@ -783,38 +783,6 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
 });
 
 describe('IndexPanel — LISS-4 provenance UI (Phase E)', () => {
-    it('shows the prefer-high-res toggle when onPreferHighResChange is provided', () => {
-        renderPanel(
-            <IndexPanel
-                selectedPlot={ plot }
-                selectedDate="2026-04-27"
-                sourceId="resourcesat-2a-liss3-boa"
-                displayMode="NDVI"
-                supportedIndices={ ['NDVI', 'NDMI'] }
-                cloudMask={ cloudMask }
-                preferHighRes
-                onPreferHighResChange={ () => undefined }
-            />,
-        );
-
-        expect(screen.getByTestId('analytics-prefer-high-res')).toBeTruthy();
-    });
-
-    it('does not show the prefer-high-res toggle when onPreferHighResChange is absent', () => {
-        renderPanel(
-            <IndexPanel
-                selectedPlot={ plot }
-                selectedDate="2026-04-27"
-                sourceId="resourcesat-2a-liss3-boa"
-                displayMode="NDVI"
-                supportedIndices={ ['NDVI', 'NDMI'] }
-                cloudMask={ cloudMask }
-            />,
-        );
-
-        expect(screen.queryByTestId('analytics-prefer-high-res')).toBeNull();
-    });
-
     it('renders the enhanced badge when the statistics response has enhanced=true', async () => {
         vi.stubGlobal(
             'fetch',
@@ -881,8 +849,6 @@ describe('IndexPanel — LISS-4 provenance UI (Phase E)', () => {
                 displayMode="NDVI"
                 supportedIndices={ ['NDVI', 'NDMI'] }
                 cloudMask={ cloudMask }
-                preferHighRes
-                onPreferHighResChange={ () => undefined }
             />,
         );
 

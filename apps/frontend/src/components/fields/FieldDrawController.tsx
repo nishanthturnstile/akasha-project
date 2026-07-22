@@ -5,6 +5,7 @@ import type { TerraDraw, GeoJSONStoreGeometries } from 'terra-draw';
 import { Button } from '@/components/ui/button';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import { cn } from '@/lib/utils';
+import { MAP_UI_COLORS } from '@/map/colors';
 import type { Plot, PlotGeometry, PlotUpdatePayload } from '@/types/api';
 
 export type FieldDrawMode = 'draw' | 'edit' | null;
@@ -140,25 +141,25 @@ export function FieldDrawController({
         { TerraDrawMapLibreGLAdapter },
       ] = await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
       const polygonStyles = {
-        fillColor: '#3b82f6' as const,
+        fillColor: MAP_UI_COLORS.selection,
         fillOpacity: 0.25 as const,
-        outlineColor: '#2563eb' as const,
+        outlineColor: MAP_UI_COLORS.selectionOutline,
         outlineOpacity: 1 as const,
         outlineWidth: 3 as const,
         outlineDashStyle: [6, 4] as unknown as [number, number],
-        closingPointColor: '#22c55e' as const,
+        closingPointColor: MAP_UI_COLORS.brand,
         closingPointWidth: 8 as const,
-        closingPointOutlineColor: '#ffffff' as const,
+        closingPointOutlineColor: MAP_UI_COLORS.white,
         closingPointOutlineWidth: 2 as const,
-        coordinatePointColor: '#3b82f6' as const,
+        coordinatePointColor: MAP_UI_COLORS.selection,
         coordinatePointWidth: 5 as const,
-        coordinatePointOutlineColor: '#ffffff' as const,
+        coordinatePointOutlineColor: MAP_UI_COLORS.white,
         coordinatePointOutlineWidth: 1.5 as const,
       };
       const circleStyles = {
-        fillColor: '#3b82f6' as const,
+        fillColor: MAP_UI_COLORS.selection,
         fillOpacity: 0.25 as const,
-        outlineColor: '#2563eb' as const,
+        outlineColor: MAP_UI_COLORS.selectionOutline,
         outlineOpacity: 1 as const,
         outlineWidth: 3 as const,
       };
@@ -173,13 +174,13 @@ export function FieldDrawController({
           }),
           new TerraDrawFreehandLineStringMode({
             styles: {
-              lineStringColor: '#ef4444' as const,
+              lineStringColor: MAP_UI_COLORS.destructive,
               lineStringWidth: 3 as const,
               lineStringOpacity: 1 as const,
               lineStringDash: [4, 4] as [number, number],
-              closingPointColor: '#ef4444' as const,
+              closingPointColor: MAP_UI_COLORS.destructive,
               closingPointWidth: 6 as const,
-              closingPointOutlineColor: '#ffffff' as const,
+              closingPointOutlineColor: MAP_UI_COLORS.white,
               closingPointOutlineWidth: 2 as const,
               closingPointOpacity: 1 as const,
               closingPointOutlineOpacity: 1 as const,
@@ -196,9 +197,9 @@ export function FieldDrawController({
                 // still easily grabbable when clicked precisely.
                 pointerDistance: 20,
                 styles: {
-                  selectedPolygonColor: '#3b82f6',
+                  selectedPolygonColor: MAP_UI_COLORS.selection,
                   selectedPolygonFillOpacity: 0.25,
-                  selectedPolygonOutlineColor: '#2563eb',
+                  selectedPolygonOutlineColor: MAP_UI_COLORS.selectionOutline,
                   selectedPolygonOutlineWidth: 3,
                 },
                 flags: {

@@ -44,7 +44,7 @@ const SheetContent = forwardRef<
     <Dialog.Content
       ref={ref}
       className={cn(
-        'fixed z-popover gap-4 bg-background p-0 shadow-e2 transition-transform duration-slow ease-decelerate',
+        'fixed z-popover gap-4 bg-background p-0 shadow-e3 transition-transform duration-slow ease-decelerate',
         'data-[state=open]:animate-in',
         sideStyles[side],
         className,
@@ -55,7 +55,7 @@ const SheetContent = forwardRef<
       <Dialog.Close asChild>
         <button
           aria-label="Close"
-          className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground hover:bg-accent/40"
+          className="absolute right-4 top-4 rounded-pill p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
         >
           <X className="size-4" />
         </button>

@@ -10,7 +10,7 @@ export default function AiAssistantPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           { statusQ.data?.message ?? 'Assistant status loading.' }
         </p>
-        <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+        <p className="mt-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           The assistant may summarize only available Akasha evidence. It must not invent agronomic advice.
         </p>
       </section>

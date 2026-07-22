@@ -387,7 +387,7 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
                   className={cn(
                     dayButtonClass,
                     outsideSeason && 'cursor-not-allowed text-muted-foreground/40',
-                    overlap && 'cursor-not-allowed text-amber-600/50',
+                    overlap && 'cursor-not-allowed text-warning/55',
                     blocked && 'cursor-not-allowed text-muted-foreground/40',
                     !outsideSeason && !overlap && !blocked && selected && 'bg-primary text-primary-foreground font-medium',
                     !outsideSeason && !overlap && !blocked && !selected && today && 'border border-primary/50 text-foreground font-medium',
@@ -411,7 +411,7 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
           </div>
           {overlapRanges && overlapRanges.length > 0 && (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="inline-block size-3 rounded-full bg-amber-600/50" />
+              <span className="inline-block size-3 rounded-full bg-warning/55" />
               Dates overlap with another crop
             </div>
           )}

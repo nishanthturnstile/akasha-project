@@ -27,6 +27,7 @@ import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { useConfig, useCrops, useFieldGroups, useFields, useIrrigationTypes, useSeasons, useTillageTypes, useVarieties, queryKeys } from '@/lib/queries';
 import { useVegetationCycles, type VegetationCycleForm } from '@/hooks/useVegetationCycles';
 import { resolveBasemapConfig } from '@/map/basemap';
+import { MAP_UI_COLORS } from '@/map/colors';
 import { polygonAreaMeters } from '@/lib/measure';
 import type { DateRange } from '@/components/ui/date-picker';
 import type maplibregl from 'maplibre-gl';
@@ -340,9 +341,9 @@ export default function EditFieldDialog({
           modes: [
             new TerraDrawPolygonMode({
               styles: {
-                fillColor: '#3b82f6',
+                fillColor: MAP_UI_COLORS.selection,
                 fillOpacity: 0.25,
-                outlineColor: '#2563eb',
+                outlineColor: MAP_UI_COLORS.selectionOutline,
                 outlineWidth: 3,
               },
             }),
@@ -353,9 +354,9 @@ export default function EditFieldDialog({
               // to trigger reliably. Tightened here to match.
               pointerDistance: 20,
               styles: {
-                selectedPolygonColor: '#3b82f6',
+                selectedPolygonColor: MAP_UI_COLORS.selection,
                 selectedPolygonFillOpacity: 0.25,
-                selectedPolygonOutlineColor: '#2563eb',
+                selectedPolygonOutlineColor: MAP_UI_COLORS.selectionOutline,
                 selectedPolygonOutlineWidth: 3,
               },
               flags: {
@@ -983,8 +984,8 @@ function CycleCard({
               if (!sel) return null;
               const badges: React.ReactNode[] = [];
               const ENABLE = false;
-              if (ENABLE && sel.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
-              if (ENABLE && sel.maturityOptions && sel.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
+              if (ENABLE && sel.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-success" />);
+              if (ENABLE && sel.maturityOptions && sel.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-warning" />);
               if (ENABLE && sel.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
               return badges.length > 0 ? (
                 <span className="ml-auto flex items-center gap-1">
@@ -997,8 +998,8 @@ function CycleCard({
             { (cropsData ?? []).map((crop) => {
               const badges: React.ReactNode[] = [];
               const ENABLE = false;
-              if (ENABLE && crop.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-emerald-500" />);
-              if (ENABLE && crop.maturityOptions && crop.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-amber-500" />);
+              if (ENABLE && crop.hasVariety) badges.push(<Sprout key="v" className="size-3.5 text-success" />);
+              if (ENABLE && crop.maturityOptions && crop.maturityOptions.length > 0) badges.push(<Timer key="m" className="size-3.5 text-warning" />);
               if (ENABLE && crop.seedingTypeId === 3) badges.push(<Scissors key="c" className="size-3.5 text-rose-500" />);
               return (
                 <SelectItem key={ crop.id } value={ crop.name }>

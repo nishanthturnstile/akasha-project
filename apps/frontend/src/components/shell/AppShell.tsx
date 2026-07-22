@@ -10,9 +10,9 @@ import {
   LogOut,
   Menu,
   Plus,
-  Satellite,
   UserCircle2,
 } from 'lucide-react';
+import { BrandLockup } from '@/components/BrandLockup';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -370,11 +370,10 @@ export function AppShell() {
           <div className="mb-2 flex items-center justify-between gap-3">
             <NavLink
               to={ MAIN_MONITORING_ROUTE }
-              className="flex items-center gap-2 rounded-md px-1 py-1 text-foreground"
-              aria-label="Open Akasha monitoring"
+              className="rounded-lg px-1 py-1 transition-colors hover:bg-primary/5"
+              aria-label="Open Akasha by CIDSA monitoring"
             >
-              <Satellite className="size-5 text-primary" strokeWidth={ 1.75 } aria-hidden="true" />
-              <span className="font-display text-base font-semibold">Akasha</span>
+              <BrandLockup variant="compact" />
             </NavLink>
           </div>
           <nav aria-label="Product modules" className="-mx-1 overflow-x-auto px-1">
@@ -417,7 +416,7 @@ export function AppShell() {
         ) }
 
         <aside
-          className="hidden border-l border-border bg-muted/30 lg:flex lg:min-h-0 lg:flex-col"
+          className="hidden border-l border-border bg-bg-light-secondary/90 dark:bg-muted/30 lg:flex lg:min-h-0 lg:flex-col"
           data-testid="product-rail"
         >
           {/* Brand row + collapse toggle */ }
@@ -428,15 +427,7 @@ export function AppShell() {
             ) }
           >
             { !railCollapsed && (
-              <>
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
-                  <Satellite className="size-6" strokeWidth={ 1.75 } aria-hidden="true" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-display text-base font-semibold leading-5">Akasha</p>
-                  <p className="truncate text-[11px] text-muted-foreground">Crop intelligence</p>
-                </div>
-              </>
+              <BrandLockup className="min-w-0 flex-1" variant="full" />
             ) }
             <Tooltip>
               <TooltipTrigger asChild>

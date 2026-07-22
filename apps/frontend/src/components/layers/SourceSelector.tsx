@@ -7,7 +7,7 @@ interface SourceSelectorProps {
   onChange: (sourceId: string) => void;
 }
 
-/** Segmented control of imagery sources. Active = saffron underline (not a fill). */
+/** Segmented control of imagery sources. Active = CIDSA green underline (not a fill). */
 export function SourceSelector({ sources, value, onChange }: SourceSelectorProps) {
   const primarySources = sources.filter((source) => source.productRole !== 'support');
   return (

@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { BrandLockup } from '@/components/BrandLockup';
 import { cn } from '@/lib/utils';
 
 interface StepIndicatorProps {
@@ -13,13 +14,15 @@ const DEFAULT_LABELS = ['Create season', 'Add field', 'Add crop'];
 export function StepIndicator({ currentStep, totalSteps = 3, labels = DEFAULT_LABELS }: StepIndicatorProps) {
   const steps = Array.from({ length: totalSteps }, (_, i) => i + 1);
   return (
-    <div className="inline-flex items-start mb-6">
-      {steps.map((num, idx) => {
+    <div className="mb-6 flex flex-col items-center gap-4">
+      <BrandLockup variant="compact" />
+      <div className="inline-flex items-start">
+        {steps.map((num, idx) => {
         const isCompleted = num < currentStep;
         const isActive = num === currentStep;
         const isLast = idx === steps.length - 1;
         return (
-          <React.Fragment key={num}>
+          <React.Fragment key={ num }>
             <div className="flex flex-col items-center">
               <div
                 className={cn(
@@ -54,7 +57,8 @@ export function StepIndicator({ currentStep, totalSteps = 3, labels = DEFAULT_LA
             )}
           </React.Fragment>
         );
-      })}
+        })}
+      </div>
     </div>
   );
 }

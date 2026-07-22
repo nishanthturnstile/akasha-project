@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { LockKeyhole, Satellite, Sprout } from 'lucide-react';
+import { LockKeyhole, Sprout } from 'lucide-react';
+import { BrandLockup } from '@/components/BrandLockup';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { useAccountMe, useSignup } from '@/lib/queries';
@@ -41,23 +42,12 @@ export default function SignupPage() {
 
     return (
         <main className="grid min-h-screen bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_460px]">
-            <section className="relative hidden min-h-0 overflow-hidden border-r border-border bg-[hsl(222_38%_7%)] lg:block">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_28%_22%,hsl(95_68%_45%/.2),transparent_30%),radial-gradient(circle_at_72%_70%,hsl(33_96%_56%/.16),transparent_34%),linear-gradient(145deg,hsl(222_40%_8%),hsl(190_28%_10%)_58%,hsl(110_24%_12%))]" />
-                <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent_0_23px,hsl(210_28%_92%/.34)_24px),repeating-linear-gradient(90deg,transparent_0_23px,hsl(210_28%_92%/.18)_24px)] opacity-[0.14]" />
+            <section className="hero-pattern relative hidden min-h-0 overflow-hidden border-r border-primary/10 bg-bg-light-secondary dark:bg-background lg:block">
+                <div className="grid-pattern absolute inset-0 opacity-70" />
                 <div className="relative flex h-full flex-col justify-between p-10">
-                    <div className="flex items-center gap-3">
-                        <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                            <Satellite className="size-5" strokeWidth={ 1.75 } />
-                        </div>
-                        <div>
-                            <p className="font-display text-lg font-semibold">Akasha</p>
-                            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                                Crop intelligence
-                            </p>
-                        </div>
-                    </div>
+                    <BrandLockup variant="full" />
                     <div className="max-w-xl">
-                        <p className="font-display text-4xl font-semibold leading-tight">
+                        <p className="text-gradient font-display text-4xl font-bold leading-tight">
                             Start with your first season, then map every field.
                         </p>
                         <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
@@ -69,19 +59,9 @@ export default function SignupPage() {
 
             <section className="flex min-h-screen items-center justify-center px-5 py-8">
                 <div className="w-full max-w-95">
-                    <div className="mb-8 flex items-center gap-3 lg:hidden">
-                        <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                            <Satellite className="size-5" strokeWidth={ 1.75 } />
-                        </div>
-                        <div>
-                            <p className="font-display text-lg font-semibold">Akasha</p>
-                            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                                Crop intelligence
-                            </p>
-                        </div>
-                    </div>
+                    <BrandLockup className="mb-8 lg:hidden" variant="full" />
 
-                    <div className="rounded-lg border border-border bg-card p-5 text-card-foreground shadow-e2">
+                    <div className="gradient-border rounded-xl border border-primary/10 bg-card p-5 text-card-foreground shadow-e2">
                         <div className="mb-5 flex items-center justify-between gap-3">
                             <div>
                                 <h1 className="font-display text-xl font-semibold">Create account</h1>

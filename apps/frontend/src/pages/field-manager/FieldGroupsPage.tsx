@@ -31,7 +31,7 @@ export default function FieldGroupsPage() {
         <input className="rounded-md border border-border bg-background px-3 py-2" value={ name } onChange={ (event) => setName(event.target.value) } />
         <button className="rounded-md bg-primary px-4 py-2 text-primary-foreground" onClick={ () => void createGroup() } type="button">Add group</button>
       </section>
-      { error && <p className="mt-4 rounded-md border border-amber-500/40 p-3 text-sm text-amber-100">{ reportErrorMessage(error) }</p> }
+      { error && <p className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">{ reportErrorMessage(error) }</p> }
       <section className="mt-4 grid gap-2 rounded-xl border border-border/80 bg-card/90 p-4">
         { groupsQ.data?.map((group) => (
           <article key={ group.id } className="rounded-md border border-border p-3">

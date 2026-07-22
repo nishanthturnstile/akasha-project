@@ -23,7 +23,7 @@ export default function ApiSettingsPage() {
         </p>
       </section>
       { createdKey && (
-        <section className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+        <section className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-4 text-warning">
           <h2 className="font-semibold">Copy this key now</h2>
           <code className="mt-2 block break-all text-sm">{ createdKey }</code>
         </section>

@@ -21,10 +21,10 @@ export default function OnboardingStep2() {
   const handleNext = () => navigate('/onboarding/step3');
 
   return (
-    <div className="flex h-dvh flex-col items-center overflow-hidden px-6 py-4">
+    <div className="hero-pattern flex h-dvh flex-col items-center overflow-hidden bg-bg-light-secondary/45 px-6 py-4 dark:bg-background">
       <StepIndicator currentStep={2} />
 
-      <Card className="w-full max-w-md shrink-0">
+      <Card className="gradient-border w-full max-w-md shrink-0">
         <CardHeader>
           <CardTitle>Let's add your field</CardTitle>
         </CardHeader>

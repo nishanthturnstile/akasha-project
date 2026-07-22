@@ -1,5 +1,6 @@
-import { ArrowRight, Satellite } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BrandLockup } from '@/components/BrandLockup';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
@@ -26,11 +27,9 @@ export function ModulePlaceholder({
       data-testid="module-placeholder"
     >
       <div className="mx-auto flex min-h-full max-w-5xl flex-col justify-center">
-        <section className="glass contour max-w-3xl overflow-hidden p-6 md:p-8">
+        <section className="glass-card hero-pattern max-w-3xl overflow-hidden p-6 md:p-8">
           <div className="mb-5 flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md bg-primary/15 text-primary">
-              <Satellite className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
-            </div>
+            <BrandLockup variant="icon" />
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 Product module

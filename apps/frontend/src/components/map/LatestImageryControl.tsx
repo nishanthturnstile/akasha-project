@@ -135,7 +135,7 @@ export function LatestImageryControl({
           { diagonal > policy.maxViewportDiagonalMeters && (
             <p className="text-xs text-muted-foreground">Zoom in until the visible area is about 2 km.</p>
           ) }
-          { stale && <p className="text-xs text-amber-600">Map moved. Search again to refresh imagery.</p> }
+          { stale && <p className="text-xs text-warning">Map moved. Search again to refresh imagery.</p> }
           { error && (
             <div className="space-y-1 text-xs text-muted-foreground">
               <p>{ error }</p>

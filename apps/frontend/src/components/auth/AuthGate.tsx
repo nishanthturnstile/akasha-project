@@ -1,4 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
+import { BrandLockup } from '@/components/BrandLockup';
 import { ApiError } from '@/lib/api';
 import { useAccountMe } from '@/lib/queries';
 import { MAIN_MONITORING_ROUTE } from '@/routes/productNavigation';
@@ -22,7 +23,9 @@ export function AuthGate({
   if (account.isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <div className="glass scan-sweep h-20 w-70 max-w-[80vw]" />
+        <div className="glass-card scan-sweep flex h-20 w-70 max-w-[80vw] items-center px-5">
+          <BrandLockup variant="compact" />
+        </div>
       </div>
     );
   }
@@ -35,8 +38,9 @@ export function AuthGate({
   if (account.isError) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 text-card-foreground shadow-e2">
-          <h1 className="font-display text-lg font-semibold">Akasha is unavailable</h1>
+        <div className="glass-card hero-pattern w-full max-w-md p-5 text-card-foreground">
+          <BrandLockup className="mb-4" variant="compact" />
+          <h1 className="font-display text-lg font-bold">Akasha by CIDSA is unavailable</h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Account verification could not complete. Check the API service and try again.
           </p>

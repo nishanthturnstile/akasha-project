@@ -92,12 +92,12 @@ export default function FieldLeaderboardPage() {
       </section>
 
       { truncated && (
-        <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+        <div className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           Ranking computed for first { fmt(leaderboardQ.data?.metadata.evaluationLimit, 0) } filtered fields.
         </div>
       ) }
       { (leaderboardQ.error || exportMutation.error) && (
-        <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100" role="status">
+        <div className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning" role="status">
           { reportErrorMessage(leaderboardQ.error ?? exportMutation.error) }
         </div>
       ) }

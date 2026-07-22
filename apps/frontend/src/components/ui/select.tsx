@@ -16,8 +16,8 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-9 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-colors',
-      'hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      'flex h-9 w-full items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-e1 transition-colors',
+      'hover:border-primary/35 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       'placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
       'group',
       className,
@@ -42,7 +42,7 @@ const SelectContent = React.forwardRef<
     sideOffset={sideOffset}
     avoidCollisions={false}
     className={cn(
-      'z-[70] max-h-64 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-e2',
+      'z-[70] max-h-64 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-e2',
       className,
     )}
     position={position}
@@ -70,7 +70,7 @@ const SelectItem = React.forwardRef<
     className={cn(
       'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm text-foreground outline-none',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground hover:bg-accent',
+      'data-[highlighted]:bg-primary/10 data-[highlighted]:text-foreground hover:bg-primary/10',
       className,
     )}
     {...props}

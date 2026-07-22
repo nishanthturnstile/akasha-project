@@ -294,7 +294,7 @@ export default function IngestionJobsList() {
       {/* Error */ }
       { jobsQ.error && (
         <p
-          className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
+          className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
           role="alert"
         >
           Failed to load ingestion jobs. { (jobsQ.error as Error).message ?? '' }

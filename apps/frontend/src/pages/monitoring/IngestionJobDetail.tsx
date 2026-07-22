@@ -215,7 +215,7 @@ function ProblemList({ items, label }: { items: string[]; label: string }) {
       { items.map((item, idx) => (
         <li
           key={ idx }
-          className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+          className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
         >
           { safeOperatorText(item) ?? '—' }
         </li>
@@ -251,7 +251,7 @@ function PipelineTab({
       ) }
       { Boolean(eventsError) && (
         <p
-          className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+          className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
           role="status"
         >
           Pipeline events are unavailable. Showing the internal orchestration view from safe job-detail
@@ -510,7 +510,7 @@ function LogsTab({ job }: { job: IngestionJobDetail }) {
       { failureKind && (
         <section>
           <SectionLabel>Failure</SectionLabel>
-          <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             <strong>Kind:</strong> { failureKind }
           </p>
         </section>
@@ -670,7 +670,7 @@ export default function IngestionJobDetail() {
       {/* Error */ }
       { jobQ.error && (
         <p
-          className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
+          className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
           role="alert"
         >
           Failed to load job detail.{ ' ' }

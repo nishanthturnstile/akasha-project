@@ -444,11 +444,11 @@ export default function FieldCreatePage() {
   const confirmLeave = () => navigate(`/monitoring/field-analytics${returnImagerySearch(searchParams)}`);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
+    <div className="fixed inset-0 z-modal flex flex-col bg-transparent">
       <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } />
 
       {/* Top bar */ }
-      <div className="glass z-50 flex items-center justify-center px-4 py-3 relative">
+      <div className="glass z-toolbar flex items-center justify-center px-4 py-3 relative">
         <button
           aria-label="Back"
           onClick={ handleClose }
@@ -461,7 +461,7 @@ export default function FieldCreatePage() {
 
       {/* Season selector bar */ }
       { !preselectedSeasonId && (
-        <div className="z-50 flex flex-col border-b border-border/60 bg-background/95">
+        <div className="z-toolbar flex flex-col border-b border-border/60 bg-background/95">
           <div className="flex items-center gap-3 px-4 py-2">
             <label className="text-sm font-medium text-foreground shrink-0">Season</label>
             { allSeasons.length === 0 && (
@@ -538,7 +538,7 @@ export default function FieldCreatePage() {
 
           { basemapRuntimeError && (
             <div
-              className="absolute left-1/2 top-4 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg"
+              className="absolute left-1/2 top-4 z-popover w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-e2"
               data-testid="basemap-runtime-error"
             >
               Unable to load Esri basemap: { basemapRuntimeError.message }
@@ -744,7 +744,7 @@ export default function FieldCreatePage() {
 
           {/* Error toast */ }
           { batchError && (
-            <div className="absolute left-1/2 bottom-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
+            <div className="absolute left-1/2 bottom-20 z-popover w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-e2">
               { batchError }
             </div>
           ) }

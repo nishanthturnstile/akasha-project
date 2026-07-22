@@ -56,8 +56,8 @@ export function FieldCreateOptionsDialog({
   return (
     <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
-        <Dialog.Content className="glass fixed left-1/2 top-1/2 z-popover w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl p-6">
+        <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
+        <Dialog.Content className="glass fixed left-1/2 top-1/2 z-modal w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl p-6">
           <VisuallyHidden>
             <Dialog.Title>Add field</Dialog.Title>
             <Dialog.Description>Choose how to add a field.</Dialog.Description>

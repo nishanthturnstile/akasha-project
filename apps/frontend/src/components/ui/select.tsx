@@ -42,7 +42,7 @@ const SelectContent = React.forwardRef<
     sideOffset={sideOffset}
     avoidCollisions={false}
     className={cn(
-      'z-[70] max-h-64 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-e2',
+      'z-modal max-h-64 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-e2',
       className,
     )}
     position={position}

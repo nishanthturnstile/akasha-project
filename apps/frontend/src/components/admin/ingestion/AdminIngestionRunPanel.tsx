@@ -122,7 +122,7 @@ export default function AdminIngestionRunPanel({
 
   return (
     <section className="overflow-hidden rounded-2xl border border-primary/20 bg-card/95 shadow-e3">
-      <div className="border-b border-border/70 bg-linear-to-r from-emerald-500/15 via-card to-amber-500/10 p-4">
+      <div className="border-b border-border/70 bg-linear-to-r from-primary/15 via-card to-info/10 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.28em] text-primary">Admin trigger</p>

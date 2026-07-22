@@ -256,10 +256,10 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   return (
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
+        <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Create season"
-          className="glass fixed left-1/2 top-[12vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg p-0"
+          className="glass fixed left-1/2 top-[12vh] z-modal w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg p-0"
         >
           <VisuallyHidden>
             <Dialog.Title>Create season</Dialog.Title>
@@ -485,5 +485,4 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     </Dialog.Root>
   );
 }
-
 

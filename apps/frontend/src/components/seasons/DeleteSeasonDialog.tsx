@@ -65,10 +65,10 @@ export default function DeleteSeasonDialog({ open, onOpenChange, deletingSeasonI
   return (
     <Dialog.Root open={ open } onOpenChange={ (open) => { if (!open) handleClose(); } }>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-overlay bg-background/60 backdrop-blur-sm" />
+        <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           onCloseAutoFocus={ (e) => e.preventDefault() }
-          className="fixed left-1/2 top-1/2 z-popover w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-popover p-6 shadow-e2"
+          className="fixed left-1/2 top-1/2 z-modal w-[calc(100%_-_2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-popover p-6 shadow-e3"
         >
           <VisuallyHidden>
             <Dialog.Title>Delete season</Dialog.Title>

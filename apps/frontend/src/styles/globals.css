@@ -18,6 +18,7 @@
   --color-text-muted: #64748b;
   --color-map-tooltip: #020617;
   --color-map-tooltip-foreground: #ffffff;
+  --color-on-image: #ffffff;
 
   /* Semantic shadcn surface contract. */
   --color-background: hsl(var(--background));
@@ -44,6 +45,7 @@
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
   --color-panel: hsl(var(--panel));
+  --color-interactive: hsl(var(--interactive));
 
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
@@ -121,6 +123,9 @@
 @utility z-panel { z-index: var(--z-panel); }
 @utility z-toolbar { z-index: var(--z-toolbar); }
 @utility z-popover { z-index: var(--z-popover); }
+@utility z-modal { z-index: var(--z-modal); }
+@utility z-tooltip { z-index: var(--z-tooltip); }
+@utility z-picker { z-index: var(--z-picker); }
 
 @layer base {
   :root {
@@ -149,6 +154,7 @@
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 142 76% 36%;
+    --interactive: 142 72% 29%;
     --radius: 0.75rem;
 
     --panel: 0 0% 100%;
@@ -174,6 +180,10 @@
     --z-panel: 40;
     --z-toolbar: 50;
     --z-popover: 60;
+    --z-modal: 70;
+    --z-tooltip: 80;
+    --z-picker: 90;
+    --shadow-primary: 0 10px 24px hsl(var(--primary) / 0.25);
   }
 
   .dark {
@@ -201,6 +211,7 @@
     --border: 217 33% 17%;
     --input: 217 33% 17%;
     --ring: 142 71% 45%;
+    --interactive: 142 69% 52%;
     --panel: 222 47% 8%;
     --panel-alpha: 0.92;
     --panel-blur: 20px;
@@ -317,6 +328,16 @@
 
   .scrim {
     background: linear-gradient(to top, hsl(var(--scrim-to)), hsl(var(--scrim-from)));
+  }
+
+  .auth-hero {
+    background: hsl(222 47% 8%);
+  }
+
+  .auth-hero-scrim {
+    background:
+      linear-gradient(to bottom, hsl(222 47% 5% / 0.46), hsl(222 47% 5% / 0.08) 42%, hsl(222 47% 5% / 0.8)),
+      linear-gradient(to right, hsl(142 76% 22% / 0.28), transparent 56%);
   }
 }
 

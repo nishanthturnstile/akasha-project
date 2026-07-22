@@ -201,9 +201,9 @@ export default function OnboardingFieldCreate() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
+    <div className="fixed inset-0 z-modal flex flex-col bg-transparent">
       {/* Top bar */ }
-      <div className="glass-card relative z-50 flex items-center justify-center rounded-none px-4 py-3">
+      <div className="glass-card relative z-toolbar flex items-center justify-center rounded-none px-4 py-3">
         <BrandLockup className="absolute left-4 hidden sm:inline-flex" variant="compact" />
         <h2 className="font-display text-lg font-bold">{ isEditing ? 'Edit field' : 'Add field' }</h2>
         <button aria-label="Close" onClick={ handleClose } className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground">
@@ -226,7 +226,7 @@ export default function OnboardingFieldCreate() {
 
         { basemapRuntimeError && (
           <div
-            className="absolute left-1/2 top-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg"
+            className="absolute left-1/2 top-20 z-popover w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-e2"
             data-testid="basemap-runtime-error"
           >
             Unable to load Esri basemap: { basemapRuntimeError.message }
@@ -307,7 +307,7 @@ export default function OnboardingFieldCreate() {
 
         {/* Error toast */ }
         { saveError && (
-          <div className="absolute left-1/2 bottom-20 z-50 w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-lg">
+          <div className="absolute left-1/2 bottom-20 z-popover w-max max-w-[90vw] -translate-x-1/2 rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground shadow-e2">
             { saveError }
           </div>
         ) }

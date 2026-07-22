@@ -246,7 +246,7 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
       ref={calendarRef}
       role="dialog"
       aria-label="Pick a date"
-      className="fixed z-[999] rounded-md border border-border bg-popover p-3 shadow-e2 pointer-events-auto"
+      className="fixed z-picker rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-e3 pointer-events-auto"
       style={fixedStyle}
     >
       {/* Header */}

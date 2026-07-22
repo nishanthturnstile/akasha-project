@@ -6,6 +6,7 @@ import {
     Cloud,
     Layers as LayersIcon,
     Columns2,
+    Square,
 } from 'lucide-react';
 import { SourceSelector } from '@/components/layers/SourceSelector';
 import { DisplayModeToggle } from '@/components/layers/DisplayModeToggle';
@@ -454,19 +455,24 @@ export function LayerControlBar({
                     </button>
                 ) }
                 { splitAvailable && (
-                    <button
-                        type="button"
-                        aria-label="Split View"
-                        aria-pressed={ splitEnabled }
-                        data-testid="split-view-toggle"
-                        onClick={ () => onSplitEnabledChange(!splitEnabled) }
-                        className={ cn(
-                            'flex size-8 items-center justify-center rounded-md',
-                            splitEnabled ? 'bg-primary/15 text-primary' : 'hover:bg-accent',
-                        ) }
-                    >
-                        <Columns2 className="size-4" />
-                    </button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <button
+                                type="button"
+                                aria-label={ splitEnabled ? 'Single View' : 'Split View' }
+                                aria-pressed={ splitEnabled }
+                                data-testid="split-view-toggle"
+                                onClick={ () => onSplitEnabledChange(!splitEnabled) }
+                                className={ cn(
+                                    'flex size-8 items-center justify-center rounded-md',
+                                    splitEnabled ? 'bg-primary/15 text-primary' : 'hover:bg-accent',
+                                ) }
+                            >
+                                { splitEnabled ? <Square className="size-4" /> : <Columns2 className="size-4" /> }
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{ splitEnabled ? 'Single View' : 'Split View' }</TooltipContent>
+                    </Tooltip>
                 ) }
                 <CloudMaskPopover
                     value={ cloudMask }

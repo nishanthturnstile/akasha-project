@@ -1355,4 +1355,31 @@ describe('MapPage best-available mode', () => {
       expect(screen.getByTestId('map-layer-manager').getAttribute('data-compare-tile-template')).toBe('');
     });
   });
+
+  it('renders two independent compact control and timeline sessions and returns to single view', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
+
+    renderMapPage({
+      splitEnabled: true,
+      selectedPlotId: 'plot-1',
+      activeSourceId: 'sentinel-2-l2a',
+      rightSourceId: 'resourcesat-2a-liss3-boa',
+      displayMode: 'NDVI',
+      rightDisplayMode: 'NDMI',
+    });
+
+    await waitFor(() => expect(screen.getAllByTestId('map-layer-manager')).toHaveLength(2));
+    expect(screen.getByTestId('left-viewer-toolbar')).toBeTruthy();
+    expect(screen.getByTestId('right-viewer-toolbar')).toBeTruthy();
+    expect(screen.getByTestId('left-viewer-timeline')).toBeTruthy();
+    expect(screen.getByTestId('right-viewer-timeline')).toBeTruthy();
+    expect(screen.getByLabelText('Left vegetation index')).toBeTruthy();
+    expect(screen.getByLabelText('Right vegetation index')).toBeTruthy();
+    expect(screen.queryByTestId('layer-control-bar')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Single View' }));
+
+    await waitFor(() => expect(screen.getAllByTestId('map-layer-manager')).toHaveLength(1));
+    expect(screen.getByTestId('layer-control-bar')).toBeTruthy();
+  });
 });

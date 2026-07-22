@@ -28,6 +28,7 @@ import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryL
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { FieldOverlayLoadingIndicator } from '@/components/map/FieldOverlayLoadingIndicator';
 import { SplitSampleReadout } from '@/components/map/SplitSampleReadout';
+import { SplitViewerToolbar } from '@/components/map/SplitViewerToolbar';
 import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
 import { MeasureTool } from '@/components/map/MeasureTool';
@@ -380,6 +381,10 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (rightRenderProfile === 'contrast') view.setRightRenderProfile('standard');
     }
   }, [configQ.data, renderProfile, rightRenderProfile, splitEnabled, view]);
+
+  useEffect(() => {
+    if (splitEnabled && bestMode) view.setBestMode(false);
+  }, [bestMode, splitEnabled, view]);
 
   const effectiveSourceId = useMemo(
     () => selectEffectiveSourceId({
@@ -1248,6 +1253,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const exportIndexType = analyticsSupportedIndices.includes(selectedDisplayMode)
     ? selectedDisplayMode
     : analyticsSupportedIndices[0] ?? config.defaultIndex ?? 'NDVI';
+  const setSplitMode = (next: boolean) => {
+    // Replacing the map layout invalidates both MapLibre instances. Clear the
+    // handles in the same batch so no overlay effect can touch a disposed map.
+    setMap(null);
+    setRightMap(null);
+    if (next && bestMode) view.setBestMode(false);
+    view.setSplitEnabled(next);
+  };
   return (
     <div className="relative h-full w-full overflow-hidden bg-background" data-testid="map-page">
       {/* Accessibility: bypass the map canvas (WCAG 2.4.1). */ }
@@ -1274,6 +1287,39 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
               onMapDisposed={ (disposedMap) => setMap((current) => current === disposedMap ? null : current) }
             />
             <div className="glass absolute left-2 top-12 z-toolbar rounded px-2 py-1 text-xs">Left · { selectedDisplayMode } · { selectedDate }</div>
+            <div className="absolute inset-x-2 bottom-[calc(var(--timeline-height)+0.75rem)] z-toolbar flex justify-end">
+              <SplitViewerToolbar
+                side="left"
+                sources={ sourcesQ.data }
+                sourceId={ effectiveSourceId }
+                onSourceChange={ view.setSource }
+                indices={ selectedSource?.supportedIndices ?? [] }
+                index={ selectedDisplayMode }
+                onIndexChange={ view.setDisplayMode }
+                cloudMask={ cloudMask }
+                onCloudMaskChange={ view.setCloudMask }
+                renderProfile={ renderProfile }
+                onRenderProfileChange={ view.setRenderProfile }
+                contrastAvailable={ Boolean(config.features?.cropMapContrastEnabled) }
+                onSingleView={ () => setSplitMode(false) }
+              />
+            </div>
+            <div className="absolute inset-x-2 bottom-2 z-panel" data-testid="left-viewer-timeline">
+              <TimelineBar
+                dates={ datesQ.data }
+                selectedDate={ selectedDate }
+                onSelect={ view.setDate }
+                sourceKind={ activeSourceKind }
+                sensorBadge={ sensorBadgeForSource(selectedSource) }
+                loading={ datesQ.isLoading }
+                error={ datesQ.isError ? messageFor(datesQ.error) : null }
+                onRetry={ () => void datesQ.refetch() }
+                periodFrom={ periodFrom }
+                periodTo={ periodTo }
+                onPeriodChange={ view.setPeriod }
+                compact
+              />
+            </div>
             { indexOverlayError && (
               <div className="glass absolute bottom-16 left-2 z-toolbar rounded p-2 text-xs">
                 <span>{ indexOverlayError }</span>{ ' ' }
@@ -1294,30 +1340,38 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
               onMapReady={ setRightMap }
               onMapDisposed={ (disposedMap) => setRightMap((current) => current === disposedMap ? null : current) }
             />
-            <div className="glass absolute left-2 top-2 z-toolbar flex gap-2 rounded p-1.5 text-xs">
-              <select value={ rightEffectiveSourceId } onChange={ (event) => view.setRightSource(event.target.value) } aria-label="Right source" className="bg-transparent">
-                { sourcesQ.data?.filter((source) => (source.supportedIndices?.length ?? 0) > 0).map((source) => <option key={ source.id } value={ source.id }>{ source.label }</option>) }
-              </select>
-              <select value={ rightIndex } onChange={ (event) => view.setRightDisplayMode(event.target.value) } aria-label="Right index" className="bg-transparent">
-                { rightSource?.supportedIndices?.map((index) => <option key={ index } value={ index }>{ index }</option>) }
-              </select>
-              <select value={ rightSelectedDate ?? '' } onChange={ (event) => view.setRightDate(event.target.value) } aria-label="Right scene date" className="bg-transparent">
-                { rightAvailableDates?.map((item) => <option key={ item.acquisitionDate } value={ item.acquisitionDate }>{ item.acquisitionDate }</option>) }
-              </select>
-              <button type="button" onClick={ () => view.setRightRenderProfile(rightRenderProfile === 'contrast' ? 'standard' : 'contrast') } className="rounded px-1 hover:bg-accent">{ rightRenderProfile === 'contrast' ? 'Contrast' : 'Standard' }</button>
-              <details className="relative">
-                <summary className="cursor-pointer rounded px-1 hover:bg-accent">Options</summary>
-                <div className="absolute right-0 top-6 grid w-56 gap-2 rounded bg-background p-2 shadow-lg">
-                  <label>From <input type="date" value={ rightPeriodFrom ?? '' } onChange={ (event) => view.setRightPeriod(event.target.value || null, rightPeriodTo) } /></label>
-                  <label>To <input type="date" value={ rightPeriodTo ?? '' } onChange={ (event) => view.setRightPeriod(rightPeriodFrom, event.target.value || null) } /></label>
-                  { ([['clouds', 'Clouds'], ['cloudShadows', 'Cloud shadows'], ['cirrus', 'Cirrus']] as const).map(([key, label]) => (
-                    <label key={ key } className="flex items-center gap-2">
-                      <input type="checkbox" checked={ rightCloudMask[key] } onChange={ (event) => view.setRightCloudMask({ ...rightCloudMask, [key]: event.target.checked }) } />
-                      { label }
-                    </label>
-                  )) }
-                </div>
-              </details>
+            <div className="glass absolute left-2 top-2 z-toolbar rounded px-2 py-1 text-xs">Right · { rightIndex } · { rightSelectedDate }</div>
+            <div className="absolute inset-x-2 bottom-[calc(var(--timeline-height)+0.75rem)] z-toolbar flex justify-end">
+              <SplitViewerToolbar
+                side="right"
+                sources={ sourcesQ.data }
+                sourceId={ rightEffectiveSourceId }
+                onSourceChange={ view.setRightSource }
+                indices={ rightSource?.supportedIndices ?? [] }
+                index={ rightIndex }
+                onIndexChange={ view.setRightDisplayMode }
+                cloudMask={ rightCloudMask }
+                onCloudMaskChange={ view.setRightCloudMask }
+                renderProfile={ rightRenderProfile }
+                onRenderProfileChange={ view.setRightRenderProfile }
+                contrastAvailable={ Boolean(config.features?.cropMapContrastEnabled) }
+              />
+            </div>
+            <div className="absolute inset-x-2 bottom-2 z-panel" data-testid="right-viewer-timeline">
+              <TimelineBar
+                dates={ rightDatesQ.data }
+                selectedDate={ rightSelectedDate }
+                onSelect={ view.setRightDate }
+                sourceKind={ rightSource?.kind }
+                sensorBadge={ sensorBadgeForSource(rightSource) }
+                loading={ rightDatesQ.isLoading }
+                error={ rightDatesQ.isError ? messageFor(rightDatesQ.error) : null }
+                onRetry={ () => void rightDatesQ.refetch() }
+                periodFrom={ rightPeriodFrom }
+                periodTo={ rightPeriodTo }
+                onPeriodChange={ view.setRightPeriod }
+                compact
+              />
             </div>
             { rightOverlayLoading && <div className="absolute inset-0 z-toolbar grid place-items-center bg-background/20 text-xs">Loading right viewer…</div> }
             { rightOverlayError && (
@@ -1517,7 +1571,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         </div>
       ) }
 
-      { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+1.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
+      { overlaysVisible && !splitEnabled && <div className="absolute bottom-[calc(var(--timeline-height)+1.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <LayerControlBar
           sources={ sourcesQ.data }
           activeSourceId={ effectiveSourceId }
@@ -1533,14 +1587,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
           splitAvailable={ Boolean(selectedPlot && config.features?.cropMapSplitEnabled) }
           splitEnabled={ splitEnabled }
-          onSplitEnabledChange={ (next) => {
-            // The map layout is replaced when split mode changes. Clear both handles
-            // in the same React batch so overlay effects never render against the
-            // MapLibre instance that the outgoing layout is about to destroy.
-            setMap(null);
-            setRightMap(null);
-            view.setSplitEnabled(next);
-          } }
+          onSplitEnabledChange={ setSplitMode }
           selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
           exportSourceId={ requestSourceId }
@@ -1597,7 +1644,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       ) }
 
       {/* Field-quality timeline appears only after a persisted field is selected. */ }
-      { selectedPlot && (
+      { selectedPlot && !splitEnabled && (
       <div className="absolute inset-x-0 bottom-0 z-panel flex items-stretch gap-2 px-2 pb-2">
         <div id="timeline-bar" className="min-w-0 flex-1">
           <TimelineBar

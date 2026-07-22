@@ -12,7 +12,7 @@ export default function AccountSettingsPage() {
           { account ? `${account.user.email} · ${account.currentTeam.name}` : 'Loading account...' }
         </p>
         { account?.authMode === 'dev' && (
-          <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+          <p className="mt-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
             Local development auth is active. Enable AUTH_MODE before customer data is used.
           </p>
         ) }

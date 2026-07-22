@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
-import { LockKeyhole, Satellite } from 'lucide-react';
+import { LockKeyhole } from 'lucide-react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { BrandLockup } from '@/components/BrandLockup';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { useAccountMe, useLogin } from '@/lib/queries';
@@ -48,23 +49,12 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_440px]">
-      <section className="relative hidden min-h-0 overflow-hidden border-r border-border bg-[hsl(222_38%_7%)] lg:block">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_25%,hsl(33_96%_56%/.18),transparent_32%),linear-gradient(145deg,hsl(222_40%_8%),hsl(190_28%_10%)_58%,hsl(110_24%_12%))]" />
-        <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent_0_23px,hsl(210_28%_92%/.34)_24px),repeating-linear-gradient(90deg,transparent_0_23px,hsl(210_28%_92%/.18)_24px)] opacity-[0.16]" />
+      <section className="hero-pattern relative hidden min-h-0 overflow-hidden border-r border-primary/10 bg-bg-light-secondary dark:bg-background lg:block">
+        <div className="grid-pattern absolute inset-0 opacity-70" />
         <div className="relative flex h-full flex-col justify-between p-10">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Satellite className="size-5" strokeWidth={ 1.75 } />
-            </div>
-            <div>
-              <p className="font-display text-lg font-semibold">Akasha</p>
-              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                Crop intelligence
-              </p>
-            </div>
-          </div>
+          <BrandLockup variant="full" />
           <div className="max-w-xl">
-            <p className="font-display text-4xl font-semibold leading-tight">
+            <p className="text-gradient font-display text-4xl font-bold leading-tight">
               Secure field intelligence for each workspace.
             </p>
             <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
@@ -77,19 +67,9 @@ export default function LoginPage() {
 
       <section className="flex min-h-screen items-center justify-center px-5 py-8">
         <div className="w-full max-w-90">
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Satellite className="size-5" strokeWidth={ 1.75 } />
-            </div>
-            <div>
-              <p className="font-display text-lg font-semibold">Akasha</p>
-              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                Crop intelligence
-              </p>
-            </div>
-          </div>
+          <BrandLockup className="mb-8 lg:hidden" variant="full" />
 
-          <div className="rounded-lg border border-border bg-card p-5 text-card-foreground shadow-e2">
+          <div className="gradient-border rounded-xl border border-primary/10 bg-card p-5 text-card-foreground shadow-e2">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
                 <h1 className="font-display text-xl font-semibold">Sign in</h1>

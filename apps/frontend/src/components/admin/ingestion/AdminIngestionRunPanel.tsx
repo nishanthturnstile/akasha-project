@@ -121,13 +121,13 @@ export default function AdminIngestionRunPanel({
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-emerald-400/25 bg-card/95 shadow-[0_18px_60px_rgba(10,44,35,0.20)]">
+    <section className="overflow-hidden rounded-2xl border border-primary/20 bg-card/95 shadow-e3">
       <div className="border-b border-border/70 bg-linear-to-r from-emerald-500/15 via-card to-amber-500/10 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-emerald-300">Admin trigger</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-primary">Admin trigger</p>
             <h2 className="mt-1 flex items-center gap-2 text-xl font-semibold">
-              <PlayCircle className="h-5 w-5 text-emerald-300" aria-hidden="true" />
+              <PlayCircle className="h-5 w-5 text-primary" aria-hidden="true" />
               Run one ingestion source
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
@@ -187,7 +187,7 @@ export default function AdminIngestionRunPanel({
           <fieldset className="rounded-xl border border-border/70 p-3 sm:col-span-2">
             <legend className="px-1 text-sm font-medium">Mode</legend>
             <div className="mt-1 flex flex-wrap gap-2">
-              <label className="flex cursor-pointer items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-sm">
+              <label className="flex cursor-pointer items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
                 <input
                   type="radio"
                   name="ingestion-mode"
@@ -200,7 +200,7 @@ export default function AdminIngestionRunPanel({
                 Dry run
               </label>
               { liveTriggerEnabled && (
-                <label className="flex cursor-pointer items-center gap-2 rounded-full border border-amber-400/50 bg-amber-500/10 px-3 py-2 text-sm">
+                <label className="flex cursor-pointer items-center gap-2 rounded-full border border-warning/35 bg-warning/10 px-3 py-2 text-sm">
                   <input
                     type="radio"
                     name="ingestion-mode"
@@ -259,8 +259,8 @@ export default function AdminIngestionRunPanel({
 
         <div className="flex flex-col justify-between gap-3 rounded-xl border border-border/70 bg-background/60 p-3">
           { isLiveMode ? (
-            <div className="rounded-lg border border-amber-400/50 bg-amber-500/10 p-3 text-sm">
-              <div className="flex gap-2 font-medium text-amber-100">
+            <div className="rounded-lg border border-warning/35 bg-warning/10 p-3 text-sm">
+              <div className="flex gap-2 font-medium text-warning">
                 <AlertTriangle className="mt-0.5 h-4 w-4" aria-hidden="true" />
                 Live canary confirmation
               </div>
@@ -284,13 +284,13 @@ export default function AdminIngestionRunPanel({
               </label>
             </div>
           ) : (
-            <p className="rounded-lg border border-emerald-400/35 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+            <p className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm text-success">
               Dry run is selected. The backend will submit a planning request without live downloads.
             </p>
           ) }
 
           { trigger.error && (
-            <p role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-100">
+            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               { safeErrorMessage(trigger.error) }
             </p>
           ) }
@@ -300,8 +300,8 @@ export default function AdminIngestionRunPanel({
               role="status"
               className={
                 lastResponse.status === 'submitted'
-                  ? 'rounded-md border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-100'
-                  : 'rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100'
+                  ? 'rounded-md border border-success/30 bg-success/10 p-3 text-sm text-success'
+                  : 'rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning'
               }
             >
               <div className="flex items-center gap-2 font-medium">

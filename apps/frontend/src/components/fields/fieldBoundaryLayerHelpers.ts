@@ -1,4 +1,5 @@
 import type maplibregl from 'maplibre-gl';
+import { MAP_UI_COLORS } from '@/map/colors';
 import type { Plot, PlotGeometry } from '@/types/api';
 
 export const FIELD_BOUNDARY_SOURCE_ID = 'akasha-field-boundary-source';
@@ -33,7 +34,7 @@ function makeFillLayer(prefix: string): maplibregl.LayerSpecification {
     type: 'fill',
     source: srcId(prefix),
     paint: {
-      'fill-color': '#3b82f6',
+      'fill-color': MAP_UI_COLORS.selection,
       'fill-opacity': 0.22,
     },
   };
@@ -45,7 +46,7 @@ function makeOutlineLayer(prefix: string): maplibregl.LayerSpecification {
     type: 'line',
     source: srcId(prefix),
     paint: {
-      'line-color': '#1d4ed8',
+      'line-color': MAP_UI_COLORS.boundaryOutline,
       'line-opacity': 0.96,
       'line-width': 4.5,
       'line-blur': 0.35,

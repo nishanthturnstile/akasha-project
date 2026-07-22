@@ -825,12 +825,12 @@ function ChartTab({
           <p data-testid="analytics-masked-pixels">Masked pixels: { maskedPixels }</p>
         ) }
         { (activeIndex === 'NDMI' || provenanceNote) && (
-          <p data-testid="analytics-ndmi-note" className="text-amber-300">
+          <p data-testid="analytics-ndmi-note" className="text-warning">
             { provenanceNote ?? 'Moisture served from LISS-3 (24 m) -- LISS-4 has no SWIR band.' }
           </p>
         ) }
         { warnings.map((warning) => (
-          <p key={ warning } className="text-amber-300">{ warning }</p>
+          <p key={ warning } className="text-warning">{ warning }</p>
         )) }
       </div>
     </div>
@@ -865,7 +865,7 @@ function PipelineProvenance({ pipeline }: { pipeline: FieldStatisticsPipelineMet
 
   return (
     <div
-      className="rounded-md border border-primary/20 bg-primary/5 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      className="rounded-md border border-primary/20 bg-primary/5 p-3 shadow-e1"
       data-testid="analytics-pipeline-provenance"
     >
       <div className="mb-2 flex items-start justify-between gap-2">
@@ -908,7 +908,7 @@ function PipelineProvenance({ pipeline }: { pipeline: FieldStatisticsPipelineMet
         </p>
       ) }
       { warnings.map((warning) => (
-        <p key={ warning } className="mt-1 text-[11px] leading-4 text-amber-300" data-testid="analytics-pipeline-warning">
+        <p key={ warning } className="mt-1 text-[11px] leading-4 text-warning" data-testid="analytics-pipeline-warning">
           { warning }
         </p>
       )) }

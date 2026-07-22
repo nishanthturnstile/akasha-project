@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
-import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Satellite, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Search } from 'lucide-react';
+import { BrandLockup } from '@/components/BrandLockup';
+import { MAP_UI_COLORS } from '@/map/colors';
 import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint, getFieldSarOverlayImage } from '@/lib/api';
 import {
   useConfig,
@@ -80,19 +82,14 @@ function FullScreenLoading() {
       className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-background"
       data-testid="app-loading"
     >
-      <div className="glass w-[320px] p-6">
-        <div className="mb-4 flex items-center gap-2 text-primary">
-          <Satellite className="size-5" strokeWidth={ 1.75 } />
-          <span className="font-display text-lg font-semibold tracking-[-0.01em] text-foreground">
-            Akasha
-          </span>
-        </div>
+      <div className="glass-card w-[320px] p-6">
+        <BrandLockup className="mb-4" variant="compact" />
         <div className="flex flex-col gap-2.5">
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-4 w-1/2" />
           <Skeleton className="h-11 w-full" />
         </div>
-        <p className="mt-4 text-[12px] text-muted-foreground">Acquiring orbital instrument…</p>
+        <p className="mt-4 text-[12px] text-muted-foreground">Preparing field intelligence…</p>
       </div>
     </div>
   );
@@ -559,10 +556,18 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         const outlineLayer = `${field.id}akasha-field-boundary-outline-layer`;
         if (!map.getLayer(fillLayer)) continue;
         const isHovered = field.id === hoveredFieldId;
-        map.setPaintProperty(fillLayer, 'fill-color', isHovered ? '#3b82f6' : '#1f2937');
+        map.setPaintProperty(
+          fillLayer,
+          'fill-color',
+          isHovered ? MAP_UI_COLORS.selection : MAP_UI_COLORS.neutralFill,
+        );
         map.setPaintProperty(fillLayer, 'fill-opacity', isHovered ? 0.35 : 0.35);
         if (map.getLayer(outlineLayer)) {
-          map.setPaintProperty(outlineLayer, 'line-color', isHovered ? '#ffffff' : '#9ca3af');
+          map.setPaintProperty(
+            outlineLayer,
+            'line-color',
+            isHovered ? MAP_UI_COLORS.white : MAP_UI_COLORS.neutralOutline,
+          );
           map.setPaintProperty(outlineLayer, 'line-opacity', 0.7);
         }
       }
@@ -1496,8 +1501,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
 
       { !overlaysVisible && (
         <div className="pointer-events-auto absolute left-4 top-4 z-toolbar flex items-center gap-2">
-          <div className="glass flex items-center justify-center rounded-md px-2 py-2 shadow-e2">
-            <Satellite className="size-4 text-primary" strokeWidth={ 1.75 } aria-hidden="true" />
+          <div className="glass-card flex items-center justify-center rounded-md px-2 py-2 shadow-e2">
+            <BrandLockup variant="icon" />
           </div>
           <button
             type="button"

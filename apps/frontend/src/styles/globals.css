@@ -1,12 +1,25 @@
-/* Akasha design system — "Calm Instrument, Living Earth".
- * Tokens are copied verbatim from docs/design-system.md (§2.6, §3, §4, §6).
- * Default theme is DARK (imagery reads best on ink); light "haze" is the alternate.
- */
+/* Akasha by CIDSA — light-first Tailwind v4 + shadcn design system. */
 @import "tailwindcss";
+@import "tw-animate-css";
 
-@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* CIDSA brand palette. */
+  --color-cidsa-primary: #16a34a;
+  --color-cidsa-primary-dark: #15803d;
+  --color-cidsa-secondary: #3b82f6;
+  --color-cidsa-accent: #0891b2;
+  --color-bg-light: #ffffff;
+  --color-bg-light-secondary: #f8fafc;
+  --color-bg-light-elevated: #f1f5f9;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-map-tooltip: #020617;
+  --color-map-tooltip-foreground: #ffffff;
+
+  /* Semantic shadcn surface contract. */
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -32,19 +45,20 @@
   --color-ring: hsl(var(--ring));
   --color-panel: hsl(var(--panel));
 
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Inter", ui-monospace, "SFMono-Regular", monospace;
 
   --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 4px);
-  --radius-sm: calc(var(--radius) - 8px);
-  --radius-pill: 999px;
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-pill: 9999px;
 
-  --shadow-e1: 0 1px 2px hsl(var(--halo) / var(--halo-alpha));
-  --shadow-e2: 0 8px 28px -6px hsl(var(--halo) / calc(var(--halo-alpha) + 0.08)),
-    0 2px 6px hsl(var(--halo) / var(--halo-alpha));
-  --shadow-e3: 0 16px 48px -8px hsl(var(--halo) / calc(var(--halo-alpha) + 0.14));
+  --shadow-e1: 0 1px 2px hsl(var(--shadow-color) / 0.08);
+  --shadow-e2: 0 10px 30px -12px hsl(var(--shadow-color) / 0.2),
+    0 2px 8px hsl(var(--shadow-color) / 0.08);
+  --shadow-e3: 0 20px 48px -16px hsl(var(--shadow-color) / 0.28);
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
@@ -54,279 +68,298 @@
   --spacing-rail: var(--rail-width);
   --spacing-timeline: var(--timeline-height);
 
-  --animate-fade-in: fade-in var(--dur-base) var(--ease-decelerate);
+  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-slide-up: slide-up 0.4s ease-out both;
+  --animate-slide-in-right: slide-in-right 0.4s ease-out both;
   --animate-panel-in: panel-in var(--dur-base) var(--ease-decelerate);
   --animate-drawer-in: drawer-in var(--dur-base) var(--ease-decelerate);
   --animate-sheet-up: sheet-up var(--dur-slow) var(--ease-decelerate);
+  --animate-float: float 3s ease-in-out infinite;
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
 
   @keyframes fade-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
-
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(24px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
   @keyframes panel-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px) scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
-
   @keyframes drawer-in {
-    from {
-      opacity: 0;
-      transform: translateX(-16px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+    from { opacity: 0; transform: translateX(-16px); }
+    to { opacity: 1; transform: translateX(0); }
   }
-
   @keyframes sheet-up {
-    from {
-      transform: translateY(100%);
-    }
-    to {
-      transform: translateY(0);
-    }
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 20px rgb(22 163 74 / 0.12); }
+    50% { box-shadow: 0 0 38px rgb(22 163 74 / 0.24); }
   }
 }
 
-@utility duration-instant {
-  transition-duration: var(--dur-instant);
-}
-
-@utility duration-fast {
-  transition-duration: var(--dur-fast);
-}
-
-@utility duration-base {
-  transition-duration: var(--dur-base);
-}
-
-@utility duration-slow {
-  transition-duration: var(--dur-slow);
-}
-
-@utility duration-deliberate {
-  transition-duration: var(--dur-deliberate);
-}
-
-@utility z-map {
-  z-index: var(--z-map);
-}
-
-@utility z-overlay {
-  z-index: var(--z-overlay);
-}
-
-@utility z-panel {
-  z-index: var(--z-panel);
-}
-
-@utility z-toolbar {
-  z-index: var(--z-toolbar);
-}
-
-@utility z-popover {
-  z-index: var(--z-popover);
-}
+@utility duration-instant { transition-duration: var(--dur-instant); }
+@utility duration-fast { transition-duration: var(--dur-fast); }
+@utility duration-base { transition-duration: var(--dur-base); }
+@utility duration-slow { transition-duration: var(--dur-slow); }
+@utility duration-deliberate { transition-duration: var(--dur-deliberate); }
+@utility z-map { z-index: var(--z-map); }
+@utility z-overlay { z-index: var(--z-overlay); }
+@utility z-panel { z-index: var(--z-panel); }
+@utility z-toolbar { z-index: var(--z-toolbar); }
+@utility z-popover { z-index: var(--z-popover); }
 
 @layer base {
   :root {
-    /* Surfaces — warm haze paper */
-    --background: 40 30% 98%;
-    --foreground: 222 28% 12%;
-    --card: 40 33% 99%;
-    --card-foreground: 222 28% 12%;
-    --popover: 40 33% 99%;
-    --popover-foreground: 222 28% 12%;
+    color-scheme: light;
 
-    /* Brand — Solar Amber / Saffron */
-    --primary: 32 95% 52%;
-    --primary-foreground: 24 75% 12%;
-
-    --secondary: 40 16% 93%;
-    --secondary-foreground: 222 25% 18%;
-    --muted: 40 16% 94%;
-    --muted-foreground: 220 12% 42%;
-    --accent: 32 92% 94%;
-    --accent-foreground: 24 70% 24%;
-
-    /* Semantic */
-    --success: 152 55% 38%;
-    --warning: 40 90% 48%;
-    --info: 205 80% 45%;
-    --destructive: 4 84% 56%;
-    --destructive-foreground: 40 33% 99%;
-    --nodata: 220 9% 46%;
-
-    --border: 40 14% 88%;
-    --input: 40 14% 88%;
-    --ring: 32 95% 52%;
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 142 76% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 40%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 34%;
+    --warning: 32 95% 38%;
+    --info: 199 89% 38%;
+    --nodata: 215 16% 40%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 142 76% 36%;
     --radius: 0.75rem;
 
-    /* Orbital glass / map overlay */
-    --panel: 40 33% 99%;
-    --panel-alpha: 0.72;
-    --panel-blur: 16px;
-    --on-map-ring: 0 0% 100%;
-    --on-map-ring-alpha: 0.55;
-    --halo: 222 30% 10%;
-    --halo-alpha: 0.18;
-    --scrim-from: 222 30% 8% / 0;
-    --scrim-to: 222 30% 8% / 0.55;
-
-    /* Typography */
-    --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-    --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
-
-    /* Elevation (designed to read on imagery) */
-    --shadow-e1: 0 1px 2px hsl(var(--halo) / var(--halo-alpha));
-    --shadow-e2: 0 8px 28px -6px hsl(var(--halo) / calc(var(--halo-alpha) + 0.08)),
-      0 2px 6px hsl(var(--halo) / var(--halo-alpha));
-    --shadow-e3: 0 16px 48px -8px hsl(var(--halo) / calc(var(--halo-alpha) + 0.14));
+    --panel: 0 0% 100%;
+    --panel-alpha: 0.9;
+    --panel-blur: 20px;
+    --on-map-ring: 142 76% 36%;
+    --on-map-ring-alpha: 0.15;
+    --shadow-color: 222 47% 11%;
+    --scrim-from: 222 47% 11% / 0;
+    --scrim-to: 222 47% 11% / 0.62;
     --ring-onmap: inset 0 0 0 1px hsl(var(--on-map-ring) / var(--on-map-ring-alpha));
 
-    /* Signature motif — contour lines (≤ 6% opacity) */
-    --contour: repeating-radial-gradient(
-      circle at 30% 120%,
-      transparent 0 14px,
-      hsl(var(--foreground) / 0.05) 14px 15px
-    );
-
-    /* Motion */
-    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-    --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
-    --ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
-    --ease-emphasis: cubic-bezier(0.2, 0, 0, 1.1);
     --dur-instant: 80ms;
     --dur-fast: 140ms;
     --dur-base: 220ms;
     --dur-slow: 360ms;
     --dur-deliberate: 540ms;
 
-    /* Map-screen layout (redesign) — kept as tokens so fit-to-bounds padding,
-     * timeline reservations, and panel stacking are computed, not magic numbers. */
-    --rail-width: 22rem; /* 352px — expanded Layers drawer */
-    --timeline-height: 2.75rem; /* 44px — compact single-row bottom filmstrip */
-
-    /* Stacking order for floating map chrome (low → high). */
+    --rail-width: 22rem;
+    --timeline-height: 2.75rem;
     --z-map: 0;
-    --z-overlay: 30; /* scrims / mobile sheet backdrop */
-    --z-panel: 40; /* layers surface, timeline */
-    --z-toolbar: 50; /* corner controls, top bar */
-    --z-popover: 60; /* calendar / command palette / menus */
+    --z-overlay: 30;
+    --z-panel: 40;
+    --z-toolbar: 50;
+    --z-popover: 60;
   }
 
   .dark {
-    --background: 222 38% 7%;
-    --foreground: 210 28% 92%;
-    --card: 222 32% 10%;
-    --card-foreground: 210 28% 92%;
-    --popover: 222 32% 10%;
-    --popover-foreground: 210 28% 92%;
-
-    --primary: 33 96% 56%;
-    --primary-foreground: 24 80% 8%;
-
-    --secondary: 220 24% 16%;
-    --secondary-foreground: 210 28% 92%;
-    --muted: 220 22% 15%;
-    --muted-foreground: 215 18% 70%;
-    --accent: 30 55% 18%;
-    --accent-foreground: 33 90% 75%;
-
-    --success: 152 50% 45%;
-    --warning: 40 88% 55%;
-    --info: 200 75% 55%;
-    --destructive: 4 70% 48%;
-    --destructive-foreground: 210 30% 96%;
-    --nodata: 220 10% 55%;
-
-    --border: 220 20% 18%;
-    --input: 220 20% 18%;
-    --ring: 33 96% 56%;
-
-    --panel: 222 30% 12%;
-    --panel-alpha: 0.86;
-    --panel-blur: 18px;
-    --on-map-ring: 0 0% 100%;
-    --on-map-ring-alpha: 0.16;
-    --halo: 0 0% 0%;
-    --halo-alpha: 0.45;
-    --scrim-from: 222 40% 4% / 0;
-    --scrim-to: 222 40% 4% / 0.7;
+    color-scheme: dark;
+    --background: 222 47% 5%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 142 71% 45%;
+    --primary-foreground: 222 47% 5%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 72%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 70% 48%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 142 69% 52%;
+    --warning: 38 92% 55%;
+    --info: 199 89% 60%;
+    --nodata: 215 20% 70%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 142 71% 45%;
+    --panel: 222 47% 8%;
+    --panel-alpha: 0.92;
+    --panel-blur: 20px;
+    --on-map-ring: 142 71% 45%;
+    --on-map-ring-alpha: 0.18;
+    --shadow-color: 0 0% 0%;
+    --scrim-from: 222 47% 4% / 0;
+    --scrim-to: 222 47% 4% / 0.75;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
+
   html,
   body,
   #root {
     height: 100%;
+    max-width: 100%;
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background font-body text-foreground antialiased;
     margin: 0;
+    line-height: 1.6;
+    overflow-x: hidden;
   }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-family: var(--font-sans);
+  }
+
+  img,
+  video,
+  iframe {
+    max-width: 100%;
+  }
+
   h1,
   h2,
-  h3 {
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply font-display;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
   }
-  /* Saffron selection + focus visibility */
+
   ::selection {
-    background: hsl(var(--primary) / 0.28);
+    background: rgb(22 163 74 / 0.24);
+    color: hsl(var(--foreground));
   }
+
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
   }
-  .tnum {
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: hsl(var(--muted)); }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.42); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary)); }
+
+  .tnum,
+  .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
 }
 
 @layer components {
-  /* Orbital-glass surface recipe (design system §4). */
-  .glass {
+  .glass,
+  .glass-card {
     background: hsl(var(--panel) / var(--panel-alpha));
-    backdrop-filter: blur(var(--panel-blur)) saturate(1.1);
-    -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(1.1);
+    -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(1.08);
+    backdrop-filter: blur(var(--panel-blur)) saturate(1.08);
+    border: 1px solid hsl(var(--primary) / 0.13);
     border-radius: var(--radius);
     box-shadow: var(--shadow-e2), var(--ring-onmap);
   }
-  .contour {
-    background-image: var(--contour);
+
+  .gradient-border {
+    position: relative;
+    border-radius: 1rem;
+    background: hsl(var(--card));
   }
-  /* Text rendered directly on imagery gets a halo. */
+
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgb(22 163 74 / 0.42), rgb(8 145 178 / 0.4));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
   .on-map-text {
-    text-shadow: 0 0 2px hsl(var(--halo) / 0.9), 0 1px 1px hsl(var(--halo) / 0.6);
+    text-shadow: 0 0 2px hsl(var(--shadow-color) / 0.9), 0 1px 1px hsl(var(--shadow-color) / 0.65);
   }
+
   .scrim {
     background: linear-gradient(to top, hsl(var(--scrim-to)), hsl(var(--scrim-from)));
   }
 }
 
-/* Loading "scan sweep" motif (replaces generic spinners). */
 @layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #16a34a 0%, #0891b2 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glow-green { box-shadow: 0 0 40px rgb(22 163 74 / 0.18); }
+  .glow-text { text-shadow: 0 0 36px rgb(22 163 74 / 0.25); }
+
+  .hero-pattern {
+    background-image:
+      radial-gradient(circle at 20% 50%, rgb(22 163 74 / 0.08), transparent 50%),
+      radial-gradient(circle at 80% 20%, rgb(8 145 178 / 0.07), transparent 40%),
+      radial-gradient(circle at 40% 80%, rgb(59 130 246 / 0.04), transparent 40%);
+  }
+
+  .grid-pattern {
+    background-image:
+      linear-gradient(rgb(22 163 74 / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(22 163 74 / 0.05) 1px, transparent 1px);
+    background-size: 50px 50px;
+  }
+
+  .hover-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+
+  .hover-card:hover {
+    transform: translateY(-4px);
+    border-color: hsl(var(--primary) / 0.25);
+    box-shadow: 0 20px 40px rgb(15 23 42 / 0.1), 0 0 32px rgb(22 163 74 / 0.08);
+  }
+
   .scan-sweep {
     position: relative;
     overflow: hidden;
   }
+
   .scan-sweep::after {
     content: "";
     position: absolute;
@@ -334,48 +367,42 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      hsl(var(--primary) / 0.14) 45%,
-      hsl(var(--primary) / 0.22) 50%,
-      hsl(var(--primary) / 0.14) 55%,
+      hsl(var(--primary) / 0.08) 45%,
+      hsl(var(--primary) / 0.18) 50%,
+      hsl(var(--primary) / 0.08) 55%,
       transparent 100%
     );
     transform: translateX(-100%);
-    animation: akasha-scan 1.6s var(--ease-standard) infinite;
+    animation: cidsa-scan 1.6s var(--ease-standard) infinite;
   }
 }
 
-@keyframes akasha-scan {
-  to {
-    transform: translateX(100%);
-  }
+@keyframes cidsa-scan {
+  to { transform: translateX(100%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
     transition-duration: 0.001ms !important;
   }
-  .scan-sweep::after {
-    animation: none;
-    opacity: 0.5;
-  }
+  .scan-sweep::after { animation: none; opacity: 0.45; }
 }
 
-
-/* --- MapLibre GL control restyle (design-system §5.4) ---------------------- */
-/* The default Mapbox/MapLibre chrome is replaced with the calm "orbital glass"
- * scale bar + muted on-map attribution so nothing reads as generic GIS. */
+/* MapLibre controls inherit the same surface contract as the React map chrome. */
 .maplibregl-ctrl-scale {
   background: hsl(var(--panel) / var(--panel-alpha));
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius-sm, 6px);
-  color: hsl(var(--foreground) / 0.85);
-  font-family: var(--font-mono);
+  border: 1px solid hsl(var(--primary) / 0.18);
+  border-radius: var(--radius-sm);
+  color: hsl(var(--foreground) / 0.86);
+  font-family: var(--font-body);
   font-variant-numeric: tabular-nums;
   font-size: 11px;
   padding: 1px 6px;
@@ -383,70 +410,60 @@
 }
 
 .maplibregl-ctrl-attrib {
-  background: transparent;
-  color: hsl(var(--foreground) / 0.6);
+  background: hsl(var(--panel) / 0.72);
+  color: hsl(var(--foreground) / 0.7);
   font-size: 10px;
 }
 
-/* MapLibre canvas should never show a focus outline ring over imagery. */
-.maplibregl-canvas:focus {
-  outline: none;
-}
+.maplibregl-canvas:focus { outline: none; }
 
-/* --- Command palette (cmdk) theming --------------------------------------- */
-/* Headless cmdk emits [cmdk-*] attribute hooks; positioning/overlay come from
- * Tailwind on the Dialog, these rules cover item selection + group headings. */
+/* Headless cmdk state hooks. */
 [cmdk-group-heading] {
   padding: 0.375rem 0.5rem 0.25rem;
+  color: hsl(var(--muted-foreground));
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
 }
+
 [cmdk-item] {
   display: flex;
   align-items: center;
   gap: 0.625rem;
   padding: 0.5rem 0.625rem;
-  border-radius: var(--radius-sm, 6px);
-  font-size: 13px;
+  border-radius: var(--radius-sm);
   color: hsl(var(--foreground) / 0.9);
   cursor: pointer;
+  font-size: 13px;
   user-select: none;
 }
-[cmdk-item][data-selected='true'] {
-  background: hsl(var(--accent));
-  color: hsl(var(--accent-foreground));
+
+[cmdk-item][data-selected="true"] {
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--foreground));
 }
-[cmdk-item][data-disabled='true'] {
+
+[cmdk-item][data-disabled="true"] {
   color: hsl(var(--muted-foreground) / 0.5);
   cursor: not-allowed;
 }
+
 [cmdk-list] {
   max-height: 22rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-padding-block: 0.25rem;
 }
+
 [cmdk-empty] {
   padding: 1.25rem 0.5rem;
-  text-align: center;
-  font-size: 13px;
   color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  text-align: center;
 }
 
-.scroll-visible::-webkit-scrollbar {
-  width: 5px;
-}
-.scroll-visible::-webkit-scrollbar-track {
-  background: transparent;
-}
-.scroll-visible::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 999px;
-}
-.scroll-visible {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border)) transparent;
-}
+.scroll-visible { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+.scroll-visible::-webkit-scrollbar { width: 5px; }
+.scroll-visible::-webkit-scrollbar-track { background: transparent; }
+.scroll-visible::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 999px; }

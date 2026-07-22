@@ -79,7 +79,7 @@ export function LayerPanel(props: LayerPanelProps) {
       className="glass w-[320px] max-w-[88vw] animate-panel-in overflow-hidden"
       aria-label="Layer controls"
     >
-      <header className="contour flex items-center justify-between gap-2 px-4 py-3">
+      <header className="hero-pattern flex items-center justify-between gap-2 px-4 py-3">
         <div className="flex items-center gap-2">
           <Layers className="size-4 text-primary" strokeWidth={1.75} />
           <h2 className="font-display text-base font-semibold tracking-[-0.01em]">Layers</h2>

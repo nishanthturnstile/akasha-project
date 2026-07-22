@@ -37,7 +37,7 @@ export function LayersSurface({ open, onClose, children }: LayersSurfaceProps) {
     if (!open) return null;
 
     const header = (
-        <div className="contour flex items-center justify-between gap-2 px-4 py-3">
+        <div className="hero-pattern flex items-center justify-between gap-2 px-4 py-3">
             <div className="flex items-center gap-2">
                 <Layers className="size-4 text-primary" strokeWidth={ 1.75 } />
                 <h2 className="font-display text-base font-semibold tracking-[-0.01em]">Layers</h2>

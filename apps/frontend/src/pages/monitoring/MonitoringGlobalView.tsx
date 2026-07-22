@@ -40,15 +40,15 @@ function formatDate(value: string | null | undefined): string {
 
 function healthTone(source: ImagerySourceMonitoringSource): string {
   if (source.availabilityStatus === 'gated') {
-    return 'border-zinc-500/40 bg-zinc-500/10 text-zinc-100';
+    return 'border-nodata/35 bg-nodata/10 text-nodata';
   }
   if (source.status === 'error') {
-    return 'border-red-500/50 bg-red-500/10 text-red-100';
+    return 'border-destructive/35 bg-destructive/10 text-destructive';
   }
   if (source.status === 'warning') {
-    return 'border-amber-500/50 bg-amber-500/10 text-amber-100';
+    return 'border-warning/35 bg-warning/10 text-warning';
   }
-  return 'border-emerald-500/50 bg-emerald-500/10 text-emerald-100';
+  return 'border-success/35 bg-success/10 text-success';
 }
 
 function healthLabel(source: ImagerySourceMonitoringSource): string {
@@ -81,9 +81,9 @@ function LatestJobPill({ source }: { source: ImagerySourceMonitoringSource }) {
   const isRunning = state === 'running' || state === 'queued';
   const isFailed = state === 'failed' || state === 'validation_failed' || state === 'cancelled';
   const pillClass = isFailed
-    ? 'border-red-500/50 bg-red-500/10 text-red-200 hover:bg-red-500/20'
+    ? 'border-destructive/35 bg-destructive/10 text-destructive hover:bg-destructive/15'
     : isRunning
-      ? 'border-amber-500/50 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+      ? 'border-warning/35 bg-warning/10 text-warning hover:bg-warning/15'
       : 'border-border/60 bg-card/80 text-muted-foreground hover:bg-card';
   return (
     <Link
@@ -112,9 +112,9 @@ function MetricCard({
 }) {
   const toneClass =
     tone === 'warn'
-      ? 'border-amber-500/40 bg-amber-500/10'
+      ? 'border-warning/30 bg-warning/10'
       : tone === 'ok'
-        ? 'border-emerald-500/40 bg-emerald-500/10'
+        ? 'border-success/30 bg-success/10'
         : 'border-border/80 bg-card/90';
   return (
     <article className={ `rounded-xl border p-4 ${toneClass}` }>
@@ -194,7 +194,7 @@ function StorageRow({ prefix }: { prefix: StoragePrefixUsage }) {
       <td className="py-2 pr-4 font-medium">{ prefix.prefix }</td>
       <td className="py-2 pr-4">{ formatNumber(prefix.objectCount) }</td>
       <td className="py-2 pr-4">{ formatBytes(prefix.bytes) }</td>
-      <td className={ `py-2 ${hasZeroByte ? 'text-amber-100' : 'text-muted-foreground'}` }>
+      <td className={ `py-2 ${hasZeroByte ? 'text-warning' : 'text-muted-foreground'}` }>
         { formatNumber(prefix.zeroByteObjectCount ?? 0) }
       </td>
     </tr>
@@ -209,7 +209,7 @@ function FailureRow({ failure }: { failure: MonitoringFailure }) {
         <span className="text-xs text-muted-foreground">{ formatDate(failure.updatedAt) }</span>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{ failure.productId ?? 'unknown product' }</p>
-      { failure.error && <p className="mt-2 text-sm text-amber-100">{ failure.error }</p> }
+      { failure.error && <p className="mt-2 text-sm text-warning">{ failure.error }</p> }
     </article>
   );
 }
@@ -254,7 +254,7 @@ export default function MonitoringGlobalView() {
       </section>
 
       { monitoringQ.error && (
-        <p className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-100" role="status">
+        <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="status">
           Imagery source monitoring could not be loaded.
         </p>
       ) }
@@ -322,7 +322,7 @@ export default function MonitoringGlobalView() {
             <article className="overflow-x-auto rounded-xl border border-border/80 bg-card/90 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold">Object storage by source prefix</h2>
-                <p className={ `text-sm ${zeroByteCount > 0 ? 'text-amber-100' : 'text-muted-foreground'}` }>
+                <p className={ `text-sm ${zeroByteCount > 0 ? 'text-warning' : 'text-muted-foreground'}` }>
                   { formatNumber(zeroByteCount) } zero-byte object(s)
                 </p>
               </div>

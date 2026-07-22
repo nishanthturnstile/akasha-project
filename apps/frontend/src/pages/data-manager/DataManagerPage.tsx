@@ -44,7 +44,7 @@ export default function DataManagerPage() {
         </Select>
         <input className="ml-3" type="file" onChange={ (event) => void onFile(event.target.files?.[0]) } />
       </section>
-      { error && <p className="mt-4 rounded-md border border-amber-500/40 p-3 text-sm text-amber-100">{ reportErrorMessage(error) }</p> }
+      { error && <p className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">{ reportErrorMessage(error) }</p> }
       <section className="mt-4 grid gap-2 rounded-xl border border-border/80 bg-card/90 p-4">
         { datasetsQ.data?.map((dataset) => (
           <article key={ dataset.id } className="rounded-md border border-border p-3">

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { MAP_UI_COLORS } from '@/map/colors';
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -151,7 +152,7 @@ export function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.closePath();
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = MAP_UI_COLORS.white;
       ctx.lineWidth = 1;
       ctx.stroke();
     }

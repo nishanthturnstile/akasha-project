@@ -474,7 +474,7 @@ export default function IngestionSchedules() {
 
       { schedulesQ.error && (
         <p
-          className="mt-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200"
+          className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
           role="alert"
         >
           Failed to load ingestion schedules. { (schedulesQ.error as Error).message ?? '' }
@@ -483,7 +483,7 @@ export default function IngestionSchedules() {
 
       { schedulesQ.data?.lastError && (
         <p
-          className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100"
+          className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
           role="status"
         >
           Scheduler schedules are available with a warning: { schedulesQ.data.lastError }
@@ -498,7 +498,7 @@ export default function IngestionSchedules() {
       ) }
 
       { isUnavailable && (
-        <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+        <p className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
           Ingestion schedules are temporarily unavailable. Refresh after the scheduler ledger is
           reachable.
         </p>

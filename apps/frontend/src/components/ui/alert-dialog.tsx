@@ -30,7 +30,7 @@ const AlertDialogContent = forwardRef<
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-popover w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-popover p-6 shadow-e2',
+        'fixed left-1/2 top-1/2 z-popover w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-primary/15 bg-popover p-6 shadow-e3',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         className,
       )}
@@ -73,7 +73,7 @@ const AlertDialogCancel = forwardRef<
   <AlertDialogPrimitive.Cancel
     ref={ref}
     className={cn(
-      'inline-flex items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-accent/40 transition-colors duration-fast',
+      'inline-flex items-center justify-center rounded-pill border border-border bg-background px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors duration-fast hover:border-primary/40 hover:bg-primary/5',
       className,
     )}
     {...props}
@@ -90,7 +90,7 @@ const AlertDialogAction = forwardRef<
   <AlertDialogPrimitive.Action
     ref={ref}
     className={cn(
-      'inline-flex items-center justify-center rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground shadow-sm hover:bg-destructive/90 transition-colors duration-fast',
+      'inline-flex items-center justify-center rounded-pill bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground shadow-sm transition-colors duration-fast hover:bg-destructive/90',
       className,
     )}
     {...props}

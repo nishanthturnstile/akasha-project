@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { BrandLockup } from '@/components/BrandLockup';
 import { X } from 'lucide-react';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
@@ -132,7 +133,7 @@ export default function OnboardingFieldCreate() {
   if (configQ.isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <div className="glass p-4">Loading map…</div>
+        <div className="glass-card p-4">Loading map…</div>
       </div>
     );
   }
@@ -140,7 +141,7 @@ export default function OnboardingFieldCreate() {
   if (configQ.isError || !configQ.data) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <div className="glass p-4">Unable to load map configuration.</div>
+        <div className="glass-card p-4">Unable to load map configuration.</div>
       </div>
     );
   }
@@ -148,7 +149,7 @@ export default function OnboardingFieldCreate() {
   if (basemapResolution.basemapError instanceof BasemapConfigurationError) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <div className="glass p-4">{ basemapResolution.basemapError.message }</div>
+        <div className="glass-card p-4">{ basemapResolution.basemapError.message }</div>
       </div>
     );
   }
@@ -202,8 +203,9 @@ export default function OnboardingFieldCreate() {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-transparent">
       {/* Top bar */ }
-      <div className="glass z-50 flex items-center justify-center px-4 py-3 relative">
-        <h2 className="font-display text-lg font-semibold">{ isEditing ? 'Edit field' : 'Add field' }</h2>
+      <div className="glass-card relative z-50 flex items-center justify-center rounded-none px-4 py-3">
+        <BrandLockup className="absolute left-4 hidden sm:inline-flex" variant="compact" />
+        <h2 className="font-display text-lg font-bold">{ isEditing ? 'Edit field' : 'Add field' }</h2>
         <button aria-label="Close" onClick={ handleClose } className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground">
           <X className="size-5" strokeWidth={ 1.75 } />
         </button>
@@ -280,7 +282,7 @@ export default function OnboardingFieldCreate() {
         {/* Field name card when geometry is ready */ }
         { draftGeometry && (
           <div className="absolute left-1/2 top-24 z-40 -translate-x-1/2 w-72">
-            <div className="rounded-lg border border-border bg-card p-4 shadow-lg space-y-3">
+            <div className="glass-card space-y-3 p-4">
               <input
                 placeholder="Field name"
                 value={ fieldName || (!editingFieldId && suggestedFieldName) || '' }
@@ -300,7 +302,7 @@ export default function OnboardingFieldCreate() {
 
         {/* Bottom center hint */ }
         <div className="absolute left-1/2 bottom-24 z-40 -translate-x-1/2">
-          <div className="glass rounded-full px-4 py-2 text-sm">{ isEditing ? 'Edit your field boundary on the map' : 'Put a dot on the map to start drawing' }</div>
+          <div className="glass-card rounded-full px-4 py-2 text-sm">{ isEditing ? 'Edit your field boundary on the map' : 'Put a dot on the map to start drawing' }</div>
         </div>
 
         {/* Error toast */ }

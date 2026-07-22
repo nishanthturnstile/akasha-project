@@ -87,7 +87,7 @@ export default function FieldActivityLogPage() {
         </div>
       </section>
 
-      { error && <p className="mt-4 rounded-md border border-amber-500/40 p-3 text-sm text-amber-100">{ reportErrorMessage(error) }</p> }
+      { error && <p className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">{ reportErrorMessage(error) }</p> }
 
       <section className="mt-4 rounded-xl border border-border/80 bg-card/90 p-4">
         <h2 className="text-lg font-semibold">Yearly timeline</h2>

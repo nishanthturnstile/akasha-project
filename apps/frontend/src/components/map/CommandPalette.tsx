@@ -18,7 +18,7 @@ interface CommandPaletteProps {
 /**
  * ⌘K / Ctrl-K command palette to jump between imagery sources and acquisition
  * dates without reaching for the panels. Built on `cmdk` (Radix Dialog under the
- * hood, so focus-trap/ARIA come for free) and styled with the orbital-glass
+ * hood, so focus-trap/ARIA come for free) and styled with the CIDSA glass-card
  * surface. Geocoded "places" search is intentionally out of scope until a
  * geocoder exists; this covers sources, dates, and panel actions.
  */

@@ -7,9 +7,9 @@ import { SelectFieldNotice } from '@/components/shell/SelectFieldNotice';
 const LEVELS: RiskLevel[] = ['low', 'medium', 'high', 'unknown'];
 
 function levelClass(level: RiskLevel) {
-  if (level === 'high') return 'border-red-500/50 bg-red-500/10 text-red-100';
-  if (level === 'medium') return 'border-amber-500/50 bg-amber-500/10 text-amber-100';
-  if (level === 'low') return 'border-emerald-500/50 bg-emerald-500/10 text-emerald-100';
+  if (level === 'high') return 'border-destructive/35 bg-destructive/10 text-destructive';
+  if (level === 'medium') return 'border-warning/35 bg-warning/10 text-warning';
+  if (level === 'low') return 'border-success/35 bg-success/10 text-success';
   return 'border-border bg-muted/20 text-muted-foreground';
 }
 
@@ -40,14 +40,14 @@ export default function DiseasesPestsPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Selected field: { fieldName }
         </p>
-        <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+        <p className="mt-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           This is not a disease or pest diagnostic model. It is field-watch context to help prioritize scouting.
         </p>
       </section>
 
       { riskQ.isLoading && <div className="glass scan-sweep mt-4 h-24 rounded-xl" /> }
       { riskQ.error && (
-        <p className="mt-4 rounded-md border border-amber-500/40 p-3 text-sm text-amber-100">
+        <p className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           { reportErrorMessage(riskQ.error) }
         </p>
       ) }

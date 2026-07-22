@@ -271,7 +271,7 @@ export function CoordinateReadout({ map, interactiveLayerId, indexLookup, fieldG
                     data-testid="index-hover-tooltip"
                     role="status"
                     aria-live="polite"
-                    className="pointer-events-none absolute hidden min-w-36 select-none rounded-lg bg-[#010203] px-4 py-3 text-left text-white shadow-e2 ring-1 ring-white/15 sm:block"
+                    className="pointer-events-none absolute hidden min-w-36 select-none rounded-lg bg-map-tooltip px-4 py-3 text-left text-map-tooltip-foreground shadow-e2 ring-1 ring-map-tooltip-foreground/15 sm:block"
                     style={ {
                         left: cursor.tooltipX,
                         top: cursor.y,
@@ -285,7 +285,7 @@ export function CoordinateReadout({ map, interactiveLayerId, indexLookup, fieldG
                             ? 'Masked'
                             : currentSample.value?.toFixed(2) }
                     </strong>
-                    <span className="block text-[13px] leading-5 text-white/90">
+                    <span className="block text-[13px] leading-5 text-map-tooltip-foreground/90">
                         { interpretation }
                     </span>
                 </div>

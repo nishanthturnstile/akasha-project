@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { LatestImageryControl } from '@/components/map/LatestImageryControl';
@@ -87,6 +87,7 @@ describe('LatestImageryControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search this area' }));
 
     await waitFor(() => expect(onSelectedChange).toHaveBeenCalledWith(expect.objectContaining({ sceneId: 'scene-new' })));
+    expect(screen.queryByText(/Map moved/)).toBeNull();
     expect(searchLatestImagery).toHaveBeenCalledWith(
       {
         type: 'Polygon',
@@ -95,6 +96,9 @@ describe('LatestImageryControl', () => {
       expect.any(AbortSignal),
     );
     expect(screen.getByRole('button', { name: '2026-07-18' }).hasAttribute('disabled')).toBe(true);
+
+    act(() => map.listeners.get('moveend')?.());
+    expect(await screen.findByText(/Map moved/)).toBeTruthy();
   });
 
   it('disables search when the viewport exceeds the configured 2 km diagonal', () => {

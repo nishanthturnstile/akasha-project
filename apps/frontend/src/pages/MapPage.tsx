@@ -503,6 +503,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   // *selected* field, so without this a fresh session lands on "No field selected"
   // and the drawn field is invisible even though it exists.
   const prevFocusedPlotId = useRef<string | null>(null);
+  const prevFocusedMap = useRef<maplibregl.Map | null>(null);
   const prevFocusNonce = useRef(0);
   useEffect(() => {
     if (!map || plotsQ.isLoading || !plotsQ.data) return;
@@ -510,10 +511,12 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     const focusTarget = selectedPlot;
     if (!focusTarget) return;
     const nonceBumped = focusNonce !== prevFocusNonce.current;
-    if (!nonceBumped && prevFocusedPlotId.current === selectedPlotId) return;
+    const mapChanged = prevFocusedMap.current !== map;
+    if (!nonceBumped && !mapChanged && prevFocusedPlotId.current === selectedPlotId) return;
     // Skip auto-selection in Global View — Effect B handles the initial fit.
     if (!nonceBumped && globalViewOpen) return;
     focusPlot(map, focusTarget);
+    prevFocusedMap.current = map;
     prevFocusedPlotId.current = selectedPlotId;
     prevFocusNonce.current = focusNonce;
   }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, globalViewOpen, view]);

@@ -53,17 +53,19 @@ export function LatestImageryControl({
   const [diagonal, setDiagonal] = useState(Infinity);
   const abortRef = useRef<AbortController | null>(null);
   const searchToken = useRef(0);
+  const hasCandidatesRef = useRef(false);
+  hasCandidatesRef.current = candidates.length > 0;
 
   useEffect(() => {
     if (!map) return;
     const moved = () => {
       setDiagonal(viewportDiagonalMeters(map));
-      if (candidates.length > 0) setStale(true);
+      if (hasCandidatesRef.current) setStale(true);
     };
     moved();
     map.on('moveend', moved);
     return () => { map.off('moveend', moved); };
-  }, [map, candidates.length]);
+  }, [map]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -105,6 +107,7 @@ export function LatestImageryControl({
           <button
             key={ value }
             type="button"
+            aria-pressed={ mode === value }
             onClick={ () => {
               onModeChange(value);
               if (value === 'default') onSelectedChange(null);
@@ -149,6 +152,7 @@ export function LatestImageryControl({
                 <button
                   key={ candidate.sceneId }
                   type="button"
+                  aria-pressed={ selected?.sceneId === candidate.sceneId }
                   disabled={ !candidate.usable }
                   title={ candidate.unavailableReason ?? `${candidate.cloudPercent}% cloud` }
                   onClick={ () => onSelectedChange(candidate) }

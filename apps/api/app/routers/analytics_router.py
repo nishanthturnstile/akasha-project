@@ -1256,7 +1256,7 @@ async def get_field_dates(
     cursor: str | None = Query(default=None),
     pageSize: int | None = Query(default=None, ge=1, le=250),
     user: CurrentUser = Depends(get_current_user),
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     _enforce_index_rate_limit(request)
     plot = await _get_field_or_404(plot_id, user.id)
     if _uses_natural_pipeline(sourceId):

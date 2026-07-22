@@ -1,4 +1,5 @@
 import asyncio
+from typing import get_type_hints
 
 import pytest
 from app.raster.render_profiles import (
@@ -11,7 +12,9 @@ from app.routers.latest_imagery_router import (
     LatestImagerySearchRequest,
     _viewport_diagonal_meters,
 )
+from app.routers.analytics_router import get_field_dates
 from pydantic import ValidationError
+from pydantic import TypeAdapter
 
 
 def test_contrast_descriptor_has_exact_equal_breaks_and_categories() -> None:
@@ -79,3 +82,13 @@ def test_latest_imagery_search_whitelists_upstream_metadata_and_rewrites_urls(mo
     assert captured["max_cloud_percent"] == 10
     assert "providerUrl" not in result["candidates"][0]
     assert result["candidates"][0]["tileUrlTemplate"].startswith("/api/imagery/scenes/")
+
+
+def test_field_history_response_contract_accepts_cursor_pages() -> None:
+    response_type = get_type_hints(get_field_dates)["return"]
+
+    result = TypeAdapter(response_type).validate_python(
+        {"items": [{"acquisitionDate": "2026-05-12"}], "nextCursor": None}
+    )
+
+    assert result["items"][0]["acquisitionDate"] == "2026-05-12"

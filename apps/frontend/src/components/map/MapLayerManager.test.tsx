@@ -11,6 +11,7 @@ const hoisted = vi.hoisted(() => ({
   applyStyle: vi.fn(),
   createBasemapStyle: vi.fn(),
   createMap: vi.fn(),
+  removeMap: vi.fn(),
   startSession: vi.fn(),
   setStyle: vi.fn(),
   addSource: vi.fn(),
@@ -78,7 +79,7 @@ vi.mock('maplibre-gl', () => {
     });
     removeSource = vi.fn();
     setPaintProperty = hoisted.setPaintProperty;
-    remove = vi.fn();
+    remove = hoisted.removeMap;
     getCanvas = vi.fn(() => ({ clientWidth: 800, clientHeight: 600 }));
     getBounds = vi.fn(() => ({
       getEast: () => 78,
@@ -148,6 +149,7 @@ afterEach(() => {
   hoisted.applyStyle.mockReset();
   hoisted.createBasemapStyle.mockReset();
   hoisted.createMap.mockReset();
+  hoisted.removeMap.mockReset();
   hoisted.startSession.mockReset();
   hoisted.setStyle.mockReset();
   hoisted.addSource.mockReset();
@@ -162,6 +164,27 @@ afterEach(() => {
 });
 
 describe('MapLayerManager Esri basemap lifecycle', () => {
+  it('notifies the owner before destroying the MapLibre instance', () => {
+    const events: string[] = [];
+    hoisted.removeMap.mockImplementation(() => events.push('removed'));
+
+    const { unmount } = render(
+      <MapLayerManager
+        basemap={ EMPTY_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+        onMapDisposed={ () => events.push('disposed') }
+      />,
+    );
+
+    unmount();
+
+    expect(events).toEqual(['disposed', 'removed']);
+  });
+
   it('starts one Esri session, applies imagery with places disabled, and waits before overlays', async () => {
     const session = sessionMock();
     hoisted.startSession.mockResolvedValue(session);

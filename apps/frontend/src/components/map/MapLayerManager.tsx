@@ -196,6 +196,7 @@ interface MapLayerManagerProps {
   visible: boolean;
   onBasemapError?: (error: Error) => void;
   onMapReady?: (map: maplibregl.Map) => void;
+  onMapDisposed?: (map: maplibregl.Map) => void;
 }
 
 /**
@@ -215,6 +216,7 @@ export function MapLayerManager({
   visible,
   onBasemapError,
   onMapReady,
+  onMapDisposed,
 }: MapLayerManagerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -318,6 +320,11 @@ export function MapLayerManager({
       disposed = true;
       activeEsriSession?.off('BasemapSessionError', reportSessionError);
       loadedRef.current = false;
+      // Clear the parent's map handle before MapLibre tears down its style. Switching
+      // between single and split layouts replaces this component; without the null
+      // notification, sibling overlay effects can briefly call getLayer() on the
+      // already-removed map and crash the whole analytics screen.
+      onMapDisposed?.(map);
       map.remove();
       mapRef.current = null;
     };

@@ -1268,6 +1268,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
               visible={ visible }
               onBasemapError={ setBasemapRuntimeError }
               onMapReady={ setMap }
+              onMapDisposed={ (disposedMap) => setMap((current) => current === disposedMap ? null : current) }
             />
             <div className="glass absolute left-2 top-2 z-toolbar rounded px-2 py-1 text-xs">Left · { selectedDisplayMode } · { selectedDate }</div>
             { indexOverlayError && (
@@ -1288,6 +1289,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
               visible={ true }
               onBasemapError={ setBasemapRuntimeError }
               onMapReady={ setRightMap }
+              onMapDisposed={ (disposedMap) => setRightMap((current) => current === disposedMap ? null : current) }
             />
             <div className="glass absolute left-2 top-2 z-toolbar flex gap-2 rounded p-1.5 text-xs">
               <select value={ rightEffectiveSourceId } onChange={ (event) => view.setRightSource(event.target.value) } aria-label="Right source" className="bg-transparent">
@@ -1334,6 +1336,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           visible={ visible }
           onBasemapError={ setBasemapRuntimeError }
           onMapReady={ setMap }
+          onMapDisposed={ (disposedMap) => setMap((current) => current === disposedMap ? null : current) }
         />
       ) }
       { splitEnabled && (

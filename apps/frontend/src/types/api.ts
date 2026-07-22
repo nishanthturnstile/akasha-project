@@ -38,6 +38,92 @@ export interface AppConfig {
   defaultIndex: string;
   defaultSourceId?: string;
   adminIngestionLiveTriggerEnabled: boolean;
+  features?: {
+    cropMapSplitEnabled: boolean;
+    cropMapContrastEnabled: boolean;
+    latestImageryEnabled: boolean;
+  };
+  latestImagery?: LatestImageryPolicy;
+}
+
+export type RenderProfileName = 'standard' | 'contrast';
+
+export interface LatestImageryPolicy {
+  policyVersion: string;
+  sourceId: 'sentinel-2-l2a';
+  processingLevel: 'L2A';
+  lookbackDays: number;
+  maxCloudPercent: number;
+  maxViewportDiagonalMeters: number;
+  resultLimit: number;
+  entitled: boolean;
+}
+
+export interface SceneCandidate {
+  sceneId: string;
+  acquisitionDate: string;
+  acquisitionDatetime: string;
+  sourceId: string;
+  sensor: string;
+  processingLevel: string;
+  cloudPercent: number;
+  coveragePercent: number;
+  coverageStatus: 'full' | 'partial';
+  usable: boolean;
+  bounds: [number, number, number, number];
+  unavailableReason?: string | null;
+  tileUrlTemplate: string;
+  thumbnailUrl: string;
+}
+
+export interface LatestImageryResult {
+  policyVersion: string;
+  searchedAt: string;
+  viewportDiagonalMeters: number;
+  candidates: SceneCandidate[];
+}
+
+export interface IndexRenderProfile {
+  sourceId: string;
+  sceneId: string;
+  indexType: string;
+  requestedProfile: RenderProfileName;
+  appliedProfile: RenderProfileName;
+  profileVersion: string;
+  thresholds: number[];
+  palette: string[];
+  legendLabels: string[];
+  fallbackReason?: string | null;
+  overlayUrl: string;
+  precision: number;
+  maskedLabel: string;
+  statisticsVersion: string;
+  maskProvenance: CloudMaskOptions;
+  formulaVersion: string;
+  geometryReference: string;
+}
+
+export interface ViewerSelection {
+  sourceId: string;
+  acquisitionDate: string;
+  indexType: string;
+  cloudMask: CloudMaskOptions;
+  renderProfile: RenderProfileName;
+  preferHighRes: boolean;
+}
+
+export interface RasterSample {
+  status: 'ok' | 'error';
+  value: number | null;
+  category: number | null;
+  masked: boolean;
+  maskClass: number | null;
+  error?: string | null;
+}
+
+export interface ComparisonSampleResponse {
+  left: RasterSample;
+  right: RasterSample;
 }
 
 export interface IrrigationType {
@@ -961,6 +1047,12 @@ export interface FieldIndexOverlayImage {
   resolutionMeters?: number | null;
   enhanced?: boolean;
   basisDate?: string | null;
+  renderProfile?: RenderProfileName;
+  renderProfileVersion?: string;
+  renderThresholds?: number[];
+  renderPalette?: string[];
+  renderLegendLabels?: string[];
+  renderFallbackReason?: string | null;
 }
 
 export interface FieldIndexPointResponse {

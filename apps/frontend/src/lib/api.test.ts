@@ -95,7 +95,7 @@ describe('api client error mapping', () => {
     await getDates('sentinel-2-l2a', { fieldId: 'field 1', indexType: 'NDVI' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/fields/field%201/dates?sourceId=sentinel-2-l2a&indexType=NDVI',
+      '/api/fields/field%201/dates?sourceId=sentinel-2-l2a&indexType=NDVI&pageSize=120',
       expect.anything(),
     );
   });

@@ -53,6 +53,7 @@ from .routers.data_manager_router import router as data_manager_router
 from .routers.field_exports_router import router as field_exports_router
 from .routers.field_group_router import router as field_groups_router
 from .routers.field_router import router as fields_router
+from .routers.latest_imagery_router import router as latest_imagery_router
 from .routers.observations_router import router as observations_router
 from .routers.operation_router import router as operations_router
 from .routers.plot_router import router as plots_router
@@ -281,6 +282,7 @@ app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
 app.include_router(fields_router)
+app.include_router(latest_imagery_router)
 app.include_router(ingestion_jobs_router)
 app.include_router(source_monitoring_router)
 

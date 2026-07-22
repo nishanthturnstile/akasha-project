@@ -9,7 +9,6 @@ import {
 import { SourceSelector } from '@/components/layers/SourceSelector';
 import { DisplayModeToggle } from '@/components/layers/DisplayModeToggle';
 import { modeLabel } from '@/lib/displayMode';
-import { CompareControl } from '@/components/map/CompareControl';
 import { DownloadMenu } from '@/components/monitoring/DownloadMenu';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -17,8 +16,8 @@ import { cn } from '@/lib/utils';
 import type {
     CloudMaskOptions,
     Plot,
-    SceneDate,
     Source,
+    RenderProfileName,
 } from '@/types/api';
 
 type CloudMaskOptionKey = keyof CloudMaskOptions;
@@ -32,16 +31,10 @@ interface LayerControlBarProps {
     onDisplayModeChange: (mode: string) => void;
     cloudMask: CloudMaskOptions;
     onCloudMaskChange: (value: CloudMaskOptions) => void;
+    renderProfile?: RenderProfileName;
+    onRenderProfileChange?: (profile: RenderProfileName) => void;
+    contrastAvailable?: boolean;
     cloudMaskDisabled?: boolean;
-    compareAvailable?: boolean;
-    compareEnabled: boolean;
-    onCompareEnabledChange: (next: boolean) => void;
-    comparableDates: SceneDate[];
-    activeDate: string | null;
-    compareDate: string | null;
-    onCompareDateChange: (date: string | null) => void;
-    blend: number;
-    onBlendChange: (value: number) => void;
     selectedPlot: Plot | null;
     selectedDate: string | null;
     exportSourceId: string | undefined;
@@ -298,16 +291,10 @@ export function LayerControlBar({
     onDisplayModeChange,
     cloudMask,
     onCloudMaskChange,
+    renderProfile = 'standard',
+    onRenderProfileChange = () => undefined,
+    contrastAvailable = false,
     cloudMaskDisabled = false,
-    compareAvailable = true,
-    compareEnabled,
-    onCompareEnabledChange,
-    comparableDates,
-    activeDate,
-    compareDate,
-    onCompareDateChange,
-    blend,
-    onBlendChange,
     selectedPlot,
     selectedDate,
     exportSourceId,
@@ -441,17 +428,23 @@ export function LayerControlBar({
             <span aria-hidden="true" className="h-5 w-px bg-border" />
 
             <div className="flex items-center gap-1" data-testid="layer-bar-cluster">
-                { compareAvailable && (
-                    <CompareControl
-                        enabled={ compareEnabled }
-                        onEnabledChange={ onCompareEnabledChange }
-                        dates={ comparableDates }
-                        activeDate={ activeDate }
-                        compareDate={ compareDate }
-                        onCompareDateChange={ onCompareDateChange }
-                        blend={ blend }
-                        onBlendChange={ onBlendChange }
-                    />
+                { contrastAvailable && (
+                    <button
+                        type="button"
+                        data-testid="contrast-toggle"
+                        aria-pressed={ renderProfile === 'contrast' }
+                        onClick={ () => onRenderProfileChange(
+                            renderProfile === 'contrast' ? 'standard' : 'contrast',
+                        ) }
+                        className={ cn(
+                            'h-8 rounded-md px-2 text-[11px] font-medium',
+                            renderProfile === 'contrast'
+                                ? 'bg-primary/15 text-primary'
+                                : 'text-foreground/80 hover:bg-accent',
+                        ) }
+                    >
+                        { renderProfile === 'contrast' ? 'Contrast' : 'Standard' }
+                    </button>
                 ) }
                 <CloudMaskPopover
                     value={ cloudMask }

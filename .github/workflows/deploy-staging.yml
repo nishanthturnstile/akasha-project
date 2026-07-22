@@ -144,6 +144,9 @@ jobs:
       COOLIFY_SERVICE_UUID: ${{ vars.COOLIFY_STAGING_SERVICE_UUID }}
       IMAGE_TAG: ${{ github.sha }}
       ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: ${{ vars.ADMIN_INGESTION_LIVE_TRIGGER_ENABLED || 'true' }}
+      CROP_MAP_SPLIT_ENABLED: ${{ vars.CROP_MAP_SPLIT_ENABLED || 'true' }}
+      CROP_MAP_CONTRAST_ENABLED: ${{ vars.CROP_MAP_CONTRAST_ENABLED || 'true' }}
+      LATEST_IMAGERY_ENABLED: ${{ vars.LATEST_IMAGERY_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_ENABLED: ${{ vars.INGESTION_RESOURCESAT_CUTOVER_ENABLED || 'true' }}
       INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
       # Activated after the 2026-07-18 capped real-product acceptance run.
@@ -203,6 +206,16 @@ jobs:
           admin_live = os.environ.get("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED", "true").lower()
           if admin_live not in {"true", "false"}:
               raise SystemExit("ADMIN_INGESTION_LIVE_TRIGGER_ENABLED must be true or false")
+          crop_map_split = os.environ.get("CROP_MAP_SPLIT_ENABLED", "true").lower()
+          crop_map_contrast = os.environ.get("CROP_MAP_CONTRAST_ENABLED", "true").lower()
+          latest_imagery = os.environ.get("LATEST_IMAGERY_ENABLED", "true").lower()
+          for name, value in (
+              ("CROP_MAP_SPLIT_ENABLED", crop_map_split),
+              ("CROP_MAP_CONTRAST_ENABLED", crop_map_contrast),
+              ("LATEST_IMAGERY_ENABLED", latest_imagery),
+          ):
+              if value not in {"true", "false"}:
+                  raise SystemExit(f"{name} must be true or false")
           resourcesat_cutover = os.environ.get(
               "INGESTION_RESOURCESAT_CUTOVER_ENABLED", "true"
           ).lower()
@@ -305,6 +318,9 @@ jobs:
           text = Path(os.environ.get("COMPOSE_TEMPLATE", "infra/selfhosted/coolify-compose.yml")).read_text()
           text = text.replace("${IMAGE_TAG:?IMAGE_TAG must be set to a Git SHA}", tag)
           text = text.replace("${ADMIN_INGESTION_LIVE_TRIGGER_ENABLED:-false}", admin_live)
+          text = text.replace("${CROP_MAP_SPLIT_ENABLED:-false}", crop_map_split)
+          text = text.replace("${CROP_MAP_CONTRAST_ENABLED:-false}", crop_map_contrast)
+          text = text.replace("${LATEST_IMAGERY_ENABLED:-false}", latest_imagery)
           text = text.replace(
               "${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-true}",
               resourcesat_cutover,

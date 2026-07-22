@@ -65,6 +65,10 @@ import type {
   FieldCreatePayload,
   FieldUpdatePayload,
   SignupPayload,
+  LatestImageryResult,
+  RenderProfileName,
+  ViewerSelection,
+  ComparisonSampleResponse,
 } from '@/types/api';
 
 /**
@@ -89,6 +93,7 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   headers?: HeadersInit;
+  signal?: AbortSignal;
 }
 
 let unauthorizedHandler: (() => void) | null = null;
@@ -147,6 +152,7 @@ function buildRequestInit(options: RequestOptions = {}): RequestInit {
     headers,
     body,
     credentials: 'same-origin',
+    signal: options.signal,
   };
 }
 
@@ -361,18 +367,39 @@ export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sourc
 
 export const getDates = (
   sourceId: string,
-  options: { fieldId?: string; indexType?: string } = {},
+  options: { fieldId?: string; indexType?: string; lookbackDays?: number } = {},
 ): Promise<SceneDate[]> => {
   if (options.fieldId) {
-    const params = new URLSearchParams();
-    params.set('sourceId', sourceId);
-    params.set('indexType', options.indexType ?? 'NDVI');
-    return request<SceneDate[]>(
-      `/api/fields/${encodeURIComponent(options.fieldId)}/dates?${params.toString()}`,
-    );
+    const fieldId = options.fieldId;
+    return (async () => {
+      const dates: SceneDate[] = [];
+      let cursor: string | null = null;
+      do {
+        const params = new URLSearchParams();
+        params.set('sourceId', sourceId);
+        params.set('indexType', options.indexType ?? 'NDVI');
+        params.set('pageSize', '120');
+        if (options.lookbackDays) params.set('lookbackDays', String(options.lookbackDays));
+        if (cursor) params.set('cursor', cursor);
+        const response: SceneDate[] | { items: SceneDate[]; nextCursor: string | null } = await request(
+          `/api/fields/${encodeURIComponent(fieldId)}/dates?${params.toString()}`,
+        );
+        if (Array.isArray(response)) {
+          dates.push(...response);
+          break;
+        }
+        const page = response;
+        dates.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor);
+      return dates;
+    })();
   }
+  const params = new URLSearchParams();
+  if (options.lookbackDays) params.set('lookbackDays', String(options.lookbackDays));
+  const query = params.toString();
   return request<SceneDate[]>(
-    `/api/sources/${encodeURIComponent(sourceId)}/dates`,
+    `/api/sources/${encodeURIComponent(sourceId)}/dates${query ? `?${query}` : ''}`,
   );
 };
 
@@ -552,7 +579,14 @@ export const getFieldSarOverlayImage = async (
 
 export const getFieldIndexOverlayImage = async (
   plotId: string,
-  options: { sourceId: string; acquisitionDate: string; indexType: string; preferHighRes?: boolean },
+  options: {
+    sourceId: string;
+    acquisitionDate: string;
+    indexType: string;
+    preferHighRes?: boolean;
+    renderProfile?: RenderProfileName;
+    cloudMask?: CloudMaskOptions;
+  },
   fallbackCoordinates: ImageCorners,
 ): Promise<FieldIndexOverlayImage> => {
   const params = new URLSearchParams({
@@ -561,6 +595,12 @@ export const getFieldIndexOverlayImage = async (
   });
   if (options.preferHighRes !== undefined) {
     params.set('preferHighRes', String(options.preferHighRes));
+  }
+  if (options.renderProfile) params.set('renderProfile', options.renderProfile);
+  if (options.cloudMask) {
+    params.set('maskClouds', String(options.cloudMask.clouds));
+    params.set('maskCloudShadows', String(options.cloudMask.cloudShadows));
+    params.set('maskCirrus', String(options.cloudMask.cirrus));
   }
   const sourceUrl = `/api/fields/${encodeURIComponent(plotId)}/overlay/${encodeURIComponent(
     options.indexType,
@@ -580,8 +620,48 @@ export const getFieldIndexOverlayImage = async (
     resolutionMeters: resolvedResNum != null && Number.isFinite(resolvedResNum) ? resolvedResNum : null,
     enhanced: res.headers.get('X-Akasha-Enhanced') === 'true',
     basisDate: res.headers.get('X-Akasha-Basis-Date') ?? null,
+    renderProfile: res.headers.get('X-Akasha-Render-Profile') === 'contrast'
+      ? 'contrast'
+      : 'standard',
+    renderProfileVersion: res.headers.get('X-Akasha-Render-Profile-Version') ?? 'standard-v1',
+    renderThresholds: (res.headers.get('X-Akasha-Render-Thresholds') ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number)
+      .filter(Number.isFinite),
+    renderPalette: (res.headers.get('X-Akasha-Render-Palette') ?? '')
+      .split(',')
+      .filter(Boolean),
+    renderLegendLabels: (() => {
+      try {
+        const labels: unknown = JSON.parse(res.headers.get('X-Akasha-Render-Legend') ?? '[]');
+        return Array.isArray(labels) ? labels.map(String) : [];
+      } catch {
+        return [];
+      }
+    })(),
+    renderFallbackReason: res.headers.get('X-Akasha-Render-Fallback'),
   };
 };
+
+export const searchLatestImagery = (
+  viewport: PlotGeometry,
+  signal?: AbortSignal,
+): Promise<LatestImageryResult> => request<LatestImageryResult>('/api/imagery/search', {
+  method: 'POST',
+  body: { viewport },
+  signal,
+});
+
+export const sampleFieldComparison = (
+  plotId: string,
+  point: { lng: number; lat: number },
+  left: ViewerSelection,
+  right: ViewerSelection,
+): Promise<ComparisonSampleResponse> => request<ComparisonSampleResponse>(
+  `/api/fields/${encodeURIComponent(plotId)}/indices/sample-comparison`,
+  { method: 'POST', body: { ...point, left, right } },
+);
 
 export const getFieldIndexPoint = (
   plotId: string,

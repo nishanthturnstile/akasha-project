@@ -11,6 +11,7 @@ const hoisted = vi.hoisted(() => ({
   applyStyle: vi.fn(),
   createBasemapStyle: vi.fn(),
   createMap: vi.fn(),
+  removeMap: vi.fn(),
   startSession: vi.fn(),
   setStyle: vi.fn(),
   addSource: vi.fn(),
@@ -78,7 +79,7 @@ vi.mock('maplibre-gl', () => {
     });
     removeSource = vi.fn();
     setPaintProperty = hoisted.setPaintProperty;
-    remove = vi.fn();
+    remove = hoisted.removeMap;
     getCanvas = vi.fn(() => ({ clientWidth: 800, clientHeight: 600 }));
     getBounds = vi.fn(() => ({
       getEast: () => 78,
@@ -148,6 +149,7 @@ afterEach(() => {
   hoisted.applyStyle.mockReset();
   hoisted.createBasemapStyle.mockReset();
   hoisted.createMap.mockReset();
+  hoisted.removeMap.mockReset();
   hoisted.startSession.mockReset();
   hoisted.setStyle.mockReset();
   hoisted.addSource.mockReset();
@@ -162,6 +164,27 @@ afterEach(() => {
 });
 
 describe('MapLayerManager Esri basemap lifecycle', () => {
+  it('notifies the owner before destroying the MapLibre instance', () => {
+    const events: string[] = [];
+    hoisted.removeMap.mockImplementation(() => events.push('removed'));
+
+    const { unmount } = render(
+      <MapLayerManager
+        basemap={ EMPTY_BASEMAP }
+        center={ [77.59, 12.97] }
+        zoom={ 11 }
+        scene={ null }
+        opacity={ 1 }
+        visible
+        onMapDisposed={ () => events.push('disposed') }
+      />,
+    );
+
+    unmount();
+
+    expect(events).toEqual(['disposed', 'removed']);
+  });
+
   it('starts one Esri session, applies imagery with places disabled, and waits before overlays', async () => {
     const session = sessionMock();
     hoisted.startSession.mockResolvedValue(session);
@@ -314,7 +337,6 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
         center={ [77.59, 12.97] }
         zoom={ 11 }
         scene={ { tileUrlTemplate: '/api/tiles/a/{z}/{x}/{y}.png' } }
-        sceneB={ null }
         indexOverlay={ null }
         opacity={ 1 }
         visible
@@ -330,7 +352,6 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
         center={ [77.59, 12.97] }
         zoom={ 11 }
         scene={ { tileUrlTemplate: '/api/tiles/b/{z}/{x}/{y}.png' } }
-        sceneB={ { tileUrlTemplate: '/api/tiles/compare/{z}/{x}/{y}.png' } }
         indexOverlay={ {
           url: '/api/fields/f/overlay/NDVI.png',
           coordinates: [[77, 13], [78, 13], [78, 12], [77, 12]],
@@ -349,10 +370,7 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
       { tileUrlTemplate: '/api/tiles/b/{z}/{x}/{y}.png' },
       { opacity: 0.5, visible: false },
     );
-    expect(hoisted.applyCompareLayer).toHaveBeenCalledWith(
-      expect.anything(),
-      { tileUrlTemplate: '/api/tiles/compare/{z}/{x}/{y}.png' },
-    );
+    expect(hoisted.applyCompareLayer).not.toHaveBeenCalled();
     expect(hoisted.addSource).toHaveBeenCalledWith(
       'akasha-index-overlay',
       expect.objectContaining({

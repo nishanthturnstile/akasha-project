@@ -334,6 +334,21 @@ class Settings:
     ingestion_trend_max_dates: int = field(
         default_factory=lambda: _get_int("INGESTION_TREND_MAX_DATES", 12)
     )
+    crop_map_split_enabled: bool = field(
+        default_factory=lambda: _get_bool("CROP_MAP_SPLIT_ENABLED", False)
+    )
+    crop_map_contrast_enabled: bool = field(
+        default_factory=lambda: _get_bool("CROP_MAP_CONTRAST_ENABLED", False)
+    )
+    latest_imagery_enabled: bool = field(
+        default_factory=lambda: _get_bool("LATEST_IMAGERY_ENABLED", False)
+    )
+    latest_imagery_max_viewport_meters: int = field(
+        default_factory=lambda: _get_int("LATEST_IMAGERY_MAX_VIEWPORT_METERS", 2000)
+    )
+    latest_imagery_result_limit: int = field(
+        default_factory=lambda: _get_int("LATEST_IMAGERY_RESULT_LIMIT", 24)
+    )
     # Optional XYZ tile layer proxy (Phase 5). Off until the ingestion tile
     # bridge and upstream signed TTL are validated for interactive sessions.
     ingestion_pipeline_tile_layer_enabled: bool = field(

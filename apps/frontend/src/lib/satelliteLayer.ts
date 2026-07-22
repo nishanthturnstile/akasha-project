@@ -7,11 +7,6 @@
 export const SAT_SOURCE_ID = 'akasha-satellite';
 export const SAT_LAYER_ID = 'akasha-satellite-layer';
 
-// Compare ("B") overlay — rendered *beneath* the primary ("A") overlay so the A
-// layer's opacity blends A over B (NASA Worldview "opacity" compare mode).
-export const SAT_SOURCE_ID_B = 'akasha-satellite-compare';
-export const SAT_LAYER_ID_B = 'akasha-satellite-compare-layer';
-
 export interface SatelliteScene {
   /** Same-origin `/api/tiles/.../{z}/{x}/{y}.png` template. */
   tileUrlTemplate: string;
@@ -59,15 +54,15 @@ export function resolveTileUrl(template: string, origin?: string): string {
     if (base && url.origin !== base) {
       throw new Error('Satellite tile template must be same-origin.');
     }
-    if (!url.pathname.startsWith('/api/tiles/')) {
-      throw new Error('Satellite tile template must use the /api/tiles contract.');
+    if (!url.pathname.startsWith('/api/tiles/') && !url.pathname.startsWith('/api/imagery/')) {
+      throw new Error('Satellite tile template must use /api/tiles/ or /api/imagery/.');
     }
     return template;
   }
 
   const path = template.startsWith('/') ? template : `/${template}`;
-  if (!path.startsWith('/api/tiles/')) {
-    throw new Error('Satellite tile template must use the /api/tiles contract.');
+  if (!path.startsWith('/api/tiles/') && !path.startsWith('/api/imagery/')) {
+    throw new Error('Satellite tile template must use /api/tiles/ or /api/imagery/.');
   }
 
   return base ? `${base}${path}` : path;
@@ -127,40 +122,4 @@ function buildRasterSource(scene: SatelliteScene, origin?: string): Record<strin
   if (scene.maxzoom != null) source.maxzoom = scene.maxzoom;
   if (scene.attribution) source.attribution = scene.attribution;
   return source;
-}
-
-/**
- * Add or replace the compare ("B") raster layer, inserted *below* the primary
- * satellite layer so A blends over B. Always rendered at full opacity — the blend
- * is driven by the A layer's `raster-opacity`. Never touches the basemap.
- */
-export function applyCompareLayer(
-  map: MapLayerHost,
-  scene: SatelliteScene,
-  origin?: string,
-): void {
-  if (map.getLayer(SAT_LAYER_ID_B)) map.removeLayer(SAT_LAYER_ID_B);
-  if (map.getSource(SAT_SOURCE_ID_B)) map.removeSource(SAT_SOURCE_ID_B);
-
-  map.addSource(SAT_SOURCE_ID_B, buildRasterSource(scene, origin));
-  // beforeId keeps B underneath A; if A isn't present yet it's added on top, which
-  // is still correct (B simply becomes the only overlay until A is (re)applied).
-  map.addLayer(
-    {
-      id: SAT_LAYER_ID_B,
-      type: 'raster',
-      source: SAT_SOURCE_ID_B,
-      layout: { visibility: 'visible' },
-      paint: {
-        'raster-opacity': 1,
-        'raster-opacity-transition': { duration: 360, delay: 0 },
-      },
-    },
-    map.getLayer(SAT_LAYER_ID) ? SAT_LAYER_ID : undefined,
-  );
-}
-
-export function removeCompareLayer(map: MapLayerHost): void {
-  if (map.getLayer(SAT_LAYER_ID_B)) map.removeLayer(SAT_LAYER_ID_B);
-  if (map.getSource(SAT_SOURCE_ID_B)) map.removeSource(SAT_SOURCE_ID_B);
 }

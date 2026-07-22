@@ -28,6 +28,9 @@ FIELD_DATES_MAX_BATCH_SIZE = 64
 READINESS_PATH = "/api/v1/analytics/readiness"
 SOURCE_DATES_PATH = "/api/v1/sources/{source_id}/dates"
 SOURCE_TILE_PATH = "/api/v1/sources/{source_id}/dates/{acquisition_date}/tiles/{z}/{x}/{y}.png"
+LATEST_IMAGERY_SEARCH_PATH = "/api/v1/imagery/search"
+LATEST_IMAGERY_TILE_PATH = "/api/v1/imagery/scenes/{scene_id}/tiles/{z}/{x}/{y}.png"
+LATEST_IMAGERY_THUMBNAIL_PATH = "/api/v1/imagery/scenes/{scene_id}/thumbnail.png"
 MAX_RETRY_AFTER_SECONDS = 30
 _POINT_CACHE_TTL_SECONDS = 60.0
 _FIELD_INDEX_POINT_CACHE: dict[tuple[str, str, str, str], tuple[float, str, str]] = {}
@@ -94,6 +97,7 @@ class FieldIndexRequest(ApiModel):
     fallback_policy: str = "nearest_valid_scene"
     max_cloud_percentage: int | float | None = None
     field_id: str | None = None
+    render_profile: Literal["standard", "contrast"] = "standard"
 
 
 class FieldDatesRequest(ApiModel):
@@ -174,9 +178,7 @@ class FieldDatesResponse(ApiModel):
 
 class FieldSarRequest(ApiModel):
     geometry: dict[str, Any]
-    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"] = (
-        "eos-04-sar-mrs-l2b"
-    )
+    source_id: Literal["eos-04-sar-mrs-l2b", "nisar-ssar-beta-gcov"] = "eos-04-sar-mrs-l2b"
     crs: Literal["EPSG:4326"] = "EPSG:4326"
     field_id: str
     target_date: date
@@ -185,9 +187,7 @@ class FieldSarRequest(ApiModel):
     include_history: bool = False
     history_lookback_days: int = Field(default=180, ge=1, le=365)
     maximum_history_observations: int = Field(default=8, ge=1, le=12)
-    comparison_policy_version: Literal["eos04-comparability-v1"] = (
-        "eos04-comparability-v1"
-    )
+    comparison_policy_version: Literal["eos04-comparability-v1"] = "eos04-comparability-v1"
     minimum_baseline_observations: int = Field(default=5, ge=3, le=12)
 
 
@@ -314,6 +314,36 @@ class NaturalSourceDatesResponse(ApiModel):
     dates: list[NaturalSourceDate] = Field(default_factory=list)
 
 
+class LatestImagerySearchRequest(ApiModel):
+    viewport: dict[str, Any]
+    source_id: Literal["sentinel-2-l2a"] = "sentinel-2-l2a"
+    processing_level: Literal["L2A"] = "L2A"
+    lookback_days: int = Field(default=365, ge=1, le=366)
+    max_cloud_percent: float = Field(default=10, ge=0, le=10)
+    limit: int = Field(default=24, ge=1, le=50)
+
+
+class LatestImagerySceneCandidate(ApiModel):
+    scene_id: str
+    acquisition_date: date
+    acquisition_datetime: datetime
+    source_id: str
+    sensor: str
+    processing_level: str
+    cloud_percent: float
+    coverage_percent: float
+    coverage_status: Literal["full", "partial"]
+    usable: bool
+    bounds: list[float]
+    unavailable_reason: str | None = None
+
+
+class LatestImageryResult(ApiModel):
+    policy_version: str
+    searched_at: datetime
+    candidates: list[LatestImagerySceneCandidate] = Field(default_factory=list)
+
+
 class Resolution(ApiModel):
     native_meters: float | None = None
     processing_meters: float | None = None
@@ -358,6 +388,12 @@ class Visualization(ApiModel):
     display_profile: str | None = None
     threshold_profile: str | None = None
     legend: list[LegendItem] = Field(default_factory=list)
+    requested_profile: Literal["standard", "contrast"] = "standard"
+    applied_profile: Literal["standard", "contrast"] = "standard"
+    profile_version: str = "standard-v1"
+    thresholds: list[float] = Field(default_factory=list)
+    palette: list[str] = Field(default_factory=list)
+    fallback_reason: str | None = None
 
 
 class Quality(ApiModel):
@@ -692,6 +728,35 @@ class IngestionClient:
             path,
             params={"aoiId": aoi_id},
             request_id=request_id,
+        )
+
+    def latest_imagery_search(
+        self,
+        request: LatestImagerySearchRequest | dict[str, Any],
+    ) -> LatestImageryResult:
+        payload = LatestImagerySearchRequest.model_validate(request)
+        data = self._request_json(
+            "POST",
+            LATEST_IMAGERY_SEARCH_PATH,
+            json=payload.model_dump(mode="json", by_alias=True),
+        )
+        try:
+            return LatestImageryResult.model_validate(data)
+        except ValidationError as exc:
+            raise self._invalid_response(
+                "Ingestion returned invalid latest imagery results."
+            ) from exc
+
+    def latest_imagery_tile(self, *, scene_id: str, z: int, x: int, y: int) -> tuple[bytes, str]:
+        return self._request_binary_path(
+            LATEST_IMAGERY_TILE_PATH.format(
+                scene_id=urllib.parse.quote(scene_id, safe=""), z=z, x=x, y=y
+            )
+        )
+
+    def latest_imagery_thumbnail(self, *, scene_id: str) -> tuple[bytes, str]:
+        return self._request_binary_path(
+            LATEST_IMAGERY_THUMBNAIL_PATH.format(scene_id=urllib.parse.quote(scene_id, safe=""))
         )
 
     def fetch_binary(
@@ -1043,6 +1108,7 @@ def request_field_index(
     acquisition_date: str,
     max_cloud_percentage: float = 20.0,
     timeout_seconds: float | None = None,
+    render_profile: Literal["standard", "contrast"] = "standard",
 ) -> dict[str, Any]:
     try:
         result = _client_for(settings_obj, timeout_seconds).field_index(
@@ -1055,6 +1121,7 @@ def request_field_index(
                 "fallbackPolicy": "nearest_valid_scene",
                 "maxCloudPercentage": max_cloud_percentage,
                 "fieldId": field_id,
+                "renderProfile": render_profile,
             }
         )
     except IngestionClientError as exc:
@@ -1167,6 +1234,48 @@ def fetch_natural_source_tile(
         )
     except IngestionClientError as exc:
         _raise_ingestion_api_error(exc, default_code="INGESTION_SOURCE_TILE_ERROR")
+
+
+def search_latest_imagery(
+    settings_obj: Settings,
+    *,
+    viewport: dict[str, Any],
+    source_id: str,
+    processing_level: str,
+    lookback_days: int,
+    max_cloud_percent: float,
+    limit: int,
+) -> dict[str, Any]:
+    try:
+        result = _client_for(settings_obj).latest_imagery_search(
+            {
+                "viewport": viewport,
+                "sourceId": source_id,
+                "processingLevel": processing_level,
+                "lookbackDays": lookback_days,
+                "maxCloudPercent": max_cloud_percent,
+                "limit": limit,
+            }
+        )
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_LATEST_IMAGERY_ERROR")
+    return result.model_dump(mode="json", by_alias=True)
+
+
+def fetch_latest_imagery_tile(
+    settings_obj: Settings, *, scene_id: str, z: int, x: int, y: int
+) -> tuple[bytes, str]:
+    try:
+        return _client_for(settings_obj).latest_imagery_tile(scene_id=scene_id, z=z, x=x, y=y)
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_LATEST_IMAGERY_TILE_ERROR")
+
+
+def fetch_latest_imagery_thumbnail(settings_obj: Settings, *, scene_id: str) -> tuple[bytes, str]:
+    try:
+        return _client_for(settings_obj).latest_imagery_thumbnail(scene_id=scene_id)
+    except IngestionClientError as exc:
+        _raise_ingestion_api_error(exc, default_code="INGESTION_LATEST_IMAGERY_TILE_ERROR")
 
 
 def _validate_and_rewrite_signed_url(settings_obj: Settings, url: str) -> str:

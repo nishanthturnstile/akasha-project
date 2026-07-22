@@ -99,7 +99,7 @@ def _render_legend_labels(
         return []
     labels = [f"≤ {formatted[0]}"]
     labels.extend(
-        f"> {lower} to ≤ {upper}" for lower, upper in zip(formatted, formatted[1:], strict=True)
+        f"> {lower} to ≤ {upper}" for lower, upper in zip(formatted, formatted[1:])
     )
     labels.append(f"> {formatted[-1]}")
     return labels

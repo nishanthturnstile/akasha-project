@@ -12,7 +12,7 @@ from app.routers.latest_imagery_router import (
     LatestImagerySearchRequest,
     _viewport_diagonal_meters,
 )
-from app.routers.analytics_router import get_field_dates
+from app.routers.analytics_router import _render_legend_labels, get_field_dates
 from pydantic import ValidationError
 from pydantic import TypeAdapter
 
@@ -25,6 +25,14 @@ def test_contrast_descriptor_has_exact_equal_breaks_and_categories() -> None:
     assert descriptor.palette == CONTRAST_PALETTE_V1
     assert category_for_value(-0.21, descriptor.thresholds) == 0
     assert category_for_value(0.4, descriptor.thresholds) == 3
+    assert _render_legend_labels(descriptor.thresholds) == [
+        "≤ -0.200",
+        "> -0.200 to ≤ 0.100",
+        "> 0.100 to ≤ 0.400",
+        "> 0.400 to ≤ 0.700",
+        "> 0.700 to ≤ 1.000",
+        "> 1.000",
+    ]
 
 
 def test_contrast_descriptor_falls_back_for_missing_or_constant_statistics() -> None:

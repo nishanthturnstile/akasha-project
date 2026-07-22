@@ -1530,7 +1530,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
           splitAvailable={ Boolean(selectedPlot && config.features?.cropMapSplitEnabled) }
           splitEnabled={ splitEnabled }
-          onSplitEnabledChange={ view.setSplitEnabled }
+          onSplitEnabledChange={ (next) => {
+            // The map layout is replaced when split mode changes. Clear both handles
+            // in the same React batch so overlay effects never render against the
+            // MapLibre instance that the outgoing layout is about to destroy.
+            setMap(null);
+            setRightMap(null);
+            view.setSplitEnabled(next);
+          } }
           selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
           exportSourceId={ requestSourceId }

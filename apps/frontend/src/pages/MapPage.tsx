@@ -28,6 +28,7 @@ import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryL
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { FieldOverlayLoadingIndicator } from '@/components/map/FieldOverlayLoadingIndicator';
 import { SplitSampleReadout } from '@/components/map/SplitSampleReadout';
+import { SplitViewControl } from '@/components/map/SplitViewControl';
 import { SplitViewerToolbar } from '@/components/map/SplitViewerToolbar';
 import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
@@ -1301,7 +1302,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
                 renderProfile={ renderProfile }
                 onRenderProfileChange={ view.setRenderProfile }
                 contrastAvailable={ Boolean(config.features?.cropMapContrastEnabled) }
-                onSingleView={ () => setSplitMode(false) }
               />
             </div>
             <div className="absolute inset-x-2 bottom-2 z-panel" data-testid="left-viewer-timeline">
@@ -1587,9 +1587,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           onRenderProfileChange={ view.setRenderProfile }
           contrastAvailable={ isIndexLayer && Boolean(config.features?.cropMapContrastEnabled) }
           cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
-          splitAvailable={ Boolean(selectedPlot && config.features?.cropMapSplitEnabled) }
-          splitEnabled={ splitEnabled }
-          onSplitEnabledChange={ setSplitMode }
           selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
           exportSourceId={ requestSourceId }
@@ -1601,10 +1598,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         />
       </div> }
 
-      {/* Left: legend + navigation map controls (zoom / compass / locate / fullscreen),
-        * stacked in a single bottom-left column so they never overlap each other.
-        * Raised above the attribution line so the two never collide at any width. */ }
+      {/* Persistent left-side map overlay controls, grouped like the reference layout. */ }
       <div className="absolute left-4 top-1/2 -translate-y-1/2 z-toolbar flex flex-col items-start gap-2">
+        <SplitViewControl
+          available={ Boolean(selectedPlot && config.features?.cropMapSplitEnabled) }
+          enabled={ splitEnabled }
+          onEnabledChange={ setSplitMode }
+        />
         { overlaysVisible && <MeasureTool
           activeTool={ activeMapTool }
           map={ map }

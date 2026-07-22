@@ -461,6 +461,13 @@ export const deleteSeason = (seasonId: string, moveFieldsToSeasonId?: string): P
 // --------------------------------------------------------------------------
 export const listFields = (): Promise<Field[]> => request<Field[]>('/api/fields');
 
+export interface NextFieldNameResponse {
+  name: string;
+}
+
+export const getNextFieldName = (): Promise<NextFieldNameResponse> =>
+  request<NextFieldNameResponse>('/api/fields/next-name');
+
 export const createField = (payload: FieldCreatePayload): Promise<Field> =>
   request<Field>('/api/fields', { method: 'POST', body: payload });
 

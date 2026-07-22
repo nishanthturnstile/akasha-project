@@ -189,10 +189,13 @@ function FieldCard({
   onUnpin: (field: Field) => void;
   seasonId?: string | null;
 }) {
-  const seasonCycles = field.vegetationData?.filter((v) => v.seasonId === seasonId) ?? [];
-  const latestVeg = useMemo(() => {
-    if (!field.vegetationData || field.vegetationData.length === 0) return null;
-    const sorted = [...field.vegetationData].sort((a, b) => {
+  const seasonCycles = useMemo(
+    () => field.vegetationData?.filter((v) => v.seasonId === seasonId) ?? [],
+    [field.vegetationData, seasonId],
+  );
+  const latestSeasonVeg = useMemo(() => {
+    if (seasonCycles.length === 0) return null;
+    const sorted = [...seasonCycles].sort((a, b) => {
       const yearA = a.year ?? 0;
       const yearB = b.year ?? 0;
       if (yearB !== yearA) return yearB - yearA;
@@ -201,8 +204,8 @@ function FieldCard({
       return dateB - dateA;
     });
     return sorted[0];
-  }, [field.vegetationData]);
-  const cropLabel = latestVeg?.cropName ?? 'Unknown crop';
+  }, [seasonCycles]);
+  const cropLabel = latestSeasonVeg?.cropName ?? 'Unknown crop';
   const allCrops = seasonCycles.map((c) => c.cropName ?? 'Unknown crop').join(', ');
   return (
     <div

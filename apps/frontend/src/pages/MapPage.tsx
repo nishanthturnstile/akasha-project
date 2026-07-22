@@ -1408,6 +1408,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           plotId={ selectedPlot.id }
           left={ leftViewerSelection }
           right={ rightViewerSelection }
+          leftLegendLabels={ indexOverlay?.renderLegendLabels }
+          rightLegendLabels={ rightIndexOverlay?.renderLegendLabels }
         />
       ) }
       <FieldOverlayLoadingIndicator

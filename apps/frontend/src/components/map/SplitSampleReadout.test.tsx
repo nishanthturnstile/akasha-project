@@ -52,6 +52,8 @@ describe('SplitSampleReadout', () => {
         plotId="field-1"
         left={ selection('NDVI') }
         right={ selection('NDMI') }
+        leftLegendLabels={ ['Low', 'Moderate', 'Healthy', 'High', 'Peak vegetation'] }
+        rightLegendLabels={ ['Dry', 'Moist'] }
       />,
     );
 
@@ -60,6 +62,7 @@ describe('SplitSampleReadout', () => {
     expect(screen.getByTestId('left-sample-popover').textContent).toContain('NDVI · 2026-05-12');
     expect(screen.getByTestId('right-sample-popover').textContent).toContain('NDMI · 2026-05-12');
     await waitFor(() => expect(screen.getByTestId('left-sample-popover').textContent).toContain('0.713'));
+    expect(screen.getByTestId('left-sample-popover').textContent).toContain('Peak vegetation');
     expect(screen.getByTestId('right-sample-popover').textContent).toContain('Scene unavailable');
     expect(left.container.querySelectorAll('div').length).toBeGreaterThan(1);
     expect(right.container.querySelectorAll('div').length).toBeGreaterThan(1);

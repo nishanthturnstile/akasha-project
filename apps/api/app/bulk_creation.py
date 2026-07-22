@@ -20,6 +20,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
@@ -120,21 +121,37 @@ def generate_seeding_types(session: Session) -> int:
     return count
 
 
+CROP_JSON_FILENAME = "crop-akasha.json"
+
+SEEDING_INT_TO_NAME = {
+    0: "direct_seed",
+    1: "transplant",
+    2: "planting_cutting",
+    3: "vine",
+    4: "perennial_tree",
+}
+
+
 def generate_crops(session: Session) -> int:
-    data = _load_json("crops.json")
+    data_path = _data_path(CROP_JSON_FILENAME)
+    data = json.loads(data_path.read_bytes())
+
+    db_count = session.query(Crop).count()
+    json_count = len(data)
+
+    if db_count == json_count:
+        return 0
+
+    if db_count > 0:
+        session.execute(text("DELETE FROM akasha.vegetation_cycles"))
+        session.query(Variety).delete()
+        session.query(Crop).delete()
+        session.flush()
+
     seeding_map = {st.name: st.id for st in session.query(SeedingType).all()}
-    existing = {name for (name,) in session.query(Crop.name).all()}
-    SEEDING_INT_TO_NAME = {
-        0: "direct_seed",
-        1: "transplant",
-        2: "planting_cutting",
-        3: "vine",
-        4: "perennial_tree",
-    }
+
     count = 0
     for item in data:
-        if item["name_en"] in existing:
-            continue
         st_int = item["seeding_type"]
         st_name = SEEDING_INT_TO_NAME.get(st_int) if isinstance(st_int, int) else st_int
         seeding_type_id = seeding_map.get(st_name)
@@ -156,9 +173,9 @@ def generate_crops(session: Session) -> int:
                 has_weather_risk=item.get("has_weather_risks", False),
                 bbch_mode=bbch,
                 characteristic=characteristic,
+                has_variety=item.get("has_varieties", False),
             )
         )
-        existing.add(item["name_en"])
         count += 1
     return count
 

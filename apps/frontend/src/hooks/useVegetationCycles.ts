@@ -57,14 +57,14 @@ export function useVegetationCycles(fieldId: string) {
     vegCycleStore.set(fieldId, newCycles);
   }, [fieldId]);
 
-  const addCycle = useCallback((seasonId: string) => {
+  const addCycle = useCallback((seasonId: string, defaultPlantingDate?: string) => {
     const newCycle: VegetationCycleForm = {
       id: crypto.randomUUID(),
       cropName: '',
       variety: '',
       maturity: '',
       year: new Date().getFullYear(),
-      plantingDate: '',
+      plantingDate: defaultPlantingDate ?? '',
       irrigationType: '',
       targetYield: null,
       harvestingDate: '',
@@ -97,6 +97,9 @@ export function useVegetationCycles(fieldId: string) {
           if (c.id !== cycleId) return c;
           const updated = { ...c, [key]: value };
           if (key === 'plantingDate' && typeof value === 'string' && c.harvestingDate && value >= c.harvestingDate) {
+            updated.harvestingDate = '';
+          }
+          if (key === 'harvestingDate' && typeof value === 'string' && c.plantingDate && value <= c.plantingDate) {
             updated.harvestingDate = '';
           }
           return updated;

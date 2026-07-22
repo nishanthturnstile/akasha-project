@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import {
     useInRouterContext,
     useNavigate,
@@ -43,12 +43,13 @@ function useRoutedMapUrlState(): void {
     const navigate = useNavigate();
     const [search] = useSearchParams();
     const params = useParams();
+    const urlPlotId = normalizeIdParam(params.plotId);
 
     // Hydration runs once: route/search params win over persisted state on first mount
     // so a shared link always shows the linked scene rather than a stale local one.
     const hydrated = useRef(false);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (hydrated.current) return;
         hydrated.current = true;
 
@@ -98,8 +99,9 @@ function useRoutedMapUrlState(): void {
         if (view.displayMode) next.set('layer', view.displayMode);
 
         const queryString = next.toString();
-        const basePath = view.selectedPlotId
-            ? `/monitoring/field-analytics/field/${view.selectedPlotId}`
+        const effectivePlotId = view.selectedPlotId;
+        const basePath = effectivePlotId
+            ? `/monitoring/field-analytics/field/${effectivePlotId}`
             : '/monitoring/field-analytics';
         const targetUrl = queryString ? `${basePath}?${queryString}` : basePath;
 
@@ -114,6 +116,7 @@ function useRoutedMapUrlState(): void {
         view.periodTo,
         view.activeSourceId,
         view.displayMode,
+        urlPlotId,
         navigate,
     ]);
 }

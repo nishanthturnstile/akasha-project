@@ -1,0 +1,762 @@
+[
+  {
+    "name_en": "Almond",
+    "color": "#D4A574",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Apple",
+    "color": "#FF6B6B",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Areca",
+    "color": "#8B6914",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Bajra",
+    "color": "#C4A265",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Banana",
+    "color": "#FFE135",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Barley",
+    "color": "#D4C56A",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Berseem",
+    "color": "#6B8E23",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Bitter Gourd",
+    "color": "#7CCD7C",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Black Pepper",
+    "color": "#3D2B1F",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Brinjal",
+    "color": "#614051",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Buckwheat",
+    "color": "#B8860B",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cabbage",
+    "color": "#A8D5BA",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cardamom",
+    "color": "#5B7C2E",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Carrot",
+    "color": "#FF8C00",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cashew",
+    "color": "#C28A3A",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Castor",
+    "color": "#8B4513",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cauliflower",
+    "color": "#F5F5DC",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cherry",
+    "color": "#D2042D",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Chickpea",
+    "color": "#D2B48C",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Chili",
+    "color": "#DC143C",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Citrus",
+    "color": "#FFA500",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Coconut",
+    "color": "#5C4033",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Coffee",
+    "color": "#6F4E37",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Coriander",
+    "color": "#7EC850",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cotton",
+    "color": "#F8F8FF",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cowpea",
+    "color": "#8A9A5B",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cucumber",
+    "color": "#2E8B2E",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Cumin",
+    "color": "#A0522D",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Fennel",
+    "color": "#C8E6C9",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Fenugreek",
+    "color": "#BDB76B",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Field Pea",
+    "color": "#9ACD32",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Garlic",
+    "color": "#F5F5F5",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Ginger",
+    "color": "#C68E17",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Grape",
+    "color": "#8B008B",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 3,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Groundnut",
+    "color": "#DAA520",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Guar",
+    "color": "#8FBC8F",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Guava",
+    "color": "#F4A460",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Jowar",
+    "color": "#CD853F",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Jute",
+    "color": "#C3B091",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Lentil",
+    "color": "#8B7355",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Lucerne / Alfalfa",
+    "color": "#7C9D8E",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Maize",
+    "color": "#F0C040",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Mango",
+    "color": "#FFD700",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Mung Bean",
+    "color": "#A9C46A",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Muskmelon",
+    "color": "#F5B041",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Mustard",
+    "color": "#E8D875",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Okra",
+    "color": "#6B8E23",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Onion",
+    "color": "#E8A317",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Papaya",
+    "color": "#FF6F00",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Peas",
+    "color": "#7CFC00",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Pigeon Pea",
+    "color": "#C4A64A",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Pineapple",
+    "color": "#FFC02E",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Pomegranate",
+    "color": "#C41E3A",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Potato",
+    "color": "#C0A060",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Pumpkin",
+    "color": "#FF7518",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Ragi",
+    "color": "#A0522D",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Rice",
+    "color": "#F5F5DC",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Rubber",
+    "color": "#4A3728",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Safflower",
+    "color": "#E67E22",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Saffron",
+    "color": "#9932CC",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Sesame",
+    "color": "#F5DEB3",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Soybean",
+    "color": "#9ACD32",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Strawberry",
+    "color": "#FC5A8D",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Sugarcane",
+    "color": "#993D00",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 2,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Sunflower",
+    "color": "#FFD700",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Sweet Potato",
+    "color": "#E3735E",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Tapioca / Cassava",
+    "color": "#8B7355",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Tea",
+    "color": "#5C7A29",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Tobacco",
+    "color": "#8B7D6B",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Tomato",
+    "color": "#FF2400",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Turmeric",
+    "color": "#F4A460",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Urad",
+    "color": "#2F1B14",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Walnut",
+    "color": "#8B6914",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 1,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Watermelon",
+    "color": "#2E8B57",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Wheat",
+    "color": "#F5DEB3",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  },
+  {
+    "name_en": "Linseed",
+    "color": "#A0855B",
+    "maturities": [{"name": "default-maturity"}, {"name": "early"}, {"name": "early-middle"}, {"name": "middle"}, {"name": "middle-late"}, {"name": "late"}],
+    "seeding_type": 0,
+    "has_varieties": false,
+    "has_weather_risks": false,
+    "bbch_mode": null,
+    "characteristic": null
+  }
+]

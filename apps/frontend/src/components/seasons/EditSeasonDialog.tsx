@@ -51,7 +51,9 @@ export default function EditSeasonDialog({
   const [endDate, setEndDate] = useState(season.endDate ?? '');
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmSeasonEdit, setConfirmSeasonEdit] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string>(CUSTOM);
+  const forceCloseRef = useRef(false);
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -153,6 +155,14 @@ export default function EditSeasonDialog({
     || endDate !== initialSnapshot.endDate
     || JSON.stringify([...selectedFieldIds].sort()) !== JSON.stringify([...initialSnapshot.fieldIds].sort());
 
+  const hasVegData = useMemo(
+    () => allFields.some((f) => f.vegetationData?.some((vc) => vc.seasonId === season.id)),
+    [allFields, season.id],
+  );
+
+  const datesDirty = startDate !== initialSnapshot.startDate
+    || endDate !== initialSnapshot.endDate;
+
   const endDateMin = useMemo(() => {
     if (!startDate) return undefined;
     const d = new Date(startDate + 'T00:00:00');
@@ -161,12 +171,8 @@ export default function EditSeasonDialog({
   }, [startDate]);
 
   const handleCancel = useCallback(() => {
-    if (dirty) {
-      setConfirmClose(true);
-    } else {
-      onOpenChange(false);
-    }
-  }, [dirty, onOpenChange]);
+    setConfirmClose(true);
+  }, []);
 
   const removedFieldIds = useMemo(
     () => seasonFieldIds.filter((id) => !selectedFieldIds.includes(id)),
@@ -201,11 +207,7 @@ export default function EditSeasonDialog({
     return removed.filter((f) => f.name.toLocaleLowerCase().includes(q));
   }, [allFields, removedFieldIds, removedSearch]);
 
-  const handleSave = () => {
-    if (!name.trim()) {
-      setError('Season name is required');
-      return;
-    }
+  const doSave = () => {
     setError(null);
     onSave?.(season.id, {
       name: name.trim(),
@@ -216,14 +218,41 @@ export default function EditSeasonDialog({
     onOpenChange(false);
   };
 
+  const handleSave = () => {
+    if (!name.trim()) {
+      setError('Season name is required');
+      return;
+    }
+    if (hasVegData && datesDirty) {
+      setConfirmSeasonEdit(true);
+      return;
+    }
+    doSave();
+  };
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen && !forceCloseRef.current) {
+      if (confirmSeasonEdit) return;
+      setConfirmClose(true);
+    } else {
+      forceCloseRef.current = false;
+      onOpenChange(nextOpen);
+    }
+  }, [onOpenChange, confirmSeasonEdit]);
+
+  useEffect(() => {
+    if (!confirmClose && forceCloseRef.current) {
+      forceCloseRef.current = false;
+      onOpenChange(false);
+    }
+  }, [confirmClose, onOpenChange]);
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit season"
-          onInteractOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
           className="glass fixed left-1/2 top-[12vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg p-0"
         >
           <VisuallyHidden>
@@ -478,14 +507,37 @@ export default function EditSeasonDialog({
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
-          <AlertDialogTitle>Save the changes?</AlertDialogTitle>
+          <AlertDialogTitle>{dirty ? 'Unsaved changes' : 'Cancel editing?'}</AlertDialogTitle>
           <AlertDialogDescription>
-            All unsaved changes will be lost.
+            {dirty
+              ? 'You have unsaved changes. Are you sure you want to discard them?'
+              : 'Are you sure you want to cancel editing? All unsaved changes will be lost.'}
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
-            <AlertDialogAction className="cursor-pointer" onClick={() => { setConfirmClose(false); onOpenChange(false); }}>
-              Yes
+            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>
+              {dirty ? 'Keep editing' : 'No, keep editing'}
+            </AlertDialogCancel>
+            <AlertDialogAction className="cursor-pointer" onClick={() => { forceCloseRef.current = true; setConfirmClose(false); }}>
+              {dirty ? 'Discard' : 'Yes, cancel'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
+
+      <AlertDialogRoot open={confirmSeasonEdit} onOpenChange={setConfirmSeasonEdit}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Edit season start/end dates</AlertDialogTitle>
+          <AlertDialogDescription>
+            This season already contains vegetation data.{'\n\n'}
+            Updating the season dates will automatically update the vegetation cycle start date and end date for all vegetation records that fall outside the new season duration.{'\n\n'}
+            Do you want to continue?
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmSeasonEdit(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction className="cursor-pointer" onClick={() => { setConfirmSeasonEdit(false); doSave(); }}>
+              Save
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

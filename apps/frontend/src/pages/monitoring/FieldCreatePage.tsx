@@ -20,12 +20,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { polygonAreaMeters } from '@/lib/measure';
-import { useConfig, useCreateField, useFields, useSeasons, queryKeys } from '@/lib/queries';
+import { useConfig, useCreateField, useFields, useNextFieldName, useSeasons, queryKeys } from '@/lib/queries';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import lineIntersect from '@turf/line-intersect';
 import type maplibregl from 'maplibre-gl';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
-import type { Field, GeoJsonPosition, PlotGeometry } from '@/types/api';
+import type { Field, GeoJsonPosition, PlotGeometry, VegetationCycleCreate } from '@/types/api';
 import type { TerraDraw, GeoJSONStoreGeometries } from 'terra-draw';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
@@ -34,6 +34,7 @@ interface PendingField {
   id: string;
   geometry: PlotGeometry;
   name: string;
+  vegetationData: VegetationCycleCreate[];
 }
 
 let tempIdCounter = 0;
@@ -167,7 +168,16 @@ export default function FieldCreatePage() {
   const pendingFieldsRef = useRef<PendingField[]>([]);
 
   const fieldsQ = useFields();
+  const nextNameQ = useNextFieldName();
   const allSeasons = useMemo(() => seasonsQ.data ?? [], [seasonsQ.data]);
+
+  // Existing saved fields for the season, shown as background reference
+  // outlines while drawing new ones -- purely visual, not part of TerraDraw's
+  // own feature store, so they can't be selected/dragged/interfere with draw.
+  const existingSeasonFields = useMemo(() => {
+    if (!selectedSeasonId) return [];
+    return (fieldsQ.data ?? []).filter((f) => f.seasonIds?.includes(selectedSeasonId));
+  }, [selectedSeasonId, fieldsQ.data]);
 
   const requestMapTool = useCallback((owner: MapToolOwner): boolean => {
     setActiveMapTool((current) => {
@@ -185,6 +195,9 @@ export default function FieldCreatePage() {
     drawInstanceRef.current = draw;
   }, []);
 
+  const handleCancelDraw = useCallback(() => setFieldMode(null), []);
+  const handleUpdateField = useCallback(() => Promise.resolve(), []);
+
   const handleGeometryChange = useCallback((geometry: PlotGeometry, featureId?: string) => {
     if (!featureId) return;
     const pendingId = featureToPendingRef.current.get(featureId);
@@ -198,14 +211,13 @@ export default function FieldCreatePage() {
     if (!geometry) return;
     const num = nextFieldNumRef.current;
     nextFieldNumRef.current += 1;
-    const name = num === 0 ? 'Field' : `Field ${num}`;
+    const name = `Field ${num}`;
     const pendingId = nextTempId();
-    const newField = { id: pendingId, geometry, name };
+    const newField = { id: pendingId, geometry, name, vegetationData: [] };
     setPendingFields((prev) => [...prev, newField]);
     if (featureId) {
       featureToPendingRef.current.set(featureId, pendingId);
     }
-    setEditingPendingField(newField);
   }, []);
 
   const handleTrimComplete = useCallback((lineCoords: [number, number][]) => {
@@ -322,12 +334,19 @@ export default function FieldCreatePage() {
           geometry: { type: 'Polygon', coordinates: pf.geometry.coordinates },
           areaHa: areaMeters / 10000,
           seasonIds: [selectedSeasonId],
+          vegetationData: pf.vegetationData.length > 0 ? pf.vegetationData : undefined,
         });
         createdFields.push(created);
       }
 
       queryClient.setQueryData<Field[]>(queryKeys.fields, (old) => [...(old ?? []), ...createdFields]);
-      navigate(`/monitoring/field-analytics/field/${createdFields[0].id}${returnImagerySearch(searchParams)}`);
+
+      const imagerySearch = returnImagerySearch(searchParams);
+      const baseUrl = `/monitoring/field-analytics/field/${createdFields[0].id}`;
+      const allParams = new URLSearchParams(imagerySearch.startsWith('?') ? imagerySearch.slice(1) : '');
+      if (selectedSeasonId) allParams.set('seasonId', selectedSeasonId);
+      const queryString = allParams.toString();
+      navigate(queryString ? `${baseUrl}?${queryString}` : baseUrl);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save fields';
       setBatchError(message);
@@ -350,19 +369,23 @@ export default function FieldCreatePage() {
     pendingFieldsRef.current = pendingFields;
   }, [pendingFields]);
 
-  // Auto-name new fields based on existing season fields
+  // Auto-name new fields — use server-side persistent counter, fall back to local computation
   useEffect(() => {
-    const seasonFields = (fieldsQ.data ?? []).filter(
-      (f) => f.seasonIds?.includes(selectedSeasonId ?? ''),
-    );
-    let maxNum = -1;
-    for (const f of seasonFields) {
-      if (f.name === 'Field') { maxNum = Math.max(maxNum, 0); continue; }
-      const m = f.name.match(/^Field (\d+)$/);
-      if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+    let num = 1;
+    if (nextNameQ.data) {
+      const m = nextNameQ.data.name.match(/^Field (\d+)$/);
+      if (m) num = parseInt(m[1]);
+    } else {
+      // Local fallback: scan all existing fields for highest number
+      let maxNum = 0;
+      for (const f of (fieldsQ.data ?? [])) {
+        const m = f.name.match(/^Field (\d+)$/);
+        if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+      }
+      num = maxNum + 1;
     }
-    nextFieldNumRef.current = maxNum + 1;
-  }, [selectedSeasonId, fieldsQ.data]);
+    nextFieldNumRef.current = num;
+  }, [nextNameQ.data, fieldsQ.data]);
 
   const basemapResolution = useMemo(() => {
     if (!configQ.data) return { basemapConfig: null, basemapError: null };
@@ -502,12 +525,24 @@ export default function FieldCreatePage() {
             />
           ) }
 
+          { existingSeasonFields.map((field) => (
+            <FieldBoundaryLayer
+              key={ field.id }
+              map={ map }
+              plot={ field }
+              featureId={ field.id }
+              name={ field.name }
+              layerPrefix={ field.id }
+              keepOnTop={ false }
+            />
+          )) }
+
           <FieldDrawController
             activeTool={ activeMapTool }
             map={ map }
             mode={ fieldMode }
-            onCancel={ () => setFieldMode(null) }
-            onUpdateField={ () => Promise.resolve() }
+            onCancel={ handleCancelDraw }
+            onUpdateField={ handleUpdateField }
             onRequestTool={ requestMapTool }
             onReleaseTool={ releaseMapTool }
             selectedPlot={ null }
@@ -565,6 +600,7 @@ export default function FieldCreatePage() {
                       onClick={ () => {
                         if (cutMode) { setCutMode(false); }
                         setShapeMode('polygon');
+                        try { drawInstanceRef.current?.setMode('polygon'); } catch { /* ignore */ }
                         if (map && typeof map.getCanvas === 'function') {
                           map.getCanvas().style.cursor = 'crosshair';
                         }
@@ -589,6 +625,7 @@ export default function FieldCreatePage() {
                       onClick={ () => {
                         if (cutMode) { setCutMode(false); }
                         setShapeMode('circle');
+                        try { drawInstanceRef.current?.setMode('circle'); } catch { /* ignore */ }
                         if (map && typeof map.getCanvas === 'function') {
                           map.getCanvas().style.cursor = 'crosshair';
                         }
@@ -840,17 +877,17 @@ export default function FieldCreatePage() {
             name: editingPendingField.name,
             geometry: editingPendingField.geometry,
             seasonIds: selectedSeasonId ? [selectedSeasonId] : [],
-            vegetationData: [],
+            vegetationData: editingPendingField.vegetationData,
             areaHa: editingPendingField.geometry.type === 'Polygon'
               ? polygonAreaMeters(toLngLatRing(editingPendingField.geometry.coordinates[0] ?? [])) / 10000
               : 0,
           } as unknown as Field }
           open={ !!editingPendingField }
           onOpenChange={ (open) => { if (!open) setEditingPendingField(null); } }
-          onSave={ (fieldId, name, geometry) => {
+          onSave={ (fieldId, name, geometry, vegetationData) => {
             setPendingFields((prev) => prev.map((pf) =>
               pf.id === fieldId
-                ? { ...pf, name: name ?? pf.name, geometry: geometry ?? pf.geometry }
+                ? { ...pf, name: name ?? pf.name, geometry: geometry ?? pf.geometry, vegetationData: vegetationData ?? pf.vegetationData }
                 : pf
             ));
             setEditingPendingField(null);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   CalendarRange,
@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditSeasonDialog from '@/components/seasons/EditSeasonDialog';
 import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
-import GlobalViewPanel, { getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
+import GlobalViewPanel, { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
 import { cn } from '@/lib/utils';
@@ -132,9 +132,11 @@ export function AppShell() {
   const [seasonSheetOpen, setSeasonSheetOpen] = useState(false);
   const [seasonTab, setSeasonTab] = useState<'active' | 'planned' | 'ended'>('active');
   const [editSeasonId, setEditSeasonId] = useState<string | null>(null);
-  const [globalViewOpen, setGlobalViewOpen] = useState(
-    !isAdminIngestionRoute && !location.pathname.includes('/field/'),
-  );
+  // `globalViewOpen` lives in the shared mapViewContext (not local state) so
+  // that descendants like MapPage -- which needs to close Global View when
+  // the user clicks a field directly on the map -- can toggle the same
+  // single source of truth AppShell reads for its own rendering.
+  const initialGlobalViewOpen = !isAdminIngestionRoute && !location.pathname.includes('/field/');
   const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
@@ -143,7 +145,7 @@ export function AppShell() {
   const [utilityOpen, setUtilityOpen] = useState(false);
 
   const setGlobalViewMode = (isGlobalView: boolean) => {
-    setGlobalViewOpen(isGlobalView);
+    view.setGlobalViewOpen(isGlobalView);
     view.setOverlaysVisible(!isGlobalView);
   };
 
@@ -163,18 +165,16 @@ export function AppShell() {
   const updateSeason = useUpdateSeason();
   const fieldsQ = useFields();
 
-  // Sync overlaysVisible with initial globalViewOpen on mount (no lag frame after page refresh)
-  useEffect(() => {
-    view.setOverlaysVisible(!globalViewOpen);
+  // Seed the shared globalViewOpen/overlaysVisible/mapFullscreen state on mount
+  // (useLayoutEffect so state is correct before the first paint — no flash of empty map).
+  useLayoutEffect(() => {
+    view.setOverlaysVisible(!initialGlobalViewOpen);
+    view.setGlobalViewOpen(initialGlobalViewOpen);
+    if (!initialGlobalViewOpen) {
+      view.setMapFullscreen(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Clear persisted field selection on mount (unless deep-linked to a specific field)
-  useEffect(() => {
-    if (!location.pathname.includes('/field/')) {
-      view.clearSelectedPlot();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sortedSeasons = useMemo(() => {
     const data = seasonsQ.data;
@@ -245,54 +245,48 @@ export function AppShell() {
     [editSeasonId, sortedSeasons],
   );
 
-  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
+  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('akasha.seasonId'); } catch { return null; }
+  });
+
+  useEffect(() => {
+    if (currentSeasonId) {
+      try { sessionStorage.setItem('akasha.seasonId', currentSeasonId); } catch { /* storage unavailable */ }
+    }
+  }, [currentSeasonId]);
+
+  // Reset currentSeasonId if the selected season was deleted
+  useEffect(() => {
+    if (!currentSeasonId) return;
+    const exists = sortedSeasons.some((s) => s.id === currentSeasonId);
+    if (!exists) {
+      setCurrentSeasonId(null);
+    }
+  }, [currentSeasonId, sortedSeasons]);
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
-  const showGlobalViewPanel = !isAdminIngestionRoute && globalViewOpen;
+  const showGlobalViewPanel = !isAdminIngestionRoute && view.globalViewOpen;
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
     [effectiveSeasonId, sortedSeasons],
   );
 
-  // Auto-select the last-viewed field for the current season on initial load
-  // and when switching between seasons.
+  // Validate the currently selected field still belongs to the current season.
+  // Does NOT auto-select fields — that only happens when the URL targets a
+  // specific field (deep-link). Season switching always lands in Global View.
   useEffect(() => {
     const fields = fieldsQ.data;
     if (!fields || fields.length === 0 || !effectiveSeasonId) return;
 
-    // If there is a currently selected field, verify it belongs to the current
-    // season. If the user switched to a season that has no fields, clear the
-    // stale selection so no polygon from another season lingers on the map.
     if (view.selectedPlotId) {
       const selectedField = fields.find((f) => f.id === view.selectedPlotId);
       const belongsToCurrentSeason = selectedField && selectedField.seasonIds?.includes(effectiveSeasonId);
       if (belongsToCurrentSeason) return;
       view.clearSelectedPlot();
     }
-
-    const savedFields = getLastFieldPerSeason();
-    const savedFieldId = savedFields[effectiveSeasonId];
-    const savedField = savedFieldId
-      ? fields.find((f) => f.id === savedFieldId && f.seasonIds?.includes(effectiveSeasonId))
-      : undefined;
-
-    if (savedField) {
-      view.setSelectedPlotId(savedField.id);
-      view.setFocusNonce(Date.now());
-      setTimeout(() => setGlobalViewMode(false), 0);
-    } else {
-      const firstField = fields.find((f) => f.seasonIds?.includes(effectiveSeasonId));
-      if (firstField) {
-        view.setSelectedPlotId(firstField.id);
-        view.setFocusNonce(Date.now());
-        setTimeout(() => setGlobalViewMode(false), 0);
-      } else {
-        // Season has no fields — keep Global View open to show the empty state
-        setTimeout(() => setGlobalViewMode(true), 0);
-      }
-    }
-  }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId, view]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldsQ.data, effectiveSeasonId, view.selectedPlotId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -326,10 +320,10 @@ export function AppShell() {
 
   // When Global View closes, re-expand the active nav group so its dropdown
   // is open and the active item (e.g. Field Analytics) is visible/highlighted.
-  const [prevGlobalViewOpen, setPrevGlobalViewOpen] = useState(globalViewOpen);
-  if (globalViewOpen !== prevGlobalViewOpen) {
-    setPrevGlobalViewOpen(globalViewOpen);
-    if (!globalViewOpen && activeGroupLabel && !expandedGroups.has(activeGroupLabel)) {
+  const [prevGlobalViewOpen, setPrevGlobalViewOpen] = useState(view.globalViewOpen);
+  if (view.globalViewOpen !== prevGlobalViewOpen) {
+    setPrevGlobalViewOpen(view.globalViewOpen);
+    if (!view.globalViewOpen && activeGroupLabel && !expandedGroups.has(activeGroupLabel)) {
       setExpandedGroups(new Set([activeGroupLabel]));
     }
   }
@@ -346,11 +340,11 @@ export function AppShell() {
     });
   };
 
-  const railWidth = railCollapsed ? '3.5rem' : '16rem';
+  const railWidth = railCollapsed ? '3.5rem' : '15rem';
 
   return (
     <TooltipProvider delayDuration={ 200 }>
-      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); setGlobalViewMode(true); } } />
+      <CreateSeasonDialog open={ createSeasonOpen } onOpenChange={ setCreateSeasonOpen } onCreated={ (season) => { setCurrentSeasonId(season.id); setSeasonTab(seasonTabFor(season)); view.clearSelectedPlot(); setGlobalViewMode(true); } } />
       { editSeasonTarget && (
         <EditSeasonDialog
           season={ editSeasonTarget }
@@ -398,7 +392,7 @@ export function AppShell() {
                       className={ ({ isActive }) =>
                         cn(
                           'flex h-9 items-center gap-2 rounded-md px-3 text-[12px] font-medium text-muted-foreground transition-colors duration-fast',
-                          (item.globalView ? isActive && globalViewOpen : isActive) && 'bg-primary/15 text-foreground shadow-e1',
+                          (item.globalView ? isActive && view.globalViewOpen : isActive) && 'bg-primary/15 text-foreground shadow-e1',
                         )
                       }
                     >
@@ -423,20 +417,20 @@ export function AppShell() {
         ) }
 
         <aside
-          className="hidden border-l border-border bg-background/96 lg:flex lg:min-h-0 lg:flex-col"
+          className="hidden border-l border-border bg-muted/30 lg:flex lg:min-h-0 lg:flex-col"
           data-testid="product-rail"
         >
           {/* Brand row + collapse toggle */ }
           <div
             className={ cn(
-              'flex items-center gap-3 border-b border-border/60 px-3 py-4',
+              'flex items-center gap-4 border-b border-border/60 px-3 py-4',
               railCollapsed && 'justify-center px-2',
             ) }
           >
             { !railCollapsed && (
               <>
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
-                  <Satellite className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+                  <Satellite className="size-6" strokeWidth={ 1.75 } aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-display text-base font-semibold leading-5">Akasha</p>
@@ -452,12 +446,12 @@ export function AppShell() {
                   aria-label={ railCollapsed ? 'Expand sidebar' : 'Collapse sidebar' }
                   aria-pressed={ railCollapsed }
                   data-testid="rail-collapse-toggle"
-                  className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   { railCollapsed ? (
-                    <Menu className="size-4" strokeWidth={ 1.75 } />
+                    <Menu className="size-5" strokeWidth={ 1.75 } />
                   ) : (
-                    <ChevronsLeft className="size-4" strokeWidth={ 1.75 } />
+                    <ChevronsLeft className="size-5" strokeWidth={ 1.75 } />
                   ) }
                 </button>
               </TooltipTrigger>
@@ -475,12 +469,12 @@ export function AppShell() {
               aria-label="Season selector"
               onClick={ () => { setSeasonSheetOpen(true); if (currentSeason) setSeasonTab(seasonTabFor(currentSeason)); } }
               className={ cn(
-                'flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
+                'flex w-full items-center gap-3 rounded-md border px-3 py-3 text-left text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
                 'border-primary bg-primary/10 text-foreground',
                 railCollapsed && 'justify-center px-0',
               ) }
             >
-              <CalendarRange className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+              <CalendarRange className="size-5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
               { !railCollapsed && (
                 <span className="min-w-0 flex-1 truncate font-bold text-sm">
                   { currentSeason ? currentSeason.name : 'Season' }
@@ -525,7 +519,7 @@ export function AppShell() {
               </div>
 
               <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-                <div className="space-y-3 pr-1">
+                <div className="space-y-4 pr-1">
                   { seasonsQ.isLoading ? (
                     <p className="text-sm text-muted-foreground">Loading seasons…</p>
                   ) : seasonsQ.error ? (
@@ -579,28 +573,24 @@ export function AppShell() {
                               isCurrent && 'border-primary/50 ring-1 ring-primary/20',
                             ) }
                             onClick={ () => {
-                              const savedFields = getLastFieldPerSeason();
-                              const savedFieldId = savedFields[season.id];
-                              const fields = fieldsQ.data ?? [];
-                              const savedField = savedFieldId ? fields.find((f) => f.id === savedFieldId && f.seasonIds?.includes(season.id)) : undefined;
-                              if (savedField) {
-                                view.setSelectedPlotId(savedField.id);
-                                view.setFocusNonce(Date.now());
-                              } else {
-                                view.clearSelectedPlot();
-                              }
                               setCurrentSeasonId(season.id);
                               setSeasonSheetOpen(false);
-                              const seasonHasFields = fields.some((f) => f.seasonIds?.includes(season.id));
-                              setGlobalViewMode(!seasonHasFields);
-                              if (savedField) {
-                                navigate(`/monitoring/field-analytics/field/${savedField.id}`);
-                              } else {
-                                navigate('/monitoring/field-analytics');
+                              setGlobalViewMode(true);
+                              navigate('/monitoring/field-analytics');
+                              const fields = fieldsQ.data;
+                              if (Array.isArray(fields)) {
+                                const seasonFields = fields.filter((f) => f.seasonIds?.includes(season.id));
+                                if (seasonFields.length > 0) {
+                                  const latest = seasonFields.reduce((a, b) =>
+                                    new Date(b.createdAt ?? 0).getTime() > new Date(a.createdAt ?? 0).getTime() ? b : a,
+                                  );
+                                  view.setSelectedPlotId(latest.id);
+                                  setLastFieldForSeason(season.id, latest.id);
+                                }
                               }
                             } }
                           >
-                            <CardHeader>
+                            <CardHeader className="pb-2">
                               <div className="flex items-center justify-between gap-2">
                                 <CardTitle className={ cn('font-bold text-lg', isCurrent && 'text-primary') }>
                                   { season.name }
@@ -609,22 +599,22 @@ export function AppShell() {
                                   <Check className="size-5 text-primary" strokeWidth={ 2.5 } aria-label="Active season" />
                                 ) }
                               </div>
-                              <div className="mt-2 flex gap-2">
-                                <div className="flex-1 rounded-md border border-border/60 bg-background/50 px-2 py-1.5">
-                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Start</p>
-                                  <p className="text-xs font-medium text-foreground tnum">
+                              <div className="mt-3 flex gap-2">
+                                <div className="flex-1 rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Start</p>
+                                  <p className="text-sm font-medium text-foreground tnum">
                                     { season.startDate ? formatDate(season.startDate) : '—' }
                                   </p>
                                 </div>
-                                <div className="flex-1 rounded-md border border-border/60 bg-background/50 px-2 py-1.5">
-                                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">End</p>
-                                  <p className="text-xs font-medium text-foreground tnum">
+                                <div className="flex-1 rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">End</p>
+                                  <p className="text-sm font-medium text-foreground tnum">
                                     { season.endDate ? formatDate(season.endDate) : '—' }
                                   </p>
                                 </div>
                               </div>
                             </CardHeader>
-                            <CardContent className="border-t border-border/50 pt-3">
+                            <CardContent className="border-t border-border/50 pt-4">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm text-muted-foreground">Fields</span>
@@ -635,7 +625,7 @@ export function AppShell() {
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent/40 cursor-pointer"
+                                    className="rounded-md border border-border px-4 py-1.5 text-sm text-foreground hover:bg-accent/40 cursor-pointer"
                                     onClick={ (e) => { e.stopPropagation(); setEditSeasonId(season.id); } }
                                   >
                                     Edit
@@ -645,7 +635,7 @@ export function AppShell() {
                                     disabled={ !season.canDelete }
                                     title={ !season.canDelete ? "Cannot delete your only season" : undefined }
                                     className={ cn(
-                                      "rounded-md border px-3 py-1.5 text-sm",
+                                      "rounded-md border px-4 py-1.5 text-sm",
                                       !season.canDelete
                                         ? "border-dashed text-muted-foreground cursor-not-allowed"
                                         : "border-border text-foreground hover:bg-accent/40 cursor-pointer"
@@ -656,7 +646,7 @@ export function AppShell() {
                                   </button>
                                 </div>
                               </div>
-                              <div className="mt-1 flex items-center gap-2 text-sm">
+                              <div className="mt-2 flex items-center gap-2 text-sm">
                                 <span className="text-muted-foreground">Total area:</span>
                                 <span className="font-semibold text-foreground tabular-nums">
                                   { seasonFields.length === 0 ? '0.00' : totalArea.toFixed(2) } ha
@@ -672,7 +662,7 @@ export function AppShell() {
                                     setGlobalViewMode(false);
                                     setAddFieldDialogOpen(true);
                                   } }
-                                  className="mt-2 w-full cursor-pointer rounded-md border border-dashed border-border px-3 py-2 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+                                  className="mt-3 w-full cursor-pointer rounded-md border border-dashed border-border px-4 py-2.5 text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
                                 >
                                   + Add field
                                 </button>
@@ -694,7 +684,7 @@ export function AppShell() {
           <ScrollArea className="min-h-0 flex-1">
             <nav
               aria-label="Product modules"
-              className={ cn('flex flex-col gap-2 px-3 py-3', railCollapsed && 'px-1') }
+              className={ cn('flex flex-col gap-2 px-3 py-4', railCollapsed && 'px-1') }
             >
 
               { primaryGroups.map((group) => {
@@ -723,12 +713,12 @@ export function AppShell() {
                         onMouseEnter={ () => setHoveredGroup(group.label) }
                         onMouseLeave={ () => setHoveredGroup(null) }
                         className={ cn(
-                          'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                          'flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                           activeGroupLabel === group.label && 'text-primary',
                         ) }
                       >
                         { GroupIcon && (
-                          <GroupIcon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                          <GroupIcon className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
                         ) }
                       </button>
                       { isHovered && (
@@ -757,19 +747,19 @@ export function AppShell() {
                                 } }
                                 className={ ({ isActive }) =>
                                   cn(
-                                    'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                    'flex w-full items-center gap-3 rounded-md px-3 py-2 text-xs text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                                     item.globalView
-                                      ? isActive && globalViewOpen && 'text-primary font-semibold'
-                                      : isActive && !globalViewOpen && 'text-primary font-semibold',
+                                      ? isActive && view.globalViewOpen && 'text-primary font-semibold'
+                                      : isActive && !view.globalViewOpen && 'text-primary font-semibold',
                                   )
                                 }
                               >
                                 { ItemIcon && (
-                                  <ItemIcon className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+                                  <ItemIcon className="size-5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
                                 ) }
                                 <span className="min-w-0 flex-1 truncate">{ item.label }</span>
                                 { item.status === 'planned' && (
-                                  <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
+                                  <Clock className="size-4 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
                                 ) }
                               </NavLink>
                             );
@@ -794,17 +784,17 @@ export function AppShell() {
                       aria-expanded={ isExpanded }
                       aria-controls={ panelId }
                       className={ cn(
-                        'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                        'flex w-full items-center justify-between gap-2.5 rounded-md px-2.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                         (isExpanded || activeGroupLabel === group.label) && 'bg-primary/10 text-primary',
                       ) }
                     >
                       <span className="flex items-center gap-2 truncate">
-                        { group.icon && <group.icon className="size-3.5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" /> }
+                        { group.icon && <group.icon className="size-5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" /> }
                         <span>{ group.label }</span>
                       </span>
                       <ChevronDown
                         className={ cn(
-                          'size-4 shrink-0 text-muted-foreground transition-transform duration-fast',
+                          'size-5 shrink-0 text-muted-foreground transition-transform duration-fast',
                           isExpanded && 'rotate-180',
                         ) }
                         strokeWidth={ 1.75 }
@@ -812,7 +802,7 @@ export function AppShell() {
                       />
                     </button>
                     { isExpanded && (
-                      <div id={ panelId } className="mt-1 flex flex-col gap-1">
+                      <div id={ panelId } className="mt-1.5 flex flex-col gap-1.5">
                         { group.items.map((item) => (
                           <NavLink
                             key={ `${group.label}-${item.label}` }
@@ -822,16 +812,16 @@ export function AppShell() {
                             onClick={ () => setGlobalViewMode(!!item.globalView) }
                             className={ ({ isActive }) =>
                               cn(
-                                'group flex items-center gap-3 rounded-md px-2.5 py-2 text-xs text-center text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                'group flex items-center gap-3 rounded-md pl-11 pr-3 py-2 text-xs text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                                 item.globalView
-                                  ? isActive && globalViewOpen && 'text-primary font-semibold'
-                                  : isActive && !globalViewOpen && 'text-primary font-semibold',
+                                  ? isActive && view.globalViewOpen && 'text-primary font-semibold'
+                                  : isActive && !view.globalViewOpen && 'text-primary font-semibold',
                               )
                             }
                           >
                             <span className="min-w-0 flex-1 truncate">{ item.label }</span>
                             { item.status === 'planned' && (
-                              <Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
+                              <Clock className="size-4 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
                             ) }
                           </NavLink>
                         )) }
@@ -851,7 +841,7 @@ export function AppShell() {
               <nav
                 aria-label="Utility"
                 className={ cn(
-                  'flex flex-col gap-1 px-3 py-3',
+                  'flex flex-col gap-1 px-3 py-4',
                   railCollapsed && 'items-center px-1',
                 ) }
                 data-testid="utility-footer"
@@ -874,15 +864,15 @@ export function AppShell() {
                                 aria-label={ item.label }
                                 className={ ({ isActive }) =>
                                   cn(
-                                    'flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                                    'flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
                                     isActive && 'bg-primary/15 text-foreground shadow-e1',
                                   )
                                 }
                               >
-                                <Icon className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
-                              </NavLink>
-                            </TooltipTrigger>
-                            <TooltipContent side="left">{ item.label }</TooltipContent>
+                                    <Icon className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
+                                  </NavLink>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">{ item.label }</TooltipContent>
                           </Tooltip>
                         );
                       }
@@ -894,13 +884,13 @@ export function AppShell() {
                           data-testid={ testIdFor(item.label) }
                           className={ ({ isActive }) =>
                             cn(
-                              'group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
-                              isActive && 'bg-primary/15 text-foreground shadow-e1',
+                            'group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                            isActive && 'bg-primary/15 text-foreground shadow-e1',
                             )
                           }
                         >
                           <Icon
-                            className="size-4 shrink-0"
+                            className="size-5 shrink-0"
                             strokeWidth={ 1.75 }
                             aria-hidden="true"
                           />
@@ -917,10 +907,10 @@ export function AppShell() {
                             onClick={ handleLogout }
                             data-testid="sign-out-action"
                             aria-label="Sign out"
-                            className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground disabled:cursor-wait disabled:opacity-70"
+                            className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground disabled:cursor-wait disabled:opacity-70"
                             disabled={ logout.isPending }
                           >
-                            <LogOut className="size-4" strokeWidth={ 1.75 } aria-hidden="true" />
+                            <LogOut className="size-5" strokeWidth={ 1.75 } aria-hidden="true" />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="left">Sign out</TooltipContent>
@@ -930,10 +920,10 @@ export function AppShell() {
                         type="button"
                         onClick={ handleLogout }
                         data-testid="sign-out-action"
-                        className="group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground disabled:cursor-wait disabled:opacity-70"
+                        className="group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground disabled:cursor-wait disabled:opacity-70"
                         disabled={ logout.isPending }
                       >
-                        <LogOut className="size-4 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+                        <LogOut className="size-5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
                         <span className="min-w-0 flex-1 truncate text-left">Sign out</span>
                       </button>
                     ) }
@@ -950,11 +940,11 @@ export function AppShell() {
                       aria-expanded={ utilityOpen }
                       className={ cn(
                         'mt-1 flex items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent/40 hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        railCollapsed ? 'size-9 justify-center px-0 py-0' : 'w-full',
+                        railCollapsed ? 'size-10 justify-center px-0 py-0' : 'w-full',
                       ) }
                     >
                       <UserCircle2
-                        className="size-5 shrink-0 text-primary"
+                        className="size-6 shrink-0 text-primary"
                         strokeWidth={ 1.5 }
                         aria-hidden="true"
                       />
@@ -970,7 +960,7 @@ export function AppShell() {
                           </span>
                           <ChevronUp
                             className={ cn(
-                              'size-4 shrink-0 transition-transform duration-fast',
+                              'size-5 shrink-0 transition-transform duration-fast',
                               utilityOpen && 'rotate-180',
                             ) }
                             strokeWidth={ 1.75 }

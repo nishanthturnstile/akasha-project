@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Satellite, Sprout, Zap } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Satellite, Sprout, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { useFieldMonitoringEvidence, useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
@@ -27,7 +26,6 @@ interface IndexPanelProps {
   periodTo?: string | null;
   /** Prefer LISS-4 high-resolution source when available (default true). */
   preferHighRes?: boolean;
-  onPreferHighResChange?: (value: boolean) => void;
   /** Vegetation cycle data for the selected field. */
   vegetationData?: VegetationCycleResponse[];
   /** Season IDs the selected field belongs to. */
@@ -83,7 +81,6 @@ export function IndexPanel({
   periodFrom,
   periodTo,
   preferHighRes = true,
-  onPreferHighResChange,
   vegetationData,
   seasonIds,
   onShowAllCrops,
@@ -149,33 +146,10 @@ export function IndexPanel({
 
   return (
     <section
-      className={ cn('glass w-[320px] max-w-[84vw] overflow-hidden opacity-95', className) }
+      className={ className }
       data-testid="index-panel"
       aria-label="Field analytics"
     >
-      <header className="contour flex items-center justify-between gap-2 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="size-4 text-primary" strokeWidth={ 1.75 } />
-          <h2 className="font-display text-base font-semibold text-foreground">Analytics</h2>
-        </div>
-        { onPreferHighResChange != null && (
-          <div className="flex items-center gap-1.5">
-            <label
-              htmlFor="analytics-pref-highres"
-              className="cursor-pointer text-[11px] text-muted-foreground"
-            >
-              Hi-res
-            </label>
-            <Switch
-              id="analytics-pref-highres"
-              checked={ preferHighRes }
-              onCheckedChange={ onPreferHighResChange }
-              data-testid="analytics-prefer-high-res"
-            />
-          </div>
-        ) }
-      </header>
-
       { !selectedPlot ? (
         <div className="px-4 py-2">
           <div
@@ -285,7 +259,7 @@ export function IndexPanel({
             </div>
           ) }
           <TabsList
-            className="grid w-full grid-cols-3 h-8"
+            className="grid w-full grid-cols-3 h-8 gap-0 rounded-none border-0 bg-transparent p-0"
             data-testid="index-panel-tabs"
             aria-label="Field analytics tabs"
           >
@@ -294,9 +268,11 @@ export function IndexPanel({
                 key={ tab.value }
                 value={ tab.value }
                 data-testid={ `index-panel-tab-${tab.value}` }
-                className="px-2 py-0.5 text-sm"
+                className="h-8 px-0 rounded-none border-0 bg-transparent text-sm text-muted-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
               >
-                { tab.label }
+                <span className={ cn('inline-block pb-0.5 border-b-2', activeTab === tab.value ? 'border-primary' : 'border-transparent') }>
+                  { tab.label }
+                </span>
               </TabsTrigger>
             )) }
           </TabsList>
@@ -433,7 +409,14 @@ function CropInfoTab({
             <p className="text-[13px] text-muted-foreground">No crops added yet.</p>
           ) : (
             seasonIdsFromField.map((sid) => {
-              const cycles = vegetationData.filter((v) => v.seasonId === sid);
+              const cycles = vegetationData
+                .filter((v) => v.seasonId === sid)
+                .sort((a, b) => {
+                  if (b.year !== a.year) return b.year - a.year;
+                  const dateA = a.sowingDate ? new Date(a.sowingDate).getTime() : 0;
+                  const dateB = b.sowingDate ? new Date(b.sowingDate).getTime() : 0;
+                  return dateB - dateA;
+                });
               const sname = cycles.find((c) => c.seasonName)?.seasonName ?? seasonNameMap[sid] ?? sid;
               return (
                 <div key={ sid } className="rounded-md border border-border/60 bg-background/50">
@@ -557,7 +540,7 @@ function CropInfoTab({
         </div>
 
         <div className="relative py-1.5">
-          <div className="absolute left-1.75 right-1.75 top-[7px] h-0.5 bg-border" />
+          <div className="absolute left-[7px] right-[7px] top-[13px] h-0.5 bg-border" />
           <div className="relative flex justify-between">
             { STAGE_LABELS.map((label, i) => (
               <div key={ label } className="flex flex-col items-center gap-1">

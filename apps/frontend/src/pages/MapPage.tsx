@@ -23,6 +23,7 @@ import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
+import { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryLayerHelpers';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { FieldOverlayLoadingIndicator } from '@/components/map/FieldOverlayLoadingIndicator';
@@ -48,6 +49,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/useMapView';
+import { useSeasonContext } from '@/state/seasonContext';
 import { useMapUrlState } from '@/hooks/useMapUrlState';
 import type {
   CloudMaskOptions,
@@ -127,6 +129,21 @@ function geometryCoordinates(geometry: PlotGeometry): [number, number][] {
 
 function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
   const coordinates = geometryCoordinates(plot.geometry);
+  if (!map || coordinates.length === 0) return;
+  map.resize();
+  const lngs = coordinates.map(([lng]) => lng);
+  const lats = coordinates.map(([, lat]) => lat);
+  map.fitBounds(
+    [
+      [Math.min(...lngs), Math.min(...lats)],
+      [Math.max(...lngs), Math.max(...lats)],
+    ],
+    { padding: 64, maxZoom: 18, duration: 650 },
+  );
+}
+
+function focusPlots(map: maplibregl.Map | null, plots: Plot[]): void {
+  const coordinates = plots.flatMap((plot) => geometryCoordinates(plot.geometry));
   if (!map || coordinates.length === 0) return;
   map.resize();
   const lngs = coordinates.map(([lng]) => lng);
@@ -339,8 +356,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     overlaysVisible,
     focusNonce,
     bestMode,
+    globalViewOpen,
     radarEvidenceVisible,
+    hoveredFieldId,
   } = view;
+  const { seasonId } = useSeasonContext();
 
   const effectiveSourceId = useMemo(
     () => selectEffectiveSourceId({
@@ -377,6 +397,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const [activeMapTool, setActiveMapTool] = useState<ActiveMapTool>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
   const [preferHighRes] = useState(true);
+  const [hoveredField, setHoveredField] = useState<{ name: string; x: number; y: number } | null>(null);
+  const hoveredFieldFrame = useRef<number | null>(null);
+  const pendingHoveredField = useRef<{ name: string; x: number; y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [deleteFieldTarget, setDeleteFieldTarget] = useState<{
     id: string;
@@ -394,6 +417,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     if (!selectedPlotId) return null;
     return plotsQ.data?.find((plot) => plot.id === selectedPlotId) ?? null;
   }, [plotsQ.data, selectedPlotId]);
+
+  // Global View shows every field in the active season on the map at once,
+  // instead of just the single selectedPlot.
+  const seasonFields = useMemo(() => {
+    if (!globalViewOpen || !seasonId) return [];
+    return (plotsQ.data ?? []).filter((field) => field.seasonIds?.includes(seasonId));
+  }, [globalViewOpen, seasonId, plotsQ.data]);
   const requestedTimelineIndex = resolveDisplayMode(
     displayModeOverride,
     selectedSource?.supportedIndices ?? [],
@@ -426,10 +456,62 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     if (!focusTarget) return;
     const nonceBumped = focusNonce !== prevFocusNonce.current;
     if (!nonceBumped && prevFocusedPlotId.current === selectedPlotId) return;
+    // Skip auto-selection in Global View — Effect B handles the initial fit.
+    if (!nonceBumped && globalViewOpen) return;
     focusPlot(map, focusTarget);
     prevFocusedPlotId.current = selectedPlotId;
     prevFocusNonce.current = focusNonce;
-  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, view]);
+  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, globalViewOpen, view]);
+
+  // Fit the map to the selected field when Global View is on, or to all fields
+  // if none is selected, so the highlighted field is in focus.
+  // On initial entry always fit to ALL fields; only refit to a single field
+  // when the user explicitly selects one (which bumps focusNonce).
+  const prevGlobalViewFitKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!map || !globalViewOpen || seasonFields.length === 0) {
+      prevGlobalViewFitKey.current = null;
+      return;
+    }
+    if (prevGlobalViewFitKey.current === null) {
+      prevGlobalViewFitKey.current = `${seasonId ?? ''}:${seasonFields.length}`;
+      focusPlots(map, seasonFields);
+    } else if (selectedPlot) {
+      const fitKey = `selected:${selectedPlot.id}`;
+      if (prevGlobalViewFitKey.current === fitKey) return;
+      prevGlobalViewFitKey.current = fitKey;
+      focusPlot(map, selectedPlot);
+    }
+  }, [map, globalViewOpen, seasonFields, seasonId, selectedPlot]);
+
+  // Style field boundaries in Global View: grey fill by default, highlight on hover.
+  // Uses persistent styledata/idle listeners so the styling survives layer
+  // re-creation when navigating back from field analytics to global view.
+  useEffect(() => {
+    if (!map || !globalViewOpen || seasonFields.length === 0) return;
+    const applyStyles = () => {
+      for (const field of seasonFields) {
+        const fillLayer = `${field.id}akasha-field-boundary-fill-layer`;
+        const outlineLayer = `${field.id}akasha-field-boundary-outline-layer`;
+        if (!map.getLayer(fillLayer)) continue;
+        const isHovered = field.id === hoveredFieldId;
+        map.setPaintProperty(fillLayer, 'fill-color', isHovered ? '#3b82f6' : '#1f2937');
+        map.setPaintProperty(fillLayer, 'fill-opacity', isHovered ? 0.35 : 0.35);
+        if (map.getLayer(outlineLayer)) {
+          map.setPaintProperty(outlineLayer, 'line-color', isHovered ? '#ffffff' : '#9ca3af');
+          map.setPaintProperty(outlineLayer, 'line-opacity', 0.7);
+        }
+      }
+    };
+    map.on('styledata', applyStyles);
+    map.on('idle', applyStyles);
+    // Fire immediately in case layers already exist.
+    applyStyles();
+    return () => {
+      map.off('styledata', applyStyles);
+      map.off('idle', applyStyles);
+    };
+  }, [map, globalViewOpen, seasonFields, hoveredFieldId]);
 
   // Field boundary interactions on the map:
   //  - continuously reflect whether the pointer is over the field so the cursor is the
@@ -442,29 +524,65 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   // navigating to or focusing a field — `mouseenter` never fires and the cursor would
   // stay a grab hand. Hit-testing every move keeps it correct with no lag.
   useEffect(() => {
-    if (!map || !selectedPlotId) return;
+    if (!map || (!globalViewOpen && !selectedPlotId)) return;
     const canvas = map.getCanvas();
     const hoverCursor = simplifiedMapControls ? 'default' : 'pointer';
 
-    const isOverField = (event: maplibregl.MapMouseEvent) => {
-      if (!map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID)) return false;
-      return (
-        map.queryRenderedFeatures(event.point, {
-          layers: [FIELD_BOUNDARY_FILL_LAYER_ID],
-        }).length > 0
-      );
+    // In Global View, each season field renders under its own layerPrefix
+    // (see the FieldBoundaryLayer loop below), so hit-testing must check all
+    // of them -- not just the single selected-field layer -- otherwise
+    // clicking/hovering a field drawn only via Global View is a no-op.
+    const fieldLayerIds = globalViewOpen
+      ? seasonFields
+        .map((field) => `${field.id}${FIELD_BOUNDARY_FILL_LAYER_ID}`)
+        .filter((id) => map.getLayer(id))
+      : (map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID) ? [FIELD_BOUNDARY_FILL_LAYER_ID] : []);
+
+    const fieldAtPoint = (event: maplibregl.MapMouseEvent) => {
+      if (fieldLayerIds.length === 0) return null;
+      return map.queryRenderedFeatures(event.point, { layers: fieldLayerIds })[0] ?? null;
     };
 
     const moveHandler = (e: maplibregl.MapMouseEvent) => {
       // While drawing/editing, let FieldDrawController own the cursor.
       if (fieldMode) return;
-      canvas.style.cursor = isOverField(e) ? hoverCursor : '';
-    };
-    const leaveHandler = () => { canvas.style.cursor = ''; };
-    const clickHandler = (e: maplibregl.MapMouseEvent) => {
-      if (isOverField(e)) {
-        navigate(`/monitoring/field-analytics/field/${selectedPlotId}`);
+      const feature = fieldAtPoint(e);
+      canvas.style.cursor = feature ? hoverCursor : '';
+      const plotId = feature?.properties?.plotId as string | undefined;
+      if (globalViewOpen) {
+        view.setHoveredFieldId(plotId ?? null);
+        const name = feature?.properties?.name as string | undefined;
+        pendingHoveredField.current = name ? { name, x: e.point.x, y: e.point.y } : null;
+        if (hoveredFieldFrame.current === null) {
+          hoveredFieldFrame.current = requestAnimationFrame(() => {
+            hoveredFieldFrame.current = null;
+            setHoveredField(pendingHoveredField.current);
+          });
+        }
       }
+    };
+    const leaveHandler = () => {
+      canvas.style.cursor = '';
+      view.setHoveredFieldId(null);
+      pendingHoveredField.current = null;
+      setHoveredField(null);
+    };
+    const clickHandler = (e: maplibregl.MapMouseEvent) => {
+      const feature = fieldAtPoint(e);
+      if (!feature) return;
+      const plotId = (feature.properties?.plotId as string | undefined) ?? selectedPlotId;
+      if (!plotId) return;
+      if (globalViewOpen) {
+        // Mirror GlobalViewPanel's own field-row click: select the field,
+        // close Global View, and focus it, so clicking a field on the map
+        // behaves the same as clicking it in the side list.
+        if (seasonId) setLastFieldForSeason(seasonId, plotId);
+        view.setSelectedPlotId(plotId);
+        view.setFocusNonce(Date.now());
+        view.setGlobalViewOpen(false);
+        view.setOverlaysVisible(true);
+      }
+      navigate(`/monitoring/field-analytics/field/${plotId}`);
     };
     map.on('mousemove', moveHandler);
     map.on('mouseout', leaveHandler);
@@ -474,8 +592,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       map.off('mouseout', leaveHandler);
       map.off('click', clickHandler);
       canvas.style.cursor = '';
+      if (hoveredFieldFrame.current !== null) {
+        cancelAnimationFrame(hoveredFieldFrame.current);
+        hoveredFieldFrame.current = null;
+      }
+      pendingHoveredField.current = null;
+      setHoveredField(null);
     };
-  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode]);
+  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode, globalViewOpen, seasonFields, seasonId, view]);
 
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
@@ -1013,11 +1137,35 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       />
       <FieldBoundaryLayer
         map={ map }
-        plot={ selectedPlot }
+        plot={ globalViewOpen ? null : selectedPlot }
         geometry={ draftGeometry }
         featureId="draft-field"
         name="Draft field"
       />
+      { globalViewOpen && seasonFields.map((field) => (
+        <FieldBoundaryLayer
+          key={ field.id }
+          map={ map }
+          plot={ field }
+          featureId={ field.id }
+          name={ field.name }
+          layerPrefix={ field.id }
+        />
+      )) }
+      { globalViewOpen && hoveredField && (
+        <div
+          data-testid="global-view-field-hover-label"
+          aria-hidden="true"
+          className="glass pointer-events-none absolute z-popover select-none rounded-md px-2.5 py-1 text-[12px] font-medium text-foreground on-map-text"
+          style={ {
+            left: hoveredField.x,
+            top: hoveredField.y,
+            transform: 'translate(-50%, calc(-100% - 10px))',
+          } }
+        >
+          { hoveredField.name }
+        </div>
+      ) }
       <FieldDrawController
         activeTool={ activeMapTool }
         map={ map }
@@ -1129,11 +1277,12 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
                 ? indexLookup
                 : undefined
             }
+            fieldGeometry={ selectedPlot?.geometry }
           />
         </div>
       ) }
 
-      { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+2.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
+      { overlaysVisible && <div className="absolute bottom-[calc(var(--timeline-height)+1.5rem)] right-4 z-toolbar flex flex-col items-end gap-2">
         <LayerControlBar
           sources={ sourcesQ.data }
           activeSourceId={ effectiveSourceId }
@@ -1167,7 +1316,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       {/* Left: legend + navigation map controls (zoom / compass / locate / fullscreen),
         * stacked in a single bottom-left column so they never overlap each other.
         * Raised above the attribution line so the two never collide at any width. */ }
-      <div className="absolute left-4 bottom-[calc(var(--timeline-height)+2.5rem)] z-toolbar flex flex-col items-start gap-2">
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-toolbar flex flex-col items-start gap-2">
         { overlaysVisible && <MeasureTool
           activeTool={ activeMapTool }
           map={ map }

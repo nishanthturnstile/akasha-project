@@ -50,6 +50,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   const [endDateError, setEndDateError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string>(INITIAL);
+  const forceCloseRef = useRef(false);
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -236,14 +237,28 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     }
   };
 
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen && dirty && !forceCloseRef.current) {
+      setConfirmClose(true);
+    } else {
+      forceCloseRef.current = false;
+      onOpenChange(nextOpen);
+    }
+  }, [dirty, onOpenChange]);
+
+  useEffect(() => {
+    if (!confirmClose && forceCloseRef.current) {
+      forceCloseRef.current = false;
+      onOpenChange(false);
+    }
+  }, [confirmClose, onOpenChange]);
+
   return (
-    <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
+    <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Create season"
-          onInteractOutside={ (e) => e.preventDefault() }
-          onEscapeKeyDown={ (e) => e.preventDefault() }
           className="glass fixed left-1/2 top-[12vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg p-0"
         >
           <VisuallyHidden>
@@ -253,14 +268,16 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
             </Dialog.Description>
           </VisuallyHidden>
 
-          <div className="relative border-b border-border/60 px-4 py-4">
-            <button aria-label="Close" onClick={handleCancel} className="absolute right-3 top-3 cursor-pointer rounded-md p-1 text-muted-foreground hover:bg-accent/40">
-              <X className="size-4" />
+          <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-4">
+            <div className="min-w-0">
+              <h3 className="text-base font-display font-bold">Create season</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Seasons filter all platform data and field assignments.
+              </p>
+            </div>
+            <button aria-label="Close" onClick={handleCancel} className="cursor-pointer rounded-md p-1.5 text-muted-foreground hover:bg-accent/40">
+              <X className="size-5" />
             </button>
-            <h3 className="text-center text-base font-display font-bold">Create season</h3>
-            <p className="mt-1 text-center text-xs text-muted-foreground">
-              Seasons filter all platform data and field assignments.
-            </p>
           </div>
 
           <div className="p-4 space-y-4">
@@ -459,7 +476,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
-            <AlertDialogAction className="cursor-pointer" onClick={() => onOpenChange(false)}>
+            <AlertDialogAction className="cursor-pointer" onClick={() => { forceCloseRef.current = true; setConfirmClose(false); }}>
               Yes
             </AlertDialogAction>
           </AlertDialogFooter>

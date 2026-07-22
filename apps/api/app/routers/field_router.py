@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..auth import CurrentUser, get_current_user
 from ..raster.errors import AkashaError, bad_request, field_backend_unavailable, not_found
+from ..api_models import ApiModel
 from ..repositories import fields_repo
 from ..schemas.fields import FieldCreate, FieldResponse, FieldUpdate, VegetationCycleResponse
 
@@ -121,3 +122,15 @@ async def delete_field(
     if not deleted:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", fieldId=field_id)
     return Response(status_code=204)
+
+
+class NextFieldNameResponse(ApiModel):
+    name: str
+
+
+@router.get("/fields/next-name", response_model=NextFieldNameResponse)
+async def next_field_name(
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, str]:
+    num = await _run_blocking(fields_repo.get_next_field_number, user.id)
+    return {"name": f"Field {num}"}

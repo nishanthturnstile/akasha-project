@@ -187,6 +187,14 @@ export function FieldDrawController({
           }),
           enableVertexDragRef.current
             ? new TerraDrawSelectMode({
+                // TerraDraw's default (40px) hit-tolerance around every vertex
+                // and every edge midpoint covers most of a modest-sized field's
+                // interior, making it hard to reliably grab the body for a
+                // whole-shape drag without accidentally moving/inserting a
+                // vertex instead. Tightening it leaves more of the interior
+                // free for whole-feature dragging while vertices/midpoints are
+                // still easily grabbable when clicked precisely.
+                pointerDistance: 20,
                 styles: {
                   selectedPolygonColor: '#3b82f6',
                   selectedPolygonFillOpacity: 0.25,
@@ -196,6 +204,7 @@ export function FieldDrawController({
                 flags: {
                   polygon: {
                     feature: {
+                      draggable: true,
                       coordinates: {
                         draggable: true,
                         midpoints: { draggable: true },
@@ -210,6 +219,16 @@ export function FieldDrawController({
       });
       draw.on('finish', (id) => {
         if (modeRef.current !== 'draw') return;
+        // TerraDraw's SelectMode re-emits 'finish' as part of its own select/edit
+        // lifecycle (e.g. right after a programmatic selectFeature() call), even
+        // though no new shape was drawn. Only treat 'finish' as "a new polygon
+        // was completed" when we were actually in a drawing mode when it fired --
+        // otherwise the code below would reselect the feature, which re-fires
+        // 'finish', creating a new pending field and looping indefinitely.
+        const terraDrawMode = draw.getMode();
+        if (terraDrawMode !== 'polygon' && terraDrawMode !== 'circle' && terraDrawMode !== 'freehand-linestring') {
+          return;
+        }
         let feature;
         try {
           feature = draw.getSnapshotFeature(id);

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import { ndviInterpretation } from '@/lib/indexRamp';
 
+import type { PlotGeometry } from '@/types/api';
+
 interface CoordinateReadoutProps {
     map: maplibregl.Map | null;
     interactiveLayerId?: string;
@@ -12,6 +14,22 @@ interface CoordinateReadoutProps {
         maskClass?: number | null;
         sourceId?: string;
     } | null>;
+    fieldGeometry?: PlotGeometry | null;
+}
+
+function geometryCenter(geom: PlotGeometry): { lng: number; lat: number } {
+    const coords = geom.type === 'Polygon'
+        ? geom.coordinates[0]
+        : geom.coordinates.flat(1)[0];
+    let minLng = Infinity, maxLng = -Infinity;
+    let minLat = Infinity, maxLat = -Infinity;
+    for (const [lng, lat] of coords) {
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+    }
+    return { lng: (minLng + maxLng) / 2, lat: (minLat + maxLat) / 2 };
 }
 
 /** Minimum time between point-request starts. Slow requests are serialized and
@@ -96,7 +114,7 @@ function isInspectableMapPoint(
  * the pointer remains over the rendered field fill. The last resolved value stays
  * visible while the next point is sampled, matching EOS without flooding the BFF.
  */
-export function CoordinateReadout({ map, interactiveLayerId, indexLookup }: CoordinateReadoutProps) {
+export function CoordinateReadout({ map, interactiveLayerId, indexLookup, fieldGeometry }: CoordinateReadoutProps) {
     const [cursor, setCursor] = useState<CursorPosition | null>(null);
     const [indexSample, setIndexSample] = useState<IndexSample | null>(null);
     const frame = useRef<number | null>(null);
@@ -221,13 +239,21 @@ export function CoordinateReadout({ map, interactiveLayerId, indexLookup }: Coor
         };
     }, [map, interactiveLayerId, indexLookup]);
 
-    if (!cursor) return null;
+    if (!cursor && !fieldGeometry) return null;
 
     const currentSample = indexSample?.lookup === indexLookup ? indexSample : null;
     const interpretation = currentSample ? sampleInterpretation(currentSample) : null;
-    const showIndexTooltip = cursor.inspectable && currentSample && (
+    const showIndexTooltip = cursor?.inspectable && currentSample && (
         currentSample.masked || (currentSample.value !== null && interpretation !== null)
     );
+
+    const displayPoint = fieldGeometry
+        ? geometryCenter(fieldGeometry)
+        : cursor
+            ? { lat: cursor.lat, lng: cursor.lng }
+            : null;
+
+    if (!displayPoint) return null;
 
     return (
         <>
@@ -236,9 +262,9 @@ export function CoordinateReadout({ map, interactiveLayerId, indexLookup }: Coor
                 aria-hidden="true"
                 className="glass pointer-events-none absolute left-4 top-4 hidden select-none items-center gap-2 rounded-md px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-foreground/80 on-map-text sm:flex"
             >
-                <span>{ formatLatLng(cursor.lat, 'N', 'S') }</span>
+                <span>{ formatLatLng(displayPoint.lat, 'N', 'S') }</span>
                 <span className="text-border">|</span>
-                <span>{ formatLatLng(cursor.lng, 'E', 'W') }</span>
+                <span>{ formatLatLng(displayPoint.lng, 'E', 'W') }</span>
             </div>
             { showIndexTooltip && (
                 <div

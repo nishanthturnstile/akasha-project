@@ -6,6 +6,7 @@ import { ArrowLeft, Circle, Loader2, Minus, Pencil, Plus, Scissors, Square, Tras
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
+import { LatestImageryControl } from '@/components/map/LatestImageryControl';
 import { FieldDrawController, type DrawShapeMode, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FieldThumbnail } from '@/components/fields/GlobalViewPanel';
@@ -25,7 +26,8 @@ import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import lineIntersect from '@turf/line-intersect';
 import type maplibregl from 'maplibre-gl';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
-import type { Field, GeoJsonPosition, PlotGeometry, VegetationCycleCreate } from '@/types/api';
+import type { Field, GeoJsonPosition, PlotGeometry, SceneCandidate, VegetationCycleCreate } from '@/types/api';
+import type { SatelliteScene } from '@/lib/satelliteLayer';
 import type { TerraDraw, GeoJSONStoreGeometries } from 'terra-draw';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
@@ -158,6 +160,8 @@ export default function FieldCreatePage() {
   const [isBatchSaving, setIsBatchSaving] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
+  const [imageryMode, setImageryMode] = useState<'default' | 'latest'>('default');
+  const [latestScene, setLatestScene] = useState<SceneCandidate | null>(null);
   const [leaveAlertOpen, setLeaveAlertOpen] = useState(false);
   const [deleteAlertField, setDeleteAlertField] = useState<PendingField | null>(null);
   const [editingPendingField, setEditingPendingField] = useState<PendingField | null>(null);
@@ -396,6 +400,15 @@ export default function FieldCreatePage() {
     }
   }, [configQ.data]);
 
+  const latestSatelliteScene = useMemo<SatelliteScene | null>(() => {
+    if (imageryMode !== 'latest' || !latestScene) return null;
+    return {
+      tileUrlTemplate: latestScene.tileUrlTemplate,
+      bounds: latestScene.bounds,
+      attribution: `${latestScene.sensor} ${latestScene.processingLevel}`,
+    };
+  }, [imageryMode, latestScene]);
+
   if (configQ.isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
@@ -499,12 +512,29 @@ export default function FieldCreatePage() {
             basemap={ basemapResolution.basemapConfig! }
             center={ configQ.data.aoi.center }
             zoom={ Math.max(configQ.data.aoi.zoom, DRAW_ZOOM) }
-            scene={ null }
+            scene={ latestSatelliteScene }
             opacity={ 1 }
             visible={ true }
-            onBasemapError={ setBasemapRuntimeError }
+            onBasemapError={ (error) => {
+              setBasemapRuntimeError(error);
+              if (imageryMode === 'latest' && latestScene) {
+                setLatestScene(null);
+                setImageryMode('default');
+              }
+            } }
             onMapReady={ setMap }
           />
+
+          { configQ.data.latestImagery && configQ.data.features?.latestImageryEnabled && (
+            <LatestImageryControl
+              map={ map }
+              policy={ configQ.data.latestImagery }
+              mode={ imageryMode }
+              onModeChange={ setImageryMode }
+              selected={ latestScene }
+              onSelectedChange={ setLatestScene }
+            />
+          ) }
 
           { basemapRuntimeError && (
             <div

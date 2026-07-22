@@ -32,6 +32,14 @@ function StateProbe() {
             <span data-testid="state-to">{ view.periodTo ?? '' }</span>
             <span data-testid="state-source">{ view.activeSourceId ?? '' }</span>
             <span data-testid="state-layer">{ view.displayMode ?? '' }</span>
+            <span data-testid="state-split">{ String(view.splitEnabled) }</span>
+            <span data-testid="state-right-source">{ view.rightSourceId ?? '' }</span>
+            <span data-testid="state-right-scene">{ view.rightDate ?? '' }</span>
+            <span data-testid="state-right-layer">{ view.rightDisplayMode ?? '' }</span>
+            <span data-testid="state-right-from">{ view.rightPeriodFrom ?? '' }</span>
+            <span data-testid="state-right-to">{ view.rightPeriodTo ?? '' }</span>
+            <span data-testid="state-profile">{ view.renderProfile }</span>
+            <span data-testid="state-right-profile">{ view.rightRenderProfile }</span>
             <button
                 type="button"
                 data-testid="set-scene"
@@ -109,6 +117,21 @@ describe('useMapUrlState', () => {
         expect(screen.getByTestId('state-scene').textContent).toBe('');
         expect(screen.getByTestId('state-from').textContent).toBe('');
         expect(screen.getByTestId('state-to').textContent).toBe('2026-04-27');
+    });
+
+    it('hydrates complete independent split selections from the URL', () => {
+        renderHarness(
+            '/monitoring/field-analytics/field/field-42?source=sentinel-2-l2a&scene=2026-05-01&layer=NDVI&profile=contrast&mask=101&split=1&rightSource=resourcesat-2a-liss3-boa&rightScene=2026-04-27&rightLayer=NDMI&rightProfile=contrast&rightMask=011&rightFrom=2025-01-01&rightTo=2026-06-01',
+        );
+
+        expect(screen.getByTestId('state-split').textContent).toBe('true');
+        expect(screen.getByTestId('state-right-source').textContent).toBe('resourcesat-2a-liss3-boa');
+        expect(screen.getByTestId('state-right-scene').textContent).toBe('2026-04-27');
+        expect(screen.getByTestId('state-right-layer').textContent).toBe('NDMI');
+        expect(screen.getByTestId('state-right-from').textContent).toBe('2025-01-01');
+        expect(screen.getByTestId('state-right-to').textContent).toBe('2026-06-01');
+        expect(screen.getByTestId('state-profile').textContent).toBe('contrast');
+        expect(screen.getByTestId('state-right-profile').textContent).toBe('contrast');
     });
 
     it('serializes reducer mutations back into the URL with replace history', () => {

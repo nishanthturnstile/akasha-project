@@ -70,6 +70,7 @@ _PIPELINE_SOURCE_IDS = frozenset(
 _EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
 _NISAR_SOURCE_ID = "nisar-ssar-beta-gcov"
 _NATURAL_SOURCE_IDS = frozenset({_EOS04_SOURCE_ID, _NISAR_SOURCE_ID})
+MAX_IMAGERY_HISTORY_DAYS = 1827
 
 
 def _is_pipeline_source(source_id: str) -> bool:
@@ -220,9 +221,7 @@ def _pipeline_source_payload(source_id: str) -> dict[str, Any] | None:
     display_modes = ["RGB", *index_modes] if is_landsat else index_modes
     configured_default_mode = str(payload.get("defaultMapDisplayMode") or "")
     default_mode = (
-        configured_default_mode
-        if configured_default_mode in display_modes
-        else display_modes[0]
+        configured_default_mode if configured_default_mode in display_modes else display_modes[0]
     )
     payload.update(
         {
@@ -296,6 +295,21 @@ async def get_config() -> dict[str, Any]:
         "indexFieldsKind": "global-optical-defaults",
         "indexAvailabilitySource": "/api/sources",
         "adminIngestionLiveTriggerEnabled": settings.admin_ingestion_live_trigger_enabled,
+        "features": {
+            "cropMapSplitEnabled": settings.crop_map_split_enabled,
+            "cropMapContrastEnabled": settings.crop_map_contrast_enabled,
+            "latestImageryEnabled": settings.latest_imagery_enabled,
+        },
+        "latestImagery": {
+            "policyVersion": "latest-image-s2-l2a-v1",
+            "sourceId": "sentinel-2-l2a",
+            "processingLevel": "L2A",
+            "lookbackDays": 365,
+            "maxCloudPercent": 10,
+            "maxViewportDiagonalMeters": settings.latest_imagery_max_viewport_meters,
+            "resultLimit": settings.latest_imagery_result_limit,
+            "entitled": settings.latest_imagery_enabled,
+        },
     }
 
 
@@ -403,10 +417,10 @@ def _pipeline_dates(
             else source_id != catalog.LANDSAT_SOURCE_ID,
             "sceneCount": natural_by_date[value].get("sceneCount", 1)
             if value in natural_by_date
-            else 0 if source_id == catalog.LANDSAT_SOURCE_ID else 1,
-            "bounds": natural_by_date[value].get("bounds")
-            if value in natural_by_date
-            else None,
+            else 0
+            if source_id == catalog.LANDSAT_SOURCE_ID
+            else 1,
+            "bounds": natural_by_date[value].get("bounds") if value in natural_by_date else None,
             "unavailableReason": natural_by_date[value].get("unavailableReason")
             if value in natural_by_date
             else (
@@ -524,7 +538,7 @@ async def get_source_dates(
     source_id: str,
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
-    lookbackDays: int | None = Query(default=None, ge=1, le=366),
+    lookbackDays: int | None = Query(default=None, ge=1, le=MAX_IMAGERY_HISTORY_DAYS),
 ) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
     natural_dates = _natural_dates(source_id)
@@ -589,9 +603,7 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
             "metricsProvisional": False,
             "tileAvailable": tile_available,
             "unavailableReason": (
-                selected.get("unavailableReason")
-                if selected
-                else "No catalog dates are available."
+                selected.get("unavailableReason") if selected else "No catalog dates are available."
             ),
             "tileRouteMode": "natural-pipeline",
         }
@@ -647,14 +659,8 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
             "coveragePercent": date.get("coveragePercent"),
             "metricsProvisional": bool(date.get("metricsProvisional", False)),
             "tileAvailable": tile_available,
-            "unavailableReason": (
-                natural_date.get("unavailableReason")
-                if natural_date
-                else None
-            ),
-            "tileRouteMode": (
-                "natural-pipeline" if tile_available else "field-overlay"
-            ),
+            "unavailableReason": (natural_date.get("unavailableReason") if natural_date else None),
+            "tileRouteMode": ("natural-pipeline" if tile_available else "field-overlay"),
             "pipelineBacked": True,
         }
     source = catalog.get_source(source_id)

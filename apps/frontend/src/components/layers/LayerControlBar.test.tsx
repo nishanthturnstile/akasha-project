@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { LayerControlBar } from '@/components/layers/LayerControlBar';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { CloudMaskOptions, Plot, SceneDate, Source } from '@/types/api';
+import type { CloudMaskOptions, Plot, Source } from '@/types/api';
 
 const sources: Source[] = [
     {
@@ -69,29 +69,6 @@ const plot: Plot = {
 
 const cloudMask: CloudMaskOptions = { clouds: true, cloudShadows: true, cirrus: false };
 
-const comparableDates: SceneDate[] = [
-    {
-        acquisitionDate: '2026-04-20',
-        datetime: '2026-04-20T00:00:00Z',
-        usablePixelPercent: 85,
-        cloudMaskedPercent: 10,
-        coveragePercent: 100,
-        isLatestUsable: false,
-        metricsProvisional: false,
-        tileAvailable: true,
-    },
-    {
-        acquisitionDate: '2026-04-27',
-        datetime: '2026-04-27T00:00:00Z',
-        usablePixelPercent: 90,
-        cloudMaskedPercent: 5,
-        coveragePercent: 100,
-        isLatestUsable: true,
-        metricsProvisional: false,
-        tileAvailable: true,
-    },
-];
-
 function renderBar(ui: ReactElement) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } },
@@ -113,14 +90,6 @@ function baseProps(overrides: Partial<Parameters<typeof LayerControlBar>[0]> = {
         onDisplayModeChange: vi.fn(),
         cloudMask,
         onCloudMaskChange: vi.fn(),
-        compareEnabled: false,
-        onCompareEnabledChange: vi.fn(),
-        comparableDates,
-        activeDate: '2026-04-27',
-        compareDate: null,
-        onCompareDateChange: vi.fn(),
-        blend: 50,
-        onBlendChange: vi.fn(),
         selectedPlot: plot,
         selectedDate: '2026-04-27',
         exportSourceId: 'resourcesat-2a-liss3-boa',
@@ -231,15 +200,4 @@ describe('LayerControlBar', () => {
         expect(screen.queryByTestId('cloud-mask-cirrus')).toBeNull();
     });
 
-    it('hides compare controls when the active mode is field-overlay only', () => {
-        renderBar(
-            <LayerControlBar
-                { ...baseProps({
-                    compareAvailable: false,
-                }) }
-            />,
-        );
-
-        expect(screen.queryByTestId('compare-control')).toBeNull();
-    });
 });

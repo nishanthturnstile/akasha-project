@@ -20,6 +20,15 @@ function normalizeIdParam(value: string | null | undefined): string | null {
     return trimmed.length > 0 ? trimmed : null;
 }
 
+function maskFromParam(value: string | null) {
+    if (!value || !/^[01]{3}$/.test(value)) return null;
+    return { clouds: value[0] === '1', cloudShadows: value[1] === '1', cirrus: value[2] === '1' };
+}
+
+function maskToParam(value: { clouds: boolean; cloudShadows: boolean; cirrus: boolean }) {
+    return `${Number(value.clouds)}${Number(value.cloudShadows)}${Number(value.cirrus)}`;
+}
+
 /**
  * Bridges deep-linkable URL state (route param `:plotId` + `?scene&from&to&source&layer`)
  * with the {@link useMapView} reducer. Hydrates on mount and replaces history (no
@@ -81,6 +90,22 @@ function useRoutedMapUrlState(): void {
         if (layer && layer !== view.displayMode) {
             view.setDisplayMode(layer);
         }
+        if (search.get('split') === '1') view.setSplitEnabled(true);
+        const rightSource = search.get('rightSource')?.trim();
+        if (rightSource) view.setRightSource(rightSource);
+        const rightScene = isoDateOrNull(search.get('rightScene'));
+        if (rightScene) view.setRightDate(rightScene);
+        const rightLayer = search.get('rightLayer')?.trim();
+        if (rightLayer) view.setRightDisplayMode(rightLayer);
+        const rightFrom = isoDateOrNull(search.get('rightFrom'));
+        const rightTo = isoDateOrNull(search.get('rightTo'));
+        if (rightFrom || rightTo) view.setRightPeriod(rightFrom, rightTo);
+        if (search.get('profile') === 'contrast') view.setRenderProfile('contrast');
+        if (search.get('rightProfile') === 'contrast') view.setRightRenderProfile('contrast');
+        const leftMask = maskFromParam(search.get('mask'));
+        if (leftMask) view.setCloudMask(leftMask);
+        const rightMask = maskFromParam(search.get('rightMask'));
+        if (rightMask) view.setRightCloudMask(rightMask);
     // We intentionally hydrate from the initial route only — subsequent URL changes
     // are written back from the reducer below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,6 +122,18 @@ function useRoutedMapUrlState(): void {
         if (view.periodTo) next.set('to', view.periodTo);
         if (view.activeSourceId) next.set('source', view.activeSourceId);
         if (view.displayMode) next.set('layer', view.displayMode);
+        next.set('mask', maskToParam(view.cloudMask));
+        if (view.renderProfile === 'contrast') next.set('profile', 'contrast');
+        if (view.splitEnabled) {
+            next.set('split', '1');
+            if (view.rightSourceId) next.set('rightSource', view.rightSourceId);
+            if (view.rightDate) next.set('rightScene', view.rightDate);
+            if (view.rightDisplayMode) next.set('rightLayer', view.rightDisplayMode);
+            if (view.rightPeriodFrom) next.set('rightFrom', view.rightPeriodFrom);
+            if (view.rightPeriodTo) next.set('rightTo', view.rightPeriodTo);
+            next.set('rightMask', maskToParam(view.rightCloudMask));
+            if (view.rightRenderProfile === 'contrast') next.set('rightProfile', 'contrast');
+        }
 
         const queryString = next.toString();
         const effectivePlotId = view.selectedPlotId;
@@ -117,6 +154,16 @@ function useRoutedMapUrlState(): void {
         view.activeSourceId,
         view.displayMode,
         urlPlotId,
+        view.cloudMask,
+        view.renderProfile,
+        view.splitEnabled,
+        view.rightSourceId,
+        view.rightDate,
+        view.rightDisplayMode,
+        view.rightPeriodFrom,
+        view.rightPeriodTo,
+        view.rightCloudMask,
+        view.rightRenderProfile,
         navigate,
     ]);
 }

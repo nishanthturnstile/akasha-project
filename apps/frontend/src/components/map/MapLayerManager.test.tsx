@@ -314,7 +314,6 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
         center={ [77.59, 12.97] }
         zoom={ 11 }
         scene={ { tileUrlTemplate: '/api/tiles/a/{z}/{x}/{y}.png' } }
-        sceneB={ null }
         indexOverlay={ null }
         opacity={ 1 }
         visible
@@ -330,7 +329,6 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
         center={ [77.59, 12.97] }
         zoom={ 11 }
         scene={ { tileUrlTemplate: '/api/tiles/b/{z}/{x}/{y}.png' } }
-        sceneB={ { tileUrlTemplate: '/api/tiles/compare/{z}/{x}/{y}.png' } }
         indexOverlay={ {
           url: '/api/fields/f/overlay/NDVI.png',
           coordinates: [[77, 13], [78, 13], [78, 12], [77, 12]],
@@ -349,10 +347,7 @@ describe('MapLayerManager Esri basemap lifecycle', () => {
       { tileUrlTemplate: '/api/tiles/b/{z}/{x}/{y}.png' },
       { opacity: 0.5, visible: false },
     );
-    expect(hoisted.applyCompareLayer).toHaveBeenCalledWith(
-      expect.anything(),
-      { tileUrlTemplate: '/api/tiles/compare/{z}/{x}/{y}.png' },
-    );
+    expect(hoisted.applyCompareLayer).not.toHaveBeenCalled();
     expect(hoisted.addSource).toHaveBeenCalledWith(
       'akasha-index-overlay',
       expect.objectContaining({

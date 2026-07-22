@@ -27,6 +27,7 @@ import { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryLayerHelpers';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { FieldOverlayLoadingIndicator } from '@/components/map/FieldOverlayLoadingIndicator';
+import { SplitSampleReadout } from '@/components/map/SplitSampleReadout';
 import { MapLayerManager, type IndexOverlay } from '@/components/map/MapLayerManager';
 import { MapControls } from '@/components/map/MapControls';
 import { MeasureTool } from '@/components/map/MeasureTool';
@@ -62,6 +63,7 @@ import type {
   Source,
   FieldIndexPointResponse,
   ImageCorners,
+  ViewerSelection,
 } from '@/types/api';
 
 function messageFor(error: unknown): string {
@@ -346,10 +348,17 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     displayMode: displayModeOverride,
     opacity,
     visible,
-    compareEnabled,
-    compareDate,
+    splitEnabled,
+    rightSourceId,
+    rightDate,
+    rightDisplayMode,
+    rightPeriodFrom,
+    rightPeriodTo,
+    rightRenderProfile,
+    rightCloudMask,
     selectedPlotId,
     cloudMask,
+    renderProfile,
     legendOpen,
     periodFrom,
     periodTo,
@@ -361,6 +370,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     hoveredFieldId,
   } = view;
   const { seasonId } = useSeasonContext();
+  useEffect(() => {
+    if (!configQ.data) return;
+    if (splitEnabled && !configQ.data.features?.cropMapSplitEnabled) {
+      view.setSplitEnabled(false);
+    }
+    if (!configQ.data.features?.cropMapContrastEnabled) {
+      if (renderProfile === 'contrast') view.setRenderProfile('standard');
+      if (rightRenderProfile === 'contrast') view.setRightRenderProfile('standard');
+    }
+  }, [configQ.data, renderProfile, rightRenderProfile, splitEnabled, view]);
 
   const effectiveSourceId = useMemo(
     () => selectEffectiveSourceId({
@@ -371,6 +390,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     [activeSourceId, configQ.data?.defaultSourceId, sourcesQ.data],
   );
   const defaultLayerQ = useDefaultLayer(effectiveSourceId);
+  const rightEffectiveSourceId = rightSourceId ?? effectiveSourceId;
   const selectedSource = useMemo(
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
     [sourcesQ.data, effectiveSourceId],
@@ -391,6 +411,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   });
 
   const [map, setMap] = useState<maplibregl.Map | null>(null);
+  const [rightMap, setRightMap] = useState<maplibregl.Map | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [draftGeometry, setDraftGeometry] = useState<PlotGeometry | null>(null);
   const [fieldMode, setFieldMode] = useState<FieldDrawMode>(null);
@@ -433,7 +454,41 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     enabled: !bestMode && Boolean(selectedPlot),
     fieldId: selectedPlot?.id,
     indexType: requestedTimelineIndex,
+    lookbackDays: 1827,
   });
+  const rightSource = useMemo(
+    () => sourcesQ.data?.find((source) => source.id === rightEffectiveSourceId),
+    [rightEffectiveSourceId, sourcesQ.data],
+  );
+  const rightIndex = resolveDisplayMode(
+    rightDisplayMode,
+    rightSource?.supportedIndices ?? [],
+    rightSource?.supportedIndices?.[0] ?? configQ.data?.defaultIndex ?? 'NDVI',
+  );
+  const rightDatesQ = useDates(rightEffectiveSourceId, {
+    enabled: splitEnabled && Boolean(selectedPlot),
+    fieldId: selectedPlot?.id,
+    indexType: rightIndex,
+    lookbackDays: 1827,
+  });
+  const rightAvailableDates = useMemo(
+    () => rightDatesQ.data?.filter((item) => (
+      (!rightPeriodFrom || item.acquisitionDate >= rightPeriodFrom)
+      && (!rightPeriodTo || item.acquisitionDate <= rightPeriodTo)
+    )),
+    [rightDatesQ.data, rightPeriodFrom, rightPeriodTo],
+  );
+  const rightSelectedDate = useMemo(() => {
+    if (!rightAvailableDates || !configQ.data) return null;
+    if (rightDate && rightAvailableDates.some((item) => item.acquisitionDate === rightDate)) {
+      return rightDate;
+    }
+    return selectDefaultDate(
+      rightAvailableDates,
+      configQ.data.usablePixelThresholdPercent,
+      { sourceKind: rightSource?.kind },
+    )?.acquisitionDate ?? null;
+  }, [configQ.data, rightAvailableDates, rightDate, rightSource?.kind]);
   useEffect(() => {
     if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
     if (!plotsQ.data.some((plot) => plot.id === selectedPlotId)) {
@@ -601,6 +656,47 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     };
   }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode, globalViewOpen, seasonFields, seasonId, view]);
 
+  useEffect(() => {
+    if (!splitEnabled || !map || !rightMap) return;
+    let syncing: 'left' | 'right' | null = null;
+    let frame: number | null = null;
+    const synchronize = (source: maplibregl.Map, target: maplibregl.Map, origin: 'left' | 'right') => {
+      if (syncing && syncing !== origin) return;
+      syncing = origin;
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const center = source.getCenter();
+        const targetCenter = target.getCenter();
+        if (
+          Math.abs(center.lng - targetCenter.lng) > 1e-7
+          || Math.abs(center.lat - targetCenter.lat) > 1e-7
+          || Math.abs(source.getZoom() - target.getZoom()) > 1e-4
+          || Math.abs(source.getBearing() - target.getBearing()) > 1e-3
+          || Math.abs(source.getPitch() - target.getPitch()) > 1e-3
+        ) {
+          target.jumpTo({
+            center,
+            zoom: source.getZoom(),
+            bearing: source.getBearing(),
+            pitch: source.getPitch(),
+          });
+        }
+        syncing = null;
+        frame = null;
+      });
+    };
+    const leftMove = () => synchronize(map, rightMap, 'left');
+    const rightMove = () => synchronize(rightMap, map, 'right');
+    map.on('move', leftMove);
+    rightMap.on('move', rightMove);
+    leftMove();
+    return () => {
+      map.off('move', leftMove);
+      rightMap.off('move', rightMove);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [map, rightMap, splitEnabled]);
+
   // ⌘K / Ctrl-K toggles the command palette from anywhere.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -751,42 +847,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     displaySource?.attribution,
   ]);
 
-  // Compare ("B") scene: same source + display mode, a different acquisition date.
-  // Rendered beneath A; the opacity slider blends A over B.
-  const sceneB = useMemo<SatelliteScene | null>(() => {
-    if (!visible || !compareEnabled || !compareDate) return null;
-    if (compareDate === selectedDate) return null;
-    if (!requestSourceId) return null;
-    if (isIndexLayer) return null;
-    const meta = (bestMode ? activeTimelineDates : datesQ.data)?.find(
-      (d) => d.acquisitionDate === compareDate,
-    );
-    if (!meta?.tileAvailable) return null;
-    const compareSourceId = bestMode && meta.resolvedSourceId ? meta.resolvedSourceId : requestSourceId;
-    const compareSource = sourcesQ.data?.find((s) => s.id === compareSourceId);
-    return {
-      tileUrlTemplate: composeTileTemplate(compareSourceId, compareDate, selectedDisplayMode),
-      bounds: meta?.bounds,
-      minzoom: defaultLayerQ.data?.minzoom,
-      maxzoom: defaultLayerQ.data?.maxzoom,
-      attribution: compareSource?.attribution ?? displaySource?.attribution,
-    };
-  }, [
-    bestMode,
-    activeTimelineDates,
-    compareEnabled,
-    compareDate,
-    visible,
-    requestSourceId,
-    isIndexLayer,
-    selectedDate,
-    selectedDisplayMode,
-    datesQ.data,
-    defaultLayerQ.data,
-    sourcesQ.data,
-    displaySource?.attribution,
-  ]);
-
   const requestedIndexOverlay = useMemo(() => {
     if (!isIndexLayer || !selectedPlot || !selectedDate || !requestSourceId) return null;
     const corners = geometryBboxCorners(selectedPlot.geometry);
@@ -803,17 +863,81 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const [indexOverlay, setIndexOverlay] = useState<IndexOverlay | null>(null);
   const [indexOverlayRequestKey, setIndexOverlayRequestKey] = useState<string | null>(null);
   const [indexOverlayLoading, setIndexOverlayLoading] = useState(false);
+  const [indexOverlayError, setIndexOverlayError] = useState<string | null>(null);
+  const [indexOverlayRetry, setIndexOverlayRetry] = useState(0);
   const requestedIndexOverlayKey = requestedIndexOverlay
     ? [
       requestedIndexOverlay.plotId,
       requestedIndexOverlay.sourceId,
       requestedIndexOverlay.acquisitionDate,
       requestedIndexOverlay.indexType,
+      renderProfile,
+      effectiveCloudMask.clouds,
+      effectiveCloudMask.cloudShadows,
+      effectiveCloudMask.cirrus,
     ].join('|')
     : null;
   const hasCurrentIndexOverlay = Boolean(
     indexOverlay && requestedIndexOverlayKey === indexOverlayRequestKey,
   );
+
+  const [rightIndexOverlay, setRightIndexOverlay] = useState<IndexOverlay | null>(null);
+  const [rightOverlayLoading, setRightOverlayLoading] = useState(false);
+  const [rightOverlayError, setRightOverlayError] = useState<string | null>(null);
+  const [rightOverlayRetry, setRightOverlayRetry] = useState(0);
+  useEffect(() => {
+    let disposed = false;
+    if (!splitEnabled || !selectedPlot || !rightSelectedDate || !rightEffectiveSourceId) {
+      setRightOverlayError(null);
+      setRightIndexOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return null;
+      });
+      return;
+    }
+    const corners = geometryBboxCorners(selectedPlot.geometry);
+    if (!corners) return;
+    setRightOverlayLoading(true);
+    setRightOverlayError(null);
+    void getFieldIndexOverlayImage(
+      selectedPlot.id,
+      {
+        sourceId: rightEffectiveSourceId,
+        acquisitionDate: rightSelectedDate,
+        indexType: rightIndex,
+        preferHighRes,
+        renderProfile: rightRenderProfile,
+        cloudMask: rightCloudMask,
+      },
+      corners,
+    ).then((overlay) => {
+      if (disposed) {
+        if (overlay.url.startsWith('blob:')) URL.revokeObjectURL(overlay.url);
+        return;
+      }
+      setRightIndexOverlay((current) => {
+        if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+        return overlay;
+      });
+    }).catch((reason) => {
+      if (!disposed) {
+        setRightOverlayError(reason instanceof Error ? reason.message : 'Right overlay is unavailable.');
+      }
+    }).finally(() => {
+      if (!disposed) setRightOverlayLoading(false);
+    });
+    return () => { disposed = true; };
+  }, [
+    preferHighRes,
+    rightEffectiveSourceId,
+    rightIndex,
+    rightRenderProfile,
+    rightCloudMask,
+    rightOverlayRetry,
+    rightSelectedDate,
+    selectedPlot,
+    splitEnabled,
+  ]);
 
   const [radarOverlay, setRadarOverlay] = useState<IndexOverlay | null>(null);
   const radarEvidence = monitoringEvidenceQ.data?.radar;
@@ -857,6 +981,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     let disposed = false;
     if (!requestedIndexOverlay) {
       setIndexOverlayLoading(false);
+      setIndexOverlayError(null);
       setIndexOverlayRequestKey(null);
       setIndexOverlay((current) => {
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
@@ -864,12 +989,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       });
       return;
     }
-    setIndexOverlay((current) => {
-      if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
-      return null;
-    });
-    setIndexOverlayRequestKey(null);
     setIndexOverlayLoading(true);
+    setIndexOverlayError(null);
     void getFieldIndexOverlayImage(
       requestedIndexOverlay.plotId,
       {
@@ -877,6 +998,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         acquisitionDate: requestedIndexOverlay.acquisitionDate,
         indexType: requestedIndexOverlay.indexType,
         preferHighRes,
+        renderProfile,
+        cloudMask: effectiveCloudMask,
       },
       requestedIndexOverlay.fallbackCoordinates,
     ).then((overlay) => {
@@ -890,17 +1013,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         if (current?.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
         return overlay;
       });
-    }).catch(() => {
+    }).catch((reason) => {
       if (!disposed) {
         setIndexOverlayLoading(false);
-        setIndexOverlayRequestKey(null);
-        setIndexOverlay(null);
+        setIndexOverlayError(reason instanceof Error ? reason.message : 'Left overlay is unavailable.');
       }
     });
     return () => {
       disposed = true;
     };
-  }, [requestedIndexOverlay, requestedIndexOverlayKey, preferHighRes]);
+  }, [requestedIndexOverlay, requestedIndexOverlayKey, preferHighRes, renderProfile, effectiveCloudMask, indexOverlayRetry]);
 
   const indexLookup = useCallback(async ({ lng, lat }: { lng: number; lat: number }): Promise<FieldIndexPointResponse | null> => {
     if (!isIndexLayer || !hasCurrentIndexOverlay || !selectedPlot || !selectedDate || !requestSourceId) return null;
@@ -921,15 +1043,30 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     selectedDisplayMode,
     preferHighRes,
   ]);
-
-  // Chronological, tile-available dates for the compare B-scene picker.
-  const comparableDates = useMemo(
-    () =>
-      (activeTimelineDates ?? [])
-        .filter((d) => d.tileAvailable)
-        .sort((a, b) => a.acquisitionDate.localeCompare(b.acquisitionDate)),
-    [activeTimelineDates],
-  );
+  const leftViewerSelection = useMemo<ViewerSelection | null>(() => (
+    requestSourceId && selectedDate
+      ? {
+        sourceId: requestSourceId,
+        acquisitionDate: selectedDate,
+        indexType: selectedDisplayMode,
+        cloudMask: effectiveCloudMask,
+        renderProfile,
+        preferHighRes,
+      }
+      : null
+  ), [effectiveCloudMask, preferHighRes, renderProfile, requestSourceId, selectedDate, selectedDisplayMode]);
+  const rightViewerSelection = useMemo<ViewerSelection | null>(() => (
+    rightEffectiveSourceId && rightSelectedDate
+      ? {
+        sourceId: rightEffectiveSourceId,
+        acquisitionDate: rightSelectedDate,
+        indexType: rightIndex,
+        cloudMask: rightCloudMask,
+        renderProfile: rightRenderProfile,
+        preferHighRes,
+      }
+      : null
+  ), [preferHighRes, rightCloudMask, rightEffectiveSourceId, rightIndex, rightRenderProfile, rightSelectedDate]);
 
   // Marginal/empty signal: no date meets the usability threshold.
   const marginalNote = useMemo<string | null>(() => {
@@ -1118,18 +1255,101 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         Skip the map
       </a>
 
-      <MapLayerManager
-        basemap={ basemapResolution.basemapConfig }
-        center={ config.aoi.center }
-        zoom={ config.aoi.zoom }
-        scene={ scene }
-        sceneB={ sceneB }
-        indexOverlay={ radarEvidenceVisible && radarOverlay ? radarOverlay : indexOverlay }
-        opacity={ opacity / 100 }
-        visible={ visible }
-        onBasemapError={ setBasemapRuntimeError }
-        onMapReady={ setMap }
-      />
+      { splitEnabled ? (
+        <div className="absolute inset-0 hidden grid-cols-2 gap-px bg-border md:grid" data-testid="split-map-view">
+          <div className="relative min-w-0">
+            <MapLayerManager
+              basemap={ basemapResolution.basemapConfig }
+              center={ config.aoi.center }
+              zoom={ config.aoi.zoom }
+              scene={ scene }
+              indexOverlay={ radarEvidenceVisible && radarOverlay ? radarOverlay : indexOverlay }
+              opacity={ 1 }
+              visible={ visible }
+              onBasemapError={ setBasemapRuntimeError }
+              onMapReady={ setMap }
+            />
+            <div className="glass absolute left-2 top-2 z-toolbar rounded px-2 py-1 text-xs">Left · { selectedDisplayMode } · { selectedDate }</div>
+            { indexOverlayError && (
+              <div className="glass absolute bottom-16 left-2 z-toolbar rounded p-2 text-xs">
+                <span>{ indexOverlayError }</span>{ ' ' }
+                <button type="button" className="text-primary underline" onClick={ () => setIndexOverlayRetry((value) => value + 1) }>Retry left</button>
+              </div>
+            ) }
+          </div>
+          <div className="relative min-w-0">
+            <MapLayerManager
+              basemap={ basemapResolution.basemapConfig }
+              center={ config.aoi.center }
+              zoom={ config.aoi.zoom }
+              scene={ null }
+              indexOverlay={ rightIndexOverlay }
+              opacity={ 1 }
+              visible={ true }
+              onBasemapError={ setBasemapRuntimeError }
+              onMapReady={ setRightMap }
+            />
+            <div className="glass absolute left-2 top-2 z-toolbar flex gap-2 rounded p-1.5 text-xs">
+              <select value={ rightEffectiveSourceId } onChange={ (event) => view.setRightSource(event.target.value) } aria-label="Right source" className="bg-transparent">
+                { sourcesQ.data?.filter((source) => (source.supportedIndices?.length ?? 0) > 0).map((source) => <option key={ source.id } value={ source.id }>{ source.label }</option>) }
+              </select>
+              <select value={ rightIndex } onChange={ (event) => view.setRightDisplayMode(event.target.value) } aria-label="Right index" className="bg-transparent">
+                { rightSource?.supportedIndices?.map((index) => <option key={ index } value={ index }>{ index }</option>) }
+              </select>
+              <select value={ rightSelectedDate ?? '' } onChange={ (event) => view.setRightDate(event.target.value) } aria-label="Right scene date" className="bg-transparent">
+                { rightAvailableDates?.map((item) => <option key={ item.acquisitionDate } value={ item.acquisitionDate }>{ item.acquisitionDate }</option>) }
+              </select>
+              <button type="button" onClick={ () => view.setRightRenderProfile(rightRenderProfile === 'contrast' ? 'standard' : 'contrast') } className="rounded px-1 hover:bg-accent">{ rightRenderProfile === 'contrast' ? 'Contrast' : 'Standard' }</button>
+              <details className="relative">
+                <summary className="cursor-pointer rounded px-1 hover:bg-accent">Options</summary>
+                <div className="absolute right-0 top-6 grid w-56 gap-2 rounded bg-background p-2 shadow-lg">
+                  <label>From <input type="date" value={ rightPeriodFrom ?? '' } onChange={ (event) => view.setRightPeriod(event.target.value || null, rightPeriodTo) } /></label>
+                  <label>To <input type="date" value={ rightPeriodTo ?? '' } onChange={ (event) => view.setRightPeriod(rightPeriodFrom, event.target.value || null) } /></label>
+                  { ([['clouds', 'Clouds'], ['cloudShadows', 'Cloud shadows'], ['cirrus', 'Cirrus']] as const).map(([key, label]) => (
+                    <label key={ key } className="flex items-center gap-2">
+                      <input type="checkbox" checked={ rightCloudMask[key] } onChange={ (event) => view.setRightCloudMask({ ...rightCloudMask, [key]: event.target.checked }) } />
+                      { label }
+                    </label>
+                  )) }
+                </div>
+              </details>
+            </div>
+            { rightOverlayLoading && <div className="absolute inset-0 z-toolbar grid place-items-center bg-background/20 text-xs">Loading right viewer…</div> }
+            { rightOverlayError && (
+              <div className="glass absolute bottom-16 right-2 z-toolbar rounded p-2 text-xs">
+                <span>{ rightOverlayError }</span>{ ' ' }
+                <button type="button" className="text-primary underline" onClick={ () => setRightOverlayRetry((value) => value + 1) }>Retry right</button>
+              </div>
+            ) }
+          </div>
+        </div>
+      ) : (
+        <MapLayerManager
+          basemap={ basemapResolution.basemapConfig }
+          center={ config.aoi.center }
+          zoom={ config.aoi.zoom }
+          scene={ scene }
+          indexOverlay={ radarEvidenceVisible && radarOverlay ? radarOverlay : indexOverlay }
+          opacity={ opacity / 100 }
+          visible={ visible }
+          onBasemapError={ setBasemapRuntimeError }
+          onMapReady={ setMap }
+        />
+      ) }
+      { splitEnabled && (
+        <div className="absolute inset-0 z-toolbar grid place-items-center bg-background/90 px-6 text-center md:hidden">
+          Split View requires a wider screen.
+        </div>
+      ) }
+      { splitEnabled && selectedPlot && leftViewerSelection && rightViewerSelection && (
+        <SplitSampleReadout
+          leftMap={ map }
+          rightMap={ rightMap }
+          plotId={ selectedPlot.id }
+          left={ leftViewerSelection }
+          right={ rightViewerSelection }
+        />
+      ) }
       <FieldOverlayLoadingIndicator
         loading={ overlaysVisible && ((isIndexLayer && indexOverlayLoading) || (radarEvidenceVisible && radarEvidence?.status === 'AVAILABLE' && !radarOverlay)) }
         map={ map }
@@ -1165,6 +1385,15 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         >
           { hoveredField.name }
         </div>
+      ) }
+      { splitEnabled && (
+        <FieldBoundaryLayer
+          map={ rightMap }
+          plot={ selectedPlot }
+          geometry={ draftGeometry }
+          featureId="right-draft-field"
+          name="Field boundary"
+        />
       ) }
       <FieldDrawController
         activeTool={ activeMapTool }
@@ -1292,16 +1521,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           onDisplayModeChange={ view.setDisplayMode }
           cloudMask={ cloudMask }
           onCloudMaskChange={ view.setCloudMask }
+          renderProfile={ renderProfile }
+          onRenderProfileChange={ view.setRenderProfile }
+          contrastAvailable={ isIndexLayer && Boolean(config.features?.cropMapContrastEnabled) }
           cloudMaskDisabled={ !analyticsEnabled || !selectedSource?.availableMaskOptions?.length }
-          compareAvailable={ !isIndexLayer }
-          compareEnabled={ compareEnabled }
-          onCompareEnabledChange={ view.setCompareEnabled }
-          comparableDates={ comparableDates }
-          activeDate={ selectedDate }
-          compareDate={ compareDate }
-          onCompareDateChange={ view.setCompareDate }
-          blend={ opacity }
-          onBlendChange={ view.setOpacity }
+          splitAvailable={ Boolean(selectedPlot && config.features?.cropMapSplitEnabled) }
+          splitEnabled={ splitEnabled }
+          onSplitEnabledChange={ view.setSplitEnabled }
           selectedPlot={ selectedPlot }
           selectedDate={ selectedDate }
           exportSourceId={ requestSourceId }
@@ -1324,7 +1550,17 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           onReleaseTool={ releaseMapTool }
         /> }
         { overlaysVisible && !simplifiedMapControls && visible && legendOpen && (scene || indexOverlay) && (
-          <Legend displayMode={ selectedDisplayMode } sourceKind={ activeSourceKind } resolvedResolutionMeters={ indexOverlay?.resolutionMeters } resolvedSourceId={ indexOverlay?.resolvedSourceId } />
+          <Legend
+            displayMode={ selectedDisplayMode }
+            sourceKind={ activeSourceKind }
+            resolvedResolutionMeters={ indexOverlay?.resolutionMeters }
+            resolvedSourceId={ indexOverlay?.resolvedSourceId }
+            renderProfile={ indexOverlay?.renderProfile }
+            renderProfileVersion={ indexOverlay?.renderProfileVersion }
+            renderThresholds={ indexOverlay?.renderThresholds }
+            renderPalette={ indexOverlay?.renderPalette }
+            renderLegendLabels={ indexOverlay?.renderLegendLabels }
+          />
         ) }
         <MapControls
           map={ map }

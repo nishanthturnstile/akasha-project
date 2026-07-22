@@ -323,6 +323,11 @@ function stubAkashaFetch({
             supportedIndices: ['NDVI', 'MSAVI', 'NDMI', 'NDWI_GREEN_NIR'],
             defaultIndex: 'NDVI',
             adminIngestionLiveTriggerEnabled: false,
+            features: {
+              cropMapSplitEnabled: true,
+              cropMapContrastEnabled: true,
+              latestImageryEnabled: true,
+            },
           }),
         );
       }
@@ -489,7 +494,10 @@ function stubAkashaFetch({
           'resourcesat-2a-awifs-boa': resourcesatDates,
           'eos-04-sar-mrs-l2b': sarDates,
         };
-        return Promise.resolve(jsonResponse(datesBySource[sourceId] ?? []));
+        const dates = datesBySource[sourceId] ?? [];
+        return Promise.resolve(jsonResponse(
+          path.includes('pageSize=') ? { items: dates, nextCursor: null } : dates,
+        ));
       }
 
       if (path.startsWith('/api/sources/resourcesat-2a-liss3-boa/dates')) {
@@ -920,7 +928,7 @@ describe('MapPage native source behavior', () => {
     });
   });
 
-  it('does not render the compare scene while satellite imagery is hidden', async () => {
+  it('does not render satellite imagery while the layer is hidden', async () => {
     stubAkashaFetch({
       resourcesatDates: [
         makeDate('2026-03-01'),
@@ -930,8 +938,6 @@ describe('MapPage native source behavior', () => {
 
     renderMapPage({
       visible: false,
-      compareEnabled: true,
-      compareDate: '2026-04-20',
     });
 
     await screen.findByTestId('map-layer-manager');
@@ -942,7 +948,7 @@ describe('MapPage native source behavior', () => {
     );
   });
 
-  it('clears the stale compare scene when switching imagery sources', async () => {
+  it('switches the active imagery scene when changing sources', async () => {
     stubAkashaFetch({
       plots: [FIELD_PLOT],
       resourcesatDates: [
@@ -953,8 +959,6 @@ describe('MapPage native source behavior', () => {
 
     renderMapPage({
       selectedPlotId: 'plot-1',
-      compareEnabled: true,
-      compareDate: '2026-03-01',
     });
 
     await screen.findByTestId('map-layer-manager');
@@ -1300,7 +1304,7 @@ describe('MapPage best-available mode', () => {
     expect(overlayParams.get('acquisitionDate')).toBe('2026-01-15');
   });
 
-  it('in best mode renders compare tiles from the compare date resolved source', async () => {
+  it('does not restore the removed opacity-compare layer from legacy state', async () => {
     const bestCandidates: ObservationCandidate[] = [
       {
         sourceId: 'eos-04-sar-mrs-l2b',
@@ -1344,15 +1348,11 @@ describe('MapPage best-available mode', () => {
       activeSourceId: 'eos-04-sar-mrs-l2b',
       selectedPlotId: 'plot-1',
       bestMode: true,
-      compareEnabled: true,
-      compareDate: '2026-01-14',
       displayMode: 'VV_GRAYSCALE',
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('map-layer-manager').getAttribute('data-compare-tile-template')).toContain(
-        '/api/tiles/eos-04-sar-mrs-l2b/2026-01-14/VV_GRAYSCALE/{z}/{x}/{y}.png',
-      );
+      expect(screen.getByTestId('map-layer-manager').getAttribute('data-compare-tile-template')).toBe('');
     });
   });
 });

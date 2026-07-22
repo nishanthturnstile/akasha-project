@@ -270,15 +270,16 @@ export function useSources() {
 
 export function useDates(
   sourceId: string | undefined,
-  options?: { enabled?: boolean; fieldId?: string; indexType?: string },
+  options?: { enabled?: boolean; fieldId?: string; indexType?: string; lookbackDays?: number },
 ) {
   return useQuery({
     queryKey: sourceId
-      ? queryKeys.dates(sourceId, options?.fieldId, options?.indexType)
+      ? [...queryKeys.dates(sourceId, options?.fieldId, options?.indexType), options?.lookbackDays ?? null]
       : (['dates', 'none'] as const),
     queryFn: () => getDates(sourceId as string, {
       fieldId: options?.fieldId,
       indexType: options?.indexType,
+      lookbackDays: options?.lookbackDays,
     }),
     enabled: Boolean(sourceId) && options?.enabled !== false,
   });

@@ -13,10 +13,15 @@ export interface MapViewState {
     visible: boolean;
     /** Layers surface (left drawer / bottom sheet) expanded. */
     layersOpen: boolean;
-    /** Compare (A-over-B opacity blend) mode active. */
-    compareEnabled: boolean;
-    /** The "B" acquisition date to blend under the active date; `null` when unset. */
-    compareDate: string | null;
+    /** True 50/50 crop-map comparison mode. */
+    splitEnabled: boolean;
+    rightSourceId: string | null;
+    rightDate: string | null;
+    rightDisplayMode: string | null;
+    rightPeriodFrom: string | null;
+    rightPeriodTo: string | null;
+    rightRenderProfile: 'standard' | 'contrast';
+    rightCloudMask: MapViewState['cloudMask'];
     /** Client-only selected field/plot id; server field data stays in TanStack Query. */
     selectedPlotId: string | null;
     /** Field scene visual cloud mask switches; statistics keep server-safe defaults. */
@@ -31,8 +36,8 @@ export interface MapViewState {
     periodFrom: string | null;
     /** Inclusive timeline window end (YYYY-MM-DD); `null` => no upper bound. */
     periodTo: string | null;
-    /** Discrete (classified) palette mode for the active index legend/raster. */
-    legendStatic: boolean;
+    /** Server-owned raster render profile for the active index. */
+    renderProfile: 'standard' | 'contrast';
     /** Layer control bar collapsed (icon-only) state. */
     layerBarCollapsed: boolean;
     /** Overlay UI visibility (all map chrome except zoom/compass/controls). */
@@ -68,8 +73,14 @@ export const initialMapViewState: MapViewState = {
     opacity: 100,
     visible: true,
     layersOpen: false,
-    compareEnabled: false,
-    compareDate: null,
+    splitEnabled: false,
+    rightSourceId: null,
+    rightDate: null,
+    rightDisplayMode: null,
+    rightPeriodFrom: null,
+    rightPeriodTo: null,
+    rightRenderProfile: 'standard',
+    rightCloudMask: { clouds: true, cloudShadows: true, cirrus: true },
     selectedPlotId: null,
     cloudMask: {
         clouds: true,
@@ -79,7 +90,7 @@ export const initialMapViewState: MapViewState = {
     legendOpen: true,
     periodFrom: null,
     periodTo: null,
-    legendStatic: false,
+    renderProfile: 'standard',
     layerBarCollapsed: false,
     overlaysVisible: false,
     headerVisible: true,
@@ -101,14 +112,19 @@ export interface MapViewContextValue extends MapViewState {
     setVisible: (visible: boolean) => void;
     setLayersOpen: (open: boolean) => void;
     toggleLayers: () => void;
-    setCompareEnabled: (enabled: boolean) => void;
-    setCompareDate: (date: string | null) => void;
+    setSplitEnabled: (enabled: boolean) => void;
+    setRightSource: (sourceId: string) => void;
+    setRightDate: (date: string | null) => void;
+    setRightDisplayMode: (mode: string) => void;
+    setRightPeriod: (from: string | null, to: string | null) => void;
+    setRightRenderProfile: (profile: 'standard' | 'contrast') => void;
+    setRightCloudMask: (mask: MapViewState['cloudMask']) => void;
     setSelectedPlotId: (plotId: string | null) => void;
     clearSelectedPlot: () => void;
     setCloudMask: (cloudMask: MapViewState['cloudMask']) => void;
     setLegendOpen: (open: boolean) => void;
     setPeriod: (from: string | null, to: string | null) => void;
-    setLegendStatic: (staticMode: boolean) => void;
+    setRenderProfile: (profile: 'standard' | 'contrast') => void;
     setLayerBarCollapsed: (collapsed: boolean) => void;
     setOverlaysVisible: (visible: boolean) => void;
     setHeaderVisible: (visible: boolean) => void;

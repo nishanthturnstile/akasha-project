@@ -11,6 +11,11 @@ interface LegendProps {
     /** Resolved STAC source ID from overlay provenance (e.g. `resourcesat-2a-liss4-mx70-l2`). */
     resolvedSourceId?: string | null;
     className?: string;
+    renderProfile?: 'standard' | 'contrast';
+    renderProfileVersion?: string;
+    renderThresholds?: number[];
+    renderPalette?: string[];
+    renderLegendLabels?: string[];
 }
 
 interface RampSpec {
@@ -262,7 +267,67 @@ function NdviDiscreteLegend({
  * map stays clean by default (CLAUDE.md: RGB is the cold default). For index and
  * SAR modes it shows a labelled ramp matching the tile render's colormap.
  */
-export function Legend({ displayMode, sourceKind, resolvedResolutionMeters, resolvedSourceId, className }: LegendProps) {
+export function Legend({
+    displayMode,
+    sourceKind,
+    resolvedResolutionMeters,
+    resolvedSourceId,
+    className,
+    renderProfile = 'standard',
+    renderProfileVersion,
+    renderThresholds = [],
+    renderPalette = [],
+    renderLegendLabels = [],
+}: LegendProps) {
+    if (
+        renderProfile === 'contrast'
+        && renderThresholds.length === 5
+        && renderPalette.length === 6
+    ) {
+        return (
+            <div
+                className={ cn(
+                    'glass pointer-events-auto w-[196px] rounded-lg px-3 py-2.5',
+                    className,
+                ) }
+                data-testid="map-legend"
+            >
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide">
+                    Contrast · { displayMode }
+                </p>
+                <div className="flex h-3 overflow-hidden rounded">
+                    { renderPalette.map((color) => (
+                        <span
+                            key={ color }
+                            className="flex-1"
+                            style={ { backgroundColor: color } }
+                        />
+                    )) }
+                </div>
+                <div className="mt-1 flex justify-between text-[9px] tabular-nums text-muted-foreground">
+                    { renderThresholds.map((value) => (
+                        <span key={ value }>{ value.toFixed(3) }</span>
+                    )) }
+                </div>
+                { renderLegendLabels.length === 6 && (
+                    <div className="mt-2 grid gap-0.5 text-[9px] text-muted-foreground">
+                        { renderLegendLabels.map((label, index) => (
+                            <span key={ label } className="flex items-center gap-1.5">
+                                <i className="size-2 rounded-sm" style={ { backgroundColor: renderPalette[index] } } />
+                                { label }
+                            </span>
+                        )) }
+                    </div>
+                ) }
+                <p className="mt-1 text-[9px] text-muted-foreground">Cloud / masked pixels are transparent.</p>
+                { renderProfileVersion && (
+                    <p className="mt-1 text-[9px] text-muted-foreground">
+                        { renderProfileVersion }
+                    </p>
+                ) }
+            </div>
+        );
+    }
     const mode = displayMode.toUpperCase();
 
     // NDVI and NDVI_CONTEXT use a discrete 8-class legend matching backend _NDVI_REFERENCE_CLASSES.

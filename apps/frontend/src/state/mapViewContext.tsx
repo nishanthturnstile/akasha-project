@@ -32,8 +32,13 @@ type MapViewAction =
     | { type: 'SET_VISIBLE'; visible: boolean }
     | { type: 'SET_LAYERS_OPEN'; open: boolean }
     | { type: 'TOGGLE_LAYERS' }
-    | { type: 'SET_COMPARE_ENABLED'; enabled: boolean }
-    | { type: 'SET_COMPARE_DATE'; date: string | null }
+    | { type: 'SET_SPLIT_ENABLED'; enabled: boolean }
+    | { type: 'SET_RIGHT_SOURCE'; sourceId: string }
+    | { type: 'SET_RIGHT_DATE'; date: string | null }
+    | { type: 'SET_RIGHT_DISPLAY_MODE'; mode: string }
+    | { type: 'SET_RIGHT_PERIOD'; from: string | null; to: string | null }
+    | { type: 'SET_RIGHT_RENDER_PROFILE'; profile: 'standard' | 'contrast' }
+    | { type: 'SET_RIGHT_CLOUD_MASK'; mask: MapViewState['cloudMask'] }
     | { type: 'SET_SELECTED_PLOT_ID'; plotId: string | null }
     | { type: 'CLEAR_SELECTED_PLOT' }
     | {
@@ -42,7 +47,7 @@ type MapViewAction =
     }
     | { type: 'SET_LEGEND_OPEN'; open: boolean }
     | { type: 'SET_PERIOD'; from: string | null; to: string | null }
-    | { type: 'SET_LEGEND_STATIC'; staticMode: boolean }
+    | { type: 'SET_RENDER_PROFILE'; profile: 'standard' | 'contrast' }
     | { type: 'SET_LAYER_BAR_COLLAPSED'; collapsed: boolean }
     | { type: 'SET_OVERLAYS_VISIBLE'; visible: boolean }
     | { type: 'SET_HEADER_VISIBLE'; visible: boolean }
@@ -66,8 +71,6 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
                 activeSourceId: action.sourceId,
                 selectedDate: null,
                 displayMode: null,
-                compareEnabled: false,
-                compareDate: null,
                 bestMode: false,
                 radarEvidenceVisible: false,
             };
@@ -85,17 +88,25 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
             return { ...state, layersOpen: action.open };
         case 'TOGGLE_LAYERS':
             return { ...state, layersOpen: !state.layersOpen };
-        case 'SET_COMPARE_ENABLED':
-            if (action.enabled === state.compareEnabled) return state;
-            // Leaving compare clears the B date so re-entering starts clean.
+        case 'SET_SPLIT_ENABLED':
+            return { ...state, splitEnabled: action.enabled };
+        case 'SET_RIGHT_SOURCE':
             return {
                 ...state,
-                compareEnabled: action.enabled,
-                compareDate: action.enabled ? state.compareDate : null,
+                rightSourceId: action.sourceId,
+                rightDate: null,
+                rightDisplayMode: null,
             };
-        case 'SET_COMPARE_DATE':
-            if (action.date === state.compareDate) return state;
-            return { ...state, compareDate: action.date };
+        case 'SET_RIGHT_DATE':
+            return { ...state, rightDate: action.date };
+        case 'SET_RIGHT_DISPLAY_MODE':
+            return { ...state, rightDisplayMode: action.mode };
+        case 'SET_RIGHT_PERIOD':
+            return { ...state, rightPeriodFrom: action.from, rightPeriodTo: action.to };
+        case 'SET_RIGHT_RENDER_PROFILE':
+            return { ...state, rightRenderProfile: action.profile };
+        case 'SET_RIGHT_CLOUD_MASK':
+            return { ...state, rightCloudMask: action.mask };
         case 'SET_SELECTED_PLOT_ID':
             if (action.plotId === state.selectedPlotId) return state;
             return { ...state, selectedPlotId: action.plotId };
@@ -110,9 +121,9 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_PERIOD':
             if (action.from === state.periodFrom && action.to === state.periodTo) return state;
             return { ...state, periodFrom: action.from, periodTo: action.to };
-        case 'SET_LEGEND_STATIC':
-            if (action.staticMode === state.legendStatic) return state;
-            return { ...state, legendStatic: action.staticMode };
+        case 'SET_RENDER_PROFILE':
+            if (action.profile === state.renderProfile) return state;
+            return { ...state, renderProfile: action.profile };
         case 'SET_LAYER_BAR_COLLAPSED':
             if (action.collapsed === state.layerBarCollapsed) return state;
             return { ...state, layerBarCollapsed: action.collapsed };
@@ -235,15 +246,20 @@ export function MapViewProvider({
             setVisible: (visible) => dispatch({ type: 'SET_VISIBLE', visible }),
             setLayersOpen: (open) => dispatch({ type: 'SET_LAYERS_OPEN', open }),
             toggleLayers: () => dispatch({ type: 'TOGGLE_LAYERS' }),
-            setCompareEnabled: (enabled) => dispatch({ type: 'SET_COMPARE_ENABLED', enabled }),
-            setCompareDate: (date) => dispatch({ type: 'SET_COMPARE_DATE', date }),
+            setSplitEnabled: (enabled) => dispatch({ type: 'SET_SPLIT_ENABLED', enabled }),
+            setRightSource: (sourceId) => dispatch({ type: 'SET_RIGHT_SOURCE', sourceId }),
+            setRightDate: (date) => dispatch({ type: 'SET_RIGHT_DATE', date }),
+            setRightDisplayMode: (mode) => dispatch({ type: 'SET_RIGHT_DISPLAY_MODE', mode }),
+            setRightPeriod: (from, to) => dispatch({ type: 'SET_RIGHT_PERIOD', from, to }),
+            setRightRenderProfile: (profile) =>
+                dispatch({ type: 'SET_RIGHT_RENDER_PROFILE', profile }),
+            setRightCloudMask: (mask) => dispatch({ type: 'SET_RIGHT_CLOUD_MASK', mask }),
             setSelectedPlotId: (plotId) => dispatch({ type: 'SET_SELECTED_PLOT_ID', plotId }),
             clearSelectedPlot: () => dispatch({ type: 'CLEAR_SELECTED_PLOT' }),
             setCloudMask: (cloudMask) => dispatch({ type: 'SET_CLOUD_MASK', cloudMask }),
             setLegendOpen: (open) => dispatch({ type: 'SET_LEGEND_OPEN', open }),
             setPeriod: (from, to) => dispatch({ type: 'SET_PERIOD', from, to }),
-            setLegendStatic: (staticMode) =>
-                dispatch({ type: 'SET_LEGEND_STATIC', staticMode }),
+            setRenderProfile: (profile) => dispatch({ type: 'SET_RENDER_PROFILE', profile }),
             setLayerBarCollapsed: (collapsed) =>
                 dispatch({ type: 'SET_LAYER_BAR_COLLAPSED', collapsed }),
             setOverlaysVisible: (visible) =>

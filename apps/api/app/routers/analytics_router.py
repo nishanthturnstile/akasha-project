@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import functools
+import hashlib
 import json
 import logging
 import math
 import time
+import urllib.parse
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -44,6 +48,7 @@ from ..raster.geo_validate import validate_polygon
 from ..raster.indices import DEFAULT_INDEX, get_index
 from ..raster.models import IndexStatisticsModel, PixelCounts
 from ..raster.raster_reader import read_index_windows
+from ..raster.render_profiles import category_for_value, resolve_render_descriptor
 from ..raster.service import (
     _candidate_assets_for_geometry,
     _excluded_mask_classes_for_assets,
@@ -62,7 +67,14 @@ from ..routers.product_router import (
     _requires_ingestion_pipeline,
     _uses_natural_pipeline,
 )
-from ..schemas.analytics import FieldStatisticsRequest, FieldStatisticsResponse
+from ..schemas.analytics import (
+    ComparisonSampleRequest,
+    FieldStatisticsRequest,
+    FieldStatisticsResponse,
+    IndexRenderProfile,
+    RasterSample,
+    ViewerSelection,
+)
 
 logger = logging.getLogger("akasha.api.field_analytics")
 
@@ -73,9 +85,24 @@ router = APIRouter(
 )
 
 MAX_TREND_DAYS = 365
+MAX_FIELD_HISTORY_DAYS = 1827
 EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
 NISAR_SOURCE_ID = "nisar-ssar-beta-gcov"
 RADAR_SELECTION_POLICY_VERSION = "radar-support-selection-v1"
+
+
+def _render_legend_labels(
+    thresholds: list[float] | tuple[float, ...], precision: int = 3
+) -> list[str]:
+    formatted = [f"{value:.{precision}f}" for value in thresholds]
+    if not formatted:
+        return []
+    labels = [f"≤ {formatted[0]}"]
+    labels.extend(
+        f"> {lower} to ≤ {upper}" for lower, upper in zip(formatted, formatted[1:], strict=True)
+    )
+    labels.append(f"> {formatted[-1]}")
+    return labels
 
 
 async def _run_blocking(func, *args, **kwargs):
@@ -275,7 +302,7 @@ def _field_dates_response(
     end_date: date | None,
     lookback_days: int | None,
     timeout_seconds: float | None = None,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
 
     def remaining_timeout() -> float:
@@ -460,8 +487,7 @@ def _field_monitoring_evidence(
         failures: list[dict[str, Any]] = []
         for radar_source_id in enabled_radar_sources:
             include_temporal = radar_source_id == EOS04_SOURCE_ID and (
-                settings.eos04_temporal_change_enabled
-                or settings.eos04_temporal_shadow_enabled
+                settings.eos04_temporal_change_enabled or settings.eos04_temporal_shadow_enabled
             )
             try:
                 result = request_field_sar(
@@ -855,6 +881,7 @@ def _compute_index_window(
     assets: dict[str, Any],
     geometry: dict[str, Any],
     index_type: str,
+    excluded_mask_classes: tuple[int, ...] | None = None,
 ) -> tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
     import numpy as np
 
@@ -883,7 +910,7 @@ def _compute_index_window(
     nodata_mask = geom & (analytic_nodata | mask_nodata)
     coverage_mask = geom & ~nodata_mask
 
-    excluded = _excluded_mask_classes_for_assets(assets=assets, override=None)
+    excluded = _excluded_mask_classes_for_assets(assets=assets, override=excluded_mask_classes)
     excluded_within_coverage = tuple(cls for cls in excluded if cls != MASK_NODATA_CLASS)
     masked_within_coverage = coverage_mask & np.isin(source_mask, excluded_within_coverage)
     valid_mask = coverage_mask & ~masked_within_coverage
@@ -911,6 +938,25 @@ def _compute_index_window(
         data_valid,
         data_masked,
     )
+
+
+def _mask_override_for_assets(
+    assets: dict[str, Any], cloud_mask: CloudMaskOptions | None
+) -> tuple[int, ...] | None:
+    if cloud_mask is None:
+        return None
+    excluded = {
+        int(value)
+        for value in assets.get("excludedMaskClasses", [])
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
+    if not cloud_mask.clouds:
+        excluded.difference_update({2, 7, 8, 9})
+    if not cloud_mask.cloud_shadows:
+        excluded.difference_update({3})
+    if not cloud_mask.cirrus:
+        excluded.difference_update({10})
+    return tuple(sorted(excluded))
 
 
 def _resolve_single_field_asset(
@@ -955,7 +1001,11 @@ def _index_overlay_response(
     acquisition_date: str,
     index_type: str,
     prefer_high_res: bool = True,
+    render_profile: str = "standard",
+    cloud_mask: CloudMaskOptions | None = None,
 ) -> tuple[bytes, str, dict[str, str]]:
+    import numpy as np
+
     resolution = catalog.resolve_best_resolution_source(
         primary_source_id=source_id,
         index_type=index_type,
@@ -985,9 +1035,25 @@ def _index_overlay_response(
         assets=assets,
         geometry=plot["geometry"],
         index_type=index_type,
+        excluded_mask_classes=_mask_override_for_assets(assets, cloud_mask),
     )
     lo, hi = tiles.overlay_display_range(index_type)
     headers: dict[str, str] = {"X-Akasha-Overlay-Stretch": f"{lo},{hi}"}
+    finite = np.asarray(values)[np.asarray(data_valid, dtype=bool) & np.isfinite(values)]
+    descriptor = resolve_render_descriptor(
+        "contrast" if render_profile == "contrast" else "standard",
+        float(finite.min()) if finite.size else None,
+        float(finite.max()) if finite.size else None,
+    )
+    headers["X-Akasha-Render-Profile"] = descriptor.applied
+    headers["X-Akasha-Render-Profile-Version"] = descriptor.version
+    headers["X-Akasha-Render-Thresholds"] = ",".join(map(str, descriptor.thresholds))
+    headers["X-Akasha-Render-Palette"] = ",".join(descriptor.palette)
+    headers["X-Akasha-Render-Legend"] = json.dumps(
+        _render_legend_labels(descriptor.thresholds), separators=(",", ":")
+    )
+    if descriptor.fallback_reason:
+        headers["X-Akasha-Render-Fallback"] = descriptor.fallback_reason
     # Provenance headers
     headers["X-Akasha-Resolved-Source"] = resolution.source_id
     if resolution.resolution_meters is not None:
@@ -1017,6 +1083,8 @@ def _index_overlay_response(
             src_transform=window_transform,
             src_crs=window_crs,
             geometry=plot["geometry"],
+            thresholds=descriptor.thresholds,
+            palette=descriptor.palette,
         )
         headers["X-Akasha-Overlay-Corners"] = json.dumps(corners, separators=(",", ":"))
         return tiles.encode_rgba_png(rgba), "image/png", headers
@@ -1030,6 +1098,8 @@ def _index_overlay_response(
         index_values=values,
         valid_mask=valid_mask,
         masked_mask=masked_mask,
+        thresholds=descriptor.thresholds,
+        palette=descriptor.palette,
     )
     return body, content_type, headers
 
@@ -1041,6 +1111,7 @@ def _pipeline_index_overlay_response(
     source_id: str,
     acquisition_date: str,
     index_type: str,
+    render_profile: str = "standard",
 ) -> tuple[bytes, str, dict[str, str]]:
     _ensure_pipeline_index_supported(source_id, index_type)
     result = request_field_index(
@@ -1051,6 +1122,7 @@ def _pipeline_index_overlay_response(
         index_type=index_type,
         acquisition_date=acquisition_date,
         max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+        render_profile="contrast" if render_profile == "contrast" else "standard",
     )
     if result.get("status") != "AVAILABLE" or not result.get("overlayUrl"):
         raise bad_request(
@@ -1076,6 +1148,20 @@ def _pipeline_index_overlay_response(
         (result.get("resolution") or {}).get("displayMeters") or 10
     )
     headers["X-Akasha-Enhanced"] = "false"
+    visualization = result.get("visualization") or {}
+    headers["X-Akasha-Render-Profile"] = str(visualization.get("appliedProfile", "standard"))
+    headers["X-Akasha-Render-Profile-Version"] = str(
+        visualization.get("profileVersion", "standard-v1")
+    )
+    headers["X-Akasha-Render-Thresholds"] = ",".join(
+        str(value) for value in visualization.get("thresholds", [])
+    )
+    headers["X-Akasha-Render-Palette"] = ",".join(visualization.get("palette", []))
+    headers["X-Akasha-Render-Legend"] = json.dumps(
+        _render_legend_labels(visualization.get("thresholds", [])), separators=(",", ":")
+    )
+    if visualization.get("fallbackReason"):
+        headers["X-Akasha-Render-Fallback"] = str(visualization["fallbackReason"])
     return body, content_type, headers
 
 
@@ -1102,6 +1188,7 @@ def _field_index_point_response(
     lng: float,
     lat: float,
     prefer_high_res: bool = True,
+    cloud_mask: CloudMaskOptions | None = None,
 ) -> dict[str, Any]:
     import numpy as np
 
@@ -1125,6 +1212,7 @@ def _field_index_point_response(
         assets=assets,
         geometry=plot["geometry"],
         index_type=index_type,
+        excluded_mask_classes=_mask_override_for_assets(assets, cloud_mask),
     )
 
     base: dict[str, Any] = {
@@ -1164,7 +1252,9 @@ async def get_field_dates(
     indexType: str = Query(default=DEFAULT_INDEX),
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
-    lookbackDays: int | None = Query(default=None, ge=1, le=366),
+    lookbackDays: int | None = Query(default=None, ge=1, le=MAX_FIELD_HISTORY_DAYS),
+    cursor: str | None = Query(default=None),
+    pageSize: int | None = Query(default=None, ge=1, le=250),
     user: CurrentUser = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     _enforce_index_rate_limit(request)
@@ -1180,32 +1270,49 @@ async def get_field_dates(
                 "Natural-source date availability exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
                 timeoutSeconds=settings.index_request_timeout_seconds,
             ) from exc
-        return _filter_source_dates(
+        dates = _filter_source_dates(
             natural_dates or [],
             start_date=startDate,
             end_date=endDate,
             lookback_days=lookbackDays,
         )
-    index_type = _normalize_index(indexType)
+    else:
+        index_type = _normalize_index(indexType)
+        try:
+            dates = await asyncio.wait_for(
+                _run_blocking_cancellable(
+                    _field_dates_response,
+                    plot=plot,
+                    source_id=sourceId,
+                    index_type=index_type,
+                    start_date=startDate,
+                    end_date=endDate,
+                    lookback_days=lookbackDays,
+                    timeout_seconds=float(settings.index_request_timeout_seconds),
+                ),
+                timeout=settings.index_request_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise index_timeout(
+                "Field-date availability exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
+                timeoutSeconds=settings.index_request_timeout_seconds,
+            ) from exc
+    if pageSize is None:
+        return dates
     try:
-        return await asyncio.wait_for(
-            _run_blocking_cancellable(
-                _field_dates_response,
-                plot=plot,
-                source_id=sourceId,
-                index_type=index_type,
-                start_date=startDate,
-                end_date=endDate,
-                lookback_days=lookbackDays,
-                timeout_seconds=float(settings.index_request_timeout_seconds),
-            ),
-            timeout=settings.index_request_timeout_seconds,
-        )
-    except TimeoutError as exc:
-        raise index_timeout(
-            "Field-date availability exceeded INDEX_REQUEST_TIMEOUT_SECONDS.",
-            timeoutSeconds=settings.index_request_timeout_seconds,
-        ) from exc
+        offset = int(base64.urlsafe_b64decode(cursor.encode()).decode()) if cursor else 0
+    except (binascii.Error, ValueError, UnicodeDecodeError) as exc:
+        raise bad_request("Invalid field-history cursor.", code="INVALID_CURSOR") from exc
+    if offset < 0 or offset > len(dates):
+        raise bad_request("Invalid field-history cursor.", code="INVALID_CURSOR")
+    items = dates[offset : offset + pageSize]
+    next_offset = offset + len(items)
+    next_cursor = (
+        base64.urlsafe_b64encode(str(next_offset).encode()).decode()
+        if next_offset < len(dates)
+        else None
+    )
+    return {"items": items, "nextCursor": next_cursor}
 
 
 @router.get("/fields/{plot_id}/monitoring/evidence")
@@ -1418,6 +1525,93 @@ async def get_field_analytics_trend(
     )
 
 
+def _render_profile_for_selection(
+    *, plot_id: str, plot: dict[str, Any], selection: ViewerSelection
+) -> IndexRenderProfile:
+    normalized_index = _normalize_index(selection.index_type)
+    if _uses_pipeline(selection.source_id):
+        result = request_field_index(
+            settings,
+            geometry=plot["geometry"],
+            field_id=plot_id,
+            source_id=selection.source_id,
+            index_type=normalized_index,
+            acquisition_date=selection.acquisition_date,
+            max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+            render_profile=selection.render_profile,
+        )
+        visualization = result.get("visualization") or {}
+        requested = visualization.get("requestedProfile", selection.render_profile)
+        applied = visualization.get("appliedProfile", "standard")
+        version = visualization.get("profileVersion", "standard-v1")
+        thresholds = visualization.get("thresholds", [])
+        palette = visualization.get("palette", [])
+        fallback = visualization.get("fallbackReason")
+    else:
+        response = _field_statistics(
+            plot_id=plot_id,
+            plot=plot,
+            source_id=selection.source_id,
+            acquisition_date=selection.acquisition_date,
+            index_type=normalized_index,
+            cloud_mask=selection.cloud_mask,
+            prefer_high_res=selection.prefer_high_res,
+        )
+        descriptor = resolve_render_descriptor(
+            selection.render_profile,
+            response.statistics.min,
+            response.statistics.max,
+        )
+        requested, applied, version = descriptor.requested, descriptor.applied, descriptor.version
+        thresholds, palette, fallback = (
+            list(descriptor.thresholds),
+            list(descriptor.palette),
+            descriptor.fallback_reason,
+        )
+    query = urllib.parse.urlencode(
+        {
+            "sourceId": selection.source_id,
+            "acquisitionDate": selection.acquisition_date,
+            "preferHighRes": str(selection.prefer_high_res).lower(),
+            "renderProfile": selection.render_profile,
+        }
+    )
+    precision = 3
+    legend_labels = _render_legend_labels(thresholds, precision)
+    geometry_reference = hashlib.sha256(
+        json.dumps(plot["geometry"], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return IndexRenderProfile(
+        source_id=selection.source_id,
+        scene_id=selection.acquisition_date,
+        index_type=normalized_index,
+        requested_profile=requested,
+        applied_profile=applied,
+        profile_version=version,
+        thresholds=thresholds,
+        palette=palette,
+        legend_labels=legend_labels,
+        fallback_reason=fallback,
+        overlay_url=f"/api/fields/{plot_id}/overlay/{normalized_index}.png?{query}",
+        precision=precision,
+        mask_provenance=selection.cloud_mask.model_dump(by_alias=True),
+        formula_version=f"{normalized_index.lower()}-v1",
+        geometry_reference=geometry_reference,
+    )
+
+
+@router.post("/fields/{plot_id}/indices/render-profile", response_model=IndexRenderProfile)
+async def get_index_render_profile(
+    plot_id: str,
+    selection: ViewerSelection,
+    user: CurrentUser = Depends(get_current_user),
+) -> IndexRenderProfile:
+    plot = await _get_field_or_404(plot_id, user.id)
+    return await _run_blocking(
+        _render_profile_for_selection, plot_id=plot_id, plot=plot, selection=selection
+    )
+
+
 @router.get("/fields/{plot_id}/overlay/{index_type}.png")
 async def get_field_index_overlay(
     plot_id: str,
@@ -1425,6 +1619,10 @@ async def get_field_index_overlay(
     sourceId: str = Query(default=settings.default_source_id),
     acquisitionDate: str = Query(...),
     preferHighRes: bool = Query(default=True),
+    renderProfile: str = Query(default="standard", pattern="^(standard|contrast)$"),
+    maskClouds: bool = Query(default=True),
+    maskCloudShadows: bool = Query(default=True),
+    maskCirrus: bool = Query(default=True),
     user: CurrentUser = Depends(get_current_user),
 ) -> Response:
     plot = await _get_field_or_404(plot_id, user.id)
@@ -1437,6 +1635,7 @@ async def get_field_index_overlay(
             source_id=sourceId,
             acquisition_date=acquisitionDate,
             index_type=normalized_index,
+            render_profile=renderProfile,
         )
     else:
         body, content_type, headers = await _run_blocking(
@@ -1446,6 +1645,12 @@ async def get_field_index_overlay(
             acquisition_date=acquisitionDate,
             index_type=normalized_index,
             prefer_high_res=preferHighRes,
+            render_profile=renderProfile,
+            cloud_mask=CloudMaskOptions(
+                clouds=maskClouds,
+                cloud_shadows=maskCloudShadows,
+                cirrus=maskCirrus,
+            ),
         )
     return Response(content=body, media_type=content_type, headers=headers)
 
@@ -1506,3 +1711,81 @@ async def get_field_index_point(
         lat=lat,
         prefer_high_res=preferHighRes,
     )
+
+
+def _sample_selection(
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    selection: ViewerSelection,
+    lng: float,
+    lat: float,
+) -> RasterSample:
+    index_type = _normalize_index(selection.index_type)
+    if _uses_pipeline(selection.source_id):
+        result = request_field_index_point(
+            settings,
+            geometry=plot["geometry"],
+            field_id=plot_id,
+            source_id=selection.source_id,
+            index_type=index_type,
+            acquisition_date=selection.acquisition_date,
+            lng=lng,
+            lat=lat,
+            max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+        )
+        point = _pipeline_point_response(
+            plot_id=plot_id,
+            source_id=selection.source_id,
+            acquisition_date=selection.acquisition_date,
+            index_type=index_type,
+            lng=lng,
+            lat=lat,
+            result=result,
+        )
+    else:
+        point = _field_index_point_response(
+            plot_id=plot_id,
+            plot=plot,
+            source_id=selection.source_id,
+            acquisition_date=selection.acquisition_date,
+            index_type=index_type,
+            lng=lng,
+            lat=lat,
+            prefer_high_res=selection.prefer_high_res,
+            cloud_mask=selection.cloud_mask,
+        )
+    profile = _render_profile_for_selection(plot_id=plot_id, plot=plot, selection=selection)
+    return RasterSample(
+        status="ok",
+        value=point.get("value"),
+        category=category_for_value(point.get("value"), profile.thresholds),
+        masked=bool(point.get("masked")),
+        mask_class=point.get("maskClass"),
+    )
+
+
+@router.post("/fields/{plot_id}/indices/sample-comparison")
+async def sample_comparison(
+    plot_id: str,
+    payload: ComparisonSampleRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, RasterSample]:
+    plot = await _get_field_or_404(plot_id, user.id)
+
+    async def sample(selection: ViewerSelection) -> RasterSample:
+        try:
+            return await _run_blocking(
+                _sample_selection,
+                plot_id=plot_id,
+                plot=plot,
+                selection=selection,
+                lng=payload.lng,
+                lat=payload.lat,
+            )
+        except Exception:  # noqa: BLE001 - partial side failure is the response contract
+            logger.warning("comparison sample side failed", exc_info=True)
+            return RasterSample(status="error", error="Sample unavailable")
+
+    left, right = await asyncio.gather(sample(payload.left), sample(payload.right))
+    return {"left": left, "right": right}

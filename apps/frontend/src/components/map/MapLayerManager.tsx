@@ -5,9 +5,7 @@ import type { ResolvedBasemapConfig } from '@/map/basemap';
 import { getSharedEsriBasemapSession } from '@/map/esriBasemapSession';
 import {
   applySatelliteLayer,
-  applyCompareLayer,
   isValidSceneBounds,
-  removeCompareLayer,
   setSatelliteOpacity,
   setSatelliteVisibility,
   SAT_LAYER_ID,
@@ -15,7 +13,7 @@ import {
   type MapLayerHost,
   type SatelliteScene,
 } from '@/lib/satelliteLayer';
-import type { ImageCorners } from '@/types/api';
+import type { ImageCorners, RenderProfileName } from '@/types/api';
 
 /** MapLibre's Map satisfies the narrow MapLayerHost structural surface at runtime. */
 const asHost = (m: maplibregl.Map): MapLayerHost => m as unknown as MapLayerHost;
@@ -61,6 +59,12 @@ export interface IndexOverlay {
   resolutionMeters?: number | null;
   enhanced?: boolean;
   basisDate?: string | null;
+  renderProfile?: RenderProfileName;
+  renderProfileVersion?: string;
+  renderThresholds?: number[];
+  renderPalette?: string[];
+  renderLegendLabels?: string[];
+  renderFallbackReason?: string | null;
 }
 
 function removeIndexOverlay(map: maplibregl.Map): void {
@@ -185,8 +189,6 @@ interface MapLayerManagerProps {
   center: [number, number];
   zoom: number;
   scene: SatelliteScene | null;
-  /** Compare ("B") scene rendered beneath `scene`; `null` disables compare. */
-  sceneB?: SatelliteScene | null;
   /** EOS-style field-clipped index image painted over the base imagery; `null` off. */
   indexOverlay?: IndexOverlay | null;
   /** 0..1 */
@@ -208,7 +210,6 @@ export function MapLayerManager({
   center,
   zoom,
   scene,
-  sceneB,
   indexOverlay,
   opacity,
   visible,
@@ -221,14 +222,11 @@ export function MapLayerManager({
 
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
-  const sceneBRef = useRef(sceneB ?? null);
-  sceneBRef.current = sceneB ?? null;
   const overlayRef = useRef(indexOverlay ?? null);
   overlayRef.current = indexOverlay ?? null;
   const stateRef = useRef({ opacity, visible });
   stateRef.current = { opacity, visible };
   const sceneKey = sceneLayerKey(scene);
-  const sceneKeyB = sceneLayerKey(sceneB ?? null);
   const overlayKey = overlayKeyOf(indexOverlay);
 
   // Create the map exactly once.
@@ -255,7 +253,6 @@ export function MapLayerManager({
         applySatelliteLayer(asHost(map), s, stateRef.current);
         if (stateRef.current.visible) fitSceneBoundsIfNeeded(map, s);
       }
-      if (sceneBRef.current) applyCompareLayer(asHost(map), sceneBRef.current);
       if (overlayRef.current) {
         applyIndexOverlay(map, overlayRef.current);
         setIndexOverlayOpacity(map, stateRef.current.visible ? stateRef.current.opacity : 0);
@@ -340,18 +337,6 @@ export function MapLayerManager({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneKey]);
-
-  // Compare ("B") layer: add/replace beneath A, or remove when compare is off.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !loadedRef.current) return;
-    if (sceneB) {
-      applyCompareLayer(asHost(map), sceneB);
-    } else {
-      removeCompareLayer(asHost(map));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneKeyB]);
 
   // Live opacity (no layer rebuild).
   useEffect(() => {

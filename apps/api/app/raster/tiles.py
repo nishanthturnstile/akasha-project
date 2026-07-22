@@ -8,6 +8,7 @@ Emergent ingress (which only routes /api/* to the backend).
 
 Uses stdlib urllib for the proxy fetch (no extra dependency).
 """
+
 from __future__ import annotations
 
 import json
@@ -37,11 +38,10 @@ def _transparent_png() -> bytes:
     # One scanline: filter byte 0, then transparent RGBA pixel.
     idat = zlib.compress(b"\x00\x00\x00\x00\x00")
     return (
-        signature
-        + _png_chunk(b"IHDR", ihdr)
-        + _png_chunk(b"IDAT", idat)
-        + _png_chunk(b"IEND", b"")
+        signature + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
     )
+
+
 # Used for TiTiler 404 tile misses at COG/scene edges so MapLibre can continue
 # rendering without noisy failed tile requests. The COG URL and storage details
 # remain server-side.
@@ -117,13 +117,21 @@ def _ndvi_reference_palette(values):
     return rgb
 
 
-def _colorize_index_rgb(index_type: str, values):
+def _colorize_index_rgb(index_type: str, values, *, thresholds=(), palette=()):
     """Map index values to RGB using the EOS-style reference palette per index.
 
     NDVI uses the discrete reference classes; other indices use their continuous
     diverging ramp clamped to the index's display range.
     """
     import numpy as np
+
+    if len(thresholds) == 5 and len(palette) == 6:
+        colors = np.asarray(
+            [tuple(int(value[i : i + 2], 16) for i in (1, 3, 5)) for value in palette],
+            dtype=np.uint8,
+        )
+        bins = np.digitize(values, np.asarray(thresholds), right=False)
+        return colors[np.clip(bins, 0, len(colors) - 1)]
 
     if index_type.upper() == "NDVI":
         return _ndvi_reference_palette(values)
@@ -214,10 +222,7 @@ def _rgba_png(width: int, height: int, rgba: bytes) -> bytes:
         scanlines.extend(rgba[start : start + stride])
     idat = zlib.compress(bytes(scanlines))
     return (
-        signature
-        + _png_chunk(b"IHDR", ihdr)
-        + _png_chunk(b"IDAT", idat)
-        + _png_chunk(b"IEND", b"")
+        signature + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
     )
 
 
@@ -245,8 +250,7 @@ def _interpolate_palette(
         for channel in range(3):
             rgb[..., channel][segment] = np.clip(
                 np.round(
-                    left_color[channel]
-                    + (right_color[channel] - left_color[channel]) * factor
+                    left_color[channel] + (right_color[channel] - left_color[channel]) * factor
                 ),
                 0,
                 255,
@@ -265,6 +269,8 @@ def render_field_index_overlay_png(
     index_values,
     valid_mask,
     masked_mask,
+    thresholds=(),
+    palette=(),
 ) -> tuple[bytes, str]:
     """Render a field-clipped index overlay as RGBA PNG.
 
@@ -290,7 +296,7 @@ def render_field_index_overlay_png(
 
     finite_valid = valid & np.isfinite(values)
     if np.any(finite_valid):
-        rgb = _colorize_index_rgb(index_type, values)
+        rgb = _colorize_index_rgb(index_type, values, thresholds=thresholds, palette=palette)
         rgba[finite_valid, :3] = rgb[finite_valid]
         rgba[finite_valid, 3] = 255
 
@@ -341,6 +347,8 @@ def reproject_index_overlay_web_mercator(
     geometry,
     supersample: int | None = None,
     max_dim: int | None = None,
+    thresholds=(),
+    palette=(),
 ):
     """Reproject a field index window to a north-up Web Mercator overlay.
 
@@ -421,7 +429,7 @@ def reproject_index_overlay_web_mercator(
     valid_b = poly & (out_valid >= 0.5) & np.isfinite(out_index)
     masked_b = poly & ~valid_b & (out_masked >= 0.5)
     if np.any(valid_b):
-        rgb = _colorize_index_rgb(index_type, out_index)
+        rgb = _colorize_index_rgb(index_type, out_index, thresholds=thresholds, palette=palette)
         rgba[valid_b, :3] = rgb[valid_b]
         rgba[valid_b, 3] = 255
     if np.any(masked_b):
@@ -433,9 +441,7 @@ def reproject_index_overlay_web_mercator(
         [mleft, mright, mright, mleft],
         [mtop, mtop, mbottom, mbottom],
     )
-    corners = [
-        [round(float(x), 10), round(float(y), 10)] for x, y in zip(xs, ys, strict=True)
-    ]
+    corners = [[round(float(x), 10), round(float(y), 10)] for x, y in zip(xs, ys, strict=True)]
     return rgba, corners
 
 
@@ -696,6 +702,4 @@ def fetch_tile(url: str, timeout: float = 20.0) -> tuple[bytes, str]:
             return TRANSPARENT_PNG, "image/png"
         raise upstream_error("TiTiler tile request failed.", code="TITILER_ERROR") from exc
     except Exception as exc:  # noqa: BLE001
-        raise upstream_error(
-            "TiTiler tile request failed.", code="TITILER_ERROR"
-        ) from exc
+        raise upstream_error("TiTiler tile request failed.", code="TITILER_ERROR") from exc

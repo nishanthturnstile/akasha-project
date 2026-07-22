@@ -718,7 +718,7 @@ export function AppShell() {
                           role="menu"
                           onMouseEnter={ () => setHoveredGroup(group.label) }
                           onMouseLeave={ () => setHoveredGroup(null) }
-                          className="absolute right-full top-0 z-50 ml-3 w-56 rounded-lg border border-border/60 bg-popover p-2 shadow-elevation-high"
+                          className="absolute right-full top-0 z-popover mr-3 w-56 rounded-lg border border-border/60 bg-popover p-2 shadow-e3"
                         >
                           <p className="mb-1 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                             { group.label }

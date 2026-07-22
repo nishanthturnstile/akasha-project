@@ -2,8 +2,8 @@ import { MapPin, MoreVertical, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { GeometryPreview } from '@/lib/geometry-preview';
 import { cn } from '@/lib/utils';
-import { MAP_UI_COLORS } from '@/map/colors';
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useDeleteField, useFields, useSeasons, useUpdateField } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
-import type { Field, GeoJsonPosition, PlotGeometry } from '@/types/api';
+import type { Field, PlotGeometry } from '@/types/api';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
 
@@ -58,17 +58,17 @@ function FieldMenu({
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors duration-fast"
+        className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
         aria-label={`Field options for ${field.name}`}
       >
         <MoreVertical className="size-4" strokeWidth={1.75} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[130px] whitespace-nowrap rounded-md border border-border bg-popover py-1 shadow-e2">
+        <div className="absolute right-0 top-full z-popover mt-1 min-w-40 whitespace-nowrap rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-e2">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(field); }}
-            className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+            className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
           >
             Edit
           </button>
@@ -76,7 +76,7 @@ function FieldMenu({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setOpen(false); onUnpin(field); }}
-              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+              className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
             >
               Unpin
             </button>
@@ -84,7 +84,7 @@ function FieldMenu({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setOpen(false); onPin(field); }}
-              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+              className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
             >
               Pin Field
             </button>
@@ -92,14 +92,14 @@ function FieldMenu({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setOpen(false); }}
-            className="flex w-full items-center px-3 py-1.5 text-left text-sm text-foreground hover:bg-accent/40 transition-colors duration-fast"
+            className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
           >
             Export Contours
           </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(field); }}
-            className="flex w-full items-center px-3 py-1.5 text-left text-sm text-destructive hover:bg-accent/40 transition-colors duration-fast"
+            className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-destructive transition-colors duration-fast hover:bg-destructive/10"
           >
             Delete
           </button>
@@ -109,62 +109,13 @@ function FieldMenu({
   );
 }
 
-function extractRings(geometry: PlotGeometry): GeoJsonPosition[][] {
-  if (geometry.type === 'Polygon') return [geometry.coordinates[0] ?? []];
-  if (geometry.type === 'MultiPolygon') return geometry.coordinates.map((poly) => poly[0] ?? []);
-  return [];
-}
-
 export function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry; size?: number }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !geometry) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const rings = extractRings(geometry);
-    if (rings.length === 0) return;
-
-    const lngs = rings.flat().map((p) => p[0]);
-    const lats = rings.flat().map((p) => p[1]);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-
-    const pad = 4;
-    const drawSize = size - pad * 2;
-    const geoW = maxLng - minLng || 1;
-    const geoH = maxLat - minLat || 1;
-    const scale = Math.min(drawSize / geoW, drawSize / geoH);
-    const cx = (maxLng + minLng) / 2;
-    const cy = (maxLat + minLat) / 2;
-
-    ctx.clearRect(0, 0, size, size);
-
-    for (const ring of rings) {
-      ctx.beginPath();
-      for (let i = 0; i < ring.length; i++) {
-        const x = pad + (ring[i][0] - cx) * scale + drawSize / 2;
-        const y = pad + (cy - ring[i][1]) * scale + drawSize / 2;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = MAP_UI_COLORS.white;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-  }, [geometry, size]);
-
   return (
-    <canvas
-      ref={canvasRef}
-      width={size}
-      height={size}
-      className="size-12 shrink-0 rounded-md bg-card"
-      aria-hidden="true"
+    <GeometryPreview
+      geometry={ geometry }
+      width={ size }
+      height={ size }
+      className="shrink-0 rounded-lg border border-primary/15 bg-primary/5 p-1.5"
     />
   );
 }

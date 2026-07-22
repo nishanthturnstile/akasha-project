@@ -17,7 +17,7 @@ const SheetOverlay = forwardRef<
   <Dialog.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-popover bg-background/60 backdrop-blur-sm data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-in',
+      'fixed inset-0 z-modal bg-background/60 backdrop-blur-sm data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-in',
       className,
     )}
     {...props}
@@ -44,7 +44,7 @@ const SheetContent = forwardRef<
     <Dialog.Content
       ref={ref}
       className={cn(
-        'fixed z-popover gap-4 bg-background p-0 shadow-e3 transition-transform duration-slow ease-decelerate',
+        'fixed z-modal gap-4 bg-background p-0 shadow-e3 transition-transform duration-slow ease-decelerate',
         'data-[state=open]:animate-in',
         sideStyles[side],
         className,
@@ -55,7 +55,7 @@ const SheetContent = forwardRef<
       <Dialog.Close asChild>
         <button
           aria-label="Close"
-          className="absolute right-4 top-4 rounded-pill p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+          className="absolute right-3 top-3 flex size-10 items-center justify-center rounded-pill text-muted-foreground transition-colors hover:bg-primary/10 hover:text-interactive"
         >
           <X className="size-4" />
         </button>

@@ -37,10 +37,10 @@ export function CommandPalette({
     return (
         <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
             <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm animate-fade-in" />
+                <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm animate-fade-in" />
                 <Dialog.Content
                     aria-label="Command palette"
-                    className="glass fixed left-1/2 top-[18vh] z-popover w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg p-0 animate-panel-in"
+                    className="glass fixed left-1/2 top-[18vh] z-modal w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-lg p-0 animate-panel-in"
                 >
                     <VisuallyHidden>
                         <Dialog.Title>Command palette</Dialog.Title>

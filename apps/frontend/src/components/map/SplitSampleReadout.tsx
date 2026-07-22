@@ -47,7 +47,7 @@ export function SplitSampleReadout({
     requestId.current += 1;
     const markerElement = () => {
       const element = document.createElement('div');
-      element.className = 'pointer-events-none absolute z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow-e2';
+      element.className = 'pointer-events-none absolute z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-e2';
       return element;
     };
     const leftMarker = markerElement();

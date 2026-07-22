@@ -14,4 +14,10 @@ describe('BrandLockup', () => {
     render(<BrandLockup variant="icon" />);
     expect(screen.getByLabelText('Akasha by CIDSA')).toBeTruthy();
   });
+
+  it('supports image-safe inverse branding without changing its name', () => {
+    render(<BrandLockup tone="inverse" />);
+    const lockup = screen.getByLabelText('Akasha by CIDSA');
+    expect(lockup.className).toContain('text-on-image');
+  });
 });

@@ -2,6 +2,8 @@ import { FormEvent, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { LockKeyhole, Sprout } from 'lucide-react';
 import { BrandLockup } from '@/components/BrandLockup';
+import { AuthHero } from '@/components/auth/AuthHero';
+import { authInputClassName } from '@/components/auth/authStyles';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { useAccountMe, useSignup } from '@/lib/queries';
@@ -42,20 +44,12 @@ export default function SignupPage() {
 
     return (
         <main className="grid min-h-screen bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_460px]">
-            <section className="hero-pattern relative hidden min-h-0 overflow-hidden border-r border-primary/10 bg-bg-light-secondary dark:bg-background lg:block">
-                <div className="grid-pattern absolute inset-0 opacity-70" />
-                <div className="relative flex h-full flex-col justify-between p-10">
-                    <BrandLockup variant="full" />
-                    <div className="max-w-xl">
-                        <p className="text-gradient font-display text-4xl font-bold leading-tight">
-                            Start with your first season, then map every field.
-                        </p>
-                        <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
-                            Create an account, complete onboarding, and keep field records scoped to your own workspace.
-                        </p>
-                    </div>
-                </div>
-            </section>
+            <AuthHero
+                description="Create an account, complete onboarding, and keep field records scoped to your own workspace."
+                imagePosition="62% center"
+                imageSrc="/images/onboardig2.png"
+                title="Start with your first season, then map every field."
+            />
 
             <section className="flex min-h-screen items-center justify-center px-5 py-8">
                 <div className="w-full max-w-95">
@@ -82,7 +76,7 @@ export default function SignupPage() {
                                     value={ displayName }
                                     onChange={ (event) => setDisplayName(event.target.value) }
                                     autoComplete="name"
-                                    className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                                    className={ authInputClassName }
                                     required
                                 />
                             </label>
@@ -93,7 +87,7 @@ export default function SignupPage() {
                                     onChange={ (event) => setEmail(event.target.value) }
                                     autoComplete="email"
                                     type="email"
-                                    className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                                    className={ authInputClassName }
                                     required
                                 />
                             </label>
@@ -105,7 +99,7 @@ export default function SignupPage() {
                                     autoComplete="new-password"
                                     type="password"
                                     minLength={ 8 }
-                                    className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                                    className={ authInputClassName }
                                     required
                                 />
                             </label>
@@ -120,7 +114,7 @@ export default function SignupPage() {
                         </form>
                         <p className="mt-4 text-center text-sm text-muted-foreground">
                             Already have an account?{ ' ' }
-                            <Link to="/login" className="font-medium text-primary hover:underline">
+                            <Link to="/login" className="inline-flex min-h-11 items-center font-semibold text-interactive underline-offset-4 hover:underline">
                                 Sign in
                             </Link>
                         </p>

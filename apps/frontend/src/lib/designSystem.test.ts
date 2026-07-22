@@ -1,8 +1,17 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const frontendRoot = resolve(process.cwd());
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    if (!entry.name.match(/\.(?:ts|tsx)$/) || entry.name.match(/\.test\.(?:ts|tsx)$/)) return [];
+    return [path];
+  });
+}
 
 describe('CIDSA design-system contract', () => {
   it('keeps the canonical light-first palette and typography', () => {
@@ -28,17 +37,25 @@ describe('CIDSA design-system contract', () => {
   });
 
   it('uses semantic status classes instead of raw Tailwind status palettes', () => {
-    const sourceFiles = [
-      'src/components/admin/ingestion/AdminIngestionRunPanel.tsx',
-      'src/components/scaffold/IndexPanel.tsx',
-      'src/pages/monitoring/MonitoringGlobalView.tsx',
-      'src/pages/monitoring/IngestionJobDetail.tsx',
-      'src/pages/monitoring/IngestionJobsList.tsx',
-      'src/pages/risk/DiseasesPestsPage.tsx',
-    ];
     const retiredPalette = /(?:bg|border|text|ring)-(?:amber|red|emerald|zinc)-\d{2,3}/;
-    for (const file of sourceFiles) {
-      expect(readFileSync(resolve(frontendRoot, file), 'utf8')).not.toMatch(retiredPalette);
+    for (const file of sourceFiles(resolve(frontendRoot, 'src'))) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(retiredPalette);
+    }
+  });
+
+  it('keeps hard-coded runtime colors out of React UI modules', () => {
+    const approvedScientificModule = resolve(frontendRoot, 'src/components/map/Legend.tsx');
+    const hardCodedColor = /#[\da-f]{3,8}|rgb\(\s*\d|hsl\(\s*\d/i;
+    for (const file of sourceFiles(resolve(frontendRoot, 'src')).filter((path) => path.endsWith('.tsx'))) {
+      if (file === approvedScientificModule) continue;
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(hardCodedColor);
+    }
+  });
+
+  it('uses named overlay layers instead of isolated numeric z-index utilities', () => {
+    const numericLayer = /\bz-(?:50|\[\d+\])\b/;
+    for (const file of sourceFiles(resolve(frontendRoot, 'src')).filter((path) => path.endsWith('.tsx'))) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(numericLayer);
     }
   });
 });

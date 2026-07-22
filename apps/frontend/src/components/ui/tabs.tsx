@@ -29,7 +29,7 @@ export const TabsTrigger = React.forwardRef<
             'inline-flex items-center justify-center whitespace-nowrap rounded-pill px-3 py-1 text-[12px] font-semibold ring-offset-background transition-colors',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             'disabled:pointer-events-none disabled:opacity-50',
-            'data-[state=active]:bg-linear-to-br data-[state=active]:from-cidsa-primary data-[state=active]:to-cidsa-primary-dark data-[state=active]:text-white data-[state=active]:shadow-e1',
+            'data-[state=active]:bg-linear-to-br data-[state=active]:from-cidsa-primary data-[state=active]:to-cidsa-primary-dark data-[state=active]:text-primary-foreground data-[state=active]:shadow-e1',
             className,
         ) }
         { ...props }

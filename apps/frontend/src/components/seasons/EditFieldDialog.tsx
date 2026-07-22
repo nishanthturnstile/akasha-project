@@ -551,10 +551,10 @@ export default function EditFieldDialog({
   return (
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-popover bg-background/60 backdrop-blur-sm" />
+        <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
-          className="glass fixed left-1/2 top-[8vh] z-popover w-[min(72rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
+          className="glass fixed left-1/2 top-[8vh] z-modal w-[min(72rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
         >
           <VisuallyHidden>
             <Dialog.Title>Edit field</Dialog.Title>
@@ -593,7 +593,7 @@ export default function EditFieldDialog({
                     />
                     { basemapRuntimeError && (
                       <div
-                        className="absolute inset-x-3 top-3 z-50 rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground shadow-lg"
+                        className="absolute inset-x-3 top-3 z-popover rounded-md bg-destructive px-3 py-2 text-sm text-destructive-foreground shadow-e2"
                         data-testid="basemap-runtime-error"
                       >
                         Unable to load Esri basemap: { basemapRuntimeError.message }
@@ -1030,7 +1030,7 @@ function CycleCard({
             { cycle.variety || <span className="text-muted-foreground">{ varietyDisabled ? 'Not available' : 'Search variety…' }</span> }
           </button>
           { varietyOpen && !varietyDisabled && (
-            <div className="absolute z-[999] mt-1 w-full rounded-md border border-border bg-popover text-popover-foreground shadow-e2">
+            <div className="absolute z-picker mt-1 w-full rounded-md border border-border bg-popover text-popover-foreground shadow-e2">
               <div className="p-1">
                 <input
                   ref={ searchRef }

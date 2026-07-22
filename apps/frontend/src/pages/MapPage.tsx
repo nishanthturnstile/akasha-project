@@ -1273,7 +1273,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
               onMapReady={ setMap }
               onMapDisposed={ (disposedMap) => setMap((current) => current === disposedMap ? null : current) }
             />
-            <div className="glass absolute left-2 top-2 z-toolbar rounded px-2 py-1 text-xs">Left · { selectedDisplayMode } · { selectedDate }</div>
+            <div className="glass absolute left-2 top-12 z-toolbar rounded px-2 py-1 text-xs">Left · { selectedDisplayMode } · { selectedDate }</div>
             { indexOverlayError && (
               <div className="glass absolute bottom-16 left-2 z-toolbar rounded p-2 text-xs">
                 <span>{ indexOverlayError }</span>{ ' ' }

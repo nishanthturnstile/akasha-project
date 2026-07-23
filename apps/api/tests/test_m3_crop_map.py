@@ -8,13 +8,12 @@ from app.raster.render_profiles import (
     resolve_render_descriptor,
 )
 from app.routers import latest_imagery_router
+from app.routers.analytics_router import _render_legend_labels, get_field_dates
 from app.routers.latest_imagery_router import (
     LatestImagerySearchRequest,
     _viewport_diagonal_meters,
 )
-from app.routers.analytics_router import _render_legend_labels, get_field_dates
-from pydantic import ValidationError
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 
 def test_contrast_descriptor_has_exact_equal_breaks_and_categories() -> None:

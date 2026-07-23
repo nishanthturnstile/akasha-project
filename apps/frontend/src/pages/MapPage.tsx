@@ -1170,6 +1170,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     if (firstCreated) {
       view.setSelectedPlotId(firstCreated.id);
       focusPlot(map, firstCreated);
+      navigate(`/monitoring/field-analytics/field/${firstCreated.id}`);
     }
   };
 
@@ -1477,6 +1478,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           });
           view.setSelectedPlotId(created.id);
           focusPlot(map, created);
+          navigate(`/monitoring/field-analytics/field/${created.id}`);
           return created;
         } }
         onUpdateField={ async (plotId, payload) => {

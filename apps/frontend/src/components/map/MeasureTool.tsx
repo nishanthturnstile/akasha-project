@@ -44,14 +44,10 @@ interface MeasureToolProps {
     onRequestTool?: (owner: MapToolOwner) => boolean;
 }
 
-const LINE_SOURCE = 'measure-result-line';
-const LINE_LAYER = 'measure-result-line-layer';
-
 interface MeasureResult {
-    area?: number;
+    area: number;
     distance: number;
     geometry: [number, number][];
-    mode: 'distance' | 'area';
 }
 
 export function MeasureTool({
@@ -67,7 +63,6 @@ export function MeasureTool({
     const drawRef = useRef<TerraDraw | null>(null);
     const startedRef = useRef(false);
     const centroidRef = useRef<[number, number]>([0, 0]);
-    const [measuringMode, setMeasuringMode] = useState<'distance' | 'area' | null>(null);
 
     // ---- ensure CSS rules exist ----
     useEffect(() => {
@@ -171,20 +166,15 @@ export function MeasureTool({
         if (!draw) return;
         const features = draw
             .getSnapshot()
-            .filter((f) => f.properties?.mode === 'polygon' || f.properties?.mode === 'polyline');
+            .filter((f) => f.properties?.mode === 'polygon');
         const feature = features[features.length - 1];
-        if (!feature) {
+        if (!feature || feature.geometry.type !== 'Polygon') {
             removeSegmentLabels();
             return;
         }
 
-        const coords =
-            feature.geometry.type === 'Polygon'
-                ? (feature.geometry.coordinates[0] as [number, number][])
-                : feature.geometry.type === 'LineString'
-                ? (feature.geometry.coordinates as [number, number][])
-                : null;
-        if (!coords || coords.length < 2) {
+        const coords = feature.geometry.coordinates[0] as [number, number][];
+        if (coords.length < 2) {
             removeSegmentLabels();
             return;
         }
@@ -292,82 +282,30 @@ export function MeasureTool({
         };
     }, [updateSegmentLabels, applyPolygonStyle]);
 
-    const addResultLine = useCallback(
-        (coords: [number, number][]) => {
-            if (!map) return;
-            removeResultPolygon();
-            const mc = resolveCssVar('--measure-color');
-            try {
-                map.addSource(LINE_SOURCE, {
-                    type: 'geojson',
-                    data: {
-                        type: 'Feature',
-                        geometry: { type: 'LineString', coordinates: coords },
-                        properties: {},
-                    },
-                });
-                map.addLayer({
-                    id: LINE_LAYER,
-                    type: 'line',
-                    source: LINE_SOURCE,
-                    paint: {
-                        'line-color': mc,
-                        'line-width': 2,
-                        'line-dasharray': [3, 3],
-                    },
-                });
-            } catch { /* ignore */ }
-        },
-        [map],
-    );
-
-    const removeResultLine = useCallback(() => {
-        if (!map) return;
-        try {
-            if (map.getLayer(LINE_LAYER)) map.removeLayer(LINE_LAYER);
-            if (map.getSource(LINE_SOURCE)) map.removeSource(LINE_SOURCE);
-        } catch { /* ignore */ }
-    }, [map]);
-
-    const removeAllResults = useCallback(() => {
-        removeResultPolygon();
-        removeResultLine();
-        removeSegmentLabels();
-    }, [removeResultPolygon, removeResultLine, removeSegmentLabels]);
-
     useEffect(() => {
         handleDrawFinishRef.current = () => {
             const draw = drawRef.current;
             if (!draw) return;
-            const features = draw.getSnapshot();
+            const features = draw
+                .getSnapshot()
+                .filter((f) => f.properties?.mode === 'polygon');
             const feature = features[features.length - 1];
-            if (!feature) return;
+            if (feature?.geometry.type !== 'Polygon') return;
 
-            const mode = measuringMode;
-            if (!mode) return;
+            const ring = feature.geometry.coordinates[0] as [number, number][];
+            const distance = lineLengthMeters(ring);
+            const area = polygonAreaMeters(ring);
 
             draw.stop();
             startedRef.current = false;
 
-            if (feature.geometry.type === 'Polygon' && mode === 'area') {
-                const ring = feature.geometry.coordinates[0] as [number, number][];
-                const distance = lineLengthMeters(ring);
-                const area = polygonAreaMeters(ring);
-                centroidRef.current = ringCentroid(ring);
-                setResult({ area, distance, geometry: ring, mode: 'area' });
-                setCursorClass('measure-done');
-                addResultPolygon(ring);
-            } else if (feature.geometry.type === 'LineString' && mode === 'distance') {
-                const coords = feature.geometry.coordinates as [number, number][];
-                const distance = lineLengthMeters(coords);
-                const mid = Math.floor(coords.length / 2);
-                centroidRef.current = coords[mid] ?? coords[0];
-                setResult({ distance, geometry: coords, mode: 'distance' });
-                setCursorClass('measure-done');
-                addResultLine(coords);
-            }
+            centroidRef.current = ringCentroid(ring);
+            setResult({ area, distance, geometry: ring });
+            setCursorClass('measure-done');
+
+            addResultPolygon(ring);
         };
-    }, [measuringMode, setCursorClass, addResultPolygon, addResultLine]);
+    }, [setCursorClass, addResultPolygon]);
 
     const repositionPopup = useCallback(() => {
         if (!map || !result) return;
@@ -390,7 +328,7 @@ export function MeasureTool({
         if (!map) return null;
         if (!drawRef.current) {
             const [
-                { TerraDraw, TerraDrawPolyLineMode, TerraDrawPolygonMode },
+                { TerraDraw, TerraDrawPolygonMode },
                 { TerraDrawMapLibreGLAdapter },
             ] = await Promise.all([
                 import('terra-draw'),
@@ -401,7 +339,7 @@ export function MeasureTool({
                     map,
                     prefixId: 'measure',
                 }),
-                modes: [new TerraDrawPolyLineMode(), new TerraDrawPolygonMode()],
+                modes: [new TerraDrawPolygonMode()],
             });
             draw.on('change', () => handleDrawChangeRef.current());
             draw.on('finish', () => handleDrawFinishRef.current());
@@ -414,20 +352,20 @@ export function MeasureTool({
         return drawRef.current;
     }, [map]);
 
-    const startMeasuring = useCallback(async (mode: 'distance' | 'area') => {
+    const startMeasuring = useCallback(async () => {
         const draw = await ensureDraw();
         if (!draw) return;
         setResult(null);
         setPopupPos(null);
-        setMeasuringMode(mode);
         setCursorClass('measure-crosshair');
-        removeAllResults();
+        removeResultPolygon();
         draw.clear();
-        draw.setMode(mode === 'distance' ? 'polyline' : 'polygon');
+        draw.setMode('polygon');
     }, [ensureDraw]);
 
     const stopMeasuring = useCallback(() => {
-        removeAllResults();
+        removeSegmentLabels();
+        removeResultPolygon();
         const draw = drawRef.current;
         if (draw && startedRef.current) {
             draw.clear();
@@ -436,26 +374,23 @@ export function MeasureTool({
         }
         setResult(null);
         setPopupPos(null);
-        setMeasuringMode(null);
         setCursorClass('');
         onReleaseTool?.('measure');
-    }, [onReleaseTool, removeAllResults]);
+    }, [onReleaseTool]);
 
     const toggleOpen = useCallback(() => {
         setOpen((prev) => {
             const nextOpen = !prev;
             if (nextOpen && onRequestTool && !onRequestTool('measure'))
                 return prev;
-            if (!nextOpen) {
+            if (nextOpen) {
+                void startMeasuring();
+            } else {
                 stopMeasuring();
             }
             return nextOpen;
         });
-    }, [onRequestTool, stopMeasuring]);
-
-    const handleModeSelect = useCallback((mode: 'distance' | 'area') => {
-        void startMeasuring(mode);
-    }, [startMeasuring]);
+    }, [onRequestTool, startMeasuring, stopMeasuring]);
 
     // ---- Escape handler ----
     useEffect(() => {
@@ -485,7 +420,8 @@ export function MeasureTool({
 
     useEffect(() => {
         return () => {
-            removeAllResults();
+            removeSegmentLabels();
+            removeResultPolygon();
             const draw = drawRef.current;
             if (draw && startedRef.current) {
                 draw.stop();
@@ -522,31 +458,6 @@ export function MeasureTool({
                 >
                     <Ruler className="size-5" strokeWidth={1.75} />
                 </button>
-                {open && (
-                    <div
-                        data-testid="measure-panel"
-                        className="flex flex-col gap-1"
-                        role="region"
-                        aria-label="Measurement modes"
-                    >
-                        <button
-                            type="button"
-                            data-testid="measure-distance-btn"
-                            className="glass flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-foreground/80 transition-colors duration-fast ease-standard hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            onClick={() => handleModeSelect('distance')}
-                        >
-                            Distance
-                        </button>
-                        <button
-                            type="button"
-                            data-testid="measure-area-btn"
-                            className="glass flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-foreground/80 transition-colors duration-fast ease-standard hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            onClick={() => handleModeSelect('area')}
-                        >
-                            Area
-                        </button>
-                    </div>
-                )}
             </div>
 
             {result && popupPos && createPortal(
@@ -570,38 +481,21 @@ export function MeasureTool({
                             <X className="size-4" strokeWidth={2} />
                         </button>
                         <div className="flex flex-col gap-1 pr-5">
-                            {result.mode === 'area' && (
-                                <>
-                                    <span className="text-xs font-medium text-foreground">
-                                        Area measurement
-                                    </span>
-                                    <span className="font-mono text-sm tabular-nums text-muted-foreground">
-                                        Total area:{' '}
-                                        <span className="text-foreground">
-                                            {(result.area! / 10000).toFixed(2)} ha
-                                        </span>
-                                    </span>
-                                    <span className="font-mono text-sm tabular-nums text-muted-foreground">
-                                        Perimeter:{' '}
-                                        <span className="text-foreground">
-                                            {(result.distance / 1000).toFixed(2)} km
-                                        </span>
-                                    </span>
-                                </>
-                            )}
-                            {result.mode === 'distance' && (
-                                <>
-                                    <span className="text-xs font-medium text-foreground">
-                                        Distance measurement
-                                    </span>
-                                    <span className="font-mono text-sm tabular-nums text-muted-foreground">
-                                        Total distance:{' '}
-                                        <span className="text-foreground">
-                                            {(result.distance / 1000).toFixed(2)} km
-                                        </span>
-                                    </span>
-                                </>
-                            )}
+                            <span className="text-xs font-medium text-foreground">
+                                Measure distance
+                            </span>
+                            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                                Total area:{' '}
+                                <span className="text-foreground">
+                                    {(result.area / 10000).toFixed(2)} ha
+                                </span>
+                            </span>
+                            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                                Total distance:{' '}
+                                <span className="text-foreground">
+                                    {(result.distance / 1000).toFixed(2)} km
+                                </span>
+                            </span>
                         </div>
                     </div>
                 </div>,

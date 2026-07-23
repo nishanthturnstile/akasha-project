@@ -614,8 +614,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     };
 
     const moveHandler = (e: maplibregl.MapMouseEvent) => {
-      // While drawing/editing, let FieldDrawController own the cursor.
-      if (fieldMode) return;
+      // While drawing/editing/measuring, let the active tool own events.
+      if (fieldMode || activeMapTool) return;
       const feature = fieldAtPoint(e);
       canvas.style.cursor = feature ? hoverCursor : '';
       const plotId = feature?.properties?.plotId as string | undefined;
@@ -638,6 +638,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       setHoveredField(null);
     };
     const clickHandler = (e: maplibregl.MapMouseEvent) => {
+      if (activeMapTool) return;
       const feature = fieldAtPoint(e);
       if (!feature) return;
       const plotId = (feature.properties?.plotId as string | undefined) ?? selectedPlotId;
@@ -669,7 +670,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       pendingHoveredField.current = null;
       setHoveredField(null);
     };
-  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode, globalViewOpen, seasonFields, seasonId, view]);
+  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode, activeMapTool, globalViewOpen, seasonFields, seasonId, view]);
 
   useEffect(() => {
     if (!splitEnabled || !map || !rightMap) return;
@@ -1609,7 +1610,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           enabled={ splitEnabled }
           onEnabledChange={ setSplitMode }
         />
-        { overlaysVisible && <MeasureTool
+        { overlaysVisible && <MeasureTool key="field"
+          activeTool={ activeMapTool }
+          map={ map }
+          onRequestTool={ requestMapTool }
+          onReleaseTool={ releaseMapTool }
+        /> }
+        { globalViewOpen && <MeasureTool key="global"
           activeTool={ activeMapTool }
           map={ map }
           onRequestTool={ requestMapTool }

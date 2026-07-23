@@ -11,6 +11,16 @@ import {
     polygonAreaMeters,
 } from '@/lib/measure';
 
+function ringCentroid(ring: [number, number][]): [number, number] {
+    let cx = 0;
+    let cy = 0;
+    for (const [lng, lat] of ring) {
+        cx += lng;
+        cy += lat;
+    }
+    return [cx / ring.length, cy / ring.length];
+}
+
 const SEGMENT_SOURCE = 'measure-segment-labels';
 const SEGMENT_LAYER = 'measure-segment-label-layer';
 const OUTLINE_ID = 'measure-polygon-outline';
@@ -40,9 +50,11 @@ export function MeasureTool({
 }: MeasureToolProps) {
     const [open, setOpen] = useState(false);
     const [result, setResult] = useState<MeasureResult | null>(null);
+    const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
 
     const drawRef = useRef<TerraDraw | null>(null);
     const startedRef = useRef(false);
+    const centroidRef = useRef<[number, number]>([0, 0]);
 
     // ---- ensure CSS rules exist ----
     useEffect(() => {
@@ -278,12 +290,30 @@ export function MeasureTool({
             draw.stop();
             startedRef.current = false;
 
+            centroidRef.current = ringCentroid(ring);
             setResult({ area, distance, geometry: ring });
             setCursorClass('measure-done');
 
             addResultPolygon(ring);
         };
     }, [setCursorClass, addResultPolygon]);
+
+    const repositionPopup = useCallback(() => {
+        if (!map || !result) return;
+        const [lng, lat] = centroidRef.current;
+        const p = map.project([lng, lat]);
+        setPopupPos({ x: p.x, y: p.y });
+    }, [map, result]);
+
+    useEffect(() => {
+        repositionPopup();
+    }, [result, repositionPopup]);
+
+    useEffect(() => {
+        if (!map || !result) return;
+        map.on('move', repositionPopup);
+        return () => { map.off('move', repositionPopup); };
+    }, [map, result, repositionPopup]);
 
     const ensureDraw = useCallback(async () => {
         if (!map) return null;
@@ -317,6 +347,7 @@ export function MeasureTool({
         const draw = await ensureDraw();
         if (!draw) return;
         setResult(null);
+        setPopupPos(null);
         setCursorClass('measure-crosshair');
         removeResultPolygon();
         draw.clear();
@@ -333,6 +364,7 @@ export function MeasureTool({
             startedRef.current = false;
         }
         setResult(null);
+        setPopupPos(null);
         setCursorClass('');
         onReleaseTool?.('measure');
     }, [onReleaseTool]);
@@ -378,6 +410,9 @@ export function MeasureTool({
     }, [activeTool, open, stopMeasuring]);
 
     // ---- unmount cleanup ----
+    const onReleaseToolRef = useRef(onReleaseTool);
+    onReleaseToolRef.current = onReleaseTool;
+
     useEffect(() => {
         return () => {
             removeSegmentLabels();
@@ -388,6 +423,7 @@ export function MeasureTool({
                 startedRef.current = false;
             }
             drawRef.current = null;
+            onReleaseToolRef.current?.('measure');
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -419,9 +455,10 @@ export function MeasureTool({
                 </button>
             </div>
 
-            {result && createPortal(
+            {result && popupPos && createPortal(
                 <div
-                    className="fixed left-1/2 top-1/2 z-toolbar -translate-x-1/2 -translate-y-1/2"
+                    className="fixed z-toolbar"
+                    style={{ left: popupPos.x, top: popupPos.y, transform: 'translate(-50%, calc(-100% - 12px))' }}
                     data-testid="measure-readout"
                 >
                     <div className="relative glass rounded-lg px-5 py-4 shadow-lg">

@@ -7,6 +7,7 @@ import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState'
 import { cn } from '@/lib/utils';
 import { MAP_UI_COLORS } from '@/map/colors';
 import type { Plot, PlotGeometry, PlotUpdatePayload } from '@/types/api';
+import { deriveCircleFromRing } from '@/components/fields/circleGeometry';
 
 export type FieldDrawMode = 'draw' | 'edit' | null;
 
@@ -139,7 +140,12 @@ export function FieldDrawController({
       const [
         { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode, TerraDrawCircleMode, TerraDrawFreehandLineStringMode },
         { TerraDrawMapLibreGLAdapter },
-      ] = await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
+        { TerraDrawCircleEditMode },
+      ] = await Promise.all([
+        import('terra-draw'),
+        import('terra-draw-maplibre-gl-adapter'),
+        import('@/components/fields/circleEditMode'),
+      ]);
       const polygonStyles = {
         fillColor: MAP_UI_COLORS.selection,
         fillOpacity: 0.25 as const,
@@ -185,6 +191,14 @@ export function FieldDrawController({
               closingPointOpacity: 1 as const,
               closingPointOutlineOpacity: 1 as const,
             },
+          }),
+          new TerraDrawCircleEditMode({
+            styles: {
+              handleColor: MAP_UI_COLORS.handle,
+              handleOutlineColor: MAP_UI_COLORS.white,
+              handleWidth: 6 as const,
+            },
+            pointerDistance: 20,
           }),
           enableVertexDragRef.current
             ? new TerraDrawSelectMode({
@@ -259,16 +273,28 @@ export function FieldDrawController({
             // Re-add the feature so SelectMode picks up the draggable flags
             // (programmatic selectFeature often only highlights, not enables
             // interactive vertex handles).
+            const isCircle = terraDrawMode === 'circle';
             try { draw.removeFeatures([id]); } catch { /* ignore */ }
             const results = draw.addFeatures([
               {
                 type: 'Feature',
                 geometry: geometry as GeoJSONStoreGeometries,
+                // Always 'polygon', even for circles: TerraDrawCircleEditMode targets
+                // features by id, not by this tag, and 'polygon' reliably resolves to
+                // TerraDrawPolygonMode's styling regardless of which mode is active.
                 properties: { mode: 'polygon' },
               },
             ]);
             const newId = results[0]?.id ?? id;
-            try { draw.setMode('select'); draw.selectFeature(newId); } catch { /* ignore */ }
+            try {
+              if (isCircle) {
+                draw.setMode('circle-edit');
+                draw.updateModeOptions('circle-edit', { targetFeatureId: newId });
+              } else {
+                draw.setMode('select');
+                draw.selectFeature(newId);
+              }
+            } catch { /* ignore */ }
             onPolygonCompleteRef.current?.(geometry, String(newId));
             setDraftGeometry(geometry);
             if (map && typeof map.getCanvas === 'function') {
@@ -291,8 +317,13 @@ export function FieldDrawController({
         // Switch to select mode so the finished shape stays visible but the user
         // cannot accidentally start a second polygon on the next click.
         try {
-          draw.setMode('select');
-          draw.selectFeature(id);
+          if (terraDrawMode === 'circle' && enableVertexDragRef.current) {
+            draw.setMode('circle-edit');
+            draw.updateModeOptions('circle-edit', { targetFeatureId: id });
+          } else {
+            draw.setMode('select');
+            draw.selectFeature(id);
+          }
         } catch {
           // Ignore mode-switch errors during cleanup.
         }
@@ -400,8 +431,14 @@ export function FieldDrawController({
         return;
       }
       try {
-        draw.setMode('select');
-        draw.selectFeature(selectedPlot.id);
+        const circleParams = deriveCircleFromRing(selectedPlot.geometry.coordinates[0]);
+        if (circleParams) {
+          draw.setMode('circle-edit');
+          draw.updateModeOptions('circle-edit', { targetFeatureId: selectedPlot.id });
+        } else {
+          draw.setMode('select');
+          draw.selectFeature(selectedPlot.id);
+        }
       } catch {
         // Ignore mode-switch errors during cleanup.
       }
@@ -446,8 +483,12 @@ export function FieldDrawController({
     if (modeRef.current !== 'draw') return;
     if (cutMode) {
       const currentMode = draw.getMode();
-      // TerraDraw can't switch from 'select' to 'freehand-linestring' directly
-      if (currentMode === 'select') {
+      // TerraDraw can't switch directly from 'select' (or our custom 'circle-edit', which
+      // is also a select-like editing mode) to 'freehand-linestring' -- hop through
+      // 'polygon' first. Skipping this hop for 'circle-edit' would leave it stuck active
+      // (with its 4 handles still on screen) since the mode switch below silently no-ops
+      // via the catch.
+      if (currentMode === 'select' || currentMode === 'circle-edit') {
         draw.setMode('polygon');
       }
       try {

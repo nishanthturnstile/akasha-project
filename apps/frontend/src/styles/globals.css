@@ -166,6 +166,9 @@
     --scrim-from: 222 47% 11% / 0;
     --scrim-to: 222 47% 11% / 0.62;
     --ring-onmap: inset 0 0 0 1px hsl(var(--on-map-ring) / var(--on-map-ring-alpha));
+    --measure-color: #eab308;
+    --measure-label-text: #ffffff;
+    --measure-label-halo: #000000;
 
     --dur-instant: 80ms;
     --dur-fast: 140ms;

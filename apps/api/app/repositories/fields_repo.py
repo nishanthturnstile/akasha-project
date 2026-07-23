@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from geoalchemy2.shape import from_shape, to_shape
@@ -434,7 +434,7 @@ def get_next_field_number(user_id: str) -> int:
             session.add(setting)
         else:
             setting.value = next_number
-            setting.updated_at = datetime.now(timezone.utc)
+            setting.updated_at = datetime.now(UTC)
 
         return next_number
 

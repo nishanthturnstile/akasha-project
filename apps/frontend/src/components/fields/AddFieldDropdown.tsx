@@ -20,9 +20,13 @@ interface AddFieldDropdownProps {
   testId?: string;
 }
 
-function latestCropName(field: Field): string | null {
+function latestCropName(field: Field, seasonId?: string | null): string | null {
   if (!field.vegetationData || field.vegetationData.length === 0) return null;
-  const sorted = [...field.vegetationData].sort((a, b) => {
+  const cycles = seasonId
+    ? field.vegetationData.filter((v) => v.seasonId === seasonId)
+    : field.vegetationData;
+  if (cycles.length === 0) return null;
+  const sorted = [...cycles].sort((a, b) => {
     const yearA = a.year ?? 0;
     const yearB = b.year ?? 0;
     if (yearB !== yearA) return yearB - yearA;
@@ -133,7 +137,7 @@ export function AddFieldDropdown({
                   <div className="flex flex-col self-center text-sm text-muted-foreground tnum">
                     <span>{f.areaHa != null ? `${f.areaHa.toFixed(1)} ha` : '—'}</span>
                     {(() => {
-                      const crop = latestCropName(f);
+                      const crop = latestCropName(f, defaultSeasonId);
                       return crop ? <span className="text-xs text-muted-foreground/60">{crop}</span> : null;
                     })()}
                   </div>

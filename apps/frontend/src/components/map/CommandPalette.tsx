@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Command } from 'cmdk';
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { CalendarDays, Layers, Radar, Satellite } from 'lucide-react';
+import { CalendarDays, Crosshair, Layers, Loader2, MapPin, Radar, Satellite } from 'lucide-react';
 import type { SceneDate, Source } from '@/types/api';
+import { useGeocoding } from '@/hooks/useGeocoding';
 
 interface CommandPaletteProps {
     open: boolean;
@@ -13,14 +15,14 @@ interface CommandPaletteProps {
     onSelectSource: (sourceId: string) => void;
     onSelectDate: (date: string) => void;
     onToggleLayers: () => void;
+    onFlyTo?: (center: [number, number]) => void;
 }
 
 /**
- * ⌘K / Ctrl-K command palette to jump between imagery sources and acquisition
- * dates without reaching for the panels. Built on `cmdk` (Radix Dialog under the
+ * ⌘K / Ctrl-K command palette to jump between imagery sources, acquisition
+ * dates, panel actions, and locations. Built on `cmdk` (Radix Dialog under the
  * hood, so focus-trap/ARIA come for free) and styled with the CIDSA glass-card
- * surface. Geocoded "places" search is intentionally out of scope until a
- * geocoder exists; this covers sources, dates, and panel actions.
+ * surface.
  */
 export function CommandPalette({
     open,
@@ -31,8 +33,26 @@ export function CommandPalette({
     onSelectSource,
     onSelectDate,
     onToggleLayers,
+    onFlyTo,
 }: CommandPaletteProps) {
+    const [searchValue, setSearchValue] = useState('');
+    const { results: geoResults, loading: geoLoading } = useGeocoding(searchValue);
     const selectableDates = (dates ?? []).filter((d) => d.tileAvailable);
+
+    const hasGeoResults = geoResults.length > 0;
+    const hasSourcesMatch = sources?.some((s) =>
+        s.label.toLowerCase().includes(searchValue.toLowerCase()),
+    );
+    const hasDatesMatch = selectableDates.some((d) =>
+        d.acquisitionDate.includes(searchValue),
+    );
+    const showEmpty =
+        searchValue.trim().length > 0 &&
+        !geoLoading &&
+        !hasGeoResults &&
+        !hasSourcesMatch &&
+        !hasDatesMatch &&
+        !'toggle layers panel'.includes(searchValue.toLowerCase());
 
     return (
         <Dialog.Root open={ open } onOpenChange={ onOpenChange }>
@@ -45,21 +65,23 @@ export function CommandPalette({
                     <VisuallyHidden>
                         <Dialog.Title>Command palette</Dialog.Title>
                         <Dialog.Description>
-                            Search and jump between imagery sources, acquisition dates, and panel actions.
+                            Search and jump between imagery sources, acquisition dates, panel actions, and locations.
                         </Dialog.Description>
                     </VisuallyHidden>
-                    <Command label="Command palette">
+                    <Command label="Command palette" shouldFilter={ !hasGeoResults }>
                         <div data-testid="command-palette">
                             <div className="flex items-center gap-2 border-b border-border/60 px-3">
                                 <Command.Input
-                                    placeholder="Search sources, dates, actions…"
+                                    placeholder="Search sources, dates, locations…"
+                                    value={ searchValue }
+                                    onValueChange={ setSearchValue }
                                     data-testid="command-input"
                                     className="h-12 w-full bg-transparent text-[14px] text-foreground placeholder:text-muted-foreground focus:outline-none"
                                 />
                             </div>
 
                             <Command.List className="p-1.5">
-                                <Command.Empty>No matches.</Command.Empty>
+                                { showEmpty && <Command.Empty>No matches.</Command.Empty> }
 
                                 { sources && sources.length > 0 && (
                                     <Command.Group heading="Sources">
@@ -106,6 +128,34 @@ export function CommandPalette({
                                                 { date.isLatestUsable && (
                                                     <span className="text-[11px] font-medium text-primary">Latest</span>
                                                 ) }
+                                            </Command.Item>
+                                        )) }
+                                    </Command.Group>
+                                ) }
+
+                                { onFlyTo && searchValue.trim().length > 0 && (
+                                    <Command.Group heading="Search location">
+                                        { geoLoading && (
+                                            <Command.Item value="__geo_loading__" disabled>
+                                                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" strokeWidth={ 1.75 } />
+                                                <span className="flex-1 text-muted-foreground">Searching…</span>
+                                            </Command.Item>
+                                        ) }
+                                        { !geoLoading && hasGeoResults && geoResults.map((result, i) => (
+                                            <Command.Item
+                                                key={ `geo-${i}` }
+                                                value={ `location ${result.label}` }
+                                                onSelect={ () => {
+                                                    onFlyTo(result.center);
+                                                    onOpenChange(false);
+                                                } }
+                                            >
+                                                { result.type === 'coords' ? (
+                                                    <Crosshair className="size-4 shrink-0 text-primary" strokeWidth={ 1.75 } />
+                                                ) : (
+                                                    <MapPin className="size-4 shrink-0 text-muted-foreground" strokeWidth={ 1.75 } />
+                                                ) }
+                                                <span className="flex-1 truncate">{ result.label }</span>
                                             </Command.Item>
                                         )) }
                                     </Command.Group>

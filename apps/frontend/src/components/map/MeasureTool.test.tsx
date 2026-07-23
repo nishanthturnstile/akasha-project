@@ -6,25 +6,23 @@ import { MeasureTool } from '@/components/map/MeasureTool';
 // the toggle/disclosure UI without touching the (browser-only) draw engine.
 describe('MeasureTool', () => {
     it('renders a collapsed toggle by default', () => {
-        const { getByTestId, queryByTestId } = render(<MeasureTool map={ null } />);
+        const { getByTestId } = render(<MeasureTool map={ null } />);
         const toggle = getByTestId('measure-toggle');
         expect(toggle.getAttribute('aria-expanded')).toBe('false');
-        expect(queryByTestId('measure-panel')).toBeNull();
     });
 
-    it('expands to reveal distance and area modes', () => {
+    it('expands to start measurement mode', () => {
         const { getByTestId } = render(<MeasureTool map={ null } />);
-        fireEvent.click(getByTestId('measure-toggle'));
-        expect(getByTestId('measure-panel')).toBeTruthy();
-        expect(getByTestId('measure-distance-btn')).toBeTruthy();
-        expect(getByTestId('measure-area-btn')).toBeTruthy();
+        const toggle = getByTestId('measure-toggle');
+        fireEvent.click(toggle);
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
     });
 
     it('collapses again when toggled off', () => {
-        const { getByTestId, queryByTestId } = render(<MeasureTool map={ null } />);
+        const { getByTestId } = render(<MeasureTool map={ null } />);
         const toggle = getByTestId('measure-toggle');
         fireEvent.click(toggle);
         fireEvent.click(toggle);
-        expect(queryByTestId('measure-panel')).toBeNull();
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
     });
 });

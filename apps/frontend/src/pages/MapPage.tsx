@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
-import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { BrandLockup } from '@/components/BrandLockup';
 import { MAP_UI_COLORS } from '@/map/colors';
 import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint, getFieldSarOverlayImage } from '@/lib/api';
@@ -25,6 +25,7 @@ import { selectEffectiveSourceId } from '@/lib/sourceSelection';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
+import { LocationSearch } from '@/components/map/LocationSearch';
 import { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { FIELD_BOUNDARY_FILL_LAYER_ID } from '@/components/fields/fieldBoundaryLayerHelpers';
 import { FieldDrawController, type FieldDrawMode } from '@/components/fields/FieldDrawController';
@@ -613,8 +614,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     };
 
     const moveHandler = (e: maplibregl.MapMouseEvent) => {
-      // While drawing/editing, let FieldDrawController own the cursor.
-      if (fieldMode) return;
+      // While drawing/editing/measuring, let the active tool own events.
+      if (fieldMode || activeMapTool) return;
       const feature = fieldAtPoint(e);
       canvas.style.cursor = feature ? hoverCursor : '';
       const plotId = feature?.properties?.plotId as string | undefined;
@@ -637,6 +638,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       setHoveredField(null);
     };
     const clickHandler = (e: maplibregl.MapMouseEvent) => {
+      if (activeMapTool) return;
       const feature = fieldAtPoint(e);
       if (!feature) return;
       const plotId = (feature.properties?.plotId as string | undefined) ?? selectedPlotId;
@@ -668,7 +670,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       pendingHoveredField.current = null;
       setHoveredField(null);
     };
-  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode, globalViewOpen, seasonFields, seasonId, view]);
+  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode, activeMapTool, globalViewOpen, seasonFields, seasonId, view]);
 
   useEffect(() => {
     if (!splitEnabled || !map || !rightMap) return;
@@ -1170,6 +1172,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     if (firstCreated) {
       view.setSelectedPlotId(firstCreated.id);
       focusPlot(map, firstCreated);
+      navigate(`/monitoring/field-analytics/field/${firstCreated.id}`);
     }
   };
 
@@ -1477,6 +1480,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           });
           view.setSelectedPlotId(created.id);
           focusPlot(map, created);
+          navigate(`/monitoring/field-analytics/field/${created.id}`);
           return created;
         } }
         onUpdateField={ async (plotId, payload) => {
@@ -1504,14 +1508,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           <div className="glass-card flex items-center justify-center rounded-md px-2 py-2 shadow-e2">
             <BrandLockup variant="icon" />
           </div>
-          <button
-            type="button"
-            onClick={ () => setCommandOpen(true) }
-            className="glass flex h-9 w-64 items-center gap-2 rounded-md px-3 text-left text-[13px] text-muted-foreground/70 shadow-e2 transition-colors duration-fast ease-standard hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Search className="size-3.5 shrink-0" strokeWidth={ 1.75 } />
-            <span>Search location</span>
-          </button>
+          <LocationSearch map={ map } className="w-72" />
         </div>
       ) }
 
@@ -1524,6 +1521,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         onSelectSource={ view.setSource }
         onSelectDate={ view.setDate }
         onToggleLayers={ view.toggleLayers }
+        onFlyTo={ (center) => {
+          map?.flyTo({ center, zoom: 13, duration: 650 });
+        } }
       /> }
 
       { overlaysVisible && (
@@ -1610,7 +1610,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           enabled={ splitEnabled }
           onEnabledChange={ setSplitMode }
         />
-        { overlaysVisible && <MeasureTool
+        { overlaysVisible && <MeasureTool key="field"
+          activeTool={ activeMapTool }
+          map={ map }
+          onRequestTool={ requestMapTool }
+          onReleaseTool={ releaseMapTool }
+        /> }
+        { globalViewOpen && <MeasureTool key="global"
           activeTool={ activeMapTool }
           map={ map }
           onRequestTool={ requestMapTool }

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
-import { FieldThumbnail } from '@/components/fields/GlobalViewPanel';
+import { FieldThumbnail, getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
@@ -148,6 +148,22 @@ export default function FieldAnalyticsPage() {
     if (!fieldsQ.data || !seasonId) return fieldsQ.data ?? [];
     return fieldsQ.data.filter((f) => f.seasonIds?.includes(seasonId)) ?? [];
   }, [fieldsQ.data, seasonId]);
+
+  // On mount, auto-select the last field for this season from Global View
+  // so the map shows a field boundary instead of a blank "No field selected" state.
+  const autoSelectedSeason = useRef<string | null>(null);
+  useEffect(() => {
+    if (selectedPlotId) return;
+    if (!seasonId || !fieldsQ.data) return;
+    if (autoSelectedSeason.current === seasonId) return;
+    autoSelectedSeason.current = seasonId;
+    const lastFieldMap = getLastFieldPerSeason();
+    const lastFieldId = lastFieldMap[seasonId];
+    if (!lastFieldId) return;
+    if (!fieldsQ.data.some((f) => f.id === lastFieldId)) return;
+    setSelectedPlotId(lastFieldId);
+    setFocusNonce(Date.now());
+  }, [selectedPlotId, seasonId, fieldsQ.data, setSelectedPlotId, setFocusNonce]);
 
   const navigateWithImageryState = useCallback((path: string) => {
     const [pathname, query = ''] = path.split('?');

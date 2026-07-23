@@ -268,7 +268,7 @@ export function IndexPanel({
                 key={ tab.value }
                 value={ tab.value }
                 data-testid={ `index-panel-tab-${tab.value}` }
-                className="h-8 px-0 rounded-none border-0 bg-transparent text-sm text-muted-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                className="h-8 px-0 rounded-none border-0 bg-transparent text-sm text-muted-foreground shadow-none data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
               >
                 <span className={ cn('inline-block pb-0.5 border-b-2', activeTab === tab.value ? 'border-primary' : 'border-transparent') }>
                   { tab.label }

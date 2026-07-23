@@ -11,6 +11,14 @@ import {
     polygonAreaMeters,
 } from '@/lib/measure';
 
+function resolveCssVar(name: string): string {
+    try {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    } catch {
+        return '';
+    }
+}
+
 function ringCentroid(ring: [number, number][]): [number, number] {
     let cx = 0;
     let cy = 0;
@@ -101,12 +109,13 @@ export function MeasureTool({
                         properties: {},
                     },
                 });
+                const mc = resolveCssVar('--measure-color');
                 map.addLayer({
                     id: POLYGON_FILL_LAYER,
                     type: 'fill',
                     source: POLYGON_SOURCE,
                     paint: {
-                        'fill-color': '#eab308',
+                        'fill-color': mc,
                         'fill-opacity': 0.12,
                     },
                 });
@@ -115,7 +124,7 @@ export function MeasureTool({
                     type: 'line',
                     source: POLYGON_SOURCE,
                     paint: {
-                        'line-color': '#eab308',
+                        'line-color': mc,
                         'line-width': 2,
                         'line-dasharray': [3, 3],
                     },
@@ -219,8 +228,8 @@ export function MeasureTool({
                         'text-offset': [0, -1.5],
                     },
                     paint: {
-                        'text-color': '#ffffff',
-                        'text-halo-color': '#000000',
+                        'text-color': resolveCssVar('--measure-label-text'),
+                        'text-halo-color': resolveCssVar('--measure-label-halo'),
                         'text-halo-width': 2,
                     },
                 });
@@ -243,7 +252,7 @@ export function MeasureTool({
                     map.setPaintProperty(
                         OUTLINE_ID,
                         'line-color',
-                        '#eab308',
+                        resolveCssVar('--measure-color'),
                     );
                     map.setPaintProperty(
                         OUTLINE_ID,
@@ -252,7 +261,7 @@ export function MeasureTool({
                     );
                 }
                 if (map.getLayer(FILL_ID)) {
-                    map.setPaintProperty(FILL_ID, 'fill-color', '#eab308');
+                    map.setPaintProperty(FILL_ID, 'fill-color', resolveCssVar('--measure-color'));
                     map.setPaintProperty(FILL_ID, 'fill-opacity', finished ? 0.12 : 0.06);
                 }
             } catch {
@@ -372,20 +381,18 @@ export function MeasureTool({
     const toggleOpen = useCallback(() => {
         setOpen((prev) => {
             const nextOpen = !prev;
-            if (
-                nextOpen &&
-                onRequestTool &&
-                !onRequestTool('measure')
-            )
+            if (nextOpen && onRequestTool && !onRequestTool('measure'))
                 return prev;
-            if (nextOpen) {
-                void startMeasuring();
-            } else {
+            if (!nextOpen) {
                 stopMeasuring();
             }
             return nextOpen;
         });
-    }, [onRequestTool, startMeasuring, stopMeasuring]);
+    }, [onRequestTool, stopMeasuring]);
+
+    const handleModeSelect = useCallback(() => {
+        void startMeasuring();
+    }, [startMeasuring]);
 
     // ---- Escape handler ----
     useEffect(() => {
@@ -453,6 +460,31 @@ export function MeasureTool({
                 >
                     <Ruler className="size-5" strokeWidth={1.75} />
                 </button>
+                {open && (
+                    <div
+                        data-testid="measure-panel"
+                        className="flex flex-col gap-1"
+                        role="region"
+                        aria-label="Measurement modes"
+                    >
+                        <button
+                            type="button"
+                            data-testid="measure-distance-btn"
+                            className="glass flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-foreground/80 transition-colors duration-fast ease-standard hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={handleModeSelect}
+                        >
+                            Distance
+                        </button>
+                        <button
+                            type="button"
+                            data-testid="measure-area-btn"
+                            className="glass flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-foreground/80 transition-colors duration-fast ease-standard hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={handleModeSelect}
+                        >
+                            Area
+                        </button>
+                    </div>
+                )}
             </div>
 
             {result && popupPos && createPortal(

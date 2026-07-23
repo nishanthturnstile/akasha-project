@@ -11,4 +11,5 @@ export const MAP_UI_COLORS = {
   neutralOutline: '#9ca3af',
   destructive: '#dc2626',
   white: '#ffffff',
+  handle: '#f59e0b',
 } as const;

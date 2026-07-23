@@ -33,6 +33,7 @@ import type { DateRange } from '@/components/ui/date-picker';
 import type maplibregl from 'maplibre-gl';
 import type { TerraDraw } from 'terra-draw';
 import type { Crop, Field, IrrigationType, PlotGeometry, TillageType, VegetationCycleCreate } from '@/types/api';
+import { deriveCircleFromRing } from '@/components/fields/circleGeometry';
 
 interface Props {
   field: Field;
@@ -331,8 +332,15 @@ export default function EditFieldDialog({
 
     void (async () => {
       try {
-        const [{ TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode }, { TerraDrawMapLibreGLAdapter }] =
-          await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
+        const [
+          { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode },
+          { TerraDrawMapLibreGLAdapter },
+          { TerraDrawCircleEditMode },
+        ] = await Promise.all([
+          import('terra-draw'),
+          import('terra-draw-maplibre-gl-adapter'),
+          import('@/components/fields/circleEditMode'),
+        ]);
 
         if (cancelled) return;
 
@@ -372,6 +380,16 @@ export default function EditFieldDialog({
                 },
               },
             }),
+            // Only ever used to EDIT an already-loaded field's geometry (this dialog
+            // never draws a brand-new circle), so no TerraDrawCircleMode is registered.
+            new TerraDrawCircleEditMode({
+              styles: {
+                handleColor: MAP_UI_COLORS.handle,
+                handleOutlineColor: MAP_UI_COLORS.white,
+                handleWidth: 6 as const,
+              },
+              pointerDistance: 20,
+            }),
           ],
         });
 
@@ -380,15 +398,29 @@ export default function EditFieldDialog({
         drawRef.current = draw;
 
         if (field.geometry.type === 'Polygon') {
+          const circleParams = deriveCircleFromRing(field.geometry.coordinates[0]);
           const results = draw.addFeatures([
             {
               type: 'Feature',
               geometry: field.geometry,
+              // Always tagged 'polygon' (never 'circle') so TerraDrawPolygonMode's
+              // styleFeature renders it -- no mode named 'circle' is registered in this
+              // dialog (it only ever edits an existing geometry, never draws a new one),
+              // so tagging 'circle' here resolves to no style function and the feature
+              // silently fails to render at all. circle-edit mode targets features by id,
+              // not by this tag, so the tag is purely a display concern.
               properties: { mode: 'polygon' },
             },
           ]);
           const id = results[0]?.id;
-          if (id) draw.selectFeature(id);
+          if (id) {
+            if (circleParams) {
+              draw.setMode('circle-edit');
+              draw.updateModeOptions('circle-edit', { targetFeatureId: id });
+            } else {
+              draw.selectFeature(id);
+            }
+          }
         }
 
         draw.on('change', () => {

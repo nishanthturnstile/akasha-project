@@ -1701,6 +1701,26 @@
   resolved "https://registry.yarnpkg.com/@testing-library/user-event/-/user-event-14.6.1.tgz#13e09a32d7a8b7060fe38304788ebf4197cd2149"
   integrity sha512-vq7fv0rnt+QTXgPxr5Hjc210p6YKq2kmdziLgnsZGgLJ9e6VAShx1pACLuRjd/AS/sr7phAR58OIIpf0LlmQNw==
 
+"@turf/circle@^7.3.5":
+  version "7.3.5"
+  resolved "https://registry.yarnpkg.com/@turf/circle/-/circle-7.3.5.tgz#569f3237d789e743372c32b44fd03d24c07e0289"
+  integrity sha512-Tse7GJrx0rxaQ5BdY6pHZ9HFPrZwRMry2yaqq94UsUyonhy1m7U2icB3Zp4M8o4XjHIGTCq9i2BYcGJram51Sw==
+  dependencies:
+    "@turf/destination" "7.3.5"
+    "@turf/helpers" "7.3.5"
+    "@types/geojson" "^7946.0.10"
+    tslib "^2.8.1"
+
+"@turf/destination@7.3.5":
+  version "7.3.5"
+  resolved "https://registry.yarnpkg.com/@turf/destination/-/destination-7.3.5.tgz#1537feed29875e915db27228a60d5dcc290ecfc6"
+  integrity sha512-x6ylChhOlIbucRSw7wF6z2gSEqqQl+dE0nSH5AL/ojZkqqGYahiw+2P4A8ZMuDM6rzH+FIqRYDes0o4nSArZCw==
+  dependencies:
+    "@turf/helpers" "7.3.5"
+    "@turf/invariant" "7.3.5"
+    "@types/geojson" "^7946.0.10"
+    tslib "^2.8.1"
+
 "@turf/difference@^7.3.5":
   version "7.3.5"
   resolved "https://registry.yarnpkg.com/@turf/difference/-/difference-7.3.5.tgz#19e77309d41c3cb8f5c4b16a14b1dbc6a08f1433"
@@ -1712,11 +1732,30 @@
     polyclip-ts "^0.16.8"
     tslib "^2.8.1"
 
+"@turf/distance@^7.3.5":
+  version "7.3.5"
+  resolved "https://registry.yarnpkg.com/@turf/distance/-/distance-7.3.5.tgz#3aa16a1fde30e5cf4cf40b7e497be8cc5d6bbaaf"
+  integrity sha512-uQAC63zg/l91KUxzfhqio7Ii3+UXTrPOVJScIdRj6EO6+9XHI4kC+AdyIS4cPAv14sZfJLIBxzMnzcGrss+kEA==
+  dependencies:
+    "@turf/helpers" "7.3.5"
+    "@turf/invariant" "7.3.5"
+    "@types/geojson" "^7946.0.10"
+    tslib "^2.8.1"
+
 "@turf/helpers@7.3.5", "@turf/helpers@^7.3.5":
   version "7.3.5"
   resolved "https://registry.yarnpkg.com/@turf/helpers/-/helpers-7.3.5.tgz#051928c03cdf9ffcc7ae36581c317afc49bfd999"
   integrity sha512-E/NMGV5MwbjjP7AJXBtsanC3yY8N2MQ87IGdIgkB2ji5AtBpwnH4L3gEqpYN4RlCJJWbLbzO91BbKv2waUd0eg==
   dependencies:
+    "@types/geojson" "^7946.0.10"
+    tslib "^2.8.1"
+
+"@turf/invariant@7.3.5":
+  version "7.3.5"
+  resolved "https://registry.yarnpkg.com/@turf/invariant/-/invariant-7.3.5.tgz#5619d0e0ef3755e2be69855bad47e10158a1820b"
+  integrity sha512-ZVIvsBvjr8lO7WxC5zYNjRsjSDvyGvWkJMjuWaJjTU8x+1tmfNnw3gDX/TI2Sit83gcRYLYkNo23lB/udqx/Hg==
+  dependencies:
+    "@turf/helpers" "7.3.5"
     "@types/geojson" "^7946.0.10"
     tslib "^2.8.1"
 

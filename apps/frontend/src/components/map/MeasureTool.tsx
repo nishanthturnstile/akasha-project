@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type maplibregl from 'maplibre-gl';
-import { Ruler, Spline, Pentagon, X } from 'lucide-react';
+import { Ruler, X } from 'lucide-react';
 import type { TerraDraw } from 'terra-draw';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
 import { cn } from '@/lib/utils';
 import {
-    formatArea,
-    formatDistance,
+    haversineMeters,
     lineLengthMeters,
     polygonAreaMeters,
 } from '@/lib/measure';
+
+const SEGMENT_SOURCE = 'measure-segment-labels';
+const SEGMENT_LAYER = 'measure-segment-label-layer';
+const OUTLINE_ID = 'measure-polygon-outline';
+const FILL_ID = 'measure-polygon-fill';
+const POLYGON_SOURCE = 'measure-result-polygon';
+const POLYGON_FILL_LAYER = 'measure-result-fill';
+const POLYGON_OUTLINE_LAYER = 'measure-result-outline';
 
 interface MeasureToolProps {
     activeTool?: ActiveMapTool;
@@ -18,25 +26,12 @@ interface MeasureToolProps {
     onRequestTool?: (owner: MapToolOwner) => boolean;
 }
 
-type MeasureMode = 'distance' | 'area';
-
 interface MeasureResult {
-    mode: MeasureMode;
-    value: number;
+    area: number;
+    distance: number;
+    geometry: [number, number][];
 }
 
-/** Terra Draw's mode name for each measurement kind. */
-const MODE_NAME: Record<MeasureMode, string> = {
-    distance: 'linestring',
-    area: 'polygon',
-};
-
-/**
- * On-map distance/area measurement, powered by Terra Draw (the project's
- * sanctioned draw library — see CLAUDE.md). The library is dynamically imported
- * on first activation so it stays out of the initial bundle. A single active
- * measurement is kept; drawing geometry updates the readout live.
- */
 export function MeasureTool({
     activeTool = null,
     map,
@@ -44,46 +39,271 @@ export function MeasureTool({
     onRequestTool,
 }: MeasureToolProps) {
     const [open, setOpen] = useState(false);
-    const [mode, setMode] = useState<MeasureMode | null>(null);
     const [result, setResult] = useState<MeasureResult | null>(null);
 
     const drawRef = useRef<TerraDraw | null>(null);
     const startedRef = useRef(false);
-    const modeRef = useRef<MeasureMode | null>(null);
-    modeRef.current = mode;
 
-    const recompute = useCallback(() => {
-        const draw = drawRef.current;
-        const activeMode = modeRef.current;
-        if (!draw || !activeMode) return;
-        const features = draw
-            .getSnapshot()
-            .filter((f) => f.properties?.mode === MODE_NAME[activeMode]);
-        const feature = features[features.length - 1];
-        if (!feature) {
-            setResult(null);
-            return;
-        }
-        if (activeMode === 'distance' && feature.geometry.type === 'LineString') {
-            const coords = feature.geometry.coordinates as [number, number][];
-            setResult({ mode: 'distance', value: lineLengthMeters(coords) });
-        } else if (activeMode === 'area' && feature.geometry.type === 'Polygon') {
-            const ring = feature.geometry.coordinates[0] as [number, number][];
-            setResult({ mode: 'area', value: polygonAreaMeters(ring) });
-        }
+    // ---- ensure CSS rules exist ----
+    useEffect(() => {
+        const styleId = 'measure-cursor-rules';
+        if (document.getElementById(styleId)) return;
+        const styleEl = document.createElement('style');
+        styleEl.id = styleId;
+        styleEl.textContent = `
+            .measure-crosshair { cursor: crosshair !important; }
+            .measure-done { cursor: default !important; }
+        `;
+        document.head.appendChild(styleEl);
+        return () => {
+            const el = document.getElementById(styleId);
+            if (el) el.remove();
+        };
     }, []);
 
-    const ensureDraw = useCallback(async (): Promise<TerraDraw | null> => {
+    // ---- cursor class management ----
+    const setCursorClass = useCallback(
+        (cls: 'measure-crosshair' | 'measure-done' | '') => {
+            if (!map) return;
+            const canvas = map.getCanvas();
+            canvas.classList.remove('measure-crosshair', 'measure-done');
+            if (cls) canvas.classList.add(cls);
+        },
+        [map],
+    );
+
+    // ---- custom polygon layer for result ----
+    const addResultPolygon = useCallback(
+        (ring: [number, number][]) => {
+            if (!map) return;
+            removeResultPolygon();
+            try {
+                map.addSource(POLYGON_SOURCE, {
+                    type: 'geojson',
+                    data: {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [ring],
+                        },
+                        properties: {},
+                    },
+                });
+                map.addLayer({
+                    id: POLYGON_FILL_LAYER,
+                    type: 'fill',
+                    source: POLYGON_SOURCE,
+                    paint: {
+                        'fill-color': '#eab308',
+                        'fill-opacity': 0.12,
+                    },
+                });
+                map.addLayer({
+                    id: POLYGON_OUTLINE_LAYER,
+                    type: 'line',
+                    source: POLYGON_SOURCE,
+                    paint: {
+                        'line-color': '#eab308',
+                        'line-width': 2,
+                        'line-dasharray': [3, 3],
+                    },
+                });
+            } catch {
+                /* ignore */
+            }
+        },
+        [map],
+    );
+
+    const removeResultPolygon = useCallback(() => {
+        if (!map) return;
+        try {
+            if (map.getLayer(POLYGON_OUTLINE_LAYER))
+                map.removeLayer(POLYGON_OUTLINE_LAYER);
+            if (map.getLayer(POLYGON_FILL_LAYER))
+                map.removeLayer(POLYGON_FILL_LAYER);
+            if (map.getSource(POLYGON_SOURCE))
+                map.removeSource(POLYGON_SOURCE);
+        } catch {
+            /* ignore */
+        }
+    }, [map]);
+
+    const removeSegmentLabels = useCallback(() => {
+        if (!map) return;
+        try {
+            if (map.getLayer(SEGMENT_LAYER)) map.removeLayer(SEGMENT_LAYER);
+            if (map.getSource(SEGMENT_SOURCE)) map.removeSource(SEGMENT_SOURCE);
+        } catch {
+            /* ignore */
+        }
+    }, [map]);
+
+    const updateSegmentLabels = useCallback(() => {
+        if (!map) return;
+        const draw = drawRef.current;
+        if (!draw) return;
+        const features = draw
+            .getSnapshot()
+            .filter((f) => f.properties?.mode === 'polygon');
+        const feature = features[features.length - 1];
+        if (!feature || feature.geometry.type !== 'Polygon') {
+            removeSegmentLabels();
+            return;
+        }
+
+        const coords = feature.geometry.coordinates[0] as [number, number][];
+        if (coords.length < 2) {
+            removeSegmentLabels();
+            return;
+        }
+
+        const isDrawing = feature.properties?.currentlyDrawing === true;
+        const endIndex =
+            isDrawing && coords.length >= 3 ? coords.length - 1 : coords.length;
+
+        const segments: GeoJSON.Feature<GeoJSON.Point>[] = [];
+        for (let i = 1; i < endIndex; i++) {
+            const prev = coords[i - 1] as [number, number];
+            const curr = coords[i] as [number, number];
+            segments.push({
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: [
+                        (prev[0] + curr[0]) / 2,
+                        (prev[1] + curr[1]) / 2,
+                    ],
+                },
+                properties: {
+                    label: `${(haversineMeters(prev, curr) / 1000).toFixed(2)} km`,
+                },
+            });
+        }
+
+        try {
+            if (map.getSource(SEGMENT_SOURCE)) {
+                (
+                    map.getSource(SEGMENT_SOURCE) as maplibregl.GeoJSONSource
+                ).setData({
+                    type: 'FeatureCollection' as const,
+                    features: segments,
+                });
+            } else {
+                map.addSource(SEGMENT_SOURCE, {
+                    type: 'geojson',
+                    data: {
+                        type: 'FeatureCollection' as const,
+                        features: segments,
+                    },
+                });
+                map.addLayer({
+                    id: SEGMENT_LAYER,
+                    type: 'symbol',
+                    source: SEGMENT_SOURCE,
+                    layout: {
+                        'text-field': ['get', 'label'],
+                        'text-size': 11,
+                        'text-offset': [0, -1.5],
+                    },
+                    paint: {
+                        'text-color': '#ffffff',
+                        'text-halo-color': '#000000',
+                        'text-halo-width': 2,
+                    },
+                });
+            }
+        } catch {
+            /* layers may not be ready yet */
+        }
+    }, [map, removeSegmentLabels]);
+
+    const applyPolygonStyle = useCallback(
+        (finished: boolean) => {
+            if (!map) return;
+            try {
+                if (map.getLayer(OUTLINE_ID)) {
+                    map.setPaintProperty(
+                        OUTLINE_ID,
+                        'line-dasharray',
+                        [3, 3],
+                    );
+                    map.setPaintProperty(
+                        OUTLINE_ID,
+                        'line-color',
+                        '#eab308',
+                    );
+                    map.setPaintProperty(
+                        OUTLINE_ID,
+                        'line-width',
+                        2,
+                    );
+                }
+                if (map.getLayer(FILL_ID)) {
+                    map.setPaintProperty(FILL_ID, 'fill-color', '#eab308');
+                    map.setPaintProperty(FILL_ID, 'fill-opacity', finished ? 0.12 : 0.06);
+                }
+            } catch {
+                /* layers may not be ready */
+            }
+        },
+        [map],
+    );
+
+    // ---- Terra Draw interaction refs (defined after callbacks to satisfy hoisting) ----
+    const handleDrawChangeRef = useRef<() => void>(() => {});
+    const handleDrawFinishRef = useRef<() => void>(() => {});
+
+    useEffect(() => {
+        handleDrawChangeRef.current = () => {
+            updateSegmentLabels();
+            applyPolygonStyle(false);
+        };
+    }, [updateSegmentLabels, applyPolygonStyle]);
+
+    useEffect(() => {
+        handleDrawFinishRef.current = () => {
+            const draw = drawRef.current;
+            if (!draw) return;
+            const features = draw
+                .getSnapshot()
+                .filter((f) => f.properties?.mode === 'polygon');
+            const feature = features[features.length - 1];
+            if (feature?.geometry.type !== 'Polygon') return;
+
+            const ring = feature.geometry.coordinates[0] as [number, number][];
+            const distance = lineLengthMeters(ring);
+            const area = polygonAreaMeters(ring);
+
+            draw.stop();
+            startedRef.current = false;
+
+            setResult({ area, distance, geometry: ring });
+            setCursorClass('measure-done');
+
+            addResultPolygon(ring);
+        };
+    }, [setCursorClass, addResultPolygon]);
+
+    const ensureDraw = useCallback(async () => {
         if (!map) return null;
         if (!drawRef.current) {
-            const [{ TerraDraw, TerraDrawLineStringMode, TerraDrawPolygonMode }, { TerraDrawMapLibreGLAdapter }] =
-                await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
+            const [
+                { TerraDraw, TerraDrawPolygonMode },
+                { TerraDrawMapLibreGLAdapter },
+            ] = await Promise.all([
+                import('terra-draw'),
+                import('terra-draw-maplibre-gl-adapter'),
+            ]);
             const draw = new TerraDraw({
-                adapter: new TerraDrawMapLibreGLAdapter({ map, prefixId: 'measure' }),
-                modes: [new TerraDrawLineStringMode(), new TerraDrawPolygonMode()],
+                adapter: new TerraDrawMapLibreGLAdapter({
+                    map,
+                    prefixId: 'measure',
+                }),
+                modes: [new TerraDrawPolygonMode()],
             });
-            draw.on('change', recompute);
-            draw.on('finish', recompute);
+            draw.on('change', () => handleDrawChangeRef.current());
+            draw.on('finish', () => handleDrawFinishRef.current());
             drawRef.current = draw;
         }
         if (!startedRef.current) {
@@ -91,46 +311,65 @@ export function MeasureTool({
             startedRef.current = true;
         }
         return drawRef.current;
-    }, [map, recompute]);
+    }, [map]);
 
-    const activateMode = useCallback(
-        async (next: MeasureMode) => {
-            const draw = await ensureDraw();
-            if (!draw) return;
-            draw.clear();
-            setResult(null);
-            draw.setMode(MODE_NAME[next]);
-            setMode(next);
-        },
-        [ensureDraw],
-    );
-
-    const clearMeasurement = useCallback(() => {
-        drawRef.current?.clear();
+    const startMeasuring = useCallback(async () => {
+        const draw = await ensureDraw();
+        if (!draw) return;
         setResult(null);
-    }, []);
+        setCursorClass('measure-crosshair');
+        removeResultPolygon();
+        draw.clear();
+        draw.setMode('polygon');
+    }, [ensureDraw]);
 
     const stopMeasuring = useCallback(() => {
+        removeSegmentLabels();
+        removeResultPolygon();
         const draw = drawRef.current;
         if (draw && startedRef.current) {
             draw.clear();
             draw.stop();
             startedRef.current = false;
         }
-        setMode(null);
         setResult(null);
+        setCursorClass('');
         onReleaseTool?.('measure');
     }, [onReleaseTool]);
 
     const toggleOpen = useCallback(() => {
         setOpen((prev) => {
             const nextOpen = !prev;
-            if (nextOpen && onRequestTool && !onRequestTool('measure')) return prev;
-            if (!nextOpen) stopMeasuring();
+            if (
+                nextOpen &&
+                onRequestTool &&
+                !onRequestTool('measure')
+            )
+                return prev;
+            if (nextOpen) {
+                void startMeasuring();
+            } else {
+                stopMeasuring();
+            }
             return nextOpen;
         });
-    }, [onRequestTool, stopMeasuring]);
+    }, [onRequestTool, startMeasuring, stopMeasuring]);
 
+    // ---- Escape handler ----
+    useEffect(() => {
+        if (!open) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                stopMeasuring();
+                setOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [open, stopMeasuring]);
+
+    // ---- close when another tool activates ----
     useEffect(() => {
         if (open && activeTool && activeTool !== 'measure') {
             setOpen(false);
@@ -138,9 +377,11 @@ export function MeasureTool({
         }
     }, [activeTool, open, stopMeasuring]);
 
-    // Tear down Terra Draw on unmount.
+    // ---- unmount cleanup ----
     useEffect(() => {
         return () => {
+            removeSegmentLabels();
+            removeResultPolygon();
             const draw = drawRef.current;
             if (draw && startedRef.current) {
                 draw.stop();
@@ -148,104 +389,76 @@ export function MeasureTool({
             }
             drawRef.current = null;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const ButtonBase = (
-        label: string,
-        active: boolean,
-        onClick: () => void,
-        icon: React.ReactNode,
-        testId: string,
-    ) => (
-        <button
-            type="button"
-            aria-label={ label }
-            aria-pressed={ active }
-            title={ label }
-            data-testid={ testId }
-            onClick={ onClick }
-            className={ cn(
-                'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors duration-fast ease-standard',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                active
-                    ? 'bg-primary/15 text-foreground shadow-e1'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-            ) }
-        >
-            { icon }
-            { label }
-        </button>
-    );
-
     return (
-        <div className="flex flex-col items-end gap-2" data-testid="measure-tool">
-            { open && (
-                <div className="glass flex flex-col gap-2 rounded-md p-2" data-testid="measure-panel">
-                    <div className="flex items-center gap-1.5">
-                        { ButtonBase(
-                            'Distance',
-                            mode === 'distance',
-                            () => void activateMode('distance'),
-                            <Spline className="size-3.5" strokeWidth={ 1.75 } />,
-                            'measure-distance-btn',
-                        ) }
-                        { ButtonBase(
-                            'Area',
-                            mode === 'area',
-                            () => void activateMode('area'),
-                            <Pentagon className="size-3.5" strokeWidth={ 1.75 } />,
-                            'measure-area-btn',
-                        ) }
-                    </div>
-
-                    { result && (
-                        <div
-                            className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-2.5 py-1.5"
-                            data-testid="measure-result"
-                        >
-                            <span className="font-mono text-[13px] tabular-nums text-foreground">
-                                { result.mode === 'distance'
-                                    ? formatDistance(result.value)
-                                    : formatArea(result.value) }
-                            </span>
-                            <button
-                                type="button"
-                                onClick={ clearMeasurement }
-                                data-testid="measure-clear-btn"
-                                className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                aria-label="Clear measurement"
-                                title="Clear measurement"
-                            >
-                                <X className="size-3.5" strokeWidth={ 2 } />
-                            </button>
-                        </div>
-                    ) }
-
-                    { mode && !result && (
-                        <p className="px-0.5 text-[11px] leading-4 text-muted-foreground" data-testid="measure-hint">
-                            { mode === 'distance'
-                                ? 'Click to add points · double-click to finish.'
-                                : 'Click to add vertices · double-click to close.' }
-                        </p>
-                    ) }
-                </div>
-            ) }
-
-            <button
-                type="button"
-                aria-label={ open ? 'Close measurement tool' : 'Measure distance or area' }
-                aria-expanded={ open }
-                title="Measure"
-                data-testid="measure-toggle"
-                onClick={ toggleOpen }
-                className={ cn(
-                    'glass flex size-9 items-center justify-center rounded-md text-foreground/80 transition-colors duration-fast ease-standard',
-                    'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    open && 'bg-primary/15 text-foreground',
-                ) }
+        <>
+            <div
+                className="flex flex-col items-end gap-2"
+                data-testid="measure-tool"
             >
-                <Ruler className="size-5" strokeWidth={ 1.75 } />
-            </button>
-        </div>
+                <button
+                    type="button"
+                    aria-label={
+                        open
+                            ? 'Close measurement tool'
+                            : 'Measure distance and area'
+                    }
+                    aria-expanded={open}
+                    title="Measure"
+                    data-testid="measure-toggle"
+                    onClick={toggleOpen}
+                    className={cn(
+                        'glass flex size-9 items-center justify-center rounded-md text-foreground/80 transition-colors duration-fast ease-standard',
+                        'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        open && 'bg-primary/15 text-foreground',
+                    )}
+                >
+                    <Ruler className="size-5" strokeWidth={1.75} />
+                </button>
+            </div>
+
+            {result && createPortal(
+                <div
+                    className="fixed left-1/2 top-1/2 z-toolbar -translate-x-1/2 -translate-y-1/2"
+                    data-testid="measure-readout"
+                >
+                    <div className="relative glass rounded-lg px-5 py-4 shadow-lg">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                stopMeasuring();
+                                setOpen(false);
+                            }}
+                            data-testid="measure-readout-close"
+                            className="absolute right-2 top-2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            aria-label="Clear measurement"
+                            title="Clear measurement"
+                        >
+                            <X className="size-4" strokeWidth={2} />
+                        </button>
+                        <div className="flex flex-col gap-1 pr-5">
+                            <span className="text-xs font-medium text-foreground">
+                                Measure distance
+                            </span>
+                            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                                Total area:{' '}
+                                <span className="text-foreground">
+                                    {(result.area / 10000).toFixed(2)} ha
+                                </span>
+                            </span>
+                            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                                Total distance:{' '}
+                                <span className="text-foreground">
+                                    {(result.distance / 1000).toFixed(2)} km
+                                </span>
+                            </span>
+                        </div>
+                    </div>
+                </div>,
+                document.body,
+            )}
+        </>
     );
 }

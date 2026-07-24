@@ -1,4 +1,4 @@
-import { Filter, MapPin, MoreVertical, Pin, Search, X } from 'lucide-react';
+import { CheckCircle2, Filter, MapPin, MoreVertical, Pin, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -80,7 +80,15 @@ function FieldCard({
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold" title={field.name}>{field.name}</p>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <p className="min-w-0 truncate text-sm font-semibold" title={field.name}>{field.name}</p>
+            {selected && (
+              <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-primary">
+                <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                Selected
+              </span>
+            )}
+          </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground" title={field.crop?.name ?? 'No crop'}>
             {field.crop?.name ?? 'No crop'}{field.group ? ` · ${field.group.name}` : ''}
           </p>
@@ -153,7 +161,15 @@ function TaskCard({
       aria-current={selected ? 'true' : undefined}
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-sm font-semibold" title={name}>{name}</p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="min-w-0 truncate text-sm font-semibold" title={name}>{name}</p>
+          {selected && (
+            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-primary">
+              <CheckCircle2 className="size-3.5" aria-hidden="true" />
+              Selected
+            </span>
+          )}
+        </div>
         <span className="rounded-pill bg-muted px-2 py-0.5 text-[11px] capitalize">{task.priority}</span>
       </div>
       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={task.notes ?? 'No notes'}>

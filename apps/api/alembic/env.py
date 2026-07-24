@@ -13,6 +13,13 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# PostgreSQL extension-backed indexes that are intentionally created by their
+# feature migrations rather than by ``Base.metadata.create_all()``.  Several
+# historical migrations call the current ORM metadata, so declaring the
+# trigram index on the model would make a fresh baseline require ``pg_trgm``
+# before the feature migration has had a chance to install it.
+MIGRATION_MANAGED_INDEXES = {"fields_name_search_trgm_idx"}
+
 
 def include_name(name, type_, parent_names) -> bool:
     """Restrict autogenerate to the API-owned ``akasha`` schema.
@@ -27,6 +34,13 @@ def include_name(name, type_, parent_names) -> bool:
     return True
 
 
+def include_object(object_, name, type_, reflected, compare_to) -> bool:
+    """Exclude explicitly migration-managed extension indexes from drift checks."""
+    if type_ == "index" and name in MIGRATION_MANAGED_INDEXES:
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=get_database_url(),
@@ -35,6 +49,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
         include_name=include_name,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -63,6 +78,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             include_schemas=True,
             include_name=include_name,
+            include_object=include_object,
         )
 
         with context.begin_transaction():

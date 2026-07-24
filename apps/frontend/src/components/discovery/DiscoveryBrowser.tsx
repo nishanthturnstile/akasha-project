@@ -255,7 +255,7 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
   }, [filters?.q, search, update]);
 
   useEffect(() => {
-    if (!page || !filters) return;
+    if (!page || !filters || query.isFetching) return;
     const applied = page.appliedFilters;
     const stale =
       applied.cropIds.join(',') !== (filters.cropIds ?? []).join(',')
@@ -270,7 +270,7 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
     } else if ((filters.page ?? 1) > Math.max(1, page.totalPages)) {
       update({ page: Math.max(1, page.totalPages) }, { keepPage: true });
     }
-  }, [filters, page, update]);
+  }, [filters, page, query.isFetching, update]);
 
   function openFilters() {
     setStagedCrops(filters?.cropIds ?? []);

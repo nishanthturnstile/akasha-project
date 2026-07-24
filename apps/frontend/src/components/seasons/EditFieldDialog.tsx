@@ -32,14 +32,14 @@ import { polygonAreaMeters } from '@/lib/measure';
 import type { DateRange } from '@/components/ui/date-picker';
 import type maplibregl from 'maplibre-gl';
 import type { TerraDraw } from 'terra-draw';
-import type { Crop, Field, IrrigationType, PlotGeometry, TillageType, VegetationCycleCreate } from '@/types/api';
-import { deriveCircleFromRing } from '@/components/fields/circleGeometry';
+import type { Crop, Field, GeoJsonPosition, IrrigationType, PlotGeometry, TillageType, VegetationCycleCreate } from '@/types/api';
+import { deriveCircleFromRing, sanitizeRingPrecision } from '@/components/fields/circleGeometry';
 
 interface Props {
   field: Field;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null) => void;
+  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null, areaHa?: number | null) => void;
   onDelete?: (fieldId: string) => void;
   saving?: boolean;
   initialSeasonId?: string;
@@ -398,11 +398,16 @@ export default function EditFieldDialog({
         drawRef.current = draw;
 
         if (field.geometry.type === 'Polygon') {
-          const circleParams = deriveCircleFromRing(field.geometry.coordinates[0]);
+          // Rounds excessive-precision coordinates that may already be sitting in the
+          // database from before this was fixed (or from any other source) -- without
+          // this, a field saved with a bad ring would keep failing to load forever,
+          // since sanitizing only new writes doesn't touch data that's already saved.
+          const sanitizedRing = sanitizeRingPrecision(field.geometry.coordinates[0]) as GeoJsonPosition[];
+          const circleParams = deriveCircleFromRing(sanitizedRing);
           const results = draw.addFeatures([
             {
               type: 'Feature',
-              geometry: field.geometry,
+              geometry: { type: 'Polygon', coordinates: [sanitizedRing] },
               // Always tagged 'polygon' (never 'circle') so TerraDrawPolygonMode's
               // styleFeature renders it -- no mode named 'circle' is registered in this
               // dialog (it only ever edits an existing geometry, never draws a new one),
@@ -412,13 +417,23 @@ export default function EditFieldDialog({
               properties: { mode: 'polygon' },
             },
           ]);
-          const id = results[0]?.id;
-          if (id) {
+          const result = results[0];
+          // addFeatures always returns an id, even for a REJECTED feature (e.g. TerraDraw's
+          // own "excessive coordinate precision" check) -- checking `id` truthiness alone
+          // would proceed to target a feature that was never actually added to the store,
+          // silently rendering nothing. Must check `valid` too.
+          if (result?.valid === false) {
+            console.error('[EditFieldDialog] field geometry rejected by TerraDraw, cannot edit', {
+              fieldId: field.id,
+              reason: result.reason,
+            });
+            setError('This field’s boundary could not be loaded for editing.');
+          } else if (result?.id) {
             if (circleParams) {
               draw.setMode('circle-edit');
-              draw.updateModeOptions('circle-edit', { targetFeatureId: id });
+              draw.updateModeOptions('circle-edit', { targetFeatureId: result.id });
             } else {
-              draw.selectFeature(id);
+              draw.selectFeature(result.id);
             }
           }
         }
@@ -450,7 +465,7 @@ export default function EditFieldDialog({
       }
       drawRef.current = null;
     };
-  }, [open, miniMap, isMultiPart, stopDraw, field.geometry]);
+  }, [open, miniMap, isMultiPart, stopDraw, field.geometry, field.id]);
 
   // Auto-expand seasons when dialog opens
   useEffect(() => {
@@ -542,6 +557,11 @@ export default function EditFieldDialog({
       geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
       vegPayload.length > 0 ? vegPayload : undefined,
       groupId || null,
+      // Recomputed from the actual edited geometry -- without this, resizing/moving
+      // a field (especially a dragged circle, where the area can change drastically)
+      // saves the new boundary but leaves the old area displayed everywhere else
+      // until the field happens to be re-saved for an unrelated reason.
+      geometryChanged ? currentArea : undefined,
     );
   };
 

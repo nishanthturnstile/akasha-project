@@ -31,6 +31,7 @@ export default function CropTab({ field }: CropTabProps) {
     geometry?: PlotGeometry,
     vegetationData?: VegetationCycleCreate[],
     groupId?: string | null,
+    areaHa?: number | null,
   ) => {
     setSaving(true);
     updateField.mutate(
@@ -41,6 +42,7 @@ export default function CropTab({ field }: CropTabProps) {
           ...(geometry ? { geometry } : {}),
           ...(vegetationData ? { vegetationData } : {}),
           ...(groupId !== undefined ? { groupId } : {}),
+          ...(areaHa !== undefined ? { areaHa } : {}),
         },
       },
       {

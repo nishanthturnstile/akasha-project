@@ -294,10 +294,10 @@ export default function FieldAnalyticsPage() {
           field={ selectedField }
           open={ editFieldOpen }
           onOpenChange={ (open) => { if (!open) setInitialVegSeasonId(undefined); setEditFieldOpen(open); } }
-          onSave={ (fieldId, name, geometry, vegetationData, groupId) => {
+          onSave={ (fieldId, name, geometry, vegetationData, groupId, areaHa) => {
             setSavingField(true);
             updateField.mutate(
-              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}) } },
+              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}), ...(areaHa !== undefined ? { areaHa } : {}) } },
               { onSuccess: () => { setSavingField(false); setEditFieldOpen(false); setInitialVegSeasonId(undefined); }, onError: () => setSavingField(false) },
             );
           } }

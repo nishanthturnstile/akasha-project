@@ -33,8 +33,19 @@
 	}
 
 	# Static React SPA with history-API fallback.
+	#
+	# Vite content-hashes every file under /assets/*, so those are safe to cache
+	# forever. index.html is NOT hashed -- without an explicit no-cache header,
+	# browsers can hold onto a stale index.html (and therefore stale asset
+	# references) indefinitely after a rebuild/restart, even though the server
+	# is correctly serving the new build. Explicit headers here make a normal
+	# reload always pick up the latest deploy, no hard-refresh required.
 	handle {
 		root * /srv
+		@hashedAssets path /assets/*
+		header @hashedAssets Cache-Control "public, max-age=31536000, immutable"
+		@shellDocument not path /assets/*
+		header @shellDocument Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
 	}

@@ -6,12 +6,13 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, select, update
 from sqlalchemy.orm import Session
 
 from ..db import session_scope
 from ..models import (
     Attachment,
+    Field,
     FieldActivity,
     FieldGroup,
     FieldGroupMember,
@@ -99,12 +100,15 @@ def _activity(
 def _task(
     row: ScoutTask,
     plot: Plot | None,
+    field: Field | None = None,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "plotId": str(row.plot_id) if row.plot_id else None,
-        "fieldName": plot.name if plot else None,
+        "fieldId": str(row.field_id) if row.field_id else None,
+        "fieldName": field.name if field else (row.field_name_snapshot or (plot.name if plot else None)),
+        "fieldNameSnapshot": row.field_name_snapshot,
         "longitude": row.longitude,
         "latitude": row.latitude,
         "status": row.status,
@@ -135,12 +139,17 @@ def _dataset(row: UploadedDataset) -> dict[str, Any]:
     }
 
 
-def _group(row: FieldGroup, plot_ids: list[str] | None = None) -> dict[str, Any]:
+def _group(
+    row: FieldGroup,
+    plot_ids: list[str] | None = None,
+    field_ids: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "name": row.name,
         "description": row.description,
         "color": row.color,
+        "fieldIds": field_ids or [],
         "plotIds": plot_ids or [],
         "createdAt": _iso(row.created_at),
         "updatedAt": _iso(row.updated_at),
@@ -227,6 +236,19 @@ def _plot_belongs_to_team(session: Session, plot_id: str | None, team_id: str | 
         return True
     stmt = select(Plot.id).where(Plot.id == _uuid(plot_id), Plot.team_id == _uuid(team_id))
     return session.execute(stmt).first() is not None
+
+
+def _field_for_team(
+    session: Session,
+    field_id: str | None,
+    team_id: str | None,
+) -> Field | None:
+    if field_id is None:
+        return None
+    stmt = select(Field).where(Field.id == _uuid(field_id))
+    if team_id is not None:
+        stmt = stmt.where(Field.team_id == _uuid(team_id))
+    return session.execute(stmt).scalar_one_or_none()
 
 
 def _group_names_for_plot(
@@ -425,8 +447,13 @@ def create_scout_task(payload: dict[str, Any], attachment_ids: list[str]) -> dic
     with session_scope() as session:
         if not _plot_belongs_to_team(session, payload.get("plotId"), payload.get("teamId")):
             raise ValueError("PLOT_NOT_FOUND")
+        field = _field_for_team(session, payload.get("fieldId"), payload.get("teamId"))
+        if payload.get("fieldId") and field is None:
+            raise ValueError("FIELD_NOT_FOUND")
         row = ScoutTask(
             plot_id=_uuid(payload.get("plotId")),
+            field_id=_uuid(payload.get("fieldId")),
+            field_name_snapshot=field.name if field else payload.get("fieldNameSnapshot"),
             longitude=payload.get("longitude"),
             latitude=payload.get("latitude"),
             status=payload.get("status", "new"),
@@ -458,8 +485,14 @@ def update_scout_task(
         task = row[0]
         if "plotId" in payload and not _plot_belongs_to_team(session, payload["plotId"], team_id):
             raise ValueError("PLOT_NOT_FOUND")
+        linked_field = None
+        if "fieldId" in payload:
+            linked_field = _field_for_team(session, payload["fieldId"], team_id)
+            if payload["fieldId"] and linked_field is None:
+                raise ValueError("FIELD_NOT_FOUND")
         field_map = {
             "plotId": "plot_id",
+            "fieldId": "field_id",
             "longitude": "longitude",
             "latitude": "latitude",
             "status": "status",
@@ -467,9 +500,19 @@ def update_scout_task(
             "priority": "priority",
             "notes": "notes",
         }
-        for field, attr in field_map.items():
-            if field in payload:
-                setattr(task, attr, _uuid(payload[field]) if field == "plotId" else payload[field])
+        for api_field, attr in field_map.items():
+            if api_field in payload:
+                setattr(
+                    task,
+                    attr,
+                    (
+                        _uuid(payload[api_field])
+                        if api_field in {"plotId", "fieldId"}
+                        else payload[api_field]
+                    ),
+                )
+        if "fieldId" in payload and linked_field is not None:
+            task.field_name_snapshot = linked_field.name
         if "metadata" in payload:
             task.metadata_json = payload.get("metadata") or {}
         if attachment_ids is not None:
@@ -483,10 +526,14 @@ def _task_row(
     session: Session,
     task_id: str,
     team_id: str | None = None,
-) -> tuple[ScoutTask, Plot | None] | None:
+) -> tuple[ScoutTask, Plot | None, Field | None] | None:
     stmt = (
-        select(ScoutTask, Plot)
+        select(ScoutTask, Plot, Field)
         .outerjoin(Plot, ScoutTask.plot_id == Plot.id)
+        .outerjoin(
+            Field,
+            and_(ScoutTask.field_id == Field.id, Field.team_id == ScoutTask.team_id),
+        )
         .where(ScoutTask.id == _uuid(task_id))
     )
     if team_id is not None:
@@ -502,17 +549,29 @@ def _task_by_id(
     row = _task_row(session, task_id, team_id)
     if not row:
         return None
-    task, plot = row
-    return _task(task, plot, _attachments_for_parent(session, "scout_task", task.id, team_id))
+    task, plot, field = row
+    return _task(
+        task,
+        plot,
+        field,
+        _attachments_for_parent(session, "scout_task", task.id, team_id),
+    )
 
 
 def list_scout_tasks(filters: dict[str, Any], team_id: str | None = None) -> list[dict[str, Any]]:
-    stmt = select(ScoutTask, Plot).outerjoin(Plot, ScoutTask.plot_id == Plot.id)
+    stmt = (
+        select(ScoutTask, Plot, Field)
+        .outerjoin(Plot, ScoutTask.plot_id == Plot.id)
+        .outerjoin(
+            Field,
+            and_(ScoutTask.field_id == Field.id, Field.team_id == ScoutTask.team_id),
+        )
+    )
     if team_id is not None:
         stmt = stmt.where(ScoutTask.team_id == _uuid(team_id))
     stmt = stmt.order_by(ScoutTask.created_at.desc())
     with session_scope() as session:
-        rows = [_task(task, plot) for task, plot in session.execute(stmt).all()]
+        rows = [_task(task, plot, field) for task, plot, field in session.execute(stmt).all()]
     return [
         row
         for row in rows
@@ -601,7 +660,11 @@ def list_field_groups(team_id: str | None = None) -> list[dict[str, Any]]:
         stmt = stmt.where(FieldGroup.team_id == _uuid(team_id))
     with session_scope() as session:
         return [
-            _group(row, _group_plot_ids(session, str(row.id), team_id))
+            _group(
+                row,
+                _group_plot_ids(session, str(row.id), team_id),
+                _group_field_ids(session, str(row.id), team_id),
+            )
             for row in session.execute(stmt).scalars().all()
         ]
 
@@ -620,7 +683,11 @@ def update_field_group(
                 setattr(group, key, payload[key])
         session.flush()
         session.refresh(group)
-        return _group(group, _group_plot_ids(session, group_id, team_id))
+        return _group(
+            group,
+            _group_plot_ids(session, group_id, team_id),
+            _group_field_ids(session, group_id, team_id),
+        )
 
 
 def _field_group_obj(
@@ -637,7 +704,15 @@ def _field_group_obj(
 def get_field_group(group_id: str, team_id: str | None = None) -> dict[str, Any] | None:
     with session_scope() as session:
         group = _field_group_obj(session, group_id, team_id)
-        return _group(group, _group_plot_ids(session, group_id, team_id)) if group else None
+        return (
+            _group(
+                group,
+                _group_plot_ids(session, group_id, team_id),
+                _group_field_ids(session, group_id, team_id),
+            )
+            if group
+            else None
+        )
 
 
 def delete_field_group(group_id: str, team_id: str | None = None) -> bool:
@@ -652,11 +727,34 @@ def assign_group_fields(
     group_id: str,
     plot_ids: list[str],
     team_id: str | None = None,
+    field_ids: list[str] | None = None,
 ) -> dict[str, Any] | None:
     with session_scope() as session:
         group = _field_group_obj(session, group_id, team_id)
         if group is None:
             return None
+        if field_ids is not None:
+            team_uuid = _uuid(team_id)
+            requested_ids = {_uuid(field_id) for field_id in field_ids}
+            field_stmt = select(Field.id).where(Field.id.in_(requested_ids))
+            if team_uuid is not None:
+                field_stmt = field_stmt.where(Field.team_id == team_uuid)
+            authorized_ids = set(session.execute(field_stmt).scalars().all())
+            if requested_ids != authorized_ids:
+                return None
+            session.execute(
+                update(Field)
+                .where(Field.group_id == group.id)
+                .where(Field.team_id == team_uuid)
+                .values(group_id=None)
+            )
+            if authorized_ids:
+                session.execute(
+                    update(Field)
+                    .where(Field.id.in_(authorized_ids))
+                    .where(Field.team_id == team_uuid)
+                    .values(group_id=group.id)
+                )
         delete_stmt = delete(FieldGroupMember).where(FieldGroupMember.group_id == group.id)
         if team_id is not None:
             delete_stmt = delete_stmt.where(FieldGroupMember.team_id == _uuid(team_id))
@@ -677,7 +775,11 @@ def assign_group_fields(
                     )
                 )
         session.flush()
-        return _group(group, _group_plot_ids(session, group_id, team_id))
+        return _group(
+            group,
+            _group_plot_ids(session, group_id, team_id),
+            _group_field_ids(session, group_id, team_id),
+        )
 
 
 def _group_plot_ids(session: Session, group_id: str, team_id: str | None = None) -> list[str]:
@@ -688,4 +790,11 @@ def _group_plot_ids(session: Session, group_id: str, team_id: str | None = None)
     )
     if team_id is not None:
         stmt = stmt.where(FieldGroupMember.team_id == _uuid(team_id))
+    return [str(row[0]) for row in session.execute(stmt).all()]
+
+
+def _group_field_ids(session: Session, group_id: str, team_id: str | None = None) -> list[str]:
+    stmt = select(Field.id).where(Field.group_id == _uuid(group_id)).order_by(Field.created_at)
+    if team_id is not None:
+        stmt = stmt.where(Field.team_id == _uuid(team_id))
     return [str(row[0]) for row in session.execute(stmt).all()]

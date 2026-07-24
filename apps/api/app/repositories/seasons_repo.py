@@ -35,6 +35,7 @@ def _row_to_season(
     (
         season_id,
         user_id,
+        team_id,
         name,
         start_date,
         end_date,
@@ -60,6 +61,7 @@ def _row_to_season(
     return {
         "id": str(season_id),
         "userId": str(user_id),
+        "teamId": str(team_id),
         "name": name,
         "startDate": start_date.isoformat() if start_date else None,
         "endDate": end_date.isoformat() if end_date else None,
@@ -73,6 +75,7 @@ def _season_columns() -> tuple[Any, ...]:
     return (
         Season.season_id,
         Season.user_id,
+        Season.team_id,
         Season.name,
         Season.start_date,
         Season.end_date,
@@ -83,11 +86,17 @@ def _season_columns() -> tuple[Any, ...]:
 
 
 def _season_field_ids(
-    session: Any, user_id: uuid.UUID, season_id: uuid.UUID
+    session: Any,
+    user_id: uuid.UUID,
+    season_id: uuid.UUID,
+    team_id: uuid.UUID | None = None,
 ) -> list[dict]:
-    all_fields = session.execute(
-        select(Field.id, Field.name, Field.area_ha).where(Field.user_id == user_id)
-    ).all()
+    field_stmt = select(Field.id, Field.name, Field.area_ha)
+    if team_id is not None:
+        field_stmt = field_stmt.where(Field.team_id == team_id)
+    else:
+        field_stmt = field_stmt.where(Field.user_id == user_id)
+    all_fields = session.execute(field_stmt).all()
     mapped_ids = {
         row[0]
         for row in session.execute(
@@ -129,53 +138,79 @@ def _normalize_field_ids(field_ids: list[str] | None) -> list[uuid.UUID]:
     return normalized
 
 
-def _validate_field_links(session: Any, user_id: str | None, field_ids: list[uuid.UUID]) -> None:
+def _validate_field_links(
+    session: Any,
+    user_id: str | None,
+    field_ids: list[uuid.UUID],
+    team_id: str | None = None,
+) -> None:
     if not field_ids:
         return
     user_uuid = _uuid(user_id)
-    rows = session.execute(
-        select(Field.id).where(
-            Field.id.in_(field_ids),
-            Field.user_id == user_uuid,
-        )
-    ).all()
+    stmt = select(Field.id).where(Field.id.in_(field_ids))
+    if team_id is not None:
+        stmt = stmt.where(Field.team_id == _uuid(team_id))
+    else:
+        stmt = stmt.where(Field.user_id == user_uuid)
+    rows = session.execute(stmt).all()
     found = {row[0] for row in rows}
     missing = [str(field_id) for field_id in field_ids if field_id not in found]
     if missing:
         raise not_found("Field not found.", code="FIELD_NOT_FOUND", fieldIds=missing)
 
 
-def list_seasons(user_id: str | None = None) -> list[dict[str, Any]]:
+def list_seasons(
+    user_id: str | None = None,
+    team_id: str | None = None,
+) -> list[dict[str, Any]]:
     stmt = select(*_season_columns()).order_by(
         Season.start_date.nulls_last(), Season.name
     )
     user_uuid = _uuid(user_id)
-    if user_id is not None:
+    if team_id is not None:
+        stmt = stmt.where(Season.team_id == _uuid(team_id))
+    elif user_id is not None:
         stmt = stmt.where(Season.user_id == user_uuid)
     with session_scope() as session:
         seasons = session.execute(stmt).all()
         results = []
         for row in seasons:
             season_id = row[0]
-            field_ids = _season_field_ids(session, user_uuid, season_id)
+            field_ids = _season_field_ids(
+                session,
+                user_uuid,
+                season_id,
+                _uuid(team_id) if team_id else None,
+            )
             mapped_field_ids = [f for f in field_ids if f.get("isMapped")]
             can_remove_map = _field_can_remove_map(session, mapped_field_ids)
             results.append(_row_to_season(row, field_ids, can_remove_map=can_remove_map))
         return results
 
 
-def get_season(season_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+def get_season(
+    season_id: str,
+    user_id: str | None = None,
+    team_id: str | None = None,
+) -> dict[str, Any] | None:
     try:
         season_uuid = uuid.UUID(str(season_id))
         user_uuid = _uuid(user_id)
         stmt = select(*_season_columns()).where(Season.season_id == season_uuid)
-        if user_id is not None:
+        if team_id is not None:
+            stmt = stmt.where(Season.team_id == _uuid(team_id))
+        elif user_id is not None:
             stmt = stmt.where(Season.user_id == user_uuid)
         with session_scope() as session:
             row = session.execute(stmt).first()
             if row is None:
                 return None
-            field_ids_result = _season_field_ids(session, user_uuid, season_uuid)
+            field_ids_result = _season_field_ids(
+                session,
+                user_uuid,
+                season_uuid,
+                _uuid(team_id) if team_id else None,
+            )
             mapped_field_ids = [f for f in field_ids_result if f.get("isMapped")]
             can_remove_map = _field_can_remove_map(session, mapped_field_ids)
             return _row_to_season(row, field_ids_result, can_remove_map=can_remove_map)
@@ -191,18 +226,22 @@ def create_season(
     end_date: date | None,
     can_delete: bool | None = None,
     field_ids: list[str] | None = None,
+    team_id: str | None = None,
 ) -> dict[str, Any]:
     with session_scope() as session:
+        if team_id is None:
+            raise ValueError("TEAM_REQUIRED")
         if can_delete is None:
             count = (
                 session.query(Season)
-                .filter(Season.user_id == _uuid(user_id))
+                .filter(Season.team_id == _uuid(team_id))
                 .count()
             )
             can_delete = count >= 1
 
         season = Season(
             user_id=_uuid(user_id),
+            team_id=_uuid(team_id),
             name=name,
             start_date=start_date,
             end_date=end_date,
@@ -212,19 +251,25 @@ def create_season(
         session.flush()
 
         field_uuids = _normalize_field_ids(field_ids)
-        _validate_field_links(session, user_id, field_uuids)
+        _validate_field_links(session, user_id, field_uuids, team_id)
         for field_uuid in field_uuids:
             session.add(
                 FieldSeason(id=uuid.uuid4(), season_id=season.season_id, field_id=field_uuid)
             )
 
-        _recalculate_can_delete(session, user_id)
+        _recalculate_can_delete(session, user_id, team_id)
         session.refresh(season)
-        field_ids_result = _season_field_ids(session, _uuid(user_id), season.season_id)
+        field_ids_result = _season_field_ids(
+            session,
+            _uuid(user_id),
+            season.season_id,
+            _uuid(team_id),
+        )
         return _row_to_season(
             (
                 season.season_id,
                 season.user_id,
+                season.team_id,
                 season.name,
                 season.start_date,
                 season.end_date,
@@ -266,6 +311,7 @@ def _clamp_vegetation_cycle_dates(
 def update_season(
     season_id: str,
     user_id: str | None = None,
+    team_id: str | None = None,
     **kwargs: Any,
 ) -> dict[str, Any] | None:
     allowed = {"name", "start_date", "end_date", "can_delete", "fieldIds"}
@@ -280,6 +326,9 @@ def update_season(
         if season is None:
             return None
         if user_id is not None and season.user_id != _uuid(user_id):
+            if team_id is None:
+                return None
+        if team_id is not None and season.team_id != _uuid(team_id):
             return None
 
         old_start = season.start_date
@@ -288,7 +337,7 @@ def update_season(
         field_uuids = None
         if "fieldIds" in values:
             field_uuids = _normalize_field_ids(values["fieldIds"])
-            _validate_field_links(session, user_id, field_uuids)
+            _validate_field_links(session, user_id, field_uuids, team_id)
 
         for key in ("name", "start_date", "end_date", "can_delete"):
             if key in values:
@@ -314,11 +363,17 @@ def update_season(
         )
 
         session.refresh(season)
-        field_ids_result = _season_field_ids(session, season.user_id, season.season_id)
+        field_ids_result = _season_field_ids(
+            session,
+            season.user_id,
+            season.season_id,
+            season.team_id,
+        )
         return _row_to_season(
             (
                 season.season_id,
                 season.user_id,
+                season.team_id,
                 season.name,
                 season.start_date,
                 season.end_date,
@@ -334,19 +389,24 @@ def delete_season(
     season_id: str,
     user_id: str | None = None,
     move_fields_to_season_id: str | None = None,
+    team_id: str | None = None,
 ) -> bool:
     with session_scope() as session:
         season = session.get(Season, _uuid(season_id))
         if season is None:
             return False
         if user_id is not None and season.user_id != _uuid(user_id):
+            if team_id is None:
+                return False
+        if team_id is not None and season.team_id != _uuid(team_id):
             return False
 
-        count = (
-            session.query(Season)
-            .filter(Season.user_id == season.user_id)
-            .count()
+        scope = (
+            Season.team_id == season.team_id
+            if team_id is not None
+            else Season.user_id == season.user_id
         )
+        count = session.query(Season).filter(scope).count()
         if count <= 1:
             raise AkashaError(
                 "CANNOT_DELETE_SEASON",
@@ -376,16 +436,22 @@ def delete_season(
 
         session.delete(season)
         session.flush()
-        _recalculate_can_delete(session, str(season.user_id))
+        _recalculate_can_delete(session, str(season.user_id), str(season.team_id))
         return True
 
 
-def _recalculate_can_delete(session: Any, user_id: str) -> None:
+def _recalculate_can_delete(
+    session: Any,
+    user_id: str,
+    team_id: str | None = None,
+) -> None:
     uid = _uuid(user_id)
-    count = session.query(Season).filter(Season.user_id == uid).count()
+    team_uuid = _uuid(team_id)
+    if team_uuid is not None:
+        count = session.query(Season).filter(Season.team_id == team_uuid).count()
+    else:
+        count = session.query(Season).filter(Season.user_id == uid).count()
     new_flag = count >= 2
-    session.execute(
-        update(Season)
-        .where(Season.user_id == uid)
-        .values(can_delete=new_flag)
-    )
+    stmt = update(Season)
+    stmt = stmt.where(Season.team_id == team_uuid) if team_uuid else stmt.where(Season.user_id == uid)
+    session.execute(stmt.values(can_delete=new_flag))

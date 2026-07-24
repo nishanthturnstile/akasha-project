@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type maplibregl from 'maplibre-gl';
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { BrandLockup } from '@/components/BrandLockup';
 import { MAP_UI_COLORS } from '@/map/colors';
-import { ApiError, composeTileTemplate, getFieldIndexOverlayImage, getFieldIndexPoint, getFieldSarOverlayImage } from '@/lib/api';
+import {
+  ApiError,
+  composeTileTemplate,
+  discoverFields,
+  discoverScoutTasks,
+  getDiscoveryMap,
+  getFieldIndexOverlayImage,
+  getFieldIndexPoint,
+  getFieldSarOverlayImage,
+} from '@/lib/api';
 import {
   useConfig,
   useCreateField,
@@ -12,6 +21,7 @@ import {
   useBestObservations,
   useDefaultLayer,
   useDeleteField,
+  useField,
   useFields,
   useFieldMonitoringEvidence,
   useSources,
@@ -57,6 +67,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useMapView } from '@/state/useMapView';
 import { useSeasonContext } from '@/state/seasonContext';
 import { useMapUrlState } from '@/hooks/useMapUrlState';
+import { useDiscoveryUrlState } from '@/hooks/useDiscoveryUrlState';
 import type {
   CloudMaskOptions,
   Field,
@@ -134,11 +145,15 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
   if (!map || coordinates.length === 0) return;
   map.resize();
   const lngs = coordinates.map(([lng]) => lng);
+  const shiftedLngs = lngs.map((lng) => lng < 0 ? lng + 360 : lng);
   const lats = coordinates.map(([, lat]) => lat);
+  const normalSpan = Math.max(...lngs) - Math.min(...lngs);
+  const shiftedSpan = Math.max(...shiftedLngs) - Math.min(...shiftedLngs);
+  const focusLngs = shiftedSpan < normalSpan ? shiftedLngs : lngs;
   map.fitBounds(
     [
-      [Math.min(...lngs), Math.min(...lats)],
-      [Math.max(...lngs), Math.max(...lats)],
+      [Math.min(...focusLngs), Math.min(...lats)],
+      [Math.max(...focusLngs), Math.max(...lats)],
     ],
     { padding: 64, maxZoom: 18, duration: 650 },
   );
@@ -147,14 +162,10 @@ function focusPlot(map: maplibregl.Map | null, plot: Plot): void {
 function focusPlots(map: maplibregl.Map | null, plots: Plot[]): void {
   const coordinates = plots.flatMap((plot) => geometryCoordinates(plot.geometry));
   if (!map || coordinates.length === 0) return;
-  map.resize();
   const lngs = coordinates.map(([lng]) => lng);
   const lats = coordinates.map(([, lat]) => lat);
   map.fitBounds(
-    [
-      [Math.min(...lngs), Math.min(...lats)],
-      [Math.max(...lngs), Math.max(...lats)],
-    ],
+    [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
     { padding: 64, maxZoom: 18, duration: 650 },
   );
 }
@@ -208,25 +219,41 @@ function fieldToFeature(field: Plot): ExportFeature {
 interface GeoJsonFeatureLike {
   type?: string;
   geometry?: PlotGeometry;
-  properties?: { name?: string | null } | null;
+  properties?: {
+    name?: string | null;
+    district?: string | null;
+    country?: string | null;
+  } | null;
   features?: GeoJsonFeatureLike[];
 }
 
 /** Pull polygon/multipolygon features out of a FeatureCollection, Feature, or raw
  *  geometry so an imported GeoJSON file can be turned into Field records. */
-function extractImportFields(input: GeoJsonFeatureLike): { name: string; geometry: PlotGeometry }[] {
+function extractImportFields(input: GeoJsonFeatureLike): Array<{
+  name: string;
+  geometry: PlotGeometry;
+  district?: string;
+  country?: string;
+}> {
   const features: GeoJsonFeatureLike[] =
     input?.type === 'FeatureCollection'
       ? input.features ?? []
       : input?.type === 'Feature'
         ? [input]
         : [{ type: 'Feature', geometry: input as unknown as PlotGeometry, properties: null }];
-  const result: { name: string; geometry: PlotGeometry }[] = [];
+  const result: Array<{
+    name: string;
+    geometry: PlotGeometry;
+    district?: string;
+    country?: string;
+  }> = [];
   features.forEach((feature, index) => {
     const geometry = feature?.geometry;
     if (geometry && (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon')) {
       const name = feature?.properties?.name?.trim() || `Imported field ${index + 1}`;
-      result.push({ name, geometry });
+      const district = feature.properties?.district?.trim() || undefined;
+      const country = feature.properties?.country?.trim() || undefined;
+      result.push({ name, geometry, district, country });
     }
   });
   return result;
@@ -367,9 +394,25 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     bestMode,
     globalViewOpen,
     radarEvidenceVisible,
-    hoveredFieldId,
   } = view;
   const { seasonId } = useSeasonContext();
+  const [mapSearchParams] = useSearchParams();
+  const discoveryEnabled = configQ.data?.features?.fieldDiscoveryEnabled !== false;
+  const discoveryTarget = mapSearchParams.get('discoveryTarget') === 'scouting'
+    ? 'scouting'
+    : 'monitoring';
+  const { filters: mapDiscoveryFilters } = useDiscoveryUrlState(
+    discoveryTarget,
+    seasonId,
+    discoveryTarget === 'scouting' ? 'new' : undefined,
+  );
+  const legacyFieldsQ = useFields({ enabled: !discoveryEnabled });
+  const legacySeasonFields = useMemo(
+    () => !discoveryEnabled && globalViewOpen && seasonId
+      ? (legacyFieldsQ.data ?? []).filter((field) => field.seasonIds.includes(seasonId))
+      : [],
+    [discoveryEnabled, globalViewOpen, legacyFieldsQ.data, seasonId],
+  );
   useEffect(() => {
     if (!configQ.data) return;
     if (splitEnabled && !configQ.data.features?.cropMapSplitEnabled) {
@@ -432,23 +475,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     onConfirm: () => Promise<void>;
   } | null>(null);
 
-  const plotsQ = useFields();
+  const selectedFieldQ = useField(selectedPlotId);
   const createFieldMutation = useCreateField();
   const updateFieldMutation = useUpdateField();
   const deleteFieldMutation = useDeleteField();
   const navigate = useNavigate();
 
-  const selectedPlot = useMemo(() => {
-    if (!selectedPlotId) return null;
-    return plotsQ.data?.find((plot) => plot.id === selectedPlotId) ?? null;
-  }, [plotsQ.data, selectedPlotId]);
-
-  // Global View shows every field in the active season on the map at once,
-  // instead of just the single selectedPlot.
-  const seasonFields = useMemo(() => {
-    if (!globalViewOpen || !seasonId) return [];
-    return (plotsQ.data ?? []).filter((field) => field.seasonIds?.includes(seasonId));
-  }, [globalViewOpen, seasonId, plotsQ.data]);
+  const selectedPlot = selectedFieldQ.data ?? null;
   const requestedTimelineIndex = resolveDisplayMode(
     displayModeOverride,
     selectedSource?.supportedIndices ?? [],
@@ -493,13 +526,6 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       { sourceKind: rightSource?.kind },
     )?.acquisitionDate ?? null;
   }, [configQ.data, rightAvailableDates, rightDate, rightSource?.kind]);
-  useEffect(() => {
-    if (!selectedPlotId || plotsQ.isLoading || !plotsQ.data) return;
-    if (!plotsQ.data.some((plot) => plot.id === selectedPlotId)) {
-      view.clearSelectedPlot();
-    }
-  }, [plotsQ.data, plotsQ.isLoading, selectedPlotId, view]);
-
   // Focus and select a field when the map loads or when the user navigates to a
   // specific field (e.g. from the season sheet Focus button). On initial load
   // the last-selected field (deep link / persisted state) wins; otherwise we fall
@@ -510,7 +536,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   const prevFocusedMap = useRef<maplibregl.Map | null>(null);
   const prevFocusNonce = useRef(0);
   useEffect(() => {
-    if (!map || plotsQ.isLoading || !plotsQ.data) return;
+    if (!map || selectedFieldQ.isLoading) return;
     if (!selectedPlotId) return;
     const focusTarget = selectedPlot;
     if (!focusTarget) return;
@@ -523,65 +549,161 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     prevFocusedMap.current = map;
     prevFocusedPlotId.current = selectedPlotId;
     prevFocusNonce.current = focusNonce;
-  }, [map, plotsQ.isLoading, plotsQ.data, selectedPlot, selectedPlotId, focusNonce, globalViewOpen, view]);
+  }, [map, selectedFieldQ.isLoading, selectedPlot, selectedPlotId, focusNonce, globalViewOpen]);
 
-  // Fit the map to the selected field when Global View is on, or to all fields
-  // if none is selected, so the highlighted field is in focus.
-  // On initial entry always fit to ALL fields; only refit to a single field
-  // when the user explicitly selects one (which bumps focusNonce).
-  const prevGlobalViewFitKey = useRef<string | null>(null);
-  useEffect(() => {
-    if (!map || !globalViewOpen || seasonFields.length === 0) {
-      prevGlobalViewFitKey.current = null;
-      return;
-    }
-    if (prevGlobalViewFitKey.current === null) {
-      prevGlobalViewFitKey.current = `${seasonId ?? ''}:${seasonFields.length}`;
-      focusPlots(map, seasonFields);
-    } else if (selectedPlot) {
-      const fitKey = `selected:${selectedPlot.id}`;
-      if (prevGlobalViewFitKey.current === fitKey) return;
-      prevGlobalViewFitKey.current = fitKey;
-      focusPlot(map, selectedPlot);
-    }
-  }, [map, globalViewOpen, seasonFields, seasonId, selectedPlot]);
+  const discoverySourceId = 'akasha-field-discovery';
+  const discoveryFillLayerId = 'akasha-field-discovery-fill';
+  const discoveryOutlineLayerId = 'akasha-field-discovery-outline';
+  const discoveryTaskSourceId = 'akasha-task-discovery';
+  const discoveryTaskLayerId = 'akasha-task-discovery-points';
 
-  // Style field boundaries in Global View: grey fill by default, highlight on hover.
-  // Uses persistent styledata/idle listeners so the styling survives layer
-  // re-creation when navigating back from field analytics to global view.
+  // Initial Global View entry fits aggregate server-computed bounds. Exact geometry
+  // remains reserved for the selected field detail request.
   useEffect(() => {
-    if (!map || !globalViewOpen || seasonFields.length === 0) return;
-    const applyStyles = () => {
-      for (const field of seasonFields) {
-        const fillLayer = `${field.id}akasha-field-boundary-fill-layer`;
-        const outlineLayer = `${field.id}akasha-field-boundary-outline-layer`;
-        if (!map.getLayer(fillLayer)) continue;
-        const isHovered = field.id === hoveredFieldId;
-        map.setPaintProperty(
-          fillLayer,
-          'fill-color',
-          isHovered ? MAP_UI_COLORS.selection : MAP_UI_COLORS.neutralFill,
+    if (!map || !globalViewOpen || !seasonId || !discoveryEnabled) return;
+    const controller = new AbortController();
+    const boundsRequest = discoveryTarget === 'scouting'
+      ? discoverScoutTasks(
+          { ...(mapDiscoveryFilters ?? { seasonId }), page: 1, pageSize: 1 },
+          controller.signal,
+        )
+      : discoverFields(
+          { ...(mapDiscoveryFilters ?? { seasonId }), page: 1, pageSize: 1 },
+          controller.signal,
         );
-        map.setPaintProperty(fillLayer, 'fill-opacity', isHovered ? 0.35 : 0.35);
-        if (map.getLayer(outlineLayer)) {
-          map.setPaintProperty(
-            outlineLayer,
-            'line-color',
-            isHovered ? MAP_UI_COLORS.white : MAP_UI_COLORS.neutralOutline,
-          );
-          map.setPaintProperty(outlineLayer, 'line-opacity', 0.7);
+    void boundsRequest
+      .then((result) => {
+        if (!result.resultBounds) return;
+        const { west, south, east, north } = result.resultBounds;
+        map.fitBounds([[west, south], [east, north]], {
+          padding: 56,
+          maxZoom: 16,
+          duration: 500,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof Error && error.name === 'AbortError')) {
+          // List error state is rendered by the Global View panel.
         }
-      }
+      });
+    return () => controller.abort();
+  }, [
+    discoveryEnabled,
+    discoveryTarget,
+    globalViewOpen,
+    map,
+    mapDiscoveryFilters,
+    seasonId,
+  ]);
+
+  // Global boundaries come from the viewport/zoom discovery endpoint. The source
+  // is refreshed on moveend and remains much lighter than the legacy full field list.
+  useEffect(() => {
+    if (!map || !globalViewOpen || !seasonId || !discoveryEnabled) return;
+    let controller: AbortController | null = null;
+    let timer: number | null = null;
+    const load = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        controller?.abort();
+        controller = new AbortController();
+        const bounds = map.getBounds();
+        void getDiscoveryMap({
+          ...(mapDiscoveryFilters ?? { seasonId }),
+          target: discoveryTarget,
+          west: bounds.getWest(),
+          south: bounds.getSouth(),
+          east: bounds.getEast(),
+          north: bounds.getNorth(),
+          zoom: map.getZoom(),
+        }, controller.signal).then((result) => {
+          const existing = map.getSource(discoverySourceId) as maplibregl.GeoJSONSource | undefined;
+          if (existing) {
+            existing.setData(result.fields as never);
+          } else {
+            map.addSource(discoverySourceId, { type: 'geojson', data: result.fields as never });
+            map.addLayer({
+              id: discoveryFillLayerId,
+              type: 'fill',
+              source: discoverySourceId,
+              paint: {
+                'fill-color': MAP_UI_COLORS.neutralFill,
+                'fill-opacity': 0.3,
+              },
+            });
+            map.addLayer({
+              id: discoveryOutlineLayerId,
+              type: 'line',
+              source: discoverySourceId,
+              paint: {
+                'line-color': [
+                  'case',
+                  ['==', ['get', 'id'], selectedPlotId ?? ''],
+                  MAP_UI_COLORS.selection,
+                  MAP_UI_COLORS.neutralOutline,
+                ],
+                'line-width': [
+                  'case',
+                  ['==', ['get', 'id'], selectedPlotId ?? ''],
+                  3,
+                  1.25,
+                ],
+              },
+            });
+          }
+          const existingTasks = map.getSource(discoveryTaskSourceId) as maplibregl.GeoJSONSource | undefined;
+          if (existingTasks) {
+            existingTasks.setData(result.taskPoints as never);
+          } else if (discoveryTarget === 'scouting') {
+            map.addSource(discoveryTaskSourceId, {
+              type: 'geojson',
+              data: result.taskPoints as never,
+            });
+            map.addLayer({
+              id: discoveryTaskLayerId,
+              type: 'circle',
+              source: discoveryTaskSourceId,
+              paint: {
+                'circle-radius': 5,
+                'circle-color': MAP_UI_COLORS.selection,
+                'circle-stroke-color': MAP_UI_COLORS.white,
+                'circle-stroke-width': 2,
+              },
+            });
+          }
+        }).catch((error: unknown) => {
+          if (!(error instanceof Error && error.name === 'AbortError')) {
+            // The panel owns the visible error state; retain the previous map data.
+          }
+        });
+      }, 120);
     };
-    map.on('styledata', applyStyles);
-    map.on('idle', applyStyles);
-    // Fire immediately in case layers already exist.
-    applyStyles();
+    load();
+    map.on('moveend', load);
     return () => {
-      map.off('styledata', applyStyles);
-      map.off('idle', applyStyles);
+      map.off('moveend', load);
+      if (timer !== null) window.clearTimeout(timer);
+      controller?.abort();
+      if (map.getLayer(discoveryTaskLayerId)) map.removeLayer(discoveryTaskLayerId);
+      if (map.getSource(discoveryTaskSourceId)) map.removeSource(discoveryTaskSourceId);
+      if (map.getLayer(discoveryOutlineLayerId)) map.removeLayer(discoveryOutlineLayerId);
+      if (map.getLayer(discoveryFillLayerId)) map.removeLayer(discoveryFillLayerId);
+      if (map.getSource(discoverySourceId)) map.removeSource(discoverySourceId);
     };
-  }, [map, globalViewOpen, seasonFields, hoveredFieldId]);
+  }, [
+    discoveryTarget,
+    discoveryEnabled,
+    globalViewOpen,
+    map,
+    mapDiscoveryFilters,
+    seasonId,
+    selectedPlotId,
+  ]);
+
+  useEffect(() => {
+    if (!map || discoveryEnabled || !globalViewOpen || legacySeasonFields.length === 0) return;
+    focusPlots(map, legacySeasonFields);
+  }, [discoveryEnabled, globalViewOpen, legacySeasonFields, map]);
 
   // Field boundary interactions on the map:
   //  - continuously reflect whether the pointer is over the field so the cursor is the
@@ -598,14 +720,12 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     const canvas = map.getCanvas();
     const hoverCursor = simplifiedMapControls ? 'default' : 'pointer';
 
-    // In Global View, each season field renders under its own layerPrefix
-    // (see the FieldBoundaryLayer loop below), so hit-testing must check all
-    // of them -- not just the single selected-field layer -- otherwise
-    // clicking/hovering a field drawn only via Global View is a no-op.
     const fieldLayerIds = globalViewOpen
-      ? seasonFields
-        .map((field) => `${field.id}${FIELD_BOUNDARY_FILL_LAYER_ID}`)
-        .filter((id) => map.getLayer(id))
+      ? discoveryEnabled
+        ? (map.getLayer(discoveryFillLayerId) ? [discoveryFillLayerId] : [])
+        : legacySeasonFields
+            .map((field) => `${field.id}${FIELD_BOUNDARY_FILL_LAYER_ID}`)
+            .filter((id) => map.getLayer(id))
       : (map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID) ? [FIELD_BOUNDARY_FILL_LAYER_ID] : []);
 
     const fieldAtPoint = (event: maplibregl.MapMouseEvent) => {
@@ -618,7 +738,10 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (fieldMode || activeMapTool) return;
       const feature = fieldAtPoint(e);
       canvas.style.cursor = feature ? hoverCursor : '';
-      const plotId = feature?.properties?.plotId as string | undefined;
+      const plotId = (
+        feature?.properties?.plotId
+        ?? feature?.properties?.id
+      ) as string | undefined;
       if (globalViewOpen) {
         view.setHoveredFieldId(plotId ?? null);
         const name = feature?.properties?.name as string | undefined;
@@ -641,17 +764,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       if (activeMapTool) return;
       const feature = fieldAtPoint(e);
       if (!feature) return;
-      const plotId = (feature.properties?.plotId as string | undefined) ?? selectedPlotId;
+      const plotId = (
+        feature.properties?.plotId
+        ?? feature.properties?.id
+        ?? selectedPlotId
+      ) as string | undefined;
       if (!plotId) return;
       if (globalViewOpen) {
-        // Mirror GlobalViewPanel's own field-row click: select the field,
-        // close Global View, and focus it, so clicking a field on the map
-        // behaves the same as clicking it in the side list.
         if (seasonId) setLastFieldForSeason(seasonId, plotId);
         view.setSelectedPlotId(plotId);
-        view.setFocusNonce(Date.now());
-        view.setGlobalViewOpen(false);
-        view.setOverlaysVisible(true);
+        return;
       }
       navigate(`/monitoring/field-analytics/field/${plotId}`);
     };
@@ -670,7 +792,20 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       pendingHoveredField.current = null;
       setHoveredField(null);
     };
-  }, [map, selectedPlotId, navigate, simplifiedMapControls, fieldMode, activeMapTool, globalViewOpen, seasonFields, seasonId, view]);
+  }, [
+    map,
+    selectedPlotId,
+    navigate,
+    simplifiedMapControls,
+    fieldMode,
+    activeMapTool,
+    globalViewOpen,
+    seasonId,
+    view,
+    discoveryFillLayerId,
+    discoveryEnabled,
+    legacySeasonFields,
+  ]);
 
   useEffect(() => {
     if (!splitEnabled || !map || !rightMap) return;
@@ -1165,6 +1300,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         name: field.name,
         geometry: field.geometry,
         areaHa: fieldAreaHa(field.geometry),
+        district: field.district,
+        country: field.country,
         seasonIds: [],
       });
       firstCreated ??= created;
@@ -1181,7 +1318,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       ? fieldToFeature(selectedPlot)
       : {
         type: 'FeatureCollection' as const,
-        features: (plotsQ.data ?? []).map(fieldToFeature),
+        features: [],
       };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/geo+json' });
     downloadBlob(blob, geoJsonFilename(selectedPlot));
@@ -1279,6 +1416,11 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       >
         Skip the map
       </a>
+      <p className="sr-only" aria-live="polite">
+        {dateOverride && selectedDate && dateOverride !== selectedDate
+          ? `The selected date is unavailable for this field. Showing ${selectedDate}.`
+          : ''}
+      </p>
 
       { splitEnabled ? (
         <div className="absolute inset-0 hidden grid-cols-2 gap-px bg-border md:grid" data-testid="split-map-view">
@@ -1432,16 +1574,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         featureId="draft-field"
         name="Draft field"
       />
-      { globalViewOpen && seasonFields.map((field) => (
+      {globalViewOpen && !discoveryEnabled && legacySeasonFields.map((field) => (
         <FieldBoundaryLayer
-          key={ field.id }
-          map={ map }
-          plot={ field }
-          featureId={ field.id }
-          name={ field.name }
-          layerPrefix={ field.id }
+          key={field.id}
+          map={map}
+          plot={field}
+          featureId={field.id}
+          name={field.name}
+          layerPrefix={field.id}
         />
-      )) }
+      ))}
       { globalViewOpen && hoveredField && (
         <div
           data-testid="global-view-field-hover-label"

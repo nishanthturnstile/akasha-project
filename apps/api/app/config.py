@@ -146,6 +146,9 @@ class Settings:
     max_request_body_bytes: int = field(
         default_factory=lambda: _get_int("MAX_REQUEST_BODY_BYTES", 1_048_576)
     )
+    field_discovery_enabled: bool = field(
+        default_factory=lambda: _get_bool("FIELD_DISCOVERY_ENABLED", True)
+    )
 
     # Temporary staging diagnostic for Bhoonidhi ResourceSat BOA product inspection.
     # Keep disabled by default; secrets are server-side only and never browser-visible.

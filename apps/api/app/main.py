@@ -50,6 +50,7 @@ from .routers.auth_router import router as auth_router
 from .routers.bhoonidhi_router import router as bhoonidhi_diagnostics_router
 from .routers.crops_router import router as crops_router
 from .routers.data_manager_router import router as data_manager_router
+from .routers.field_discovery_router import router as field_discovery_router
 from .routers.field_exports_router import router as field_exports_router
 from .routers.field_group_router import router as field_groups_router
 from .routers.field_router import router as fields_router
@@ -282,6 +283,7 @@ app.include_router(scout_tasks_router)
 app.include_router(data_manager_router)
 app.include_router(field_groups_router)
 app.include_router(fields_router)
+app.include_router(field_discovery_router)
 app.include_router(latest_imagery_router)
 app.include_router(ingestion_jobs_router)
 app.include_router(source_monitoring_router)

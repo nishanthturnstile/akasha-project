@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useAssignFieldGroupFields, useCreateFieldGroup, useFieldGroups, usePlots } from '@/lib/queries';
+import { useAssignFieldGroupFields, useCreateFieldGroup, useFieldGroups, useFields } from '@/lib/queries';
 import { reportErrorMessage } from '@/pages/reports/reportUtils';
 
 export default function FieldGroupsPage() {
   const [name, setName] = useState('North Block');
   const groupsQ = useFieldGroups();
-  const plotsQ = usePlots();
+  const fieldsQ = useFields();
   const createMutation = useCreateFieldGroup();
   const assignMutation = useAssignFieldGroupFields();
   const error = groupsQ.error ?? createMutation.error ?? assignMutation.error;
@@ -15,9 +15,9 @@ export default function FieldGroupsPage() {
   }
 
   async function assignFirst(groupId: string) {
-    const first = plotsQ.data?.[0]?.id;
+    const first = fieldsQ.data?.[0]?.id;
     if (!first) return;
-    await assignMutation.mutateAsync({ groupId, plotIds: [first] });
+    await assignMutation.mutateAsync({ groupId, fieldIds: [first] });
   }
 
   return (
@@ -38,7 +38,7 @@ export default function FieldGroupsPage() {
             <div className="flex justify-between gap-3">
               <div>
                 <p className="font-medium">{ group.name }</p>
-                <p className="text-sm text-muted-foreground">{ group.plotIds.length } assigned fields</p>
+                <p className="text-sm text-muted-foreground">{ group.fieldIds.length } assigned fields</p>
               </div>
               <button className="rounded-md border border-border px-3 py-1.5 text-sm" onClick={ () => void assignFirst(group.id) } type="button">Assign first field</button>
             </div>

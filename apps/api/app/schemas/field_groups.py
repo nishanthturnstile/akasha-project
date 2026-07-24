@@ -18,10 +18,12 @@ class FieldGroup(ApiModel):
     name: str
     description: str | None = None
     color: str | None = None
+    field_ids: list[str] = Field(default_factory=list)
     plot_ids: list[str] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 
 
 class FieldAssignmentPayload(ApiModel):
+    field_ids: list[str] = Field(default_factory=list)
     plot_ids: list[str] = Field(default_factory=list)

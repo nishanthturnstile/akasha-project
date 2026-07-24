@@ -78,6 +78,7 @@ class FieldIdEntry(ApiModel):
 class SeasonResponse(ApiModel):
     id: str
     userId: str
+    teamId: str | None = None
     name: str
     startDate: str | None = None
     endDate: str | None = None

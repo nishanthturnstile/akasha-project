@@ -1,203 +1,34 @@
-import { MapPin, MoreVertical, Plus, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { GeometryPreview } from '@/lib/geometry-preview';
-import { cn } from '@/lib/utils';
-import {
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogRoot,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useDeleteField, useFields, useSeasons, useUpdateField } from '@/lib/queries';
-import { useMapView } from '@/state/useMapView';
-import type { Field, PlotGeometry } from '@/types/api';
-import EditFieldDialog from '@/components/seasons/EditFieldDialog';
+import { MapPin, Plus, Search, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { DiscoveryBrowser } from '@/components/discovery/DiscoveryBrowser';
 import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptionsDialog';
+import { GeometryPreview } from '@/lib/geometry-preview';
+import { useConfig, useFields } from '@/lib/queries';
+import { useMapView } from '@/state/useMapView';
+import type { PlotGeometry } from '@/types/api';
 
 interface Props {
   onClose: () => void;
   seasonId: string | null;
 }
 
-function FieldMenu({
-  field,
-  onEdit,
-  onDelete,
-  isPinned,
-  onPin,
-  onUnpin,
-}: {
-  field: Field;
-  onEdit: (field: Field) => void;
-  onDelete: (field: Field) => void;
-  isPinned: boolean;
-  onPin: (field: Field) => void;
-  onUnpin: (field: Field) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
-
-  return (
-    <div ref={menuRef} className="relative">
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
-        aria-label={`Field options for ${field.name}`}
-      >
-        <MoreVertical className="size-4" strokeWidth={1.75} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-popover mt-1 min-w-40 whitespace-nowrap rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-e2">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(field); }}
-            className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
-          >
-            Edit
-          </button>
-          {isPinned ? (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setOpen(false); onUnpin(field); }}
-              className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
-            >
-              Unpin
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setOpen(false); onPin(field); }}
-              className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
-            >
-              Pin Field
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
-            className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-foreground transition-colors duration-fast hover:bg-accent"
-          >
-            Export Contours
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(field); }}
-            className="flex min-h-10 w-full items-center rounded-md px-3 py-2 text-left text-sm text-destructive transition-colors duration-fast hover:bg-destructive/10"
-          >
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry; size?: number }) {
   return (
     <GeometryPreview
-      geometry={ geometry }
-      width={ size }
-      height={ size }
+      geometry={geometry}
+      width={size}
+      height={size}
       className="shrink-0 rounded-lg border border-primary/15 bg-primary/5 p-1.5"
     />
   );
 }
 
-function FieldCard({
-  field,
-  onEdit,
-  onDelete,
-  onSelect,
-  selected,
-  isPinned,
-  onPin,
-  onUnpin,
-  seasonId,
-}: {
-  field: Field;
-  onEdit: (field: Field) => void;
-  onDelete: (field: Field) => void;
-  onSelect?: (field: Field) => void;
-  selected?: boolean;
-  isPinned: boolean;
-  onPin: (field: Field) => void;
-  onUnpin: (field: Field) => void;
-  seasonId?: string | null;
-}) {
-  const seasonCycles = useMemo(
-    () => field.vegetationData?.filter((v) => v.seasonId === seasonId) ?? [],
-    [field.vegetationData, seasonId],
-  );
-  const latestSeasonVeg = useMemo(() => {
-    if (seasonCycles.length === 0) return null;
-    const sorted = [...seasonCycles].sort((a, b) => {
-      const yearA = a.year ?? 0;
-      const yearB = b.year ?? 0;
-      if (yearB !== yearA) return yearB - yearA;
-      const dateA = a.sowingDate ? new Date(a.sowingDate).getTime() : 0;
-      const dateB = b.sowingDate ? new Date(b.sowingDate).getTime() : 0;
-      return dateB - dateA;
-    });
-    return sorted[0];
-  }, [seasonCycles]);
-  const cropLabel = latestSeasonVeg?.cropName ?? 'Unknown crop';
-  const allCrops = seasonCycles.map((c) => c.cropName ?? 'Unknown crop').join(', ');
-  return (
-    <div
-      className={ cn(
-        'grid cursor-pointer grid-cols-[52px_1fr_auto] gap-x-3 rounded-lg border border-border/70 px-4 py-4 transition-colors duration-fast',
-        selected
-          ? 'border-l-[3px] border-l-primary bg-primary/5'
-          : 'bg-card/35 hover:bg-accent/10',
-      ) }
-      onClick={ () => onSelect?.(field) }
-      role="button"
-      tabIndex={ 0 }
-      onKeyDown={ (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(field); } } }
-    >
-      <div className="row-span-2 self-center">
-        <FieldThumbnail geometry={field.geometry} size={52} />
-      </div>
-
-      <p className="min-w-0 self-center truncate text-base font-semibold text-foreground">
-        {isPinned && <MapPin className="mr-1 inline size-3.5 text-primary" strokeWidth={1.75} />}
-        {field.name}
-      </p>
-      <div className="self-center justify-self-end">
-        <FieldMenu field={field} onEdit={onEdit} onDelete={onDelete} isPinned={isPinned} onPin={onPin} onUnpin={onUnpin} />
-      </div>
-
-      <span className="self-center truncate text-xs text-muted-foreground" title={ allCrops }>{cropLabel}</span>
-      <span className="self-center justify-self-end text-xs text-muted-foreground tnum">
-        {field.areaHa != null ? `${field.areaHa.toFixed(2)} ha` : '—'}
-      </span>
-    </div>
-  );
-}
-
 const LAST_FIELD_KEY = 'akasha.lastFieldPerSeason';
-const PINNED_KEY = 'akasha.pinnedFields';
 
 export function getLastFieldPerSeason(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(LAST_FIELD_KEY) ?? '{}');
+    return JSON.parse(localStorage.getItem(LAST_FIELD_KEY) ?? '{}') as Record<string, string>;
   } catch {
     return {};
   }
@@ -209,286 +40,139 @@ export function setLastFieldForSeason(seasonId: string, fieldId: string) {
     map[seasonId] = fieldId;
     localStorage.setItem(LAST_FIELD_KEY, JSON.stringify(map));
   } catch {
-    // localStorage unavailable
+    // Storage unavailable.
   }
 }
 
-function getPinnedFields(): Record<string, string[]> {
-  try {
-    return JSON.parse(localStorage.getItem(PINNED_KEY) ?? '{}');
-  } catch {
-    return {};
-  }
+function LegacyFieldList({ seasonId }: { seasonId: string }) {
+  const fieldsQ = useFields();
+  const view = useMapView();
+  const [query, setQuery] = useState('');
+  const fields = useMemo(() => (fieldsQ.data ?? []).filter((field) =>
+    field.seasonIds.includes(seasonId)
+    && field.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())), [
+    fieldsQ.data,
+    query,
+    seasonId,
+  ]);
+  return (
+    <div className="min-h-0 flex-1 overflow-auto p-4">
+      <label className="relative mb-3 block">
+        <span className="sr-only">Search field names</span>
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="h-9 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm"
+          placeholder="Search field names"
+        />
+      </label>
+      <div className="space-y-2">
+        {fields.map((field) => (
+          <article key={field.id} className="flex items-center gap-3 rounded-lg border border-border p-3">
+            <FieldThumbnail geometry={field.geometry} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{field.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {field.areaHa == null ? '—' : `${field.areaHa.toFixed(2)} ha`}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label={`Find ${field.name} on map`}
+              className="rounded-md border border-border p-2"
+              onClick={() => {
+                view.setSelectedPlotId(field.id);
+                view.setFocusNonce(view.focusNonce + 1);
+              }}
+            >
+              <MapPin className="size-4" />
+            </button>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
 }
-
-function setPinnedFieldsForSeason(seasonId: string, fieldIds: string[]) {
-  try {
-    const map = getPinnedFields();
-    map[seasonId] = fieldIds;
-    localStorage.setItem(PINNED_KEY, JSON.stringify(map));
-  } catch {
-    // localStorage unavailable
-  }
-}
-
-const EMPTY_CTA_BUTTONS = [
-  { label: 'Add Field', icon: Plus, action: 'add-field' as const },
-];
 
 export default function GlobalViewPanel({ onClose, seasonId }: Props) {
-  const fieldsQ = useFields();
-  const seasonsQ = useSeasons();
-  const deleteField = useDeleteField();
-  const updateField = useUpdateField();
-  const view = useMapView();
-  const { selectedPlotId } = view;
-  const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const [editingField, setEditingField] = useState<Field | null>(null);
-  const [deletingField, setDeletingField] = useState<Field | null>(null);
-  const [savingField, setSavingField] = useState(false);
-  const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
-
-  const allFields = useMemo(() => (Array.isArray(fieldsQ.data) ? fieldsQ.data : []), [fieldsQ.data]);
-  const allSeasons = useMemo(
-    () => (Array.isArray(seasonsQ.data) ? seasonsQ.data : []),
-    [seasonsQ.data],
-  );
-
-  const currentSeason = useMemo(() => {
-    if (!seasonId) return null;
-    return allSeasons.find((s) => s.id === seasonId) ?? null;
-  }, [allSeasons, seasonId]);
-
-  const seasonFields = useMemo(() => {
-    if (!seasonId) return allFields;
-    return allFields.filter((f) => f.seasonIds?.includes(seasonId));
-  }, [allFields, seasonId]);
-
-  const seasonNames = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const s of allSeasons) {
-      map[s.id] = s.name;
-    }
-    return map;
-  }, [allSeasons]);
-
-  const [pinnedFieldIds, setPinnedFieldIds] = useState<string[]>(() => {
-    return seasonId ? (getPinnedFields()[seasonId] ?? []) : [];
-  });
-
-  const handlePin = (field: Field) => {
-    if (!seasonId) return;
-    const next = pinnedFieldIds.includes(field.id) ? pinnedFieldIds : [...pinnedFieldIds, field.id];
-    setPinnedFieldIds(next);
-    setPinnedFieldsForSeason(seasonId, next);
-  };
-
-  const handleUnpin = (field: Field) => {
-    if (!seasonId) return;
-    const next = pinnedFieldIds.filter((id) => id !== field.id);
-    setPinnedFieldIds(next);
-    setPinnedFieldsForSeason(seasonId, next);
-  };
-
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredFields = useMemo(() => {
-    const matched = !normalizedQuery
-      ? seasonFields
-      : seasonFields.filter((f) => {
-          const searchable = [
-            f.name,
-            f.areaHa?.toString(),
-            ...(f.seasonIds?.map((sid) => seasonNames[sid]).filter(Boolean) ?? []),
-          ].filter(Boolean).join(' ').toLocaleLowerCase();
-          return searchable.includes(normalizedQuery);
-        });
-    return [...matched].sort((a, b) => {
-      const aPinned = pinnedFieldIds.includes(a.id) ? 0 : 1;
-      const bPinned = pinnedFieldIds.includes(b.id) ? 0 : 1;
-      if (aPinned !== bPinned) return aPinned - bPinned;
-      return a.name.localeCompare(b.name);
-    });
-  }, [seasonFields, normalizedQuery, seasonNames, pinnedFieldIds]);
-
-  const handleDelete = (field: Field) => {
-    setDeletingField(field);
-  };
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('discoveryTarget') === 'scouting' ? 'scouting' : 'monitoring';
+  const [addFieldOpen, setAddFieldOpen] = useState(false);
+  const configQ = useConfig();
+  const discoveryEnabled = configQ.data?.features?.fieldDiscoveryEnabled !== false;
 
   return (
     <>
-      <div className="flex h-full w-80 flex-col border-l border-border bg-muted/30">
-        <header className="flex items-center justify-between border-b border-border/60 px-4 py-4">
-          <div>
-            <h2 className="font-display text-base font-semibold text-foreground">Global View</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {currentSeason
-                ? `${currentSeason.name} (${seasonFields.length} field${seasonFields.length !== 1 ? 's' : ''})`
-                : `${seasonFields.length} field${seasonFields.length !== 1 ? 's' : ''}`}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {seasonFields.reduce((sum, f) => sum + (f.areaHa ?? 0), 0).toFixed(1)} ha total
-            </p>
+      <aside className="flex h-full w-96 max-w-[42vw] flex-col border-l border-border bg-muted/30">
+        <header className="border-b border-border/60 px-4 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="font-display text-base font-semibold">Global View</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Discover fields and scouting work without leaving the map.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close global view"
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent"
+            >
+              <X className="size-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close global view"
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent/40"
-          >
-            <X className="size-4" />
-          </button>
+          {discoveryEnabled && <div className="mt-3 grid grid-cols-2 rounded-lg bg-muted p-1" role="tablist" aria-label="Discovery target">
+            {(['monitoring', 'scouting'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={tab === value}
+                className={tab === value
+                  ? 'rounded-md bg-background px-3 py-1.5 text-xs font-semibold shadow-sm'
+                  : 'rounded-md px-3 py-1.5 text-xs text-muted-foreground'}
+                onClick={() => setSearchParams((current) => {
+                  const next = new URLSearchParams(current);
+                  if (value === 'scouting') next.set('discoveryTarget', 'scouting');
+                  else next.delete('discoveryTarget');
+                  return next;
+                }, { replace: true })}
+              >
+                {value === 'monitoring' ? 'Monitoring' : 'Scouting'}
+              </button>
+            ))}
+          </div>}
         </header>
 
-        <div className="flex flex-col gap-3 px-4 py-3">
-          <label className="relative block">
-            <span className="sr-only">Search fields</span>
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              strokeWidth={1.75}
-            />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search fields, seasons…"
-              className="h-9 w-full rounded-md border border-input bg-background/55 pl-9 pr-3 text-[13px] text-foreground shadow-e1 transition-colors duration-fast placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
-        </div>
+        {seasonId && discoveryEnabled ? (
+          <DiscoveryBrowser key={`${tab}:${seasonId}`} target={tab} seasonId={seasonId} />
+        ) : seasonId ? (
+          <LegacyFieldList seasonId={seasonId} />
+        ) : (
+          <div className="m-4 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            Select a season to discover fields.
+          </div>
+        )}
 
-        <ScrollArea className="flex-1 px-4 pb-4">
-          {fieldsQ.isLoading ? (
-            <div className="space-y-2">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="flex items-center gap-3 rounded-lg border border-border/70 bg-card/35 px-3 py-2.5">
-                  <div className="size-12 shrink-0 rounded-sm bg-muted/50 animate-pulse" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3.5 w-28 rounded bg-muted/50 animate-pulse" />
-                    <div className="h-3 w-16 rounded bg-muted/50 animate-pulse" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : fieldsQ.error ? (
-            <p className="text-sm text-destructive">Failed to load fields.</p>
-          ) : filteredFields.length === 0 ? (
-            normalizedQuery ? (
-              <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/80 bg-card/35 px-4 py-8 text-center">
-                <p className="text-sm font-medium text-foreground">No fields match your search</p>
-                <p className="text-xs text-muted-foreground">Try a different search term.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/80 bg-card/35 px-4 py-8 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  {currentSeason ? `"${currentSeason.name}" has no fields yet` : 'No fields yet'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {currentSeason ? 'Add a field to this season to get started.' : 'Add a field to get started.'}
-                </p>
-                <div className="flex flex-wrap justify-center gap-2 pt-1">
-                  {EMPTY_CTA_BUTTONS.map((btn) => (
-                    <button
-                      key={btn.action}
-                      type="button"
-                      onClick={() => {
-                        if (btn.action === 'add-field') {
-                          setAddFieldDialogOpen(true);
-                        }
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-md border-2 border-dashed border-primary/40 bg-primary/[0.08] px-5 py-2.5 text-sm font-medium text-primary hover:bg-primary/[0.15] transition-colors duration-fast"
-                    >
-                      <btn.icon className="size-3.5" strokeWidth={1.75} />
-                      {btn.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )
-          ) : (
-            <div className="space-y-2">
-              {filteredFields.map((field) => (
-                  <FieldCard
-                  key={field.id}
-                  field={field}
-                  seasonId={seasonId}
-                  selected={field.id === selectedPlotId}
-                  isPinned={pinnedFieldIds.includes(field.id)}
-                  onPin={handlePin}
-                  onUnpin={handleUnpin}
-                  onEdit={setEditingField}
-                  onDelete={handleDelete}
-                  onSelect={ (f) => {
-                    if (seasonId) setLastFieldForSeason(seasonId, f.id);
-                    view.setSelectedPlotId(f.id);
-                    view.setFocusNonce(Date.now());
-                    onClose();
-                    navigate(`/monitoring/field-analytics/field/${f.id}`);
-                  } }
-                />
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-
-        <div className="shrink-0 border-t border-border/60 px-4 py-3">
-          <button
-            type="button"
-            onClick={ () => setAddFieldDialogOpen(true) }
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 active:bg-primary/80 transition-colors duration-fast"
-          >
-            <Plus className="size-4" strokeWidth={1.75} />
-            Add field
-          </button>
-        </div>
-      </div>
-
-      {editingField && (
-        <EditFieldDialog
-          key={editingField.id}
-          field={editingField}
-          open={!!editingField}
-          onOpenChange={(open) => { if (!open) setEditingField(null); }}
-          onSave={(fieldId, name, geometry, vegetationData, groupId, areaHa) => {
-            setSavingField(true);
-            updateField.mutate(
-              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}), ...(areaHa !== undefined ? { areaHa } : {}) } },
-              { onSuccess: () => { setSavingField(false); setEditingField(null); }, onError: () => setSavingField(false) },
-            );
-          }}
-          saving={savingField}
-          onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
-          initialSeasonId={ seasonId ?? undefined }
-        />
-      )}
-
-      <AlertDialogRoot open={!!deletingField} onOpenChange={(open) => { if (!open) setDeletingField(null); }}>
-        <AlertDialogContent>
-          <AlertDialogTitle>Delete field?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to delete "{deletingField?.name}"? This action cannot be undone.
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => {
-              if (!deletingField) return;
-              try {
-                await deleteField.mutateAsync(deletingField.id);
-              } catch {
-                // error handled by query state
-              }
-              setDeletingField(null);
-            }}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialogRoot>
-
+        {tab === 'monitoring' && (
+          <div className="shrink-0 border-t border-border/60 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setAddFieldOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
+            >
+              <Plus className="size-4" />
+              Add field
+            </button>
+          </div>
+        )}
+      </aside>
       <FieldCreateOptionsDialog
-        open={ addFieldDialogOpen }
-        onOpenChange={ setAddFieldDialogOpen }
-        defaultSeasonId={ seasonId }
+        open={addFieldOpen}
+        onOpenChange={setAddFieldOpen}
+        defaultSeasonId={seasonId}
       />
     </>
   );

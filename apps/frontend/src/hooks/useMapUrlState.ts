@@ -116,7 +116,16 @@ function useRoutedMapUrlState(): void {
     useEffect(() => {
         if (!hydrated.current) return;
 
-        const next = new URLSearchParams();
+        // Preserve discovery and future module-owned parameters. This hook only
+        // replaces the map parameters it owns.
+        const next = new URLSearchParams(window.location.search);
+        for (const owned of [
+            'scene', 'from', 'to', 'source', 'layer', 'mask', 'profile', 'split',
+            'rightSource', 'rightScene', 'rightLayer', 'rightFrom', 'rightTo',
+            'rightMask', 'rightProfile',
+        ]) {
+            next.delete(owned);
+        }
         if (view.selectedDate) next.set('scene', view.selectedDate);
         if (view.periodFrom) next.set('from', view.periodFrom);
         if (view.periodTo) next.set('to', view.periodTo);
@@ -137,9 +146,11 @@ function useRoutedMapUrlState(): void {
 
         const queryString = next.toString();
         const effectivePlotId = view.selectedPlotId;
-        const basePath = effectivePlotId
-            ? `/monitoring/field-analytics/field/${effectivePlotId}`
-            : '/monitoring/field-analytics';
+        const basePath = view.globalViewOpen
+            ? window.location.pathname
+            : effectivePlotId
+                ? `/monitoring/field-analytics/field/${effectivePlotId}`
+                : '/monitoring/field-analytics';
         const targetUrl = queryString ? `${basePath}?${queryString}` : basePath;
 
         const currentPath = `${window.location.pathname}${window.location.search}`;
@@ -164,6 +175,7 @@ function useRoutedMapUrlState(): void {
         view.rightPeriodTo,
         view.rightCloudMask,
         view.rightRenderProfile,
+        view.globalViewOpen,
         navigate,
     ]);
 }

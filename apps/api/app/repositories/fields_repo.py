@@ -10,9 +10,10 @@ from typing import Any
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import shape
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..db import session_scope
+from ..discovery_normalization import natural_sort_key, normalize_search_text
 from ..models import (
     AppSetting,
     Crop,
@@ -25,7 +26,8 @@ from ..models import (
     Variety,
     VegetationCycle,
 )
-from ..raster.errors import AkashaError, bad_request, invalid_geometry, not_found
+from ..raster.errors import bad_request, invalid_geometry, not_found
+from ..raster.geo_validate import validate_polygon
 
 
 def _uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
@@ -63,6 +65,17 @@ def _geometry_payload(geometry: Any) -> dict[str, Any]:
     return to_shape(geometry).__geo_interface__
 
 
+def _validated_geometry_facts(geometry: dict[str, Any]) -> dict[str, Any]:
+    facts = validate_polygon(
+        geometry,
+        max_area_ha=settings.max_polygon_area_ha,
+        max_vertices=settings.max_polygon_vertices,
+    )
+    if facts["areaHa"] <= 0:
+        raise invalid_geometry("Field geometry must have a non-zero geodesic area.")
+    return facts
+
+
 def _normalize_season_ids(season_ids: list[str] | None) -> list[uuid.UUID]:
     if not season_ids:
         return []
@@ -77,10 +90,17 @@ def _normalize_season_ids(season_ids: list[str] | None) -> list[uuid.UUID]:
     return normalized
 
 
-def _validate_field_group(session: Any, group_id: uuid.UUID | None) -> None:
+def _validate_field_group(
+    session: Any,
+    group_id: uuid.UUID | None,
+    team_id: str | uuid.UUID | None = None,
+) -> None:
     if group_id is None:
         return
-    row = session.execute(select(FieldGroup.id).where(FieldGroup.id == group_id)).first()
+    stmt = select(FieldGroup.id).where(FieldGroup.id == group_id)
+    if team_id is not None:
+        stmt = stmt.where(FieldGroup.team_id == _uuid(team_id))
+    row = session.execute(stmt).first()
     if row is None:
         raise not_found(
             "Field group not found.",
@@ -89,16 +109,21 @@ def _validate_field_group(session: Any, group_id: uuid.UUID | None) -> None:
         )
 
 
-def _validate_season_links(session: Any, user_id: str, season_ids: list[uuid.UUID]) -> None:
+def _validate_season_links(
+    session: Any,
+    user_id: str,
+    season_ids: list[uuid.UUID],
+    team_id: str | None = None,
+) -> None:
     if not season_ids:
         return
     user_uuid = _uuid(user_id)
-    rows = session.execute(
-        select(Season.season_id).where(
-            Season.season_id.in_(season_ids),
-            Season.user_id == user_uuid,
-        )
-    ).all()
+    stmt = select(Season.season_id).where(Season.season_id.in_(season_ids))
+    if team_id is not None:
+        stmt = stmt.where(Season.team_id == _uuid(team_id))
+    else:
+        stmt = stmt.where(Season.user_id == user_uuid)
+    rows = session.execute(stmt).all()
     found = {row[0] for row in rows}
     missing = [str(season_id) for season_id in season_ids if season_id not in found]
     if missing:
@@ -350,10 +375,13 @@ def _row_to_field(
     return {
         "id": str(field.id),
         "userId": str(field.user_id),
+        "teamId": str(field.team_id),
         "name": field.name,
         "areaHa": field.area_ha,
         "geometry": _geometry_payload(field.geometry),
         "groupId": str(field.group_id) if field.group_id else None,
+        "district": field.district,
+        "country": field.country,
         "seasonIds": [str(sid) for sid in season_data],
         "seasons": [
             {
@@ -375,31 +403,6 @@ def _row_to_field(
             else None
         ),
     }
-
-
-def _field_columns() -> tuple[Any, ...]:
-    return (Field,)
-
-
-def _validate_field_name_unique(
-    session: Session,
-    user_id: str,
-    name: str,
-    exclude_field_id: str | None = None,
-) -> None:
-    stmt = select(Field).where(
-        Field.user_id == _uuid(user_id),
-        Field.name == name,
-    )
-    if exclude_field_id is not None:
-        stmt = stmt.where(Field.id != _uuid(exclude_field_id))
-    existing = session.execute(stmt).scalar_one_or_none()
-    if existing is not None:
-        raise AkashaError(
-            "DUPLICATE_FIELD_NAME",
-            f'A field named "{name}" already exists.',
-            409,
-        )
 
 
 def get_next_field_number(user_id: str) -> int:
@@ -447,21 +450,31 @@ def create_field(
     group_id: str | None,
     season_ids: list[str] | None = None,
     vegetation_data: list[dict[str, Any]] | None = None,
+    team_id: str | None = None,
+    district: str | None = None,
+    country: str | None = None,
 ) -> dict[str, Any]:
     with session_scope() as session:
+        if team_id is None:
+            raise bad_request("Current team is required.", code="TEAM_REQUIRED")
         group_uuid = _uuid(group_id) if group_id else None
         season_uuids = _normalize_season_ids(season_ids)
         veg_data = vegetation_data or []
-        _validate_field_group(session, group_uuid)
-        _validate_season_links(session, user_id, season_uuids)
+        _validate_field_group(session, group_uuid, team_id)
+        _validate_season_links(session, user_id, season_uuids, team_id)
         _validate_vegetation_cycles(session, user_id, veg_data, season_uuids)
-        _validate_field_name_unique(session, user_id, name)
+        geometry_facts = _validated_geometry_facts(geometry)
         field = Field(
             user_id=_uuid(user_id),
+            team_id=_uuid(team_id),
             name=name,
+            name_search_key=normalize_search_text(name),
+            name_sort_key=natural_sort_key(name),
             geometry=_geometry_value(geometry),
-            area_ha=area_ha,
+            area_ha=geometry_facts["areaHa"],
             group_id=group_uuid,
+            district=district.strip() if district and district.strip() else None,
+            country=country.strip() if country and country.strip() else None,
         )
         # Ensure UUIDs are generated in Python to avoid DB-side gen_random_uuid() errors
         field.id = uuid.uuid4()
@@ -486,8 +499,12 @@ def create_field(
         return _row_to_field(field, season_data, veg_rows)
 
 
-def list_fields(user_id: str) -> list[dict[str, Any]]:
-    stmt = select(Field).order_by(Field.name)
+def list_fields(user_id: str, team_id: str | None = None) -> list[dict[str, Any]]:
+    stmt = select(Field).order_by(Field.name_sort_key, Field.id)
+    if team_id is not None:
+        stmt = stmt.where(Field.team_id == _uuid(team_id))
+    else:
+        stmt = stmt.where(Field.user_id == _uuid(user_id))
     with session_scope() as session:
         fields = session.execute(stmt).scalars().all()
         user_uuid = _uuid(user_id)
@@ -495,7 +512,7 @@ def list_fields(user_id: str) -> list[dict[str, Any]]:
         field_season_ids: dict[uuid.UUID, list[uuid.UUID]] = {}
         field_ids: list[uuid.UUID] = []
         for field in fields:
-            if field.user_id == user_uuid:
+            if team_id is not None or field.user_id == user_uuid:
                 field_ids.append(field.id)
                 sids = [
                     row[0]
@@ -511,7 +528,7 @@ def list_fields(user_id: str) -> list[dict[str, Any]]:
         veg_by_field = _vegetation_cycle_data_bulk(session, field_ids)
         results = []
         for field in fields:
-            if field.user_id == user_uuid:
+            if team_id is not None or field.user_id == user_uuid:
                 sids = field_season_ids.get(field.id, [])
                 field_season_data = {
                     sid: season_data[sid] for sid in sids if sid in season_data
@@ -526,11 +543,15 @@ def list_fields(user_id: str) -> list[dict[str, Any]]:
         return results
 
 
-def get_field(field_id: str, user_id: str) -> dict[str, Any] | None:
+def get_field(field_id: str, user_id: str, team_id: str | None = None) -> dict[str, Any] | None:
     stmt = select(Field).where(Field.id == _uuid(field_id))
     with session_scope() as session:
         field = session.execute(stmt).scalar_one_or_none()
-        if field is None or field.user_id != _uuid(user_id):
+        if field is None:
+            return None
+        if team_id is not None and field.team_id != _uuid(team_id):
+            return None
+        if team_id is None and field.user_id != _uuid(user_id):
             return None
         sids = [
             row[0]
@@ -543,12 +564,23 @@ def get_field(field_id: str, user_id: str) -> dict[str, Any] | None:
         return _row_to_field(field, season_data, veg_rows)
 
 
-def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] | None:
-    # Keys here match what the router actually sends: FieldUpdate.model_dump(by_alias=True)
-    # dumps using each field's declared (already-camelCase) name, e.g. "areaHa" -- not the
-    # ORM's snake_case attribute name. The previous "area_ha" entry here never matched
-    # anything in kwargs, so area updates were silently dropped on every PATCH.
-    allowed = {"name", "geometry", "areaHa", "groupId", "seasonIds", "vegetationData"}
+def update_field(
+    field_id: str,
+    user_id: str,
+    *,
+    team_id: str | None = None,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    allowed = {
+        "name",
+        "geometry",
+        "area_ha",
+        "groupId",
+        "seasonIds",
+        "vegetationData",
+        "district",
+        "country",
+    }
     values = {
         k: v
         for k, v in kwargs.items()
@@ -559,21 +591,25 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
         field = session.execute(
             select(Field).where(
                 Field.id == _uuid(field_id),
-                Field.user_id == _uuid(user_id),
+                (
+                    Field.team_id == _uuid(team_id)
+                    if team_id is not None
+                    else Field.user_id == _uuid(user_id)
+                ),
             )
         ).scalar_one_or_none()
         if field is None:
             return None
         group_uuid = _uuid(values["groupId"]) if values.get("groupId") else None
         if "groupId" in values:
-            _validate_field_group(session, group_uuid)
+            _validate_field_group(session, group_uuid, team_id)
         season_uuids = (
             _normalize_season_ids(values.get("seasonIds"))
             if "seasonIds" in values
             else None
         )
         if season_uuids is not None:
-            _validate_season_links(session, user_id, season_uuids)
+            _validate_season_links(session, user_id, season_uuids, team_id)
         veg_data = values.get("vegetationData")
         if veg_data is not None:
             effective_season_uuids = (
@@ -591,21 +627,24 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
             _validate_vegetation_cycles(
                 session, user_id, veg_data, effective_season_uuids
             )
-        if "name" in values and values["name"] != field.name:
-            _validate_field_name_unique(session, user_id, values["name"], exclude_field_id=field_id)
-        # Maps each incoming (camelCase) key to the ORM's actual (snake_case) attribute
-        # name -- setattr(field, "areaHa", ...) or setattr(field, "groupId", ...) would
-        # silently create a throwaway instance attribute instead of touching the real
-        # mapped column, since Field has no such attribute for SQLAlchemy to track.
-        field_attrs = {"name": "name", "geometry": "geometry", "areaHa": "area_ha", "groupId": "group_id"}
-        for key, attr in field_attrs.items():
+        for key in ("name", "geometry", "groupId", "district", "country"):
             if key in values:
                 value = values[key]
                 if key == "geometry":
-                    value = _geometry_value(value)
+                    values["area_ha"] = _validated_geometry_facts(values[key])["areaHa"]
+                    values[key] = _geometry_value(values[key])
                 if key == "groupId":
-                    value = group_uuid
-                setattr(field, attr, value)
+                    field.group_id = group_uuid
+                    continue
+                if key in {"district", "country"}:
+                    setattr(field, key, values[key].strip() if values[key] else None)
+                    continue
+                setattr(field, key, values[key])
+        if "name" in values:
+            field.name_search_key = normalize_search_text(values["name"])
+            field.name_sort_key = natural_sort_key(values["name"])
+        if "area_ha" in values:
+            field.area_ha = values["area_ha"]
         session.flush()
         if season_uuids is not None:
             session.execute(delete(FieldSeason).where(FieldSeason.field_id == field.id))
@@ -633,13 +672,17 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
 
 
 def list_vegetation_cycles(
-    field_id: str, user_id: str, season_id: str
+    field_id: str, user_id: str, season_id: str, team_id: str | None = None
 ) -> list[dict[str, Any]]:
     with session_scope() as session:
         field = session.execute(
             select(Field.id).where(
                 Field.id == _uuid(field_id),
-                Field.user_id == _uuid(user_id),
+                (
+                    Field.team_id == _uuid(team_id)
+                    if team_id is not None
+                    else Field.user_id == _uuid(user_id)
+                ),
             )
         ).first()
         if field is None:
@@ -647,12 +690,16 @@ def list_vegetation_cycles(
         return _vegetation_cycle_data(session, _uuid(field_id), _uuid(season_id))
 
 
-def delete_field(field_id: str, user_id: str) -> bool:
+def delete_field(field_id: str, user_id: str, team_id: str | None = None) -> bool:
     with session_scope() as session:
         field = session.execute(
             select(Field).where(
                 Field.id == _uuid(field_id),
-                Field.user_id == _uuid(user_id),
+                (
+                    Field.team_id == _uuid(team_id)
+                    if team_id is not None
+                    else Field.user_id == _uuid(user_id)
+                ),
             )
         ).scalar_one_or_none()
         if field is None:

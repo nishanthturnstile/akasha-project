@@ -42,6 +42,7 @@ export interface AppConfig {
     cropMapSplitEnabled: boolean;
     cropMapContrastEnabled: boolean;
     latestImageryEnabled: boolean;
+    fieldDiscoveryEnabled?: boolean;
   };
   latestImagery?: LatestImageryPolicy;
 }
@@ -1313,7 +1314,9 @@ export interface ActivityFilters {
 export interface ScoutTask {
   id: string;
   plotId?: string | null;
+  fieldId?: string | null;
   fieldName?: string | null;
+  fieldNameSnapshot?: string | null;
   longitude?: number | null;
   latitude?: number | null;
   status: 'new' | 'closed';
@@ -1328,6 +1331,7 @@ export interface ScoutTask {
 
 export interface ScoutTaskPayload {
   plotId?: string | null;
+  fieldId?: string | null;
   longitude?: number | null;
   latitude?: number | null;
   status?: 'new' | 'closed';
@@ -1339,6 +1343,7 @@ export interface ScoutTaskPayload {
 
 export interface ScoutTaskUpdatePayload {
   plotId?: string | null;
+  fieldId?: string | null;
   longitude?: number | null;
   latitude?: number | null;
   status?: 'new' | 'closed';
@@ -1368,6 +1373,7 @@ export interface FieldGroup {
   name: string;
   description?: string | null;
   color?: string | null;
+  fieldIds: string[];
   plotIds: string[];
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -1558,10 +1564,13 @@ export interface SeasonUpdatePayload {
 export interface Field {
   id: string;
   userId: string;
+  teamId?: string;
   name: string;
   areaHa: number | null;
   geometry: PlotGeometry;
   groupId: string | null;
+  district?: string | null;
+  country?: string | null;
   seasonIds: string[];
   vegetationData: VegetationCycleResponse[];
   createdAt: string | null;
@@ -1573,6 +1582,8 @@ export interface FieldCreatePayload {
   geometry: PlotGeometry;
   areaHa?: number | null;
   groupId?: string | null;
+  district?: string | null;
+  country?: string | null;
   seasonIds?: string[];
   vegetationData?: VegetationCycleCreate[];
 }
@@ -1582,8 +1593,109 @@ export interface FieldUpdatePayload {
   geometry?: PlotGeometry | null;
   areaHa?: number | null;
   groupId?: string | null;
+  district?: string | null;
+  country?: string | null;
   seasonIds?: string[] | null;
   vegetationData?: VegetationCycleCreate[] | null;
+}
+
+export type DiscoverySort =
+  | 'name_asc'
+  | 'name_desc'
+  | 'newest'
+  | 'oldest'
+  | 'area_asc'
+  | 'area_desc';
+
+export interface DiscoveryFocusBounds {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}
+
+export interface DiscoveryOption<T extends string | number> {
+  id: T;
+  name: string;
+}
+
+export interface FieldDiscoveryFacets {
+  crops: DiscoveryOption<number>[];
+  groups: DiscoveryOption<string>[];
+  hasUngrouped: boolean;
+}
+
+export interface DiscoveryFieldSummary {
+  id: string;
+  name: string;
+  areaHa: number | null;
+  crop: DiscoveryOption<number> | null;
+  group: DiscoveryOption<string> | null;
+  district: string | null;
+  country: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  focusBounds: DiscoveryFocusBounds;
+}
+
+export interface DiscoveryTaskSummary {
+  id: string;
+  status: 'new' | 'closed';
+  priority: 'low' | 'medium' | 'high';
+  notes: string | null;
+  assignee: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  field: DiscoveryFieldSummary | null;
+  fieldNameSnapshot: string | null;
+  findFieldAvailable: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface DiscoveryFilters {
+  seasonId: string;
+  q?: string;
+  cropIds?: number[];
+  groupIds?: string[];
+  includeUngrouped?: boolean;
+  sort?: DiscoverySort;
+  page?: number;
+  pageSize?: number;
+  pinnedFieldIds?: string[];
+  status?: 'new' | 'closed';
+}
+
+export interface AppliedDiscoveryFilters {
+  seasonId: string;
+  q: string;
+  cropIds: number[];
+  groupIds: string[];
+  includeUngrouped: boolean;
+  sort: DiscoverySort;
+  status: 'new' | 'closed' | null;
+}
+
+export interface DiscoveryPage<T> {
+  items: T[];
+  pinnedItems: DiscoveryFieldSummary[];
+  appliedFilters: AppliedDiscoveryFilters;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  resultBounds: DiscoveryFocusBounds | null;
+}
+
+export interface DiscoveryMapResponse {
+  fields: {
+    type: 'FeatureCollection';
+    features: Array<Record<string, unknown>>;
+  };
+  taskPoints: {
+    type: 'FeatureCollection';
+    features: Array<Record<string, unknown>>;
+  };
 }
 
 /** Standard BFF error envelope: { error: { code, message, details } }. */

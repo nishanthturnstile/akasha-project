@@ -11,6 +11,7 @@ import {
   createReportTemplate,
   createScoutTask,
   deletePlot,
+  discoverFields,
   exportAllPlotsGeoJson,
   exportActivitiesCsv,
   exportFieldIndex,
@@ -293,6 +294,12 @@ describe('api client error mapping', () => {
     await expect(getConfig()).rejects.toMatchObject({ code: 'NETWORK_ERROR', status: 0 });
   });
 
+  it('preserves AbortError so TanStack Query treats cancellation as cancellation', async () => {
+    const aborted = new DOMException('Aborted', 'AbortError');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(aborted));
+    await expect(discoverFields({ seasonId: 'season-1' })).rejects.toBe(aborted);
+  });
+
   describe('plot field functions', () => {
     const geometry: PlotGeometry = {
       type: 'Polygon',
@@ -517,6 +524,13 @@ describe('api client error mapping', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/datasets/upload',
         expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/field-groups/group%201/fields',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ fieldIds: ['plot 1'] }),
+        }),
       );
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/field-groups/group%201/fields',

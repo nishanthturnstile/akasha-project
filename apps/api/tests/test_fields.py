@@ -51,6 +51,9 @@ class FakeSeasonStore:
         group_id: str | None = None,
         season_ids: list[str] | None = None,
         vegetation_data: list | None = None,
+        team_id: str | None = None,
+        district: str | None = None,
+        country: str | None = None,
     ) -> dict:
         self._seq += 1
         fid = str(uuid.uuid4())
@@ -62,10 +65,13 @@ class FakeSeasonStore:
         row = {
             "id": fid,
             "userId": user_id,
+            "teamId": team_id,
             "name": name,
             "areaHa": area_ha,
             "geometry": geometry,
             "groupId": group_id,
+            "district": district,
+            "country": country,
             "seasonIds": sid_list,
             "seasons": [
                 {
@@ -83,12 +89,12 @@ class FakeSeasonStore:
         self.rows[fid] = row
         return {k: v for k, v in row.items() if not k.startswith("_")}
 
-    def list_fields(self, user_id: str) -> list[dict]:
+    def list_fields(self, user_id: str, team_id: str | None = None) -> list[dict]:
         ordered = sorted(self.rows.values(), key=lambda r: r["_seq"], reverse=True)
         return [{k: v for k, v in r.items() if not k.startswith("_")}
                  for r in ordered if r["userId"] == user_id]
 
-    def get_field(self, field_id: str, user_id: str) -> dict | None:
+    def get_field(self, field_id: str, user_id: str, team_id: str | None = None) -> dict | None:
         row = self.rows.get(field_id)
         if row is None or row["userId"] != user_id:
             return None
@@ -126,14 +132,20 @@ class FakeSeasonStore:
         row["updatedAt"] = self._now()
         return {k: v for k, v in row.items() if not k.startswith("_")}
 
-    def delete_field(self, field_id: str, user_id: str) -> bool:
+    def delete_field(self, field_id: str, user_id: str, team_id: str | None = None) -> bool:
         row = self.rows.get(field_id)
         if row is None or row["userId"] != user_id:
             return False
         del self.rows[field_id]
         return True
 
-    def list_vegetation_cycles(self, field_id: str, user_id: str, season_id: str) -> list:
+    def list_vegetation_cycles(
+        self,
+        field_id: str,
+        user_id: str,
+        season_id: str,
+        team_id: str | None = None,
+    ) -> list:
         return []
 
 

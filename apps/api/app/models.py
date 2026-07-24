@@ -154,6 +154,11 @@ class Season(TimestampMixin, Base):
         ForeignKey(f"{AKASHA_SCHEMA}.users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.teams.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
@@ -418,8 +423,17 @@ class Field(UuidPkMixin, TimestampMixin, Base):
         ForeignKey(f"{AKASHA_SCHEMA}.users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.teams.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    name_search_key: Mapped[str] = mapped_column(Text, nullable=False)
+    name_sort_key: Mapped[str] = mapped_column(Text, nullable=False)
     area_ha: Mapped[float | None] = mapped_column(Float)
+    district: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
     geometry: Mapped[Any] = mapped_column(
         Geometry(geometry_type="GEOMETRY", srid=4326, spatial_index=False),
         nullable=False,
@@ -592,6 +606,11 @@ class ScoutTask(UuidPkMixin, TimestampMixin, OwnerTeamMixin, Base):
         UUID(as_uuid=True),
         ForeignKey(f"{AKASHA_SCHEMA}.plots.id", ondelete="SET NULL"),
     )
+    field_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.fields.id", ondelete="SET NULL"),
+    )
+    field_name_snapshot: Mapped[str | None] = mapped_column(Text)
     longitude: Mapped[float | None] = mapped_column(Float)
     latitude: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'new'"))
@@ -827,16 +846,34 @@ Index("field_activities_plot_date_idx", FieldActivity.plot_id, FieldActivity.act
 Index("field_activities_team_idx", FieldActivity.team_id)
 Index("scout_tasks_status_idx", ScoutTask.status)
 Index("scout_tasks_team_idx", ScoutTask.team_id)
+Index("scout_tasks_team_field_idx", ScoutTask.team_id, ScoutTask.field_id)
+Index(
+    "scout_tasks_team_status_created_idx",
+    ScoutTask.team_id,
+    ScoutTask.status,
+    ScoutTask.created_at.desc(),
+)
 Index("uploaded_datasets_created_idx", UploadedDataset.created_at.desc())
 Index("uploaded_datasets_team_idx", UploadedDataset.team_id)
 Index("fields_geometry_gix", Field.geometry, postgresql_using="gist")
 Index("fields_user_idx", Field.user_id)
+Index("fields_team_created_idx", Field.team_id, Field.created_at.desc(), Field.id)
+Index("fields_team_name_sort_idx", Field.team_id, Field.name_sort_key, Field.id)
+Index("fields_team_area_idx", Field.team_id, Field.area_ha, Field.id)
+Index("fields_team_group_idx", Field.team_id, Field.group_id)
+Index("seasons_team_idx", Season.team_id)
 Index("field_seasons_field_idx", FieldSeason.field_id)
 Index("field_seasons_season_idx", FieldSeason.season_id)
 Index("crops_seeding_type_idx", Crop.seeding_type_id)
 Index("varieties_crop_id_idx", Variety.crop_id)
 Index("vegetation_cycles_field_idx", VegetationCycle.field_id)
 Index("vegetation_cycles_season_idx", VegetationCycle.season_id)
+Index(
+    "vegetation_cycles_season_crop_field_idx",
+    VegetationCycle.season_id,
+    VegetationCycle.crop_id,
+    VegetationCycle.field_id,
+)
 Index("vegetation_cycles_user_idx", VegetationCycle.user_id)
 Index(
     "pipeline_proxy_records_user_team_idx",

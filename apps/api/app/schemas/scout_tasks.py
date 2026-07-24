@@ -12,6 +12,7 @@ from .operations import AttachmentPublic
 
 class ScoutTaskPayload(ApiModel):
     plot_id: str | None = None
+    field_id: str | None = None
     longitude: float | None = None
     latitude: float | None = None
     status: Literal["new", "closed"] = "new"
@@ -24,6 +25,7 @@ class ScoutTaskPayload(ApiModel):
 
 class ScoutTaskUpdate(ApiModel):
     plot_id: str | None = None
+    field_id: str | None = None
     longitude: float | None = None
     latitude: float | None = None
     status: Literal["new", "closed"] | None = None
@@ -37,7 +39,9 @@ class ScoutTaskUpdate(ApiModel):
 class ScoutTask(ApiModel):
     id: str
     plot_id: str | None = None
+    field_id: str | None = None
     field_name: str | None = None
+    field_name_snapshot: str | None = None
     longitude: float | None = None
     latitude: float | None = None
     status: Literal["new", "closed"]

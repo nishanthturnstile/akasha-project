@@ -100,6 +100,7 @@ async def assign_field_group(
         group_id,
         payload.plot_ids,
         team.id,
+        payload.field_ids if "field_ids" in payload.model_fields_set else None,
     )
     if row is None:
         raise not_found("Field group not found.", code="FIELD_GROUP_NOT_FOUND", groupId=group_id)

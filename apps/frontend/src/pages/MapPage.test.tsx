@@ -436,6 +436,10 @@ function stubAkashaFetch({
         return Promise.resolve(jsonResponse(plots));
       }
 
+      if (path === '/api/fields/plot-1') {
+        return Promise.resolve(jsonResponse(plots[0]));
+      }
+
       if (path === '/api/fields/plot-1/indices/statistics') {
         const requestBody = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
         return Promise.resolve(

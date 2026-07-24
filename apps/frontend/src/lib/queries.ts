@@ -76,6 +76,10 @@ import {
   updateField,
   deleteField,
   getNextFieldName,
+  getField,
+  getFieldDiscoveryFacets,
+  discoverFields,
+  discoverScoutTasks,
 } from '@/lib/api';
 import type {
   CloudMaskOptions,
@@ -100,6 +104,7 @@ import type {
   IngestionJobFilters,
   TriggerIngestionJobRequest,
   BestObservationsParams,
+  DiscoveryFilters,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -200,6 +205,15 @@ export const queryKeys = {
   season: (seasonId: string) => ['seasons', seasonId] as const,
   fields: ['fields'] as const,
   field: (fieldId: string) => ['fields', fieldId] as const,
+  fieldDiscoveryFacets: (
+    seasonId: string,
+    target: 'monitoring' | 'scouting',
+    status?: string,
+  ) => ['field-discovery', 'facets', seasonId, target, status ?? 'all'] as const,
+  fieldDiscovery: (filters: DiscoveryFilters) =>
+    ['field-discovery', 'fields', filters] as const,
+  scoutTaskDiscovery: (filters: DiscoveryFilters) =>
+    ['field-discovery', 'scout-tasks', filters] as const,
   bestObservations: (params: BestObservationsParams) =>
     ['observations', 'best', params] as const,
 };
@@ -572,7 +586,10 @@ export function useCreateScoutTask() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: ScoutTaskPayload) => createScoutTask(payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['operations', 'scout-tasks'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['operations', 'scout-tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['field-discovery'] });
+    },
   });
 }
 
@@ -581,7 +598,10 @@ export function useUpdateScoutTask() {
   return useMutation({
     mutationFn: ({ taskId, payload }: UpdateScoutTaskVariables) =>
       updateScoutTask(taskId, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['operations', 'scout-tasks'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['operations', 'scout-tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['field-discovery'] });
+    },
   });
 }
 
@@ -759,9 +779,13 @@ export function useDeleteFieldGroup() {
 export function useAssignFieldGroupFields() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ groupId, plotIds }: { groupId: string; plotIds: string[] }) =>
-      assignFieldGroupFields(groupId, plotIds),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldGroups }),
+    mutationFn: ({ groupId, fieldIds }: { groupId: string; fieldIds: string[] }) =>
+      assignFieldGroupFields(groupId, fieldIds),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fieldGroups });
+      void queryClient.invalidateQueries({ queryKey: ['field-discovery'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+    },
   });
 }
 
@@ -833,8 +857,50 @@ export function useDeleteSeason() {
 // --------------------------------------------------------------------------
 // Fields hooks
 // --------------------------------------------------------------------------
-export function useFields() {
-  return useQuery({ queryKey: queryKeys.fields, queryFn: listFields });
+export function useFields(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.fields,
+    queryFn: listFields,
+    enabled: options?.enabled,
+  });
+}
+
+export function useField(fieldId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.field(fieldId ?? 'none'),
+    queryFn: () => getField(fieldId as string),
+    enabled: Boolean(fieldId),
+  });
+}
+
+export function useFieldDiscoveryFacets(
+  seasonId: string | null | undefined,
+  target: 'monitoring' | 'scouting',
+  status?: 'new' | 'closed',
+) {
+  return useQuery({
+    queryKey: queryKeys.fieldDiscoveryFacets(seasonId ?? 'none', target, status),
+    queryFn: ({ signal }) => getFieldDiscoveryFacets(seasonId as string, target, status, signal),
+    enabled: Boolean(seasonId),
+  });
+}
+
+export function useFieldDiscovery(filters: DiscoveryFilters | null) {
+  return useQuery({
+    queryKey: queryKeys.fieldDiscovery(filters ?? { seasonId: 'none' }),
+    queryFn: ({ signal }) => discoverFields(filters as DiscoveryFilters, signal),
+    enabled: Boolean(filters?.seasonId),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useScoutTaskDiscovery(filters: DiscoveryFilters | null) {
+  return useQuery({
+    queryKey: queryKeys.scoutTaskDiscovery(filters ?? { seasonId: 'none' }),
+    queryFn: ({ signal }) => discoverScoutTasks(filters as DiscoveryFilters, signal),
+    enabled: Boolean(filters?.seasonId),
+    placeholderData: (previous) => previous,
+  });
 }
 
 export function useCreateField() {
@@ -844,6 +910,7 @@ export function useCreateField() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+      void queryClient.invalidateQueries({ queryKey: ['field-discovery'] });
     },
   });
 }
@@ -857,6 +924,7 @@ export function useUpdateField() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
       void queryClient.invalidateQueries({ queryKey: queryKeys.field(data.id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+      void queryClient.invalidateQueries({ queryKey: ['field-discovery'] });
     },
   });
 }
@@ -868,6 +936,7 @@ export function useDeleteField() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
       void queryClient.invalidateQueries({ queryKey: queryKeys.seasons });
+      void queryClient.invalidateQueries({ queryKey: ['field-discovery'] });
     },
   });
 }

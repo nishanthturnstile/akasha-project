@@ -46,12 +46,14 @@ class FakeSeasonStore:
         end_date,
         can_delete: bool | None = None,
         field_ids: list[str] | None = None,
+        team_id: str | None = None,
     ) -> dict[str, Any]:
         self._seq += 1
         season_id = str(uuid.uuid4())
         row = {
             "id": season_id,
             "userId": user_id,
+            "teamId": team_id,
             "name": name,
             "startDate": start_date.isoformat() if start_date else None,
             "endDate": end_date.isoformat() if end_date else None,
@@ -68,10 +70,15 @@ class FakeSeasonStore:
         self.rows[season_id] = row
         return self._public(row)
 
-    def list_seasons(self, user_id: str) -> list[dict[str, Any]]:
+    def list_seasons(self, user_id: str, team_id: str | None = None) -> list[dict[str, Any]]:
         return [self._public(row) for row in self.rows.values() if row["userId"] == user_id]
 
-    def get_season(self, season_id: str, user_id: str) -> dict[str, Any] | None:
+    def get_season(
+        self,
+        season_id: str,
+        user_id: str,
+        team_id: str | None = None,
+    ) -> dict[str, Any] | None:
         row = self.rows.get(season_id)
         if row is None or row["userId"] != user_id:
             return None
@@ -98,7 +105,11 @@ class FakeSeasonStore:
         return self._public(row)
 
     def delete_season(
-        self, season_id: str, user_id: str, move_fields_to_season_id: str | None = None,
+        self,
+        season_id: str,
+        user_id: str,
+        move_fields_to_season_id: str | None = None,
+        team_id: str | None = None,
     ) -> bool:
         row = self.rows.get(season_id)
         if row is None or row["userId"] != user_id:

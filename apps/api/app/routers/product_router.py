@@ -299,6 +299,7 @@ async def get_config() -> dict[str, Any]:
             "cropMapSplitEnabled": settings.crop_map_split_enabled,
             "cropMapContrastEnabled": settings.crop_map_contrast_enabled,
             "latestImageryEnabled": settings.latest_imagery_enabled,
+            "fieldDiscoveryEnabled": settings.field_discovery_enabled,
         },
         "latestImagery": {
             "policyVersion": "latest-image-s2-l2a-v1",

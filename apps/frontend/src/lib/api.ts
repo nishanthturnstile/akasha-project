@@ -69,6 +69,12 @@ import type {
   RenderProfileName,
   ViewerSelection,
   ComparisonSampleResponse,
+  DiscoveryFieldSummary,
+  DiscoveryFilters,
+  DiscoveryPage,
+  DiscoveryTaskSummary,
+  DiscoveryMapResponse,
+  FieldDiscoveryFacets,
 } from '@/types/api';
 
 /**
@@ -178,7 +184,15 @@ async function fetchApi(path: string, options: RequestOptions = {}): Promise<Res
   let res: Response;
   try {
     res = await fetch(path, buildRequestInit(options));
-  } catch {
+  } catch (error) {
+    if (
+      error != null
+      && typeof error === 'object'
+      && 'name' in error
+      && error.name === 'AbortError'
+    ) {
+      throw error;
+    }
     throw new ApiError('NETWORK_ERROR', 'Unable to reach the Akasha service.', 0);
   }
 
@@ -500,6 +514,72 @@ export const createField = (payload: FieldCreatePayload): Promise<Field> =>
 
 export const getField = (fieldId: string): Promise<Field> =>
   request<Field>(`/api/fields/${encodeURIComponent(fieldId)}`);
+
+function discoveryParams(filters: DiscoveryFilters): URLSearchParams {
+  const params = new URLSearchParams({ seasonId: filters.seasonId });
+  if (filters.q) params.set('q', filters.q);
+  for (const cropId of filters.cropIds ?? []) params.append('cropId', String(cropId));
+  for (const groupId of filters.groupIds ?? []) params.append('groupId', groupId);
+  for (const fieldId of (filters.pinnedFieldIds ?? []).slice(0, 50)) {
+    params.append('pinnedFieldIds', fieldId);
+  }
+  if (filters.includeUngrouped) params.set('includeUngrouped', 'true');
+  if (filters.sort) params.set('sort', filters.sort);
+  if (filters.page) params.set('page', String(filters.page));
+  if (filters.pageSize) params.set('pageSize', String(filters.pageSize));
+  if (filters.status) params.set('status', filters.status);
+  return params;
+}
+
+export const getFieldDiscoveryFacets = (
+  seasonId: string,
+  target: 'monitoring' | 'scouting',
+  status?: 'new' | 'closed',
+  signal?: AbortSignal,
+): Promise<FieldDiscoveryFacets> => {
+  const params = new URLSearchParams({ seasonId, target });
+  if (status) params.set('status', status);
+  return request<FieldDiscoveryFacets>(`/api/field-discovery/facets?${params}`, { signal });
+};
+
+export const discoverFields = (
+  filters: DiscoveryFilters,
+  signal?: AbortSignal,
+): Promise<DiscoveryPage<DiscoveryFieldSummary>> =>
+  request<DiscoveryPage<DiscoveryFieldSummary>>(
+    `/api/field-discovery/fields?${discoveryParams(filters)}`,
+    { signal },
+  );
+
+export const discoverScoutTasks = (
+  filters: DiscoveryFilters,
+  signal?: AbortSignal,
+): Promise<DiscoveryPage<DiscoveryTaskSummary>> =>
+  request<DiscoveryPage<DiscoveryTaskSummary>>(
+    `/api/field-discovery/scout-tasks?${discoveryParams(filters)}`,
+    { signal },
+  );
+
+export const getDiscoveryMap = (
+  filters: DiscoveryFilters & {
+    target: 'monitoring' | 'scouting';
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+    zoom: number;
+  },
+  signal?: AbortSignal,
+): Promise<DiscoveryMapResponse> => {
+  const params = discoveryParams(filters);
+  params.set('target', filters.target);
+  params.set('west', String(filters.west));
+  params.set('south', String(filters.south));
+  params.set('east', String(filters.east));
+  params.set('north', String(filters.north));
+  params.set('zoom', String(filters.zoom));
+  return request<DiscoveryMapResponse>(`/api/field-discovery/map?${params}`, { signal });
+};
 
 export const updateField = (fieldId: string, payload: FieldUpdatePayload): Promise<Field> =>
   request<Field>(`/api/fields/${encodeURIComponent(fieldId)}`, { method: 'PATCH', body: payload });
@@ -898,10 +978,10 @@ export const updateFieldGroup = (groupId: string, payload: FieldGroupPayload): P
 export const deleteFieldGroup = (groupId: string): Promise<void> =>
   request<void>(`/api/field-groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
 
-export const assignFieldGroupFields = (groupId: string, plotIds: string[]): Promise<FieldGroup> =>
+export const assignFieldGroupFields = (groupId: string, fieldIds: string[]): Promise<FieldGroup> =>
   request<FieldGroup>(`/api/field-groups/${encodeURIComponent(groupId)}/fields`, {
     method: 'POST',
-    body: { plotIds },
+    body: { fieldIds },
   });
 
 export const exportFieldIndex = (

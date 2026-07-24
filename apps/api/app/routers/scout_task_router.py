@@ -29,6 +29,8 @@ async def _run_blocking(func, *args, **kwargs):
     except ValueError as exc:
         if str(exc) == "PLOT_NOT_FOUND":
             raise not_found("Plot not found.", code="PLOT_NOT_FOUND") from exc
+        if str(exc) == "FIELD_NOT_FOUND":
+            raise not_found("Field not found.", code="FIELD_NOT_FOUND") from exc
         if str(exc) == "ATTACHMENT_NOT_FOUND":
             raise not_found("Attachment not found.", code="ATTACHMENT_NOT_FOUND") from exc
         if str(exc) == "ATTACHMENT_ALREADY_LINKED":

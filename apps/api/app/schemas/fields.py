@@ -67,6 +67,8 @@ class FieldCreate(ApiModel):
     geometry: dict[str, Any]
     areaHa: float | None = None
     groupId: str | None = None
+    district: str | None = None
+    country: str | None = None
     seasonIds: list[str] = Field(default_factory=list)
     vegetationData: list[VegetationCycleCreate] = Field(default_factory=list)
 
@@ -76,16 +78,22 @@ class FieldUpdate(ApiModel):
     geometry: dict[str, Any] | None = None
     areaHa: float | None = None
     groupId: str | None = None
+    district: str | None = None
+    country: str | None = None
     seasonIds: list[str] | None = None
     vegetationData: list[VegetationCycleCreate] | None = None
 
 
 class FieldResponse(ApiModel):
     id: str
+    userId: str | None = None
+    teamId: str | None = None
     name: str
     areaHa: float | None = None
     geometry: dict[str, Any]
     groupId: str | None = None
+    district: str | None = None
+    country: str | None = None
     seasonIds: list[str] = Field(default_factory=list)
     seasons: list[SeasonItem] = Field(default_factory=list)
     vegetationData: list[VegetationCycleResponse] = Field(default_factory=list)

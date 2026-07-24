@@ -61,7 +61,7 @@ async def list_seasons(
     user: CurrentUser = Depends(get_current_user),
     team: CurrentTeam = Depends(get_current_team),
 ) -> list[dict[str, Any]]:
-    return await _run_blocking(seasons_repo.list_seasons, user.id)
+    return await _run_blocking(seasons_repo.list_seasons, user.id, team.id)
 
 
 @router.post(
@@ -82,6 +82,7 @@ async def create_season(
         payload.start_date,
         payload.end_date,
         field_ids=payload.field_ids,
+        team_id=team.id,
     )
 
 
@@ -95,10 +96,8 @@ async def get_season(
     user: CurrentUser = Depends(get_current_user),
     team: CurrentTeam = Depends(get_current_team),
 ) -> dict[str, Any]:
-    season = await _run_blocking(seasons_repo.get_season, season_id, user.id)
+    season = await _run_blocking(seasons_repo.get_season, season_id, user.id, team.id)
     if season is None:
-        raise not_found("Season not found.", code="SEASON_NOT_FOUND", seasonId=season_id)
-    if season["userId"] != user.id:
         raise not_found("Season not found.", code="SEASON_NOT_FOUND", seasonId=season_id)
     return season
 
@@ -127,6 +126,7 @@ async def update_season(
         seasons_repo.update_season,
         season_id,
         user.id,
+        team_id=team.id,
         **data,
     )
     if season is None:
@@ -142,7 +142,11 @@ async def delete_season(
     team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
 ) -> Response:
     deleted = await _run_blocking(
-        seasons_repo.delete_season, season_id, user.id, move_fields_to_season_id,
+        seasons_repo.delete_season,
+        season_id,
+        user.id,
+        move_fields_to_season_id,
+        team_id=team.id,
     )
     if not deleted:
         raise not_found("Season not found.", code="SEASON_NOT_FOUND", seasonId=season_id)

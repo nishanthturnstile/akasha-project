@@ -105,7 +105,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
 
   return (
     <>
-      <aside className="flex h-full w-96 max-w-[42vw] flex-col border-l border-border bg-muted/30">
+      <aside className="flex h-full min-w-0 w-full flex-col border-l border-border bg-muted/30">
         <header className="border-b border-border/60 px-4 py-4">
           <div className="flex items-start justify-between">
             <div>

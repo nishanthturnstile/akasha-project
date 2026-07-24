@@ -544,7 +544,11 @@ def get_field(field_id: str, user_id: str) -> dict[str, Any] | None:
 
 
 def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] | None:
-    allowed = {"name", "geometry", "area_ha", "groupId", "seasonIds", "vegetationData"}
+    # Keys here match what the router actually sends: FieldUpdate.model_dump(by_alias=True)
+    # dumps using each field's declared (already-camelCase) name, e.g. "areaHa" -- not the
+    # ORM's snake_case attribute name. The previous "area_ha" entry here never matched
+    # anything in kwargs, so area updates were silently dropped on every PATCH.
+    allowed = {"name", "geometry", "areaHa", "groupId", "seasonIds", "vegetationData"}
     values = {
         k: v
         for k, v in kwargs.items()
@@ -589,13 +593,19 @@ def update_field(field_id: str, user_id: str, **kwargs: Any) -> dict[str, Any] |
             )
         if "name" in values and values["name"] != field.name:
             _validate_field_name_unique(session, user_id, values["name"], exclude_field_id=field_id)
-        for key in ("name", "geometry", "area_ha", "groupId"):
+        # Maps each incoming (camelCase) key to the ORM's actual (snake_case) attribute
+        # name -- setattr(field, "areaHa", ...) or setattr(field, "groupId", ...) would
+        # silently create a throwaway instance attribute instead of touching the real
+        # mapped column, since Field has no such attribute for SQLAlchemy to track.
+        field_attrs = {"name": "name", "geometry": "geometry", "areaHa": "area_ha", "groupId": "group_id"}
+        for key, attr in field_attrs.items():
             if key in values:
+                value = values[key]
                 if key == "geometry":
-                    values[key] = _geometry_value(values[key])
+                    value = _geometry_value(value)
                 if key == "groupId":
-                    values[key] = group_uuid
-                setattr(field, key, values[key])
+                    value = group_uuid
+                setattr(field, attr, value)
         session.flush()
         if season_uuids is not None:
             session.execute(delete(FieldSeason).where(FieldSeason.field_id == field.id))

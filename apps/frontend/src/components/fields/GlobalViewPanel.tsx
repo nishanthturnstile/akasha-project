@@ -449,10 +449,10 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
           field={editingField}
           open={!!editingField}
           onOpenChange={(open) => { if (!open) setEditingField(null); }}
-          onSave={(fieldId, name, geometry, vegetationData, groupId) => {
+          onSave={(fieldId, name, geometry, vegetationData, groupId, areaHa) => {
             setSavingField(true);
             updateField.mutate(
-              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}) } },
+              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}), ...(areaHa !== undefined ? { areaHa } : {}) } },
               { onSuccess: () => { setSavingField(false); setEditingField(null); }, onError: () => setSavingField(false) },
             );
           }}

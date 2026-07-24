@@ -102,8 +102,8 @@ class FakeSeasonStore:
             row["name"] = kwargs["name"]
         if "geometry" in kwargs:
             row["geometry"] = kwargs["geometry"]
-        if "area_ha" in kwargs:
-            row["areaHa"] = kwargs["area_ha"]
+        if "areaHa" in kwargs:
+            row["areaHa"] = kwargs["areaHa"]
         if "groupId" in kwargs:
             row["groupId"] = kwargs["groupId"]
         if "seasonIds" in kwargs:
@@ -239,6 +239,29 @@ def test_update_field_updates_seasons(store):
     assert len(body["seasons"]) == 1
     assert body["seasons"][0]["name"] == "Rabi 2026"
     assert body["seasons"][0]["canDelete"] is False
+
+
+# --------------------------------------------------------------------------
+# 4b) update writes the recomputed area (regression: fields_repo.update_field's
+# "allowed" set used to check for "area_ha", but the router always sends the
+# camelCase "areaHa" -- so an edited field's boundary would save fine but the
+# stored area silently never updated, e.g. an area shown in a Global View list
+# would go stale forever the moment a field's geometry changed via PATCH).
+# --------------------------------------------------------------------------
+def test_update_field_persists_recomputed_area(store):
+    created = store.create_field(TEST_USER, "Field A", VALID_POLY, area_ha=1.0)
+    fid = created["id"]
+
+    r = client.patch(
+        f"/api/fields/{fid}",
+        json={"areaHa": 2.5},
+    )
+    assert r.status_code == 200
+    assert r.json()["areaHa"] == 2.5
+
+    # And it's not just the immediate response -- a follow-up GET must agree too.
+    r2 = client.get(f"/api/fields/{fid}")
+    assert r2.json()["areaHa"] == 2.5
 
 
 # --------------------------------------------------------------------------

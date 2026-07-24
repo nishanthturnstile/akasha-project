@@ -71,10 +71,37 @@ export function deriveCircleFromRing(ring: Position[] | undefined | null): Circl
   return { center, radiusMeters: meanKm * 1000 };
 }
 
+// Matches TerraDraw's own default `coordinatePrecision` (confirmed in its source).
+// @turf/circle's raw floating-point output carries ~14-17 decimal digits of noise;
+// TerraDraw's own validateFeature REJECTS features with "excessive precision" --
+// silently, with no UI error -- so every ring this mode writes back to the store
+// (and therefore to the backend) must be rounded to the same precision TerraDraw
+// itself uses when *drawing* a circle, or a dragged/resized circle becomes
+// unreadable the next time it's reopened for editing.
+const COORDINATE_PRECISION = 9;
+
+function roundCoordinate([lng, lat]: Position): Position {
+  const factor = 10 ** COORDINATE_PRECISION;
+  return [Math.round(lng * factor) / factor, Math.round(lat * factor) / factor];
+}
+
+/**
+ * Rounds every vertex of a ring to TerraDraw's coordinate precision. Fields saved
+ * before this fix (or from any other source of excessive-precision coordinates)
+ * still have the raw, unrounded values sitting in the database -- loading one of
+ * those into TerraDraw for editing hits the same silent rejection. Call this on
+ * any ring right before handing it to `TerraDraw.addFeatures`, not just on ones
+ * this module generates itself, so already-affected fields self-heal on next open
+ * (the fix is re-applied and re-saved) without needing a data migration.
+ */
+export function sanitizeRingPrecision(ring: Position[]): Position[] {
+  return ring.map(roundCoordinate);
+}
+
 /** Closed ring (first point repeated), same segment density as TerraDrawCircleMode's output. */
 export function buildCircleRing(center: Position, radiusMeters: number): Position[] {
   const feature = circle(center, radiusMeters / 1000, { steps: CIRCLE_SEGMENTS, units: 'kilometers' });
-  return feature.geometry.coordinates[0];
+  return feature.geometry.coordinates[0].map(roundCoordinate);
 }
 
 function destinationPoint(center: Position, radiusMeters: number, bearingDeg: number): Position {
@@ -92,7 +119,7 @@ function destinationPoint(center: Position, radiusMeters: number, bearingDeg: nu
       Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
       Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
     );
-  return [(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI];
+  return roundCoordinate([(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI]);
 }
 
 export type HandleRole = 'n' | 'e' | 's' | 'w';

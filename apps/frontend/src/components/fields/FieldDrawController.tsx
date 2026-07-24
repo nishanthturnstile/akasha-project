@@ -7,7 +7,7 @@ import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState'
 import { cn } from '@/lib/utils';
 import { MAP_UI_COLORS } from '@/map/colors';
 import type { Plot, PlotGeometry, PlotUpdatePayload } from '@/types/api';
-import { deriveCircleFromRing } from '@/components/fields/circleGeometry';
+import { deriveCircleFromRing, sanitizeRingPrecision } from '@/components/fields/circleGeometry';
 
 export type FieldDrawMode = 'draw' | 'edit' | null;
 
@@ -50,10 +50,17 @@ function latestPolygon(draw: TerraDraw): PlotGeometry | null {
 }
 
 function toEditableFeature(plot: Plot): TerraDrawPolygonFeature {
+  // Rounds excessive-precision coordinates that may already be sitting in the
+  // database (e.g. a circle saved before circleGeometry.ts started rounding its
+  // output) -- otherwise TerraDraw's own validateFeature silently rejects the
+  // feature and editing never becomes available for that field.
+  const geometry = plot.geometry.type === 'Polygon'
+    ? { type: 'Polygon' as const, coordinates: [sanitizeRingPrecision(plot.geometry.coordinates[0])] }
+    : plot.geometry;
   return {
     type: 'Feature',
     id: plot.id,
-    geometry: plot.geometry as TerraDrawPolygonFeature['geometry'],
+    geometry: geometry as TerraDrawPolygonFeature['geometry'],
     properties: { fieldId: plot.id },
   } as TerraDrawPolygonFeature;
 }

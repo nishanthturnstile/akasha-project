@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from app.discovery_normalization import natural_sort_key, normalize_search_text
 from app.main import app
+from app.models import ScoutTask
 from app.repositories import field_discovery_repo
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
 client = TestClient(app)
 SEASON_ID = "10000000-0000-4000-8000-000000000001"
@@ -41,6 +44,40 @@ def test_unicode_and_natural_normalization() -> None:
     assert normalize_search_text("  CAFÉ\tField  ") == "cafe field"
     assert natural_sort_key("Field 2") < natural_sort_key("Field 10")
     assert natural_sort_key("Árbol 02") == natural_sort_key("arbol 2")
+
+
+def test_scout_search_includes_visible_field_snapshot() -> None:
+    filters = {
+        "status": "new",
+        "q": "  CAFÉ  Field ",
+        "cropIds": [],
+        "groupIds": [],
+        "includeUngrouped": False,
+    }
+    statement = field_discovery_repo._apply_task_filters(select(ScoutTask), filters)
+    sql = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "fields.name_search_key" in sql
+    assert "scout_tasks.field_name_snapshot" in sql
+    assert "cafe field" in sql
+
+
+def test_scout_name_sort_uses_visible_snapshot_when_field_is_unavailable() -> None:
+    order = field_discovery_repo._task_order("name_asc")
+    sql = str(
+        select(ScoutTask).order_by(*order).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "coalesce(akasha.fields.name_sort_key" in sql
+    assert "scout_tasks.field_name_snapshot" in sql
 
 
 def test_field_discovery_contract_is_geometry_light_and_repeats_filters(monkeypatch) -> None:

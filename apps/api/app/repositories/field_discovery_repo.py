@@ -513,12 +513,33 @@ def _task_select(team_id: uuid.UUID, season_id: uuid.UUID) -> Select[Any]:
     )
 
 
+def _normalized_task_snapshot():
+    return func.lower(
+        func.unaccent(
+            func.regexp_replace(
+                func.btrim(ScoutTask.field_name_snapshot),
+                r"\s+",
+                " ",
+                "g",
+            )
+        )
+    )
+
+
 def _apply_task_filters(stmt: Select[Any], filters: dict[str, Any]) -> Select[Any]:
     if filters["status"]:
         stmt = stmt.where(ScoutTask.status == filters["status"])
     query = normalize_search_text(filters["q"])
     if query:
-        stmt = stmt.where(Field.name_search_key.contains(query))
+        # Keep tasks discoverable after their linked field is removed. The task card
+        # falls back to ``field_name_snapshot``, so search must use that same visible
+        # label instead of silently excluding snapshot-only rows.
+        stmt = stmt.where(
+            or_(
+                Field.name_search_key.contains(query),
+                _normalized_task_snapshot().contains(query),
+            )
+        )
     if filters["cropIds"]:
         stmt = stmt.where(Crop.id.in_(filters["cropIds"]))
     groups = filters["groupIds"]
@@ -532,8 +553,9 @@ def _apply_task_filters(stmt: Select[Any], filters: dict[str, Any]) -> Select[An
 
 
 def _task_order(sort: SortMode):
+    visible_name = func.coalesce(Field.name_sort_key, _normalized_task_snapshot())
     if sort == "name_desc":
-        return (Field.name_sort_key.desc().nullslast(), ScoutTask.id)
+        return (visible_name.desc().nullslast(), ScoutTask.id)
     if sort == "newest":
         return (ScoutTask.created_at.desc(), ScoutTask.id)
     if sort == "oldest":
@@ -542,7 +564,7 @@ def _task_order(sort: SortMode):
         return (Field.area_ha.asc().nullslast(), ScoutTask.id)
     if sort == "area_desc":
         return (Field.area_ha.desc().nullslast(), ScoutTask.id)
-    return (Field.name_sort_key.asc().nullslast(), ScoutTask.id)
+    return (visible_name.asc().nullslast(), ScoutTask.id)
 
 
 def _task_summary(row: Any) -> dict[str, Any]:

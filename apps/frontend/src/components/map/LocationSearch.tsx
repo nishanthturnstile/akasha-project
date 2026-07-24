@@ -82,6 +82,13 @@ export function LocationSearch({ map, className }: LocationSearchProps) {
           placeholder="Search Location"
           className="h-full flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none"
           aria-label="Search location"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={showDropdown}
+          aria-controls="location-search-results"
+          aria-activedescendant={
+            selectedIndex >= 0 ? `location-search-result-${selectedIndex}` : undefined
+          }
           autoComplete="off"
           spellCheck={false}
         />
@@ -93,15 +100,20 @@ export function LocationSearch({ map, className }: LocationSearchProps) {
       </div>
 
       {showDropdown && (
-        <div className="absolute left-0 top-full mt-1 w-full min-w-64 rounded-md border border-border bg-popover shadow-e2 max-h-60 overflow-y-auto z-popover">
+        <div
+          id="location-search-results"
+          role="listbox"
+          aria-label="Location search results"
+          className="absolute left-0 top-full mt-1 w-full min-w-64 rounded-md border border-border bg-popover shadow-e2 max-h-60 overflow-y-auto z-popover"
+        >
           {loading && (
-            <p className="flex items-center gap-2 px-3 py-2.5 text-[12px] text-muted-foreground">
+            <p role="status" className="flex items-center gap-2 px-3 py-2.5 text-[12px] text-muted-foreground">
               <Loader2 className="size-3 animate-spin" strokeWidth={1.75} />
               Searching\u2026
             </p>
           )}
           {!loading && error && (
-            <p className="px-3 py-2.5 text-[12px] text-muted-foreground">{error}</p>
+            <p role="status" className="px-3 py-2.5 text-[12px] text-muted-foreground">{error}</p>
           )}
           {!loading && !error && results.length === 0 && (
             <p className="px-3 py-2.5 text-[12px] text-muted-foreground">No results found</p>
@@ -109,6 +121,9 @@ export function LocationSearch({ map, className }: LocationSearchProps) {
           {results.map((result, i) => (
             <button
               key={`${result.type}-${i}`}
+              id={`location-search-result-${i}`}
+              role="option"
+              aria-selected={i === selectedIndex}
               type="button"
               onClick={() => flyTo(result)}
               onMouseEnter={() => setSelectedIndex(i)}

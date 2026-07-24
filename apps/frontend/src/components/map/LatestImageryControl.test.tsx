@@ -60,15 +60,21 @@ describe('LatestImageryControl', () => {
       searchedAt: '2026-07-22T00:00:00Z',
       viewportDiagonalMeters: 777,
       candidates: [
-        candidate(),
         candidate({
           sceneId: 'scene-partial',
-          acquisitionDate: '2026-07-18',
+          acquisitionDate: '2026-07-22',
+          acquisitionDatetime: '2026-07-22T10:00:00Z',
           usable: false,
           coverageStatus: 'partial',
           coveragePercent: 70,
           unavailableReason: 'Scene does not fully cover the searched viewport.',
         }),
+        candidate({
+          sceneId: 'scene-old',
+          acquisitionDate: '2026-07-18',
+          acquisitionDatetime: '2026-07-18T10:00:00Z',
+        }),
+        candidate(),
       ],
     });
 
@@ -95,7 +101,7 @@ describe('LatestImageryControl', () => {
       },
       expect.any(AbortSignal),
     );
-    expect(screen.getByRole('button', { name: '2026-07-18' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '2026-07-22' }).hasAttribute('disabled')).toBe(true);
 
     act(() => map.listeners.get('moveend')?.());
     expect(await screen.findByText(/Map moved/)).toBeTruthy();
@@ -115,5 +121,21 @@ describe('LatestImageryControl', () => {
 
     expect(screen.getByRole('button', { name: 'Search this area' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByText(/Zoom in/)).toBeTruthy();
+  });
+
+  it('explains why search is unavailable when the account is not entitled', () => {
+    render(
+      <LatestImageryControl
+        map={ mapMock() as never }
+        policy={ { ...policy, entitled: false } }
+        mode="latest"
+        onModeChange={ vi.fn() }
+        selected={ null }
+        onSelectedChange={ vi.fn() }
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Search this area' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/not available for this account/)).toBeTruthy();
   });
 });

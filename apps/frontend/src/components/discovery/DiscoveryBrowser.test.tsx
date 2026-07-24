@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DiscoveryBrowser } from '@/components/discovery/DiscoveryBrowser';
@@ -106,5 +106,15 @@ describe('DiscoveryBrowser saved-filter normalization', () => {
       groupIds: [],
       includeUngrouped: false,
     }));
+  });
+
+  it('explains that scouting search uses the task field name', () => {
+    render(
+      <MemoryRouter>
+        <DiscoveryBrowser target="scouting" seasonId="season-1" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByPlaceholderText('Search tasks by field name')).toBeTruthy();
   });
 });

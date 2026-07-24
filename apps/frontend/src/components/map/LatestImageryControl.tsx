@@ -38,6 +38,13 @@ function viewportDiagonalMeters(map: maplibregl.Map): number {
   return Math.hypot(dx, dy);
 }
 
+function newestFirst(candidates: SceneCandidate[]): SceneCandidate[] {
+  return [...candidates].sort((left, right) => (
+    right.acquisitionDatetime.localeCompare(left.acquisitionDatetime)
+    || right.acquisitionDate.localeCompare(left.acquisitionDate)
+  ));
+}
+
 export function LatestImageryControl({
   map,
   policy,
@@ -84,8 +91,9 @@ export function LatestImageryControl({
         controller.signal,
       );
       if (token !== searchToken.current) return;
-      setCandidates(result.candidates);
-      const newest = result.candidates.find((candidate) => candidate.usable) ?? null;
+      const ordered = newestFirst(result.candidates);
+      setCandidates(ordered);
+      const newest = ordered.find((candidate) => candidate.usable) ?? null;
       onSelectedChange(newest);
       if (!newest) setError('No full-coverage imagery is available for this area.');
     } catch (reason) {
@@ -135,6 +143,9 @@ export function LatestImageryControl({
           { diagonal > policy.maxViewportDiagonalMeters && (
             <p className="text-xs text-muted-foreground">Zoom in until the visible area is about 2 km.</p>
           ) }
+          { !policy.entitled && (
+            <p className="text-xs text-muted-foreground">Latest Image is not available for this account.</p>
+          ) }
           { stale && <p className="text-xs text-warning">Map moved. Search again to refresh imagery.</p> }
           { error && (
             <div className="space-y-1 text-xs text-muted-foreground">
@@ -148,7 +159,7 @@ export function LatestImageryControl({
           ) }
           { candidates.length > 0 && (
             <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Latest imagery dates">
-              { [...candidates].reverse().map((candidate) => (
+              { candidates.map((candidate) => (
                 <button
                   key={ candidate.sceneId }
                   type="button"

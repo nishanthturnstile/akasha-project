@@ -1040,10 +1040,17 @@ def _index_overlay_response(
     lo, hi = tiles.overlay_display_range(index_type)
     headers: dict[str, str] = {"X-Akasha-Overlay-Stretch": f"{lo},{hi}"}
     finite = np.asarray(values)[np.asarray(data_valid, dtype=bool) & np.isfinite(values)]
+    contrast_percentiles = (
+        tuple(float(value) for value in np.percentile(finite, (2, 98)))
+        if finite.size
+        else (None, None)
+    )
     descriptor = resolve_render_descriptor(
         "contrast" if render_profile == "contrast" else "standard",
         float(finite.min()) if finite.size else None,
         float(finite.max()) if finite.size else None,
+        lower_percentile=contrast_percentiles[0],
+        upper_percentile=contrast_percentiles[1],
     )
     headers["X-Akasha-Render-Profile"] = descriptor.applied
     headers["X-Akasha-Render-Profile-Version"] = descriptor.version

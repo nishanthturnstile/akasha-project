@@ -16,6 +16,16 @@ describe('MeasureTool', () => {
         const toggle = getByTestId('measure-toggle');
         fireEvent.click(toggle);
         expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        expect(getByTestId('measure-mode-picker')).toBeTruthy();
+        expect(getByTestId('measure-distance-mode').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('lets the user choose area instead of tracing an open distance path', () => {
+        const { getByTestId } = render(<MeasureTool map={ null } />);
+        fireEvent.click(getByTestId('measure-toggle'));
+        fireEvent.click(getByTestId('measure-area-mode'));
+        expect(getByTestId('measure-area-mode').getAttribute('aria-pressed')).toBe('true');
+        expect(getByTestId('measure-distance-mode').getAttribute('aria-pressed')).toBe('false');
     });
 
     it('collapses again when toggled off', () => {

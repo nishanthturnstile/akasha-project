@@ -337,6 +337,9 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
       : page
         ? `${page.total} result${page.total === 1 ? '' : 's'} loaded.`
         : '');
+  const searchLabel = target === 'monitoring'
+    ? 'Search field names'
+    : 'Search tasks by field name';
 
   return (
     <section className={cn('flex min-h-0 flex-1 flex-col', className)} aria-label={`${target} discovery`}>
@@ -359,7 +362,7 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
           </div>
         )}
         <label className="relative block">
-          <span className="sr-only">Search field names</span>
+          <span className="sr-only">{searchLabel}</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
@@ -371,7 +374,7 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
                 update({ q: search.trim() });
               }
             }}
-            placeholder="Search field names"
+            placeholder={searchLabel}
             className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-8 text-sm"
           />
           {search && (

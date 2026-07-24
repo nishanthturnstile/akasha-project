@@ -7,17 +7,10 @@ export interface GeocodingResult {
   type: 'place' | 'coords';
 }
 
-const COORDS_PATTERN = /^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/;
+const COORDS_PATTERN = /^\s*([+-]?\d+\.?\d*)\s*,\s*([+-]?\d+\.?\d*)\s*$/;
 
-interface NominatimItem {
-  display_name: string;
-  lon: string;
-  lat: string;
-  boundingbox: [string, string, string, string];
-}
-
-function parseCoords(query: string): GeocodingResult | null {
-  const match = query.match(COORDS_PATTERN);
+export function parseCoords(query: string): GeocodingResult | null {
+  const match = query.replace(/\u2212/g, '-').match(COORDS_PATTERN);
   if (!match) return null;
   const lon = parseFloat(match[1]);
   const lat = parseFloat(match[2]);
@@ -43,6 +36,7 @@ export function useGeocoding(query: string): {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const controller = new AbortController();
 
     const trimmed = query.trim();
     if (!trimmed) {
@@ -59,42 +53,45 @@ export function useGeocoding(query: string): {
       setError(null);
       return;
     }
+    if (COORDS_PATTERN.test(trimmed.replace(/\u2212/g, '-'))) {
+      setResults([]);
+      setLoading(false);
+      setError('Coordinates must be longitude from -180 to 180, then latitude from -90 to 90');
+      return;
+    }
 
     setLoading(true);
     setError(null);
     debounceRef.current = setTimeout(async () => {
       try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=5&addressdetails=0`;
-        const res = await fetch(url, {
-          headers: { 'Accept-Language': 'en' },
-        });
-        if (!res.ok) throw new Error('Geocoding request failed');
-        const data = await res.json() as NominatimItem[];
-        const placeResults: GeocodingResult[] = data.map((item) => ({
-          label: item.display_name,
-          center: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number],
-          bbox: item.boundingbox
-            ? ([
-                parseFloat(item.boundingbox[2]),
-                parseFloat(item.boundingbox[0]),
-                parseFloat(item.boundingbox[3]),
-                parseFloat(item.boundingbox[1]),
-              ] as [number, number, number, number])
-            : undefined,
-          type: 'place' as const,
-        }));
+        const url = `/api/geocoding/search?q=${encodeURIComponent(trimmed)}`;
+        const res = await fetch(url, { credentials: 'include', signal: controller.signal });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => null) as {
+            error?: { message?: string };
+          } | null;
+          throw new Error(payload?.error?.message ?? 'Location search failed');
+        }
+        const data = await res.json() as { results?: GeocodingResult[] };
+        const placeResults = Array.isArray(data.results) ? data.results : [];
         setResults(placeResults);
         setError(placeResults.length === 0 ? 'No results found' : null);
-      } catch {
-        setError('Failed to search location');
+      } catch (requestError) {
+        if (controller.signal.aborted) return;
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : 'Failed to search location',
+        );
         setResults([]);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 300);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      controller.abort();
     };
   }, [query]);
 

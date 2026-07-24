@@ -34,9 +34,32 @@ def test_contrast_descriptor_has_exact_equal_breaks_and_categories() -> None:
     ]
 
 
+def test_contrast_descriptor_uses_robust_percentile_stretch_when_available() -> None:
+    descriptor = resolve_render_descriptor(
+        "contrast",
+        -1.0,
+        1.0,
+        lower_percentile=-0.2,
+        upper_percentile=0.8,
+    )
+
+    assert descriptor.applied == "contrast"
+    assert descriptor.version == "percentile-2-98-v1"
+    assert descriptor.thresholds == pytest.approx((0.0, 0.2, 0.4, 0.6, 0.8))
+
+
 def test_contrast_descriptor_falls_back_for_missing_or_constant_statistics() -> None:
     assert resolve_render_descriptor("contrast", None, None).fallback_reason == "missing_statistics"
     assert resolve_render_descriptor("contrast", 0.4, 0.4).fallback_reason == "constant_scene"
+    quantized = resolve_render_descriptor(
+        "contrast",
+        0.0,
+        1.0,
+        lower_percentile=0.4,
+        upper_percentile=0.4,
+    )
+    assert quantized.applied == "contrast"
+    assert quantized.version == "equal-bands-v1"
 
 
 def test_latest_imagery_viewport_validation_and_distance() -> None:

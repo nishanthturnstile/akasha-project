@@ -1,6 +1,15 @@
 import { CheckCircle2, Filter, MapPin, MoreVertical, Pin, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogRoot,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   SheetContent,
   SheetDescription,
@@ -12,12 +21,16 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDiscoveryUrlState } from '@/hooks/useDiscoveryUrlState';
 import {
+  useDeleteField,
+  useField,
   useFieldDiscovery,
   useFieldDiscoveryFacets,
   useScoutTaskDiscovery,
+  useUpdateField,
   useUpdateScoutTask,
 } from '@/lib/queries';
 import { cn } from '@/lib/utils';
+import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import { useMapView } from '@/state/useMapView';
 import type {
   DiscoveryFieldSummary,
@@ -61,6 +74,8 @@ function FieldCard({
   onPin,
   onFind,
   onOpen,
+  onEdit,
+  onDeleteRequest,
 }: {
   field: DiscoveryFieldSummary;
   pinned: boolean;
@@ -68,8 +83,14 @@ function FieldCard({
   onPin: () => void;
   onFind: () => void;
   onOpen: () => void;
+  onEdit: () => void;
+  onDeleteRequest: () => void;
 }) {
   const location = [field.district, field.country].filter(Boolean).join(', ');
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const closeMenu = () => {
+    if (detailsRef.current) detailsRef.current.open = false;
+  };
   return (
     <article
       className={cn(
@@ -98,20 +119,49 @@ function FieldCard({
           <span className="pt-1 text-xs text-muted-foreground tnum">
             {field.areaHa == null ? '—' : `${field.areaHa.toFixed(2)} ha`}
           </span>
-          <details className="relative">
+          <details ref={detailsRef} className="relative">
             <summary
               className="flex size-7 cursor-pointer list-none items-center justify-center rounded-md hover:bg-accent"
               aria-label={`Field options for ${field.name}`}
             >
               <MoreVertical className="size-4" />
             </summary>
-            <div className="absolute right-0 z-popover mt-1 w-36 rounded-md border border-border bg-popover p-1 shadow-e2">
+            <div className="absolute right-0 z-popover mt-1 w-40 rounded-md border border-border bg-popover p-1 shadow-e2">
               <button
                 type="button"
                 className="w-full rounded px-2 py-2 text-left text-xs hover:bg-accent"
                 onClick={onOpen}
               >
                 Open analytics
+              </button>
+              <button
+                type="button"
+                className="w-full rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                onClick={() => { closeMenu(); onEdit(); }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="w-full rounded px-2 py-2 text-left text-xs hover:bg-accent"
+                onClick={() => { closeMenu(); onPin(); }}
+              >
+                {pinned ? 'Unpin' : 'Pin'}
+              </button>
+              <button
+                type="button"
+                disabled
+                title="Available after native vector exports."
+                className="w-full cursor-not-allowed rounded px-2 py-2 text-left text-xs text-muted-foreground"
+              >
+                Export Contours
+              </button>
+              <button
+                type="button"
+                className="w-full rounded px-2 py-2 text-left text-xs text-destructive hover:bg-destructive/10"
+                onClick={() => { closeMenu(); onDeleteRequest(); }}
+              >
+                Delete
               </button>
             </div>
           </details>
@@ -254,8 +304,14 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
   const [stagedUngrouped, setStagedUngrouped] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => seasonId ? readPins(seasonId) : []);
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [deletingField, setDeletingField] = useState<{ id: string; name: string } | null>(null);
+  const [savingField, setSavingField] = useState(false);
   const view = useMapView();
   const navigate = useNavigate();
+  const editingFieldQ = useField(editingFieldId);
+  const updateField = useUpdateField();
+  const deleteField = useDeleteField();
   const facetsQ = useFieldDiscoveryFacets(seasonId, target, filters?.status);
   const requestFilters = filters ? { ...filters, pinnedFieldIds: pinnedIds } : null;
   const fieldsQ = useFieldDiscovery(target === 'monitoring' ? requestFilters : null);
@@ -480,6 +536,8 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
                         view.setOverlaysVisible(true);
                         navigate(`/monitoring/field-analytics/field/${field.id}`);
                       }}
+                      onEdit={() => setEditingFieldId(field.id)}
+                      onDeleteRequest={() => setDeletingField({ id: field.id, name: field.name })}
                     />
                   ))}
                 </div>
@@ -503,6 +561,8 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
                           view.setOverlaysVisible(true);
                           navigate(`/monitoring/field-analytics/field/${field.id}`);
                         }}
+                        onEdit={() => setEditingFieldId(field.id)}
+                        onDeleteRequest={() => setDeletingField({ id: field.id, name: field.name })}
                       />
                     ))
                   : tasksQ.data?.items.map((task) => (
@@ -613,6 +673,60 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
           </SheetFooter>
         </SheetContent>
       </SheetRoot>
+
+      {editingFieldId && editingFieldQ.data && (
+        <EditFieldDialog
+          key={editingFieldQ.data.id}
+          field={editingFieldQ.data}
+          open
+          onOpenChange={(open) => { if (!open) setEditingFieldId(null); }}
+          onSave={(fieldId, name, geometry, vegetationData, groupId, areaHa) => {
+            setSavingField(true);
+            updateField.mutate(
+              {
+                fieldId,
+                payload: {
+                  name,
+                  ...(geometry ? { geometry } : {}),
+                  ...(vegetationData ? { vegetationData } : {}),
+                  ...(groupId !== undefined ? { groupId } : {}),
+                  ...(areaHa !== undefined ? { areaHa } : {}),
+                },
+              },
+              {
+                onSuccess: () => { setSavingField(false); setEditingFieldId(null); },
+                onError: () => setSavingField(false),
+              },
+            );
+          }}
+          saving={savingField}
+          onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
+          initialSeasonId={seasonId ?? undefined}
+        />
+      )}
+
+      <AlertDialogRoot open={!!deletingField} onOpenChange={(open) => { if (!open) setDeletingField(null); }}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete field?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete "{deletingField?.name}"? This action cannot be undone.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (!deletingField) return;
+              try {
+                await deleteField.mutateAsync(deletingField.id);
+              } catch {
+                // Error surfaced by mutation/query state.
+              }
+              setDeletingField(null);
+            }}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </section>
   );
 }

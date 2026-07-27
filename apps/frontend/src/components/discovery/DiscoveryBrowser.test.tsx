@@ -65,6 +65,15 @@ vi.mock('@/lib/queries', () => ({
     isPending: false,
     mutateAsync: vi.fn(),
   }),
+  useField: () => ({ data: undefined, isLoading: false }),
+  useUpdateField: () => ({ mutate: vi.fn() }),
+  useDeleteField: () => ({ mutateAsync: vi.fn() }),
+}));
+
+// Real EditFieldDialog transitively pulls in MapLibre-dependent map components;
+// stub it like MapPage.test.tsx stubs MapLayerManager to keep this test isolated.
+vi.mock('@/components/seasons/EditFieldDialog', () => ({
+  default: () => null,
 }));
 
 vi.mock('@/state/useMapView', () => ({

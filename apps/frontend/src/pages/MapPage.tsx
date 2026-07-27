@@ -771,9 +771,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       ) as string | undefined;
       if (!plotId) return;
       if (globalViewOpen) {
+        // Mirror GlobalViewPanel's own field-row click / DiscoveryBrowser's "Open
+        // analytics": select the field, close Global View, and focus it, so clicking
+        // a field on the map behaves the same as clicking it in the side list.
         if (seasonId) setLastFieldForSeason(seasonId, plotId);
         view.setSelectedPlotId(plotId);
-        return;
+        view.setFocusNonce(Date.now());
+        view.setGlobalViewOpen(false);
+        view.setOverlaysVisible(true);
       }
       navigate(`/monitoring/field-analytics/field/${plotId}`);
     };

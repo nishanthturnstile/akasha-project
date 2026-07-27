@@ -66,6 +66,47 @@ navigate(`/monitoring/field-analytics/field/${plotId}`);
 The early `return` silently drops the `navigate(...)` call for every
 Global-View map click, so a click only ever highlights the field.
 
+### Issue 2b — fixing the `return` wasn't sufficient: a layer-detection race
+
+After removing the early `return` (first pass of this fix), clicking still
+didn't open a field in some cases — specifically right after opening Global
+View, before interacting with the field list. Root cause: a second,
+independent bug in the same effect.
+
+`clickHandler`/`moveHandler` hit-test the map via a `fieldAtPoint()` closure
+that used a `fieldLayerIds` array computed **once**, at the moment the
+`useEffect` that registers these handlers runs:
+
+```tsx
+const fieldLayerIds = globalViewOpen
+  ? discoveryEnabled
+    ? (map.getLayer(discoveryFillLayerId) ? [discoveryFillLayerId] : [])
+    : ...
+  : ...;
+const fieldAtPoint = (event) => {
+  if (fieldLayerIds.length === 0) return null;
+  return map.queryRenderedFeatures(event.point, { layers: fieldLayerIds })[0] ?? null;
+};
+```
+
+But the discovery fill layer (`discoveryFillLayerId`) is added **asynchronously**
+by a *different* effect, debounced 120ms and gated behind a network round trip
+to `getDiscoveryMap(...)` (see the `map.on('moveend', load)` effect above it).
+If a click happened before that layer existed yet — the common case right
+after opening Global View, since nothing else had triggered a re-render —
+`fieldLayerIds` was captured as `[]` and stayed that way: none of the
+click-handler effect's dependencies (`map`, `selectedPlotId`, `globalViewOpen`,
+etc.) change just because the *other* effect later calls `map.addLayer(...)`
+imperatively, so the effect never re-ran to pick up the now-existing layer.
+Clicking a field before ever clicking something in the list (which happens to
+bump `selectedPlotId` and force a re-run) would silently do nothing.
+
+**Fix:** moved the `fieldLayerIds` computation inside `fieldAtPoint` itself so
+it's evaluated fresh on every mousemove/click instead of once at effect-setup
+time. This checks `map.getLayer(...)` live, so it's correct regardless of
+whether the async discovery layer has loaded yet by the time of any given
+click — no new state or extra effect dependency needed.
+
 ## Fix
 
 ### `DiscoveryBrowser.tsx` — restore the full field-card menu
@@ -114,7 +155,8 @@ from `MapLayerManager`: added the three missing query-hook mocks and stubbed
 ## Verification
 
 - `tsc -p tsconfig.json --noEmit`, `eslint`, and the full `vitest run` suite
-  (67 files / 437 tests) all pass.
+  all pass (67 files / 436-437 tests, depending on unrelated concurrent
+  changes on the branch).
 - Verified live against the running dev stack, not just by reading the diff:
   - Opened Global View → 3-dot menu on a field card shows Open analytics,
     Edit, Pin, Export Contours (disabled), Delete.
@@ -128,6 +170,13 @@ from `MapLayerManager`: added the three missing query-hook mocks and stubbed
     field list untouched (did not exercise the destructive "Delete" path
     against real data).
   - Clicking a field boundary directly on the Global View map navigates
-    straight into that field's analytics page, matching "Open analytics".
+    straight into that field's analytics page, matching "Open analytics" —
+    including on a **cold page load** (full reload → Global View already
+    open from URL/persisted state → click a field boundary as the very
+    first map interaction, no prior list click). This specific case is what
+    the Issue 2b race actually broke and the first pass of the fix (only
+    removing the early `return`) did not catch, since manual testing after
+    the first pass had incidentally already interacted with the list first
+    (which masked the race by forcing the effect to re-run).
 - No regressions: existing Pin/Find Field footer buttons, Open analytics,
   filters, pagination, and scouting-task cards were unaffected.

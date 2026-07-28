@@ -720,7 +720,13 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     const canvas = map.getCanvas();
     const hoverCursor = simplifiedMapControls ? 'default' : 'pointer';
 
-    const fieldLayerIds = globalViewOpen
+    // Computed fresh on every call (not once when handlers are registered): the
+    // discovery fill layer is added asynchronously by a separate, debounced
+    // moveend/network-driven effect, so it often doesn't exist yet at the moment
+    // Global View opens and this effect runs. Recomputing per-event avoids a stale
+    // empty-layer closure that would otherwise make clicks silently no-op until an
+    // unrelated dependency (e.g. selectedPlotId) happened to re-run this effect.
+    const currentFieldLayerIds = (): string[] => globalViewOpen
       ? discoveryEnabled
         ? (map.getLayer(discoveryFillLayerId) ? [discoveryFillLayerId] : [])
         : legacySeasonFields
@@ -729,6 +735,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       : (map.getLayer(FIELD_BOUNDARY_FILL_LAYER_ID) ? [FIELD_BOUNDARY_FILL_LAYER_ID] : []);
 
     const fieldAtPoint = (event: maplibregl.MapMouseEvent) => {
+      const fieldLayerIds = currentFieldLayerIds();
       if (fieldLayerIds.length === 0) return null;
       return map.queryRenderedFeatures(event.point, { layers: fieldLayerIds })[0] ?? null;
     };
@@ -771,9 +778,14 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       ) as string | undefined;
       if (!plotId) return;
       if (globalViewOpen) {
+        // Mirror GlobalViewPanel's own field-row click / DiscoveryBrowser's "Open
+        // analytics": select the field, close Global View, and focus it, so clicking
+        // a field on the map behaves the same as clicking it in the side list.
         if (seasonId) setLastFieldForSeason(seasonId, plotId);
         view.setSelectedPlotId(plotId);
-        return;
+        view.setFocusNonce(Date.now());
+        view.setGlobalViewOpen(false);
+        view.setOverlaysVisible(true);
       }
       navigate(`/monitoring/field-analytics/field/${plotId}`);
     };

@@ -53,6 +53,24 @@ def _assert_team_backfill_complete(table: str) -> None:
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
     op.execute("CREATE EXTENSION IF NOT EXISTS unaccent")
+    # A prior manual `CREATE EXTENSION unaccent` (run without search_path pinned to
+    # ``public``) can leave it installed under a role-named schema (e.g. ``akasha``),
+    # which the CREATE EXTENSION IF NOT EXISTS above won't correct. Relocate it so the
+    # unqualified unaccent(...) calls below resolve under this migration's
+    # search_path=public session.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_extension
+                WHERE extname = 'unaccent' AND extnamespace <> 'public'::regnamespace
+            ) THEN
+                ALTER EXTENSION unaccent SET SCHEMA public;
+            END IF;
+        END $$;
+        """
+    )
 
     # The baseline migration intentionally calls current Base.metadata.create_all().
     # IF NOT EXISTS keeps both fresh databases and upgraded live databases valid.

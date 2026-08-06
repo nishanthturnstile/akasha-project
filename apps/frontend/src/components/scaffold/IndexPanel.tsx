@@ -3,10 +3,11 @@ import { AlertTriangle, CalendarDays, ChevronDown, ChevronRight, Info, Layers, L
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
+import { NdviValueSplit } from '@/components/analytics/NdviValueSplit';
 import { useFieldMonitoringEvidence, useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
 import { radarEvidenceDescription } from '@/lib/radarEvidence';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
+import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, NdviValueSplit as NdviValueSplitData, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
@@ -108,6 +109,16 @@ export function IndexPanel({
     cloudMask,
     preferHighRes,
   });
+  const ndviStatisticsQ = useFieldStatistics(
+    analyticsIndices.includes('NDVI') ? selectedPlot?.id : null,
+    {
+      sourceId,
+      acquisitionDate: selectedDate,
+      indexType: 'NDVI',
+      cloudMask,
+      preferHighRes,
+    },
+  );
   const trendQ = useFieldTrend(selectedPlot?.id, {
     sourceId,
     indexType: activeIndexType,
@@ -283,7 +294,13 @@ export function IndexPanel({
               data-testid="index-panel-content-crop-info"
               className="mt-1.5 space-y-1.5"
             >
-              <CropInfoTab vegetationData={ vegetationData ?? [] } seasonIds={ seasonIds } onShowAllCrops={ onShowAllCrops } />
+              <CropInfoTab
+                vegetationData={ vegetationData ?? [] }
+                seasonIds={ seasonIds }
+                onShowAllCrops={ onShowAllCrops }
+                valueSplit={ ndviStatisticsQ.data?.valueSplit ?? null }
+                selectedDate={ selectedDate }
+              />
             </TabsContent>
 
             <TabsContent
@@ -354,10 +371,14 @@ function CropInfoTab({
   vegetationData,
   seasonIds,
   onShowAllCrops,
+  valueSplit,
+  selectedDate,
 }: {
   vegetationData: VegetationCycleResponse[];
   seasonIds?: string[];
   onShowAllCrops?: (seasonId?: string) => void;
+  valueSplit: NdviValueSplitData | null;
+  selectedDate: string | null;
 }) {
   const seasonsQ = useSeasons();
   const seasonNameMap = useMemo(() => {
@@ -389,7 +410,7 @@ function CropInfoTab({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-2 pt-0.5 lg:grid-cols-3">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-2 pt-0.5">
       {/* ── Card 1: Crop Rotation ── */ }
       <div
         data-testid="crop-info-card-crop-rotation"
@@ -570,7 +591,11 @@ function CropInfoTab({
         </div>
       </div>
 
-      {/* ── Card 3: Current Risks ── */ }
+      { valueSplit?.indexType === 'NDVI' && (
+        <NdviValueSplit valueSplit={ valueSplit } selectedDate={ selectedDate } />
+      ) }
+
+      {/* ── Card 4: Current Risks ── */ }
       <div
         data-testid="crop-info-card-current-risks"
         className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-background/40 p-2.5 opacity-80"
@@ -681,7 +706,10 @@ function ChartTab({
         )) }
       </div>
 
-      <div className="rounded-md border border-border/80 bg-background/50 p-2.5">
+      <div
+        className="rounded-md border border-border/80 bg-background/50 p-2.5"
+        data-testid="analytics-statistics-summary"
+      >
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <p className="text-[11px] uppercase text-muted-foreground">
             { selectedDate ?? 'Latest date' }

@@ -305,7 +305,7 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.queryByTestId('index-panel-tabs')).toBeNull();
     });
 
-    it('renders three tabs with Crop info active by default — shows 3 cards', () => {
+    it('renders three tabs with Crop info active by default', () => {
         renderPanel(
             <IndexPanel
                 selectedPlot={ plot }
@@ -363,6 +363,95 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.getByTestId('analytics-year-2022')).toBeTruthy();
         expect(screen.getByTestId('analytics-date-bounds')).toBeTruthy();
         expect(screen.getByTestId('analytics-weather-overlay')).toBeTruthy();
+    });
+
+    it('renders the backend NDVI value split in Crop info only', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path === '/api/fields/plot-1/indices/statistics') {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'native',
+                        scope: 'field',
+                        sourceId: 'sentinel-2-l2a',
+                        acquisitionDate: '2026-04-27',
+                        indexType: 'NDVI',
+                        cloudMask,
+                        statistics: {
+                            min: 0.1,
+                            max: 0.8,
+                            mean: 0.5,
+                            stddev: 0.1,
+                            validPixelPercent: 90,
+                            cloudMaskedPercent: 5,
+                            coveragePercent: 95,
+                        },
+                        pixelCounts: {
+                            totalPixels: 100,
+                            nodataPixels: 5,
+                            coveragePixels: 95,
+                            maskedPixels: 5,
+                            validPixels: 90,
+                        },
+                        valueSplit: {
+                            indexType: 'NDVI',
+                            profileId: 'ndvi-density-v1',
+                            percentageBasis: 'classifiablePixels',
+                            thresholds: [0.2, 0.4, 0.6],
+                            totalPixels: 100,
+                            classifiablePixels: 95,
+                            noDataPixels: 5,
+                            unclassifiedPixels: 0,
+                            categories: [
+                                { id: 'denseVegetation', label: 'Dense vegetation', minInclusive: 0.6, maxExclusive: null, pixelCount: 40, percentage: 40 },
+                                { id: 'moderateVegetation', label: 'Moderate vegetation', minInclusive: 0.4, maxExclusive: 0.6, pixelCount: 30, percentage: 30 },
+                                { id: 'sparseVegetation', label: 'Sparse vegetation', minInclusive: 0.2, maxExclusive: 0.4, pixelCount: 15, percentage: 15 },
+                                { id: 'openSoil', label: 'Open soil', minInclusive: null, maxExclusive: 0.2, pixelCount: 5, percentage: 5 },
+                                { id: 'cloudiness', label: 'Cloudiness', minInclusive: null, maxExclusive: null, pixelCount: 5, percentage: 10 },
+                            ],
+                        },
+                        metadata: { bands: ['B8', 'B4'], warnings: [] },
+                    }));
+                }
+                if (path.startsWith('/api/fields/plot-1/analytics/trend')) {
+                    return Promise.resolve(jsonResponse({
+                        plotId: 'plot-1',
+                        provider: 'native',
+                        scope: 'native_fallback',
+                        sourceId: 'sentinel-2-l2a',
+                        indexType: 'NDVI',
+                        startDate: '2025-10-29',
+                        endDate: '2026-04-27',
+                        points: [],
+                        metadata: { bands: ['B8', 'B4'] },
+                    }));
+                }
+                if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                return Promise.resolve(jsonResponse({}));
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-04-27"
+                sourceId="sentinel-2-l2a"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI', 'MSAVI'] }
+                cloudMask={ cloudMask }
+            />,
+        );
+        const split = await screen.findByTestId('ndvi-value-split');
+        expect(screen.getByTestId('index-panel-content-crop-info').contains(split)).toBe(true);
+        expect(screen.getByText('NDVI values split')).toBeTruthy();
+
+        activateTab('index-panel-tab-chart');
+
+        expect(screen.getByTestId('analytics-statistics-summary')).toBeTruthy();
+        expect(screen.getByTestId('analytics-chart-section')).toBeTruthy();
+        expect(screen.queryByTestId('ndvi-value-split')).toBeNull();
     });
 
     it('labels ResourceSat statistics with provisional mask provenance', () => {

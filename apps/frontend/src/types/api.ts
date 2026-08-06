@@ -898,6 +898,28 @@ export interface FieldStatisticsRequest {
   preferHighRes?: boolean;
 }
 
+export interface NdviValueSplitCategory {
+  id: 'denseVegetation' | 'moderateVegetation' | 'sparseVegetation' | 'openSoil' | 'cloudiness' | string;
+  label: string;
+  minInclusive: number | null;
+  maxExclusive: number | null;
+  pixelCount: number | null;
+  areaSqM?: number | null;
+  percentage: number;
+}
+
+export interface NdviValueSplit {
+  indexType: 'NDVI';
+  profileId: string;
+  percentageBasis: 'classifiablePixels';
+  thresholds: number[];
+  totalPixels: number | null;
+  classifiablePixels: number | null;
+  noDataPixels: number | null;
+  unclassifiedPixels: number | null;
+  categories: NdviValueSplitCategory[];
+}
+
 export interface FieldMonitoringEvidence {
   fieldId: string;
   targetDate: string;
@@ -1008,6 +1030,7 @@ export interface FieldStatisticsResponse {
   cloudMask: CloudMaskOptions;
   statistics: IndexStatistics;
   pixelCounts: PixelCounts;
+  valueSplit?: NdviValueSplit | null;
   sarSupport?: SarSupport | null;
   maskedPixels?: number;
   maskMethod?: string | null;

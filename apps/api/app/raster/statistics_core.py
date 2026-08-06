@@ -34,6 +34,7 @@ from .indices import (
     DEFAULT_SCALE,
     get_index,
 )
+from .value_split import IndexValueSplitPayload, compute_ndvi_value_split
 
 MASK_NODATA_CLASS = 0
 
@@ -55,6 +56,7 @@ class IndexStatistics:
     valid_pixel_percent: float
     cloud_masked_percent: float
     coverage_percent: float
+    value_split: IndexValueSplitPayload | None = None
     warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -72,6 +74,7 @@ class IndexStatistics:
             "validPixelPercent": self.valid_pixel_percent,
             "cloudMaskedPercent": self.cloud_masked_percent,
             "coveragePercent": self.coverage_percent,
+            "valueSplit": self.value_split,
             "warnings": list(self.warnings),
         }
 
@@ -164,6 +167,7 @@ def compute_index_statistics(
 
     # --- index on valid pixels (reflectance corrected) --------------------
     min_v = max_v = mean_v = std_v = None
+    finite_index_values = np.array([], dtype="float64")
     if valid_pixels > 0:
         a_ref = correct_reflectance(a[valid_mask], scale, offset)
         b_ref = correct_reflectance(b[valid_mask], scale, offset)
@@ -174,12 +178,12 @@ def compute_index_statistics(
                 "were excluded from min/max/mean/stddev."
             )
         index_vals = index_vals[good]
-        index_vals = index_vals[np.isfinite(index_vals)]
-        if index_vals.size > 0:
-            min_v = _round(np.min(index_vals))
-            max_v = _round(np.max(index_vals))
-            mean_v = _round(np.mean(index_vals))
-            std_v = _round(np.std(index_vals))  # population stddev (ddof=0)
+        finite_index_values = index_vals[np.isfinite(index_vals)]
+        if finite_index_values.size > 0:
+            min_v = _round(np.min(finite_index_values))
+            max_v = _round(np.max(finite_index_values))
+            mean_v = _round(np.mean(finite_index_values))
+            std_v = _round(np.std(finite_index_values))  # population stddev (ddof=0)
         else:  # pragma: no cover - degenerate
             warnings.append("No finite index values after masking.")
     else:
@@ -189,6 +193,16 @@ def compute_index_statistics(
 
     def pct(numerator: int) -> float:
         return _round((numerator / total_pixels * 100.0) if total_pixels else 0.0, 4) or 0.0
+
+    value_split = None
+    if index_def.id == "NDVI":
+        value_split = compute_ndvi_value_split(
+            values=finite_index_values,
+            masked_pixel_count=masked_pixels,
+            total_pixel_count=total_pixels,
+            nodata_pixel_count=nodata_pixels,
+            valid_pixel_count=valid_pixels,
+        )
 
     return IndexStatistics(
         index_type=index_def.id,
@@ -204,6 +218,7 @@ def compute_index_statistics(
         valid_pixel_percent=pct(valid_pixels),
         cloud_masked_percent=pct(masked_pixels),
         coverage_percent=pct(coverage_pixels),
+        value_split=value_split,
         warnings=warnings,
     )
 

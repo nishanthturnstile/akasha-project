@@ -971,6 +971,7 @@ def test_statistics_uses_pipeline_adapter_and_no_signed_url_leaks(monkeypatch) -
     assert body["statistics"]["cloudMaskedPercent"] == pytest.approx(3.25)
     assert body["statistics"]["coveragePercent"] == pytest.approx(98.75)
     assert body["pixelCounts"]["validPixels"] == 42
+    assert body["valueSplit"] is None
     assert set(body["metadata"]) == {"provider", "scope", "queryId", "providerRoute", "versions"}
     _assert_no_leaks(body)
 

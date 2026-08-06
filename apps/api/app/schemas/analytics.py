@@ -9,7 +9,12 @@ from pydantic import Field
 from ..api_models import ApiModel, CloudMaskOptions
 from ..config import settings
 from ..raster.indices import DEFAULT_INDEX
-from ..raster.models import IndexStatisticsModel, PixelCounts, SarSupport
+from ..raster.models import (
+    IndexStatisticsModel,
+    IndexValueSplit,
+    PixelCounts,
+    SarSupport,
+)
 
 
 class FieldStatisticsRequest(ApiModel):
@@ -30,6 +35,7 @@ class FieldStatisticsResponse(ApiModel):
     cloud_mask: CloudMaskOptions
     statistics: IndexStatisticsModel
     pixel_counts: PixelCounts
+    value_split: IndexValueSplit | None = None
     metadata: dict[str, Any]
     sar_support: SarSupport | None = None
     # Best-resolution provenance (Phase D)

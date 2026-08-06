@@ -762,6 +762,7 @@ def _field_statistics(
         cloud_mask=cloud_mask,
         statistics=IndexStatisticsModel(**computed["statistics"]),
         pixel_counts=PixelCounts(**computed["pixelCounts"]),
+        value_split=computed.get("valueSplit"),
         metadata=metadata,
         sar_support=computed.get("sarSupport"),
         resolved_source_id=resolution.source_id,

@@ -8,6 +8,7 @@ from typing import Any
 from .api_models import CloudMaskOptions, FieldTrendPoint
 from .raster.errors import bad_request, upstream_error
 from .raster.models import IndexStatisticsModel, PixelCounts
+from .raster.value_split import normalize_pipeline_ndvi_value_split
 from .schemas.analytics import FieldStatisticsResponse
 
 _METADATA_ALLOWLIST = ("queryId", "providerRoute", "versions")
@@ -99,6 +100,26 @@ def _metadata(result: dict[str, Any], *, scope: str) -> dict[str, Any]:
     return metadata
 
 
+def _value_split(result: dict[str, Any], *, index_type: str) -> dict[str, Any] | None:
+    if index_type != "NDVI":
+        return None
+    visualization = result.get("visualization")
+    threshold_profile = (
+        visualization.get("thresholdProfile") if isinstance(visualization, dict) else None
+    )
+    class_statistics = result.get("classStatistics")
+    if not isinstance(class_statistics, list):
+        return None
+    selection = result.get("selection") if isinstance(result.get("selection"), dict) else {}
+    return normalize_pipeline_ndvi_value_split(
+        class_statistics=[item for item in class_statistics if isinstance(item, dict)],
+        threshold_profile=str(threshold_profile) if threshold_profile else None,
+        total_pixel_count=_int_or_default(selection.get("totalPixelCount")) or None,
+        coverage_pixel_count=_int_or_default(selection.get("coveragePixelCount")) or None,
+        nodata_pixel_count=_int_or_default(selection.get("nodataPixelCount")) or None,
+    )
+
+
 def field_index_to_statistics_response(
     result: dict[str, Any],
     *,
@@ -120,6 +141,7 @@ def field_index_to_statistics_response(
         cloud_mask=cloud_mask,
         statistics=_index_statistics_model(stats),
         pixel_counts=_pixel_counts(result),
+        value_split=_value_split(result, index_type=index_type),
         metadata=_metadata(result, scope="field"),
         resolved_source_id=source_id,
         resolution_meters=_float_or_none(resolution.get("displayMeters")),

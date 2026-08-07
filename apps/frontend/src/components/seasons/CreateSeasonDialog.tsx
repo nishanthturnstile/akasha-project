@@ -50,7 +50,6 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   const [endDateError, setEndDateError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string>(INITIAL);
-  const forceCloseRef = useRef(false);
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -215,6 +214,15 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     }
   }, [dirty, onOpenChange]);
 
+  const handleKeepEditing = useCallback(() => {
+    setConfirmClose(false);
+  }, []);
+
+  const handleDiscardChanges = useCallback(() => {
+    setConfirmClose(false);
+    onOpenChange(false);
+  }, [onOpenChange]);
+
   const handleCreate = async () => {
     let hasError = false;
     if (!name.trim()) { setNameError('Season name is required'); hasError = true; }
@@ -238,20 +246,16 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   };
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen && dirty && !forceCloseRef.current) {
-      setConfirmClose(true);
+    if (!nextOpen) {
+      if (dirty) {
+        setConfirmClose(true);
+      } else {
+        onOpenChange(false);
+      }
     } else {
-      forceCloseRef.current = false;
       onOpenChange(nextOpen);
     }
   }, [dirty, onOpenChange]);
-
-  useEffect(() => {
-    if (!confirmClose && forceCloseRef.current) {
-      forceCloseRef.current = false;
-      onOpenChange(false);
-    }
-  }, [confirmClose, onOpenChange]);
 
   return (
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
@@ -475,8 +479,8 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
             All unsaved changes will be lost.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
-            <AlertDialogAction className="cursor-pointer" onClick={() => { forceCloseRef.current = true; setConfirmClose(false); }}>
+            <AlertDialogCancel className="cursor-pointer" onClick={handleKeepEditing}>No</AlertDialogCancel>
+            <AlertDialogAction className="cursor-pointer" onClick={handleDiscardChanges}>
               Yes
             </AlertDialogAction>
           </AlertDialogFooter>

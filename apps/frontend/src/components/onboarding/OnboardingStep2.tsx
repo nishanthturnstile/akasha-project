@@ -58,7 +58,7 @@ export default function OnboardingStep2() {
       <img
         src="/images/onboardig2.png"
         alt="Add field illustration"
-        className="mt-auto w-full shrink-0"
+        className="mt-auto max-h-[35vh] w-full shrink-0 object-contain"
       />
     </div>
   );

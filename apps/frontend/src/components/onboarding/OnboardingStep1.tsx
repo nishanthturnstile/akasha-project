@@ -280,7 +280,7 @@ export default function OnboardingStep1() {
       <img
         src="/images/onboarding1.png"
         alt="Create season illustration"
-        className="mt-auto w-full shrink-0"
+        className="mt-auto max-h-[35vh] w-full shrink-0 object-contain"
       />
     </div>
   );

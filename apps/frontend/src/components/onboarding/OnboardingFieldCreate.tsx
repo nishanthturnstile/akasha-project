@@ -281,7 +281,7 @@ export default function OnboardingFieldCreate() {
 
         {/* Field name card when geometry is ready */ }
         { draftGeometry && (
-          <div className="absolute left-1/2 top-24 z-40 -translate-x-1/2 w-72">
+          <div className="absolute left-1/2 top-24 z-40 w-full max-w-72 -translate-x-1/2 px-4">
             <div className="glass-card space-y-3 p-4">
               <input
                 placeholder="Field name"

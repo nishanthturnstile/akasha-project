@@ -71,7 +71,7 @@ export default function FieldActivityLogPage() {
             onChange={ (event) => setFilters((current) => ({ ...current, year: Number(event.target.value) || undefined })) }
           />
         </label>
-        <button className="self-end rounded-md border border-border px-3 py-2 text-sm" onClick={ () => void exportCsv() } type="button">
+        <button className="self-end justify-self-start rounded-md border border-border px-3 py-2 text-sm" onClick={ () => void exportCsv() } type="button">
           Download report
         </button>
       </section>
@@ -81,7 +81,7 @@ export default function FieldActivityLogPage() {
         <div className="mt-3 grid gap-3 md:grid-cols-3">
           <input className="rounded-md border border-border bg-background px-3 py-2" value={ activityType } onChange={ (event) => setActivityType(event.target.value) } />
           <input className="rounded-md border border-border bg-background px-3 py-2" placeholder="Assignee" value={ assignee } onChange={ (event) => setAssignee(event.target.value) } />
-          <button className="rounded-md bg-primary px-4 py-2 text-primary-foreground disabled:opacity-40" disabled={ !firstPlotId || createMutation.isPending } onClick={ () => void addActivity() } type="button">
+          <button className="w-full rounded-md bg-primary px-4 py-2 text-primary-foreground disabled:opacity-40 sm:w-auto" disabled={ !firstPlotId || createMutation.isPending } onClick={ () => void addActivity() } type="button">
             Add activity
           </button>
         </div>

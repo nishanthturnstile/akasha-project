@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import EditFieldDialog from '@/components/seasons/EditFieldDialog';
+import EditFieldDialog, { sortVegetationCyclesForDisplay } from '@/components/seasons/EditFieldDialog';
 import type { ResolvedBasemapConfig } from '@/map/basemap';
 import type { Field } from '@/types/api';
 
@@ -125,6 +125,45 @@ function renderDialog() {
 afterEach(() => {
     state.basemaps.length = 0;
     vi.unstubAllEnvs();
+});
+
+describe('sortVegetationCyclesForDisplay', () => {
+    it('keeps a newly added draft cycle at the top of the list', () => {
+        const cycles = [
+            {
+                id: 'existing',
+                cropName: 'Wheat',
+                variety: '',
+                maturity: '',
+                year: 2024,
+                plantingDate: '2024-01-10',
+                irrigationType: '',
+                targetYield: null,
+                harvestingDate: '2024-05-15',
+                tillageType: '',
+                actualYield: null,
+                isCutOff: false,
+                notes: '',
+            },
+            {
+                id: 'draft',
+                cropName: '',
+                variety: '',
+                maturity: '',
+                year: 2025,
+                plantingDate: '',
+                irrigationType: '',
+                targetYield: null,
+                harvestingDate: '',
+                tillageType: '',
+                actualYield: null,
+                isCutOff: false,
+                notes: '',
+            },
+        ];
+
+        expect(sortVegetationCyclesForDisplay(cycles).map((cycle) => cycle.id)).toEqual(['draft', 'existing']);
+    });
 });
 
 describe('EditFieldDialog basemap behavior', () => {

@@ -91,6 +91,24 @@ function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: strin
   return aStart <= bEnd && bStart <= aEnd;
 }
 
+export function sortVegetationCyclesForDisplay(cycles: VegetationCycleForm[]) {
+  return [...cycles].sort((a, b) => {
+    const aIsDraft = !a.cropName && !a.plantingDate;
+    const bIsDraft = !b.cropName && !b.plantingDate;
+
+    if (aIsDraft !== bIsDraft) {
+      return aIsDraft ? -1 : 1;
+    }
+
+    const yearDiff = (b.year ?? 0) - (a.year ?? 0);
+    if (yearDiff !== 0) return yearDiff;
+
+    const aDate = a.plantingDate || '9999-12-31';
+    const bDate = b.plantingDate || '9999-12-31';
+    return bDate.localeCompare(aDate);
+  });
+}
+
 function getOverlapRanges(
   currentCycleId: string,
   allCycles: VegetationCycleForm[],
@@ -776,13 +794,7 @@ export default function EditFieldDialog({
                                   { cycles.length === 0 && (
                                     <p className="text-sm text-muted-foreground">No vegetation cycles added yet.</p>
                                   ) }
-                                  { cycles.slice().sort((a, b) => {
-                                      const yearDiff = (b.year ?? 0) - (a.year ?? 0);
-                                      if (yearDiff !== 0) return yearDiff;
-                                      const aDate = a.plantingDate || '9999-12-31';
-                                      const bDate = b.plantingDate || '9999-12-31';
-                                      return bDate.localeCompare(aDate);
-                                    }).map((cycle) => (
+                                  { sortVegetationCyclesForDisplay(cycles).map((cycle) => (
                                     <CycleCard
                                       key={ `${cycle.id}-${cycle.cropName}` }
                                       cycle={ cycle }

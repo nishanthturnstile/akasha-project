@@ -259,7 +259,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Create season"
-          className="glass fixed left-1/2 top-[12vh] z-modal w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg p-0"
+          className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-0 sm:w-[calc(100vw-2rem)] lg:max-w-2xl"
         >
           <VisuallyHidden>
             <Dialog.Title>Create season</Dialog.Title>
@@ -328,7 +328,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
               { nameError && <p className="text-sm text-destructive">{ nameError }</p> }
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-sm">Start date <span className="text-destructive">*</span></label>
                 <DatePicker
@@ -450,14 +450,14 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
             { error && <p className="text-sm text-destructive">{ error }</p> }
 
-            <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-              <Button variant="outline" size="lg" className="min-w-[120px]" onClick={handleCancel}>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border/60 pt-3">
+              <Button variant="outline" size="lg" className="min-w-[120px] flex-1 sm:flex-none" onClick={handleCancel}>
                 Cancel
               </Button>
               <Button
                 variant="primary"
                 size="lg"
-                className="min-w-[120px]"
+                className="min-w-[120px] flex-1 sm:flex-none"
                 onClick={ handleCreate }
                 disabled={ !canCreate || createSeason.isPending }
               >

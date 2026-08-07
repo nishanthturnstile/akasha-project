@@ -606,24 +606,24 @@ export default function EditFieldDialog({
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
-          className="glass fixed left-1/2 top-[8vh] z-modal w-[min(72rem,calc(100vw-3rem))] -translate-x-1/2 overflow-y-auto max-h-[88vh] rounded-xl p-0"
+          className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl p-0 sm:w-[calc(100vw-2rem)] lg:w-[min(72rem,calc(100vw-3rem))]"
         >
           <VisuallyHidden>
             <Dialog.Title>Edit field</Dialog.Title>
             <Dialog.Description>Edit field name and adjust its boundary on the map.</Dialog.Description>
           </VisuallyHidden>
 
-          <div className="flex items-center justify-between border-b-2 border-border/60 px-6 py-4">
+          <div className="flex items-center justify-between border-b-2 border-border/60 px-4 py-3 sm:px-6 sm:py-4">
             <h3 className="text-lg font-display font-semibold">Edit field</h3>
             <button aria-label="Close" onClick={ handleCancel } className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/40">
               <X className="size-5" />
             </button>
           </div>
 
-          <div className="p-6 space-y-6">
-            <div className="grid grid-cols-2 gap-6">
+          <div className="p-4 space-y-6 sm:p-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               {/* Left column: mini-map with polygon edit */ }
-              <div className="min-h-[200px]">
+              <div className="h-64 min-h-[200px] lg:h-auto">
                 { basemapResolution.error ? (
                   <div
                     className="flex min-h-50 items-center justify-center rounded-xl border-2 border-destructive/60 bg-destructive/10 p-4 text-center text-sm text-destructive"
@@ -675,7 +675,7 @@ export default function EditFieldDialog({
 
               {/* Right column: field details */ }
               <div className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">Field name</label>
                     <input
@@ -811,7 +811,7 @@ export default function EditFieldDialog({
             { error && <p className="text-sm text-destructive">{ error }</p> }
 
             <div className="rounded-lg border-2 border-border/60 bg-muted/10 p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <Button
                   variant="outline"
                   size="lg"
@@ -821,11 +821,11 @@ export default function EditFieldDialog({
                   <Trash2 className="size-4 mr-1.5" />
                   Delete field
                 </Button>
-                <div className="flex items-center gap-3">
-                  <Button variant="outline" size="lg" className="min-w-[120px]" onClick={ handleCancel }>
+                <div className="flex w-full items-center justify-end gap-3 sm:w-auto">
+                  <Button variant="outline" size="lg" className="min-w-[120px] flex-1 sm:flex-none" onClick={ handleCancel }>
                     Cancel
                   </Button>
-                  <Button variant="primary" size="lg" onClick={ handleSave } disabled={ saving || hasAnyOverlap } className="min-w-[120px]">
+                  <Button variant="primary" size="lg" onClick={ handleSave } disabled={ saving || hasAnyOverlap } className="min-w-[120px] flex-1 sm:flex-none">
                     { saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null }
                     { saving ? 'Saving…' : 'Save' }
                   </Button>
@@ -1070,7 +1070,7 @@ function CycleCard({
         </Select>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
         <div ref={ varietyRef } className="relative">
           <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Variety</label>
           <button
@@ -1134,7 +1134,7 @@ function CycleCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{ dateLabel }</label>
           <DatePicker

@@ -138,7 +138,7 @@ function PopoverButton({
                 ) }
             >
                 { icon }
-                <span className="max-w-40 truncate">
+                <span className="max-w-24 truncate sm:max-w-40">
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                         { label }
                     </span>
@@ -156,7 +156,7 @@ function PopoverButton({
                     aria-label={ ariaLabel ?? label }
                     style={ { maxHeight: 'var(--layer-popover-max-height, 14rem)' } }
                     className={ cn(
-                        'glass absolute bottom-full z-popover mb-2 min-w-56 overflow-y-auto overscroll-contain rounded-md p-3 shadow-e2',
+                        'glass absolute bottom-full z-popover mb-2 w-[calc(100vw-2rem)] max-w-xs overflow-y-auto overscroll-contain rounded-md p-3 shadow-e2 sm:w-auto sm:min-w-56',
                         align === 'end' && 'right-0',
                         align === 'start' && 'left-0',
                         align === 'center' && 'left-1/2 -translate-x-1/2',
@@ -345,10 +345,10 @@ export function LayerControlBar({
                 value={ activeSourceLabel }
                 ariaLabel="Imagery source"
                 testId="layer-source-trigger"
-                align="start"
+                align="end"
                 disabled={ !sources || sources.length === 0 }
             >
-                <div className="min-w-56">
+                <div className="w-full min-w-0">
                     <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Source
                     </p>
@@ -409,10 +409,10 @@ export function LayerControlBar({
                 value={ modeLabel(displayMode) }
                 ariaLabel="Display mode"
                 testId="layer-display-trigger"
-                align="start"
+                align="end"
                 disabled={ displayModes.length <= 1 }
             >
-                <div className="min-w-48">
+                <div className="w-full min-w-0">
                     <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Layer
                     </p>

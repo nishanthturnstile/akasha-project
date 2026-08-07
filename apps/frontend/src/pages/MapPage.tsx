@@ -698,6 +698,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     mapDiscoveryFilters,
     seasonId,
     selectedPlotId,
+    view.discoveryRefreshNonce,
   ]);
 
   useEffect(() => {

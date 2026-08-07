@@ -10,6 +10,7 @@ import { LatestImageryControl } from '@/components/map/LatestImageryControl';
 import { FieldDrawController, type DrawShapeMode, type FieldDrawMode } from '@/components/fields/FieldDrawController';
 import { FieldBoundaryLayer } from '@/components/fields/FieldBoundaryLayer';
 import { FieldThumbnail } from '@/components/fields/GlobalViewPanel';
+import { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   AlertDialogAction,
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { polygonAreaMeters } from '@/lib/measure';
 import { useConfig, useCreateField, useFields, useNextFieldName, useSeasons, queryKeys } from '@/lib/queries';
+import { useMapView } from '@/state/useMapView';
 import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import lineIntersect from '@turf/line-intersect';
 import type maplibregl from 'maplibre-gl';
@@ -140,6 +142,7 @@ function returnImagerySearch(searchParams: URLSearchParams): string {
 
 export default function FieldCreatePage() {
   const navigate = useNavigate();
+  const view = useMapView();
   const configQ = useConfig();
   const seasonsQ = useSeasons();
   const createFieldMutation = useCreateField();
@@ -345,12 +348,22 @@ export default function FieldCreatePage() {
 
       queryClient.setQueryData<Field[]>(queryKeys.fields, (old) => [...(old ?? []), ...createdFields]);
 
+      // Land in Global View for the season the fields were added to, so the
+      // newly created fields are immediately visible in the season's field list.
+      // Also record the first created field as the season's last field and select
+      // it in the map view, so opening Field Analytics shows the new boundary
+      // instead of a blank "No field selected" state.
+      const firstCreated = createdFields[0];
+      if (selectedSeasonId) {
+        try { window.sessionStorage.setItem('akasha.seasonId', selectedSeasonId); } catch { /* storage unavailable */ }
+        setLastFieldForSeason(selectedSeasonId, firstCreated.id);
+      }
+      view.setSelectedPlotId(firstCreated.id);
       const imagerySearch = returnImagerySearch(searchParams);
-      const baseUrl = `/monitoring/field-analytics/field/${createdFields[0].id}`;
       const allParams = new URLSearchParams(imagerySearch.startsWith('?') ? imagerySearch.slice(1) : '');
       if (selectedSeasonId) allParams.set('seasonId', selectedSeasonId);
       const queryString = allParams.toString();
-      navigate(queryString ? `${baseUrl}?${queryString}` : baseUrl);
+      navigate(queryString ? `/monitoring/field-analytics?${queryString}` : '/monitoring/field-analytics');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to save fields';
       setBatchError(message);

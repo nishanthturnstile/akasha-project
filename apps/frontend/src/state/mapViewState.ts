@@ -64,6 +64,12 @@ export interface MapViewState {
     radarEvidenceVisible: boolean;
     /** Field id hovered in the Global View panel, so the map can highlight it. */
     hoveredFieldId: string | null;
+    /**
+     * Monotonic counter bumped when discovery data changes outside the map (e.g. a
+     * field is deleted) so the Global View map source refetches instead of waiting
+     * for the next `moveend`.
+     */
+    discoveryRefreshNonce: number;
 }
 
 export const initialMapViewState: MapViewState = {
@@ -102,6 +108,7 @@ export const initialMapViewState: MapViewState = {
     globalViewOpen: false,
     radarEvidenceVisible: false,
     hoveredFieldId: null,
+    discoveryRefreshNonce: 0,
 };
 
 export interface MapViewContextValue extends MapViewState {
@@ -136,6 +143,7 @@ export interface MapViewContextValue extends MapViewState {
     setGlobalViewOpen: (open: boolean) => void;
     setRadarEvidenceVisible: (visible: boolean) => void;
     setHoveredFieldId: (fieldId: string | null) => void;
+    bumpDiscoveryRefresh: () => void;
 }
 
 export const MapViewContext = createContext<MapViewContextValue | null>(null);

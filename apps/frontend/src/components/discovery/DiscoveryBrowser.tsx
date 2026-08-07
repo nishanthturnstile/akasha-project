@@ -700,7 +700,15 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
             );
           }}
           saving={savingField}
-          onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
+          onDelete={async (fieldId) => {
+            try {
+              await deleteField.mutateAsync(fieldId);
+              if (view.selectedPlotId === fieldId) view.setSelectedPlotId(null);
+              view.bumpDiscoveryRefresh();
+            } catch {
+              // Error surfaced by mutation/query state.
+            }
+          }}
           initialSeasonId={seasonId ?? undefined}
         />
       )}
@@ -717,6 +725,8 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
               if (!deletingField) return;
               try {
                 await deleteField.mutateAsync(deletingField.id);
+                if (view.selectedPlotId === deletingField.id) view.setSelectedPlotId(null);
+                view.bumpDiscoveryRefresh();
               } catch {
                 // Error surfaced by mutation/query state.
               }

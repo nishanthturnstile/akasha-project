@@ -2,9 +2,18 @@ import { Pencil } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogRoot,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { AddFieldDropdown } from '@/components/fields/AddFieldDropdown';
-import { FieldThumbnail, getLastFieldPerSeason } from '@/components/fields/GlobalViewPanel';
+import { FieldThumbnail, getLastFieldPerSeason, setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import EditFieldDialog from '@/components/seasons/EditFieldDialog';
 import MapPage from '@/pages/MapPage';
 import { IndexPanel } from '@/components/scaffold/IndexPanel';
@@ -64,6 +73,8 @@ export default function FieldAnalyticsPage() {
     radarEvidenceVisible,
     setRadarEvidenceVisible,
     setMapFullscreen,
+    setGlobalViewOpen,
+    setOverlaysVisible,
   } = useMapView();
 
   const prevPlotId = useRef<string | null>(null);
@@ -83,6 +94,8 @@ export default function FieldAnalyticsPage() {
   const [editFieldOpen, setEditFieldOpen] = useState(false);
   const [initialVegSeasonId, setInitialVegSeasonId] = useState<string | undefined>(undefined);
   const [savingField, setSavingField] = useState(false);
+  const [noFieldsOpen, setNoFieldsOpen] = useState(false);
+  const [lastPromptedSeasonId, setLastPromptedSeasonId] = useState<string | null>(null);
 
   const selectedField = useMemo(() => {
     if (!selectedPlotId || !fieldsQ.data) return null;
@@ -149,7 +162,39 @@ export default function FieldAnalyticsPage() {
     return fieldsQ.data.filter((f) => f.seasonIds?.includes(seasonId)) ?? [];
   }, [fieldsQ.data, seasonId]);
 
-  // On mount, auto-select the last field for this season from Global View
+  // If the active season has no fields and the user is in the field-analytics
+  // (map workspace) view, alert them once per visit and offer to draw a field on
+  // the map or dismiss into Global View. Never prompt while in Global View —
+  // `overlaysVisible` is false there (see AppShell `setGlobalViewMode`). State
+  // is adjusted during render (React-recommended; same pattern as AppShell
+  // `trackedGroup`) rather than in an effect to avoid cascading render commits.
+  const emptySeasonPrompt = Boolean(
+    overlaysVisible && seasonId && fieldsQ.isSuccess && seasonFields.length === 0,
+  );
+  if (noFieldsOpen && !emptySeasonPrompt) {
+    setNoFieldsOpen(false);
+  } else if (emptySeasonPrompt && seasonId && lastPromptedSeasonId !== seasonId) {
+    setLastPromptedSeasonId(seasonId);
+    setNoFieldsOpen(true);
+  } else if (!emptySeasonPrompt && seasonId && lastPromptedSeasonId === seasonId) {
+    setLastPromptedSeasonId(null);
+  }
+
+  // A selected field that is not part of the active season (a stale selection
+  // restored from localStorage, a deleted field, or an empty season) must not
+  // draw a stray boundary on the map. Clear it while in the field-analytics
+  // workspace (`overlaysVisible`); Global View deliberately keeps selections
+  // for highlighting. Runs before the auto-select effect below so a stale
+  // selection is removed in the same commit it could otherwise be re-picked.
+  const staleSelectionInAnalytics = Boolean(
+    overlaysVisible && seasonId && fieldsQ.isSuccess && selectedPlotId
+    && !(selectedField && selectedField.seasonIds?.includes(seasonId)),
+  );
+  useEffect(() => {
+    if (staleSelectionInAnalytics) clearSelectedPlot();
+  }, [clearSelectedPlot, staleSelectionInAnalytics]);
+
+  // On mount, auto-select a field for this season from Global View
   // so the map shows a field boundary instead of a blank "No field selected" state.
   const autoSelectedSeason = useRef<string | null>(null);
   useEffect(() => {
@@ -159,11 +204,18 @@ export default function FieldAnalyticsPage() {
     autoSelectedSeason.current = seasonId;
     const lastFieldMap = getLastFieldPerSeason();
     const lastFieldId = lastFieldMap[seasonId];
-    if (!lastFieldId) return;
-    if (!fieldsQ.data.some((f) => f.id === lastFieldId)) return;
-    setSelectedPlotId(lastFieldId);
+    const fieldId = lastFieldId && seasonFields.some((f) => f.id === lastFieldId)
+      ? lastFieldId
+      : seasonFields.length > 0
+        ? seasonFields.reduce((a, b) =>
+          new Date(b.createdAt ?? 0).getTime() > new Date(a.createdAt ?? 0).getTime() ? b : a,
+        ).id
+        : null;
+    if (!fieldId) return;
+    setLastFieldForSeason(seasonId, fieldId);
+    setSelectedPlotId(fieldId);
     setFocusNonce(Date.now());
-  }, [selectedPlotId, seasonId, fieldsQ.data, setSelectedPlotId, setFocusNonce]);
+  }, [seasonFields, selectedPlotId, seasonId, fieldsQ.data, setSelectedPlotId, setFocusNonce]);
 
   const navigateWithImageryState = useCallback((path: string) => {
     const [pathname, query = ''] = path.split('?');
@@ -306,6 +358,33 @@ export default function FieldAnalyticsPage() {
           initialSeasonId={ initialVegSeasonId }
         />
       ) }
+
+      <AlertDialogRoot open={ noFieldsOpen } onOpenChange={ setNoFieldsOpen }>
+        <AlertDialogContent>
+          <AlertDialogTitle>No fields in this season</AlertDialogTitle>
+          <AlertDialogDescription>
+            This season doesn't have any fields yet. Draw a field on the map to get started.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={ () => {
+              setNoFieldsOpen(false);
+              setGlobalViewOpen(true);
+              setOverlaysVisible(false);
+            } }>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={ () => {
+                setNoFieldsOpen(false);
+                navigate(`/monitoring/field-create?mode=draw&seasonId=${seasonId ?? ''}`);
+              } }
+            >
+              Draw field
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
 
     </div>
   );

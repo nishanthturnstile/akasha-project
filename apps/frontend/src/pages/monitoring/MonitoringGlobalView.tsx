@@ -146,7 +146,7 @@ function SourceRow({ source }: { source: ImagerySourceMonitoringSource }) {
         <div className="mt-1 text-xs text-muted-foreground">{ source.sourceId }</div>
       </td>
       <td className="py-3 pr-4"><StatusPill source={ source } /></td>
-      <td className="py-3 pr-4 text-sm">
+      <td className="hidden py-3 pr-4 text-sm md:table-cell">
         <div>{ formatDate(source.latestAvailableDate) }</div>
         <div className="text-xs text-muted-foreground">
           { source.daysSinceLatestAvailable === null || source.daysSinceLatestAvailable === undefined
@@ -154,13 +154,13 @@ function SourceRow({ source }: { source: ImagerySourceMonitoringSource }) {
             : `${source.daysSinceLatestAvailable} day(s) ago` }
         </div>
       </td>
-      <td className="py-3 pr-4 text-sm">
+      <td className="hidden py-3 pr-4 text-sm md:table-cell">
         <div>{ formatDate(source.latestSuccessfulCompositeDate) }</div>
         <div className="text-xs text-muted-foreground">
           { source.latestSuccessfulCompositeAoiId ?? 'no AOI success' }
         </div>
       </td>
-      <td className="py-3 pr-4 text-sm">
+      <td className="hidden py-3 pr-4 text-sm lg:table-cell">
         <div>{ formatDate(source.latestSuccessfulSearchUpdatedAt) }</div>
         <div className="text-xs text-muted-foreground">
           { source.daysSinceLatestSuccessfulSearch === null
@@ -169,17 +169,17 @@ function SourceRow({ source }: { source: ImagerySourceMonitoringSource }) {
             : `${source.daysSinceLatestSuccessfulSearch} day(s) ago` }
         </div>
       </td>
-      <td className="py-3 pr-4 text-sm">
+      <td className="hidden py-3 pr-4 text-sm md:table-cell">
         <div>{ formatNumber(source.coveragePercent, 1) }%</div>
         <div className="text-xs text-muted-foreground">
           usable { formatNumber(source.usablePixelPercent, 1) }%
         </div>
       </td>
-      <td className="py-3 pr-4 text-sm">
+      <td className="hidden py-3 pr-4 text-sm lg:table-cell">
         <div>{ source.tileAvailableDateCount } / { source.dateCount }</div>
         <div className="text-xs text-muted-foreground">{ source.refreshPolicy ?? 'manual' }</div>
       </td>
-      <td className="py-3 pr-4"><LatestJobPill source={ source } /></td>
+      <td className="hidden py-3 pr-4 lg:table-cell"><LatestJobPill source={ source } /></td>
       <td className="py-3 text-sm text-muted-foreground">
         { reasons.length ? reasons.slice(0, 3).join(' | ') : 'No active warning' }
       </td>
@@ -298,17 +298,17 @@ export default function MonitoringGlobalView() {
               <h2 className="text-lg font-semibold">Source refresh status</h2>
               <p className="text-sm text-muted-foreground">{ sources.length } registered source(s)</p>
             </div>
-            <table className="mt-3 min-w-280 w-full text-left text-sm">
+            <table className="mt-3 min-w-full w-full text-left text-sm md:min-w-[50rem] lg:min-w-[80rem]">
               <thead className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-4">Source</th>
                   <th className="py-2 pr-4">State</th>
-                  <th className="py-2 pr-4">Latest catalog</th>
-                  <th className="py-2 pr-4">Composite success</th>
-                  <th className="py-2 pr-4">Search heartbeat</th>
-                  <th className="py-2 pr-4">Coverage</th>
-                  <th className="py-2 pr-4">Tiles</th>
-                  <th className="py-2 pr-4">Latest job</th>
+                  <th className="hidden py-2 pr-4 md:table-cell">Latest catalog</th>
+                  <th className="hidden py-2 pr-4 md:table-cell">Composite success</th>
+                  <th className="hidden py-2 pr-4 lg:table-cell">Search heartbeat</th>
+                  <th className="hidden py-2 pr-4 md:table-cell">Coverage</th>
+                  <th className="hidden py-2 pr-4 lg:table-cell">Tiles</th>
+                  <th className="hidden py-2 pr-4 lg:table-cell">Latest job</th>
                   <th className="py-2">Reason</th>
                 </tr>
               </thead>
@@ -326,7 +326,7 @@ export default function MonitoringGlobalView() {
                   { formatNumber(zeroByteCount) } zero-byte object(s)
                 </p>
               </div>
-              <table className="mt-3 min-w-130 w-full text-left text-sm">
+              <table className="mt-3 min-w-full w-full text-left text-sm md:min-w-[30rem]">
                 <thead className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                   <tr>
                     <th className="py-2 pr-4">Prefix</th>

@@ -105,11 +105,11 @@ function JobRow({ job }: { job: IngestionJobSummary }) {
           <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />
         </Link>
       </td>
-      <td className="py-3 pr-4 text-sm">
+      <td className="hidden py-3 pr-4 text-sm md:table-cell">
         <div className="font-medium">{ job.sourceId }</div>
         { job.provider && <div className="mt-0.5 text-xs text-muted-foreground">{ job.provider }</div> }
       </td>
-      <td className="py-3 pr-4 text-sm text-muted-foreground">{ job.aoiId ?? '—' }</td>
+      <td className="hidden py-3 pr-4 text-sm text-muted-foreground md:table-cell">{ job.aoiId ?? '—' }</td>
       <td className="py-3 pr-4">
         <Badge variant={ variant } className="inline-flex items-center gap-1">
           <StateIcon state={ job.state } />
@@ -119,13 +119,13 @@ function JobRow({ job }: { job: IngestionJobSummary }) {
           <div className="mt-1 text-xs text-destructive">{ failureKind }</div>
         ) }
       </td>
-      <td className="py-3 pr-4 text-xs text-muted-foreground">
+      <td className="hidden py-3 pr-4 text-xs text-muted-foreground md:table-cell">
         <div>{ fmtDate(job.windowStart) }</div>
         { job.windowEnd && job.windowEnd !== job.windowStart && (
           <div className="text-[11px]">→ { fmtDate(job.windowEnd) }</div>
         ) }
       </td>
-      <td className="py-3 pr-4">
+      <td className="hidden py-3 pr-4 lg:table-cell">
         <div className="grid grid-cols-4 gap-x-2 text-center text-xs">
           <span title="Found" className="text-muted-foreground">
             <span className="block font-semibold text-foreground">{ fmtCount(job.foundCount) }</span>
@@ -145,7 +145,7 @@ function JobRow({ job }: { job: IngestionJobSummary }) {
           </span>
         </div>
       </td>
-      <td className="py-3 pr-4 text-xs text-muted-foreground">
+      <td className="hidden py-3 pr-4 text-xs text-muted-foreground lg:table-cell">
         { message
           ? <span className="line-clamp-2 max-w-55">{ message }</span>
           : '—' }
@@ -331,19 +331,19 @@ export default function IngestionJobsList() {
                   No ingestion jobs match the current filters.
                 </p>
               ) : (
-                <table className="mt-3 min-w-225 w-full text-left text-sm">
+                <table className="mt-3 min-w-full w-full text-left text-sm md:min-w-[45rem] lg:min-w-[70rem]">
                   <thead className="sticky top-0 bg-card/95 text-xs uppercase tracking-[0.14em] text-muted-foreground">
                     <tr>
                       <th className="py-2 pr-4">Job ID</th>
-                      <th className="py-2 pr-4">Source / Provider</th>
-                      <th className="py-2 pr-4">AOI</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">Source / Provider</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">AOI</th>
                       <th className="py-2 pr-4">State</th>
-                      <th className="py-2 pr-4">Window</th>
-                      <th className="py-2 pr-4">
+                      <th className="hidden py-2 pr-4 md:table-cell">Window</th>
+                      <th className="hidden py-2 pr-4 lg:table-cell">
                         <Download className="inline h-3 w-3 mr-1" aria-hidden="true" />
                         Counts
                       </th>
-                      <th className="py-2 pr-4">Message</th>
+                      <th className="hidden py-2 pr-4 lg:table-cell">Message</th>
                       <th className="py-2">Updated</th>
                     </tr>
                   </thead>

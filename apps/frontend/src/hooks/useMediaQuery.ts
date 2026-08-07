@@ -41,3 +41,8 @@ export function useMediaQuery(query: string): boolean {
 export function useIsDesktop(): boolean {
   return useMediaQuery('(min-width: 768px)');
 }
+
+/** Tailwind `lg` breakpoint. Above this the AppShell uses the desktop rail + side panels. */
+export function useIsLargeScreen(): boolean {
+  return useMediaQuery('(min-width: 1024px)');
+}

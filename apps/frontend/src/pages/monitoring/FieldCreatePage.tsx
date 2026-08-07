@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, Circle, Loader2, Minus, Pencil, Plus, Scissors, Square, Trash2, Undo2, X } from 'lucide-react';
+import { useIsLargeScreen } from '@/hooks/useMediaQuery';
+import {
+  SheetRoot,
+  SheetContent,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import { ArrowLeft, Circle, Loader2, Minus, PanelRight, Pencil, Plus, Scissors, Square, Trash2, Undo2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MapLayerManager } from '@/components/map/MapLayerManager';
@@ -28,7 +35,7 @@ import { BasemapConfigurationError, resolveBasemapConfig } from '@/map/basemap';
 import lineIntersect from '@turf/line-intersect';
 import type maplibregl from 'maplibre-gl';
 import type { ActiveMapTool, MapToolOwner } from '@/components/map/mapToolState';
-import type { Field, GeoJsonPosition, PlotGeometry, SceneCandidate, VegetationCycleCreate } from '@/types/api';
+import type { Field, GeoJsonPosition, PlotGeometry, SceneCandidate, Season, VegetationCycleCreate } from '@/types/api';
 import type { SatelliteScene } from '@/lib/satelliteLayer';
 import type { TerraDraw, GeoJSONStoreGeometries } from 'terra-draw';
 import CreateSeasonDialog from '@/components/seasons/CreateSeasonDialog';
@@ -140,6 +147,139 @@ function returnImagerySearch(searchParams: URLSearchParams): string {
   return query ? `?${query}` : '';
 }
 
+interface FieldCreateSidePanelProps {
+  pendingFields: PendingField[];
+  selectedSeasonId: string | null;
+  allSeasons: Season[];
+  isBatchSaving: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+  onEdit: (field: PendingField) => void;
+  onDelete: (field: PendingField) => void;
+}
+
+function FieldCreateSidePanel({
+  pendingFields,
+  selectedSeasonId,
+  allSeasons,
+  isBatchSaving,
+  onSave,
+  onCancel,
+  onEdit,
+  onDelete,
+}: FieldCreateSidePanelProps) {
+  return (
+    <div className="flex h-full flex-col bg-background/95">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
+        <h3 className="font-display text-sm font-semibold text-foreground">Fields to add</h3>
+        { pendingFields.length > 0 && (
+          <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-[11px] font-medium text-primary">
+            { pendingFields.length }
+          </span>
+        ) }
+      </div>
+
+      <ScrollArea className="flex-1">
+        { pendingFields.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+            <p className="text-sm text-muted-foreground">Draw a field on the map to add it here.</p>
+            <p className="text-xs text-muted-foreground/60">You can add multiple fields before saving.</p>
+          </div>
+        ) : (
+          <div className="p-3 space-y-2">
+            { pendingFields.map((pf) => {
+              const area = pf.geometry.type === 'Polygon'
+                ? polygonAreaMeters(toLngLatRing(pf.geometry.coordinates[0] ?? [])) / 10000
+                : 0;
+              return (
+                <div
+                  key={ pf.id }
+                  className="grid grid-cols-[52px_1fr_auto] gap-x-3 rounded-lg border border-border/70 bg-card/35 px-4 py-4 transition-colors duration-fast"
+                >
+                  <div className="row-span-2 self-center">
+                    <FieldThumbnail geometry={ pf.geometry } size={ 52 } />
+                  </div>
+                  <p className="min-w-0 self-center truncate text-base font-semibold text-foreground">
+                    { pf.name }
+                  </p>
+                  <div className="flex items-center gap-1 self-center justify-self-end">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={ (e) => { e.stopPropagation(); onEdit(pf); } }
+                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors duration-fast"
+                          aria-label={ `Edit ${pf.name}` }
+                        >
+                          <Pencil className="size-4" strokeWidth={ 1.75 } />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left">Edit</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={ (e) => { e.stopPropagation(); onDelete(pf); } }
+                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-fast"
+                          aria-label={ `Delete ${pf.name}` }
+                        >
+                          <Trash2 className="size-4" strokeWidth={ 1.75 } />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left">Delete</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <span className="self-center truncate text-xs text-muted-foreground">{ area.toFixed(1) } ha</span>
+                  <span />
+                </div>
+              );
+            }) }
+          </div>
+        ) }
+      </ScrollArea>
+
+      <div className="shrink-0 border-t border-border/60 px-4 py-3 space-y-2">
+        { selectedSeasonId && (
+          <p className="text-[12px] text-muted-foreground">
+            Season: <span className="font-medium text-foreground">
+              { allSeasons.find((s) => s.id === selectedSeasonId)?.name ?? 'Unknown' }
+            </span>
+          </p>
+        ) }
+        <Button
+          type="button"
+          variant="primary"
+          size="lg"
+          className="w-full"
+          onClick={ onSave }
+          disabled={ pendingFields.length === 0 || !selectedSeasonId || isBatchSaving }
+        >
+          { isBatchSaving ? (
+            <>
+              <Loader2 className="size-4 animate-spin mr-1.5" />
+              Saving…
+            </>
+          ) : (
+            `Save ${pendingFields.length > 0 ? `${pendingFields.length} field${pendingFields.length > 1 ? 's' : ''}` : 'all'}`
+          ) }
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="lg"
+          className="w-full"
+          onClick={ onCancel }
+          disabled={ isBatchSaving }
+        >
+          <X className="size-4 mr-1.5" strokeWidth={ 1.75 } />
+          Cancel drawing
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function FieldCreatePage() {
   const navigate = useNavigate();
   const view = useMapView();
@@ -170,6 +310,8 @@ export default function FieldCreatePage() {
   const [editingPendingField, setEditingPendingField] = useState<PendingField | null>(null);
   const nextFieldNumRef = useRef(0);
   const [cutMode, setCutMode] = useState(false);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const isLargeScreen = useIsLargeScreen();
   const drawInstanceRef = useRef<TerraDraw | null>(null);
   const featureToPendingRef = useRef(new Map<string, string>());
   const pendingFieldsRef = useRef<PendingField[]>([]);
@@ -222,6 +364,7 @@ export default function FieldCreatePage() {
     const pendingId = nextTempId();
     const newField = { id: pendingId, geometry, name, vegetationData: [] };
     setPendingFields((prev) => [...prev, newField]);
+    setMobilePanelOpen(true);
     if (featureId) {
       featureToPendingRef.current.set(featureId, pendingId);
     }
@@ -763,115 +906,55 @@ export default function FieldCreatePage() {
           ) }
         </div>
 
-        {/* Side panel — always visible in multi-draw mode */ }
-        <div className="w-80 shrink-0 border-l border-border bg-background/95 flex flex-col">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
-            <h3 className="font-display text-sm font-semibold text-foreground">Fields to add</h3>
-            { pendingFields.length > 0 && (
-              <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-[11px] font-medium text-primary">
-                { pendingFields.length }
-              </span>
-            ) }
+        {/* Side panel — desktop inline, mobile sheet */ }
+        { isLargeScreen ? (
+          <div className="hidden lg:flex w-80 shrink-0 flex-col border-l border-border bg-background/95">
+            <FieldCreateSidePanel
+              pendingFields={ pendingFields }
+              selectedSeasonId={ selectedSeasonId }
+              allSeasons={ allSeasons }
+              isBatchSaving={ isBatchSaving }
+              onSave={ () => void saveAll() }
+              onCancel={ () => { if (pendingFields.length > 0) setLeaveAlertOpen(true); else handleClose(); } }
+              onEdit={ setEditingPendingField }
+              onDelete={ setDeleteAlertField }
+            />
           </div>
-
-          <ScrollArea className="flex-1">
-            { pendingFields.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                <p className="text-sm text-muted-foreground">Draw a field on the map to add it here.</p>
-                <p className="text-xs text-muted-foreground/60">You can add multiple fields before saving.</p>
-              </div>
-            ) : (
-              <div className="p-3 space-y-2">
-                { pendingFields.map((pf) => {
-                  const area = pf.geometry.type === 'Polygon'
-                    ? polygonAreaMeters(toLngLatRing(pf.geometry.coordinates[0] ?? [])) / 10000
-                    : 0;
-                  return (
-                    <div
-                      key={ pf.id }
-                      className="grid grid-cols-[52px_1fr_auto] gap-x-3 rounded-lg border border-border/70 bg-card/35 px-4 py-4 transition-colors duration-fast"
-                    >
-                      <div className="row-span-2 self-center">
-                        <FieldThumbnail geometry={ pf.geometry } size={ 52 } />
-                      </div>
-                      <p className="min-w-0 self-center truncate text-base font-semibold text-foreground">
-                        { pf.name }
-                      </p>
-                      <div className="flex items-center gap-1 self-center justify-self-end">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={ (e) => { e.stopPropagation(); setEditingPendingField(pf); } }
-                              className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors duration-fast"
-                              aria-label={ `Edit ${pf.name}` }
-                            >
-                              <Pencil className="size-4" strokeWidth={ 1.75 } />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">Edit</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={ (e) => { e.stopPropagation(); setDeleteAlertField(pf); } }
-                              className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-fast"
-                              aria-label={ `Delete ${pf.name}` }
-                            >
-                              <Trash2 className="size-4" strokeWidth={ 1.75 } />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">Delete</TooltipContent>
-                        </Tooltip>
-                      </div>
-                      <span className="self-center truncate text-xs text-muted-foreground">{ area.toFixed(1) } ha</span>
-                      <span />
-                    </div>
-                  );
-                }) }
-              </div>
-            ) }
-          </ScrollArea>
-
-          <div className="shrink-0 border-t border-border/60 px-4 py-3 space-y-2">
-            { selectedSeasonId && (
-              <p className="text-[12px] text-muted-foreground">
-                Season: <span className="font-medium text-foreground">
-                  { allSeasons.find((s) => s.id === selectedSeasonId)?.name ?? 'Unknown' }
+        ) : (
+          <>
+            <SheetRoot open={ mobilePanelOpen } onOpenChange={ setMobilePanelOpen } modal={ false }>
+              <SheetContent hideClose className="p-0">
+                <div className="sr-only">
+                  <SheetTitle>Fields to add</SheetTitle>
+                  <SheetDescription>Review and save the fields drawn on the map.</SheetDescription>
+                </div>
+                <FieldCreateSidePanel
+                  pendingFields={ pendingFields }
+                  selectedSeasonId={ selectedSeasonId }
+                  allSeasons={ allSeasons }
+                  isBatchSaving={ isBatchSaving }
+                  onSave={ () => void saveAll() }
+                  onCancel={ () => { if (pendingFields.length > 0) setLeaveAlertOpen(true); else handleClose(); } }
+                  onEdit={ setEditingPendingField }
+                  onDelete={ setDeleteAlertField }
+                />
+              </SheetContent>
+            </SheetRoot>
+            <button
+              type="button"
+              onClick={ () => setMobilePanelOpen(true) }
+              className="absolute bottom-6 right-4 z-popover flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-e2"
+              aria-label="Review fields"
+            >
+              <PanelRight className="size-4" />
+              { pendingFields.length > 0 && (
+                <span className="flex size-5 items-center justify-center rounded-full bg-primary-foreground text-xs font-medium text-primary">
+                  { pendingFields.length }
                 </span>
-              </p>
-            ) }
-            <Button
-              type="button"
-              variant="primary"
-              size="lg"
-              className="w-full"
-              onClick={ () => void saveAll() }
-              disabled={ pendingFields.length === 0 || !selectedSeasonId || isBatchSaving }
-            >
-              { isBatchSaving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin mr-1.5" />
-                  Saving…
-                </>
-              ) : (
-                `Save ${pendingFields.length > 0 ? `${pendingFields.length} field${pendingFields.length > 1 ? 's' : ''}` : 'all'}`
               ) }
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="lg"
-              className="w-full"
-              onClick={ () => { if (pendingFields.length > 0) setLeaveAlertOpen(true); else handleClose(); } }
-              disabled={ isBatchSaving }
-            >
-              <X className="size-4 mr-1.5" strokeWidth={ 1.75 } />
-              Cancel drawing
-            </Button>
-          </div>
-        </div>
+            </button>
+          </>
+        ) }
       </div>
 
       {/* Leave confirmation dialog */ }

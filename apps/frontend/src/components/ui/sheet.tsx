@@ -28,6 +28,7 @@ SheetOverlay.displayName = 'SheetOverlay';
 /* ── Sheet Content ───────────────────────────────────────── */
 interface SheetContentProps extends ComponentPropsWithoutRef<typeof Dialog.Content> {
   side?: 'left' | 'right';
+  hideClose?: boolean;
 }
 
 const sideStyles: Record<string, string> = {
@@ -38,7 +39,7 @@ const sideStyles: Record<string, string> = {
 const SheetContent = forwardRef<
   ElementRef<typeof Dialog.Content>,
   SheetContentProps
->(({ side = 'right', className, children, ...props }, ref) => (
+>(({ side = 'right', hideClose = false, className, children, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <Dialog.Content
@@ -52,14 +53,16 @@ const SheetContent = forwardRef<
       {...props}
     >
       {children}
-      <Dialog.Close asChild>
-        <button
-          aria-label="Close"
-          className="absolute right-3 top-3 flex size-10 items-center justify-center rounded-pill text-muted-foreground transition-colors hover:bg-primary/10 hover:text-interactive"
-        >
-          <X className="size-4" />
-        </button>
-      </Dialog.Close>
+      {!hideClose && (
+        <Dialog.Close asChild>
+          <button
+            aria-label="Close"
+            className="absolute right-3 top-3 flex size-10 items-center justify-center rounded-pill text-muted-foreground transition-colors hover:bg-primary/10 hover:text-interactive"
+          >
+            <X className="size-4" />
+          </button>
+        </Dialog.Close>
+      )}
     </Dialog.Content>
   </SheetPortal>
 ));

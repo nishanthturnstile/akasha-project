@@ -339,34 +339,34 @@ function ScheduleRow({
           <div className="mt-1 text-[11px] text-muted-foreground">adapter { schedule.adapter }</div>
         ) }
       </td>
-      <td className="py-3 pr-4 text-sm text-muted-foreground">{ displayValue(schedule.provider) }</td>
-      <td className="py-3 pr-4 text-sm text-muted-foreground">{ displayValue(schedule.aoiId) }</td>
-      <td className="py-3 pr-4"><StateBadge value={ schedule.lifecycleState } /></td>
+      <td className="hidden py-3 pr-4 text-sm text-muted-foreground md:table-cell">{ displayValue(schedule.provider) }</td>
+      <td className="hidden py-3 pr-4 text-sm text-muted-foreground md:table-cell">{ displayValue(schedule.aoiId) }</td>
+      <td className="hidden py-3 pr-4 md:table-cell"><StateBadge value={ schedule.lifecycleState } /></td>
       <td className="py-3 pr-4">
         <StateBadge value={ schedule.scheduleState } />
         <div className="mt-1 text-[11px] text-muted-foreground">
           { schedule.scheduleEnabled ? 'enabled' : 'not enabled' }
         </div>
       </td>
-      <td className="py-3 pr-4"><StateBadge value={ schedule.productExposure } /></td>
-      <td className="py-3 pr-4"><StateBadge value={ schedule.validationState } /></td>
-      <td className="py-3 pr-4 text-xs text-muted-foreground whitespace-nowrap">
+      <td className="hidden py-3 pr-4 md:table-cell"><StateBadge value={ schedule.productExposure } /></td>
+      <td className="hidden py-3 pr-4 md:table-cell"><StateBadge value={ schedule.validationState } /></td>
+      <td className="hidden py-3 pr-4 text-xs text-muted-foreground whitespace-nowrap lg:table-cell">
         { fmtDateTime(schedule.lastRunAt) }
       </td>
-      <td className="py-3 pr-4 text-xs text-success whitespace-nowrap">
+      <td className="hidden py-3 pr-4 text-xs text-success whitespace-nowrap lg:table-cell">
         { fmtDateTime(schedule.lastSuccessAt) }
       </td>
-      <td className="py-3 pr-4 text-xs text-destructive whitespace-nowrap">
+      <td className="hidden py-3 pr-4 text-xs text-destructive whitespace-nowrap lg:table-cell">
         { fmtDateTime(schedule.lastFailureAt) }
       </td>
       <td className="py-3 pr-4 text-xs text-muted-foreground whitespace-nowrap">
         { fmtDateTime(schedule.nextDueAt) }
       </td>
-      <td className="py-3 pr-4 text-xs text-muted-foreground whitespace-nowrap">
+      <td className="hidden py-3 pr-4 text-xs text-muted-foreground whitespace-nowrap lg:table-cell">
         { nextWindow(schedule) }
       </td>
-      <td className="py-3 pr-4 text-xs text-muted-foreground">{ fmtCadence(schedule.cadenceDays) }</td>
-      <td className="py-3 pr-4 text-xs text-muted-foreground">
+      <td className="hidden py-3 pr-4 text-xs text-muted-foreground md:table-cell">{ fmtCadence(schedule.cadenceDays) }</td>
+      <td className="hidden py-3 pr-4 text-xs text-muted-foreground md:table-cell">
         <span className="line-clamp-2 max-w-55">
           { displayValue(schedule.dueReason) }
         </span>
@@ -541,23 +541,23 @@ export default function IngestionSchedules() {
                   No schedules match the current filters.
                 </p>
               ) : (
-                <table className="mt-3 min-w-375 w-full text-left text-sm">
+                <table className="mt-3 min-w-full w-full text-left text-sm md:min-w-[60rem] lg:min-w-[90rem]">
                   <thead className="sticky top-0 bg-card/95 text-xs uppercase tracking-[0.14em] text-muted-foreground">
                     <tr>
                       <th className="py-2 pr-4">Source ID</th>
-                      <th className="py-2 pr-4">Provider</th>
-                      <th className="py-2 pr-4">AOI</th>
-                      <th className="py-2 pr-4">Lifecycle</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">Provider</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">AOI</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">Lifecycle</th>
                       <th className="py-2 pr-4">Schedule</th>
-                      <th className="py-2 pr-4">Exposure</th>
-                      <th className="py-2 pr-4">Validation</th>
-                      <th className="py-2 pr-4">Last run</th>
-                      <th className="py-2 pr-4">Last success</th>
-                      <th className="py-2 pr-4">Last failure</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">Exposure</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">Validation</th>
+                      <th className="hidden py-2 pr-4 lg:table-cell">Last run</th>
+                      <th className="hidden py-2 pr-4 lg:table-cell">Last success</th>
+                      <th className="hidden py-2 pr-4 lg:table-cell">Last failure</th>
                       <th className="py-2 pr-4">Next due</th>
-                      <th className="py-2 pr-4">Next window</th>
-                      <th className="py-2 pr-4">Cadence</th>
-                      <th className="py-2 pr-4">Due reason</th>
+                      <th className="hidden py-2 pr-4 lg:table-cell">Next window</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">Cadence</th>
+                      <th className="hidden py-2 pr-4 md:table-cell">Due reason</th>
                       <th className="py-2 pr-4">Status</th>
                       <th className="py-2">Run</th>
                     </tr>

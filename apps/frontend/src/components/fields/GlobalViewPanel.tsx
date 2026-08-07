@@ -6,11 +6,13 @@ import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptions
 import { GeometryPreview } from '@/lib/geometry-preview';
 import { useConfig, useFields } from '@/lib/queries';
 import { useMapView } from '@/state/useMapView';
+import { cn } from '@/lib/utils';
 import type { PlotGeometry } from '@/types/api';
 
 interface Props {
   onClose: () => void;
   seasonId: string | null;
+  className?: string;
 }
 
 export function FieldThumbnail({ geometry, size = 48 }: { geometry: PlotGeometry; size?: number }) {
@@ -96,7 +98,7 @@ function LegacyFieldList({ seasonId }: { seasonId: string }) {
   );
 }
 
-export default function GlobalViewPanel({ onClose, seasonId }: Props) {
+export default function GlobalViewPanel({ onClose, seasonId, className }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('discoveryTarget') === 'scouting' ? 'scouting' : 'monitoring';
   const [addFieldOpen, setAddFieldOpen] = useState(false);
@@ -105,7 +107,7 @@ export default function GlobalViewPanel({ onClose, seasonId }: Props) {
 
   return (
     <>
-      <aside className="flex h-full min-w-0 w-full flex-col border-l border-border bg-muted/30">
+      <aside className={cn('flex h-full min-w-0 w-full flex-col border-l border-border bg-muted/30', className)}>
         <header className="border-b border-border/60 px-4 py-4">
           <div className="flex items-start justify-between">
             <div>

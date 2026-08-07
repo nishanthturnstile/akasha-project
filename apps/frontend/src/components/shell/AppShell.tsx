@@ -18,6 +18,7 @@ import { Separator } from '@/components/ui/separator';
 import {
   SheetRoot,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
@@ -31,6 +32,7 @@ import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptions
 import GlobalViewPanel, { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
+import { useIsLargeScreen } from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
 import { useAccountMe, useLogout, useSeasons, useUpdateSeason, useFields } from '@/lib/queries';
 import {
@@ -266,6 +268,7 @@ export function AppShell() {
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
   const showGlobalViewPanel = !isAdminIngestionRoute && view.globalViewOpen;
+  const isLargeScreen = useIsLargeScreen();
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
@@ -356,11 +359,11 @@ export function AppShell() {
       ) }
       <div
         className={ cn(
-          'grid h-screen w-screen overflow-hidden bg-background text-foreground lg:grid-rows-1',
+          'grid h-screen w-screen overflow-hidden bg-background text-foreground',
           'grid-cols-1 grid-rows-[auto_minmax(0,1fr)]',
-          showGlobalViewPanel
-            ? 'lg:grid-cols-[minmax(0,1fr)_20rem_var(--rail-w)]'
-            : 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]',
+          isLargeScreen && showGlobalViewPanel
+            ? 'lg:grid-cols-[minmax(0,1fr)_20rem_var(--rail-w)] lg:grid-rows-1'
+            : 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)] lg:grid-rows-1',
         ) }
         style={ { '--rail-w': railWidth } as CSSProperties }
         data-testid="product-shell"
@@ -411,8 +414,20 @@ export function AppShell() {
           </SeasonProvider>
         </section>
 
-        { showGlobalViewPanel && (
+        { isLargeScreen && showGlobalViewPanel && (
           <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewMode(false) } seasonId={ effectiveSeasonId } />
+        ) }
+
+        { !isLargeScreen && showGlobalViewPanel && (
+          <SheetRoot open onOpenChange={ (open) => { if (!open) setGlobalViewMode(false); } } modal={ false }>
+            <SheetContent hideClose className="p-0">
+              <div className="sr-only">
+                <SheetTitle>Global View</SheetTitle>
+                <SheetDescription>Season fields and scouting discovery panel.</SheetDescription>
+              </div>
+              <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewMode(false) } seasonId={ effectiveSeasonId } className="border-l-0" />
+            </SheetContent>
+          </SheetRoot>
         ) }
 
         <aside

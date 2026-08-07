@@ -76,7 +76,7 @@ export function useVegetationCycles(fieldId: string) {
     const current = vegCycleStore.get(fieldId);
     vegCycleStore.set(fieldId, {
       ...current,
-      [seasonId]: [...(current[seasonId] ?? []), newCycle],
+      [seasonId]: [newCycle, ...(current[seasonId] ?? [])],
     });
   }, [fieldId]);
 

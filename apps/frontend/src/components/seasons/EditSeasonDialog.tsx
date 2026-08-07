@@ -53,7 +53,6 @@ export default function EditSeasonDialog({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmSeasonEdit, setConfirmSeasonEdit] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string>(CUSTOM);
-  const forceCloseRef = useRef(false);
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -174,6 +173,15 @@ export default function EditSeasonDialog({
     setConfirmClose(true);
   }, []);
 
+  const handleKeepEditing = useCallback(() => {
+    setConfirmClose(false);
+  }, []);
+
+  const handleDiscardChanges = useCallback(() => {
+    setConfirmClose(false);
+    onOpenChange(false);
+  }, [onOpenChange]);
+
   const removedFieldIds = useMemo(
     () => seasonFieldIds.filter((id) => !selectedFieldIds.includes(id)),
     [seasonFieldIds, selectedFieldIds],
@@ -231,21 +239,13 @@ export default function EditSeasonDialog({
   };
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen && !forceCloseRef.current) {
+    if (!nextOpen) {
       if (confirmSeasonEdit) return;
       setConfirmClose(true);
     } else {
-      forceCloseRef.current = false;
       onOpenChange(nextOpen);
     }
   }, [onOpenChange, confirmSeasonEdit]);
-
-  useEffect(() => {
-    if (!confirmClose && forceCloseRef.current) {
-      forceCloseRef.current = false;
-      onOpenChange(false);
-    }
-  }, [confirmClose, onOpenChange]);
 
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
@@ -514,10 +514,10 @@ export default function EditSeasonDialog({
               : 'Are you sure you want to cancel editing? All unsaved changes will be lost.'}
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>
+            <AlertDialogCancel className="cursor-pointer" onClick={handleKeepEditing}>
               {dirty ? 'Keep editing' : 'No, keep editing'}
             </AlertDialogCancel>
-            <AlertDialogAction className="cursor-pointer" onClick={() => { forceCloseRef.current = true; setConfirmClose(false); }}>
+            <AlertDialogAction className="cursor-pointer" onClick={handleDiscardChanges}>
               {dirty ? 'Discard' : 'Yes, cancel'}
             </AlertDialogAction>
           </AlertDialogFooter>

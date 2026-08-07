@@ -161,7 +161,6 @@ export default function EditFieldDialog({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDeleteField, setConfirmDeleteField] = useState(false);
   const [confirmClearSeasonId, setConfirmClearSeasonId] = useState<string | null>(null);
-  const forceCloseRef = useRef(false);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
@@ -583,22 +582,23 @@ export default function EditFieldDialog({
     setConfirmClose(true);
   }, []);
 
+  const handleKeepEditing = useCallback(() => {
+    setConfirmClose(false);
+  }, []);
+
+  const handleDiscardChanges = useCallback(() => {
+    setConfirmClose(false);
+    onOpenChange(false);
+  }, [onOpenChange]);
+
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen && !forceCloseRef.current) {
+    if (!nextOpen) {
       if (confirmDeleteField || confirmClearSeasonId) return;
       setConfirmClose(true);
     } else {
-      forceCloseRef.current = false;
       onOpenChange(nextOpen);
     }
   }, [onOpenChange, confirmDeleteField, confirmClearSeasonId]);
-
-  useEffect(() => {
-    if (!confirmClose && forceCloseRef.current) {
-      forceCloseRef.current = false;
-      onOpenChange(false);
-    }
-  }, [confirmClose, onOpenChange]);
 
   return (
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
@@ -845,8 +845,8 @@ export default function EditFieldDialog({
               : 'Are you sure you want to cancel editing? All unsaved changes will be lost.' }
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={ () => setConfirmClose(false) }>{ dirty ? 'Keep editing' : 'No, keep editing' }</AlertDialogCancel>
-            <AlertDialogAction onClick={ () => { forceCloseRef.current = true; setConfirmClose(false); } }>
+            <AlertDialogCancel onClick={ handleKeepEditing }>{ dirty ? 'Keep editing' : 'No, keep editing' }</AlertDialogCancel>
+            <AlertDialogAction onClick={ handleDiscardChanges }>
               { dirty ? 'Discard' : 'Yes, cancel' }
             </AlertDialogAction>
           </AlertDialogFooter>

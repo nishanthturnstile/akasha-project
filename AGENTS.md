@@ -55,7 +55,7 @@ When an agent is asked to compare, reuse, or align patterns across Akasha projec
 
 As of the UI↔pipeline integration work, Akasha is moving to a **two-VM split**:
 
-- **`akasha-control`** — Coolify control/public-app VM. The product app (`akasha-em-git`: web
+- **`akasha-control`** — Coolify control/public-app VM. The product app (`akasha-project`: web
   gateway, FastAPI BFF, app Postgres/MinIO/TiTiler as configured by this repo) should be moved here
   and managed by Coolify. Current observed size: Azure `Standard_D4s_v4` (4 vCPU, ~16 GiB RAM) with
   a 64 GiB OS disk and a 256 GiB `/data` disk. This is acceptable for Coolify + the product app MVP,

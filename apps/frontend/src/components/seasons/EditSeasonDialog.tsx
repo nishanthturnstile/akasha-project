@@ -240,19 +240,32 @@ export default function EditSeasonDialog({
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
-      if (confirmSeasonEdit) return;
+      if (confirmClose || confirmSeasonEdit) return;
       setConfirmClose(true);
     } else {
       onOpenChange(nextOpen);
     }
-  }, [onOpenChange, confirmSeasonEdit]);
+  }, [onOpenChange, confirmClose, confirmSeasonEdit]);
+
+  // Safety net: if Radix ever leaves body pointer-events locked after the dialog
+  // closes (the nested-dialog freeze), force-clear it so the page stays usable.
+  useEffect(() => {
+    if (!open) document.body.style.pointerEvents = '';
+  }, [open]);
+
+  const handleDialogInteractOutside = useCallback((event: { preventDefault: () => void }) => {
+    if (confirmClose || confirmSeasonEdit) event.preventDefault();
+  }, [confirmClose, confirmSeasonEdit]);
 
   return (
+    <>
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit season"
+          onInteractOutside={ handleDialogInteractOutside }
+          onEscapeKeyDown={ (e) => { if (confirmClose || confirmSeasonEdit) e.preventDefault(); } }
           className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-0 sm:w-[calc(100vw-2rem)] lg:max-w-2xl"
         >
           <VisuallyHidden>
@@ -504,6 +517,7 @@ export default function EditSeasonDialog({
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      </Dialog.Root>
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
@@ -542,6 +556,6 @@ export default function EditSeasonDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
-    </Dialog.Root>
+    </>
   );
 }

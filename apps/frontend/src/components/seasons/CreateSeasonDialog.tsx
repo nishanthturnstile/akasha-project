@@ -247,6 +247,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
+      if (confirmClose) return;
       if (dirty) {
         setConfirmClose(true);
       } else {
@@ -255,14 +256,27 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     } else {
       onOpenChange(nextOpen);
     }
-  }, [dirty, onOpenChange]);
+  }, [dirty, confirmClose, onOpenChange]);
+
+  // Safety net: if Radix ever leaves body pointer-events locked after the dialog
+  // closes (the nested-dialog freeze), force-clear it so the page stays usable.
+  useEffect(() => {
+    if (!open) document.body.style.pointerEvents = '';
+  }, [open]);
+
+  const handleDialogInteractOutside = useCallback((event: { preventDefault: () => void }) => {
+    if (confirmClose) event.preventDefault();
+  }, [confirmClose]);
 
   return (
+    <>
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Create season"
+          onInteractOutside={ handleDialogInteractOutside }
+          onEscapeKeyDown={ (e) => { if (confirmClose) e.preventDefault(); } }
           className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-0 sm:w-[calc(100vw-2rem)] lg:max-w-2xl"
         >
           <VisuallyHidden>
@@ -471,6 +485,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      </Dialog.Root>
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
@@ -486,7 +501,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
-    </Dialog.Root>
+    </>
   );
 }
 

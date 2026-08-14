@@ -639,19 +639,36 @@ export default function EditFieldDialog({
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
-      if (confirmDeleteField || confirmClearSeasonId || confirmAddCycleSeasonId) return;
+      if (confirmClose || confirmDeleteField || confirmClearSeasonId || confirmAddCycleSeasonId) return;
       setConfirmClose(true);
     } else {
       onOpenChange(nextOpen);
     }
-  }, [onOpenChange, confirmDeleteField, confirmClearSeasonId, confirmAddCycleSeasonId]);
+  }, [onOpenChange, confirmClose, confirmDeleteField, confirmClearSeasonId, confirmAddCycleSeasonId]);
+
+  const confirmActive = confirmClose || confirmDeleteField || confirmClearSeasonId !== null || confirmAddCycleSeasonId !== null;
+
+  // When any confirm dialog is open over this dialog, ignore outside clicks/Escape
+  // so the outer dialog cannot be dismissed (or re-open its own confirm) mid-flow.
+  const handleDialogInteractOutside = useCallback((event: { preventDefault: () => void }) => {
+    if (confirmActive) event.preventDefault();
+  }, [confirmActive]);
+
+  // Safety net: if Radix ever leaves body pointer-events locked after the dialog
+  // closes (the nested-dialog freeze), force-clear it so the page stays usable.
+  useEffect(() => {
+    if (!open) document.body.style.pointerEvents = '';
+  }, [open]);
 
   return (
+    <>
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
+          onInteractOutside={ handleDialogInteractOutside }
+          onEscapeKeyDown={ (e) => { if (confirmActive) e.preventDefault(); } }
           className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl p-0 sm:w-[calc(100vw-2rem)] lg:w-[min(72rem,calc(100vw-3rem))]"
         >
           <VisuallyHidden>
@@ -861,6 +878,7 @@ export default function EditFieldDialog({
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      </Dialog.Root>
 
       <AlertDialogRoot open={ confirmClose } onOpenChange={ setConfirmClose }>
         <AlertDialogContent>
@@ -933,7 +951,7 @@ export default function EditFieldDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
-    </Dialog.Root>
+    </>
   );
 }
 

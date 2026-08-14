@@ -27,6 +27,18 @@ import {
 const CUSTOM = '__custom__';
 const INITIAL = '__initial__';
 
+// Clears the body/html scroll-lock styles that Radix Dialog/AlertDialog and
+// react-remove-scroll set while a dialog is open. If Radix fails to restore them
+// (nested dialog close ordering bug), the page is left unclickable — resetting
+// here un-freezes it.
+function resetDialogLockStyles(): void {
+  const { body } = document;
+  body.style.pointerEvents = '';
+  body.style.overflow = '';
+  body.style.position = '';
+  document.documentElement.style.overflow = '';
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -260,8 +272,10 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
   // Safety net: if Radix ever leaves body pointer-events locked after the dialog
   // closes (the nested-dialog freeze), force-clear it so the page stays usable.
+  // Runs both when `open` flips to false AND on unmount.
   useEffect(() => {
-    if (!open) document.body.style.pointerEvents = '';
+    if (!open) resetDialogLockStyles();
+    return () => resetDialogLockStyles();
   }, [open]);
 
   const handleDialogInteractOutside = useCallback((event: { preventDefault: () => void }) => {

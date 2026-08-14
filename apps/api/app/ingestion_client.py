@@ -354,6 +354,10 @@ class Selection(ApiModel):
     window_days: int | None = None
     rule: str | None = None
     valid_pixel_count: int | None = None
+    total_pixel_count: int | None = None
+    nodata_pixel_count: int | None = None
+    coverage_pixel_count: int | None = None
+    masked_pixel_count: int | None = None
 
 
 class FieldIndexStatistics(ApiModel):
@@ -374,6 +378,7 @@ class ClassStatistic(ApiModel):
     value_range: list[float] | None = None
     area_sq_m: float | None = None
     area_percentage: float | None = None
+    pixel_count: int | None = None
 
 
 class LegendItem(ApiModel):

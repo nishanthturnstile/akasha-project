@@ -53,4 +53,15 @@ describe('MapViewProvider selected field state', () => {
     const second = renderHook(() => useMapView(), { wrapper });
     expect(second.result.current.activeSourceId).toBe('sentinel-2-l2a');
   });
+
+  it('bumps the discovery refresh nonce on each call', () => {
+    const { result } = renderHook(() => useMapView(), { wrapper });
+
+    const initial = result.current.discoveryRefreshNonce;
+    act(() => result.current.bumpDiscoveryRefresh());
+    expect(result.current.discoveryRefreshNonce).toBe(initial + 1);
+
+    act(() => result.current.bumpDiscoveryRefresh());
+    expect(result.current.discoveryRefreshNonce).toBe(initial + 2);
+  });
 });

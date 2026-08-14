@@ -166,9 +166,10 @@ export function MeasureTool({
         if (!draw) return;
         const features = draw
             .getSnapshot()
-            .filter((f) => f.properties?.mode === 'polygon');
+            .filter((f) => f.properties?.mode === 'polygon' && f.geometry.type === 'Polygon');
         const feature = features[features.length - 1];
-        if (!feature || feature.geometry.type !== 'Polygon') {
+
+        if (!feature) {
             removeSegmentLabels();
             return;
         }
@@ -288,9 +289,10 @@ export function MeasureTool({
             if (!draw) return;
             const features = draw
                 .getSnapshot()
-                .filter((f) => f.properties?.mode === 'polygon');
+                .filter((f) => f.properties?.mode === 'polygon' && f.geometry.type === 'Polygon');
             const feature = features[features.length - 1];
-            if (feature?.geometry.type !== 'Polygon') return;
+
+            if (!feature) return;
 
             const ring = feature.geometry.coordinates[0] as [number, number][];
             const distance = lineLengthMeters(ring);
@@ -359,7 +361,11 @@ export function MeasureTool({
         setPopupPos(null);
         setCursorClass('measure-crosshair');
         removeResultPolygon();
-        draw.clear();
+        try {
+            draw.clear();
+        } catch {
+            /* draw may not be enabled */
+        }
         draw.setMode('polygon');
     }, [ensureDraw, removeResultPolygon, setCursorClass]);
 
@@ -368,8 +374,12 @@ export function MeasureTool({
         removeResultPolygon();
         const draw = drawRef.current;
         if (draw && startedRef.current) {
-            draw.clear();
-            draw.stop();
+            try {
+                draw.clear();
+                draw.stop();
+            } catch {
+                /* draw may not be enabled */
+            }
             startedRef.current = false;
         }
         setResult(null);

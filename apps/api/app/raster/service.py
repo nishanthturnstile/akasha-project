@@ -231,6 +231,7 @@ def build_response(
         "indexType": stats["indexType"],
         "sourceId": source_id,
         "acquisitionDate": acquisition_date,
+        "valueSplit": stats.get("valueSplit"),
         "statistics": {
             "min": stats["min"],
             "max": stats["max"],

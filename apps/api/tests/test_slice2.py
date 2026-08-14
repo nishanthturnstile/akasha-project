@@ -1977,6 +1977,14 @@ def test_resourcesat_statistics_keeps_valid_and_water_mask_classes(monkeypatch):
     assert body["pixelCounts"]["validPixels"] == 2
     assert body["statistics"]["validPixelPercent"] == 50.0
     assert body["statistics"]["mean"] == pytest.approx(0.5)
+    assert body["valueSplit"]["profileId"] == "ndvi-density-v1"
+    assert [category["percentage"] for category in body["valueSplit"]["categories"]] == [
+        0.0,
+        50.0,
+        0.0,
+        0.0,
+        50.0,
+    ]
     assert body["metadata"]["nativeExcludedMaskClasses"] == [0, 2, 3]
     assert body["metadata"]["metricsProvisional"] is True
 

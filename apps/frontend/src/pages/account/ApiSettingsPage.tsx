@@ -28,8 +28,8 @@ export default function ApiSettingsPage() {
           <code className="mt-2 block break-all text-sm">{ createdKey }</code>
         </section>
       ) }
-      <section className="mt-4 flex gap-3 rounded-xl border border-border/80 bg-card/90 p-4">
-        <input className="rounded-md border border-border bg-background px-3 py-2" value={ name } onChange={ (event) => setName(event.target.value) } />
+      <section className="mt-4 flex flex-wrap gap-3 rounded-xl border border-border/80 bg-card/90 p-4">
+        <input className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2" value={ name } onChange={ (event) => setName(event.target.value) } />
         <button className="rounded-md bg-primary px-4 py-2 text-primary-foreground" onClick={ () => void createKey() } type="button">Create key</button>
       </section>
       <section className="mt-4 grid gap-2 rounded-xl border border-border/80 bg-card/90 p-4">

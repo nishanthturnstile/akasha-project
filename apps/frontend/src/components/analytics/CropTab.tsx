@@ -25,7 +25,7 @@ export default function CropTab({ field }: CropTabProps) {
       : '';
   const selectedCycle = vegData.find((vc) => vc.id === resolvedId) ?? null;
 
-  const handleSave = useCallback((
+  const handleSave = useCallback(async (
     fieldId: string,
     name: string,
     geometry?: PlotGeometry,
@@ -34,28 +34,26 @@ export default function CropTab({ field }: CropTabProps) {
     areaHa?: number | null,
   ) => {
     setSaving(true);
-    updateField.mutate(
-      {
-        fieldId,
-        payload: {
-          name,
-          ...(geometry ? { geometry } : {}),
-          ...(vegetationData ? { vegetationData } : {}),
-          ...(groupId !== undefined ? { groupId } : {}),
-          ...(areaHa !== undefined ? { areaHa } : {}),
+    try {
+      await updateField.mutateAsync(
+        {
+          fieldId,
+          payload: {
+            name,
+            ...(geometry ? { geometry } : {}),
+            ...(vegetationData ? { vegetationData } : {}),
+            ...(groupId !== undefined ? { groupId } : {}),
+            ...(areaHa !== undefined ? { areaHa } : {}),
+          },
         },
-      },
-      {
-        onSuccess: () => {
-          setSaving(false);
-          setEditDialogOpen(false);
-          setUserSelectedId('');
-        },
-        onError: () => {
-          setSaving(false);
-        },
-      },
-    );
+      );
+      setSaving(false);
+      setEditDialogOpen(false);
+      setUserSelectedId('');
+    } catch (err) {
+      setSaving(false);
+      throw err;
+    }
   }, [updateField]);
 
   return (

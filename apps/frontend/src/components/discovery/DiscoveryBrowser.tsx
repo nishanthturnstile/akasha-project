@@ -680,27 +680,38 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
           field={editingFieldQ.data}
           open
           onOpenChange={(open) => { if (!open) setEditingFieldId(null); }}
-          onSave={(fieldId, name, geometry, vegetationData, groupId, areaHa) => {
+          onSave={ async (fieldId, name, geometry, vegetationData, groupId, areaHa) => {
             setSavingField(true);
-            updateField.mutate(
-              {
-                fieldId,
-                payload: {
-                  name,
-                  ...(geometry ? { geometry } : {}),
-                  ...(vegetationData ? { vegetationData } : {}),
-                  ...(groupId !== undefined ? { groupId } : {}),
-                  ...(areaHa !== undefined ? { areaHa } : {}),
+            try {
+              await updateField.mutateAsync(
+                {
+                  fieldId,
+                  payload: {
+                    name,
+                    ...(geometry ? { geometry } : {}),
+                    ...(vegetationData ? { vegetationData } : {}),
+                    ...(groupId !== undefined ? { groupId } : {}),
+                    ...(areaHa !== undefined ? { areaHa } : {}),
+                  },
                 },
-              },
-              {
-                onSuccess: () => { setSavingField(false); setEditingFieldId(null); },
-                onError: () => setSavingField(false),
-              },
-            );
+              );
+              setSavingField(false);
+              setEditingFieldId(null);
+            } catch (err) {
+              setSavingField(false);
+              throw err;
+            }
           }}
           saving={savingField}
-          onDelete={(fieldId) => deleteField.mutateAsync(fieldId)}
+          onDelete={async (fieldId) => {
+            try {
+              await deleteField.mutateAsync(fieldId);
+              if (view.selectedPlotId === fieldId) view.setSelectedPlotId(null);
+              view.bumpDiscoveryRefresh();
+            } catch {
+              // Error surfaced by mutation/query state.
+            }
+          }}
           initialSeasonId={seasonId ?? undefined}
         />
       )}
@@ -717,6 +728,8 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
               if (!deletingField) return;
               try {
                 await deleteField.mutateAsync(deletingField.id);
+                if (view.selectedPlotId === deletingField.id) view.setSelectedPlotId(null);
+                view.bumpDiscoveryRefresh();
               } catch {
                 // Error surfaced by mutation/query state.
               }

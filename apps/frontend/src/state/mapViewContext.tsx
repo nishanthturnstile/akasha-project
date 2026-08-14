@@ -58,7 +58,8 @@ type MapViewAction =
     | { type: 'SET_BEST_MODE'; enabled: boolean }
     | { type: 'SET_GLOBAL_VIEW_OPEN'; open: boolean }
     | { type: 'SET_RADAR_EVIDENCE_VISIBLE'; visible: boolean }
-    | { type: 'SET_HOVERED_FIELD_ID'; fieldId: string | null };
+    | { type: 'SET_HOVERED_FIELD_ID'; fieldId: string | null }
+    | { type: 'BUMP_DISCOVERY_REFRESH' };
 
 function reducer(state: MapViewState, action: MapViewAction): MapViewState {
     switch (action.type) {
@@ -157,6 +158,8 @@ function reducer(state: MapViewState, action: MapViewAction): MapViewState {
         case 'SET_HOVERED_FIELD_ID':
             if (action.fieldId === state.hoveredFieldId) return state;
             return { ...state, hoveredFieldId: action.fieldId };
+        case 'BUMP_DISCOVERY_REFRESH':
+            return { ...state, discoveryRefreshNonce: state.discoveryRefreshNonce + 1 };
         default:
             return state;
     }
@@ -280,6 +283,8 @@ export function MapViewProvider({
                 dispatch({ type: 'SET_RADAR_EVIDENCE_VISIBLE', visible }),
             setHoveredFieldId: (fieldId) =>
                 dispatch({ type: 'SET_HOVERED_FIELD_ID', fieldId }),
+            bumpDiscoveryRefresh: () =>
+                dispatch({ type: 'BUMP_DISCOVERY_REFRESH' }),
         }),
         [state],
     );

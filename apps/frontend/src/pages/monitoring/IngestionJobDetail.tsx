@@ -142,7 +142,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function KVRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[180px_1fr] gap-x-4 border-t border-border/50 py-2 text-sm">
+    <div className="grid grid-cols-[120px_1fr] gap-x-4 border-t border-border/50 py-2 text-sm sm:grid-cols-[160px_1fr] lg:grid-cols-[180px_1fr]">
       <dt className="text-muted-foreground">{ label }</dt>
       <dd className="break-all">{ value ?? '—' }</dd>
     </div>
@@ -162,7 +162,7 @@ function RecordDisplay({ data }: { data: Record<string, unknown> }) {
   return (
     <dl className="divide-y divide-border/50 rounded-lg border border-border/60 bg-background/60 px-3">
       { entries.map(([key, val]) => (
-        <div key={ key } className="grid grid-cols-[200px_1fr] gap-x-4 py-2 text-sm">
+        <div key={ key } className="grid grid-cols-[120px_1fr] gap-x-4 py-2 text-sm sm:grid-cols-[160px_1fr] lg:grid-cols-[200px_1fr]">
           <dt className="font-mono text-xs text-muted-foreground break-all">{ key }</dt>
           <dd className="break-all text-foreground">
             { val === null || val === undefined
@@ -304,7 +304,7 @@ function SummaryTab({ job }: { job: IngestionJobDetail }) {
 
       <section>
         <SectionLabel>Counts</SectionLabel>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           { (
             [
               { label: 'Found', value: job.foundCount, tone: '' },
@@ -362,7 +362,7 @@ function CandidatesTab({ job }: { job: IngestionJobDetail }) {
 
       <section>
         <SectionLabel>Candidate counts</SectionLabel>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           { (
             [
               { label: 'Found', value: job.foundCount, tone: '' },

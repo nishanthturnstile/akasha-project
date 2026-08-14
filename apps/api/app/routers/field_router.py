@@ -21,7 +21,14 @@ from ..auth import (
 )
 from ..raster.errors import AkashaError, bad_request, field_backend_unavailable, not_found
 from ..repositories import fields_repo
-from ..schemas.fields import FieldCreate, FieldResponse, FieldUpdate, VegetationCycleResponse
+from ..schemas.fields import (
+    FieldCreate,
+    FieldResponse,
+    FieldUpdate,
+    GrowthStageDateUpdateRequest,
+    GrowthStageResponse,
+    VegetationCycleResponse,
+)
 
 logger = logging.getLogger("akasha.api.fields")
 router = APIRouter(prefix="/api", tags=["fields"], dependencies=[Depends(get_current_team)])
@@ -120,6 +127,33 @@ async def list_vegetation_cycles(
         season_id,
         team.id,
     )
+
+
+@router.patch(
+    "/vegetation-cycles/{cycle_id}/growth-stages",
+    response_model=list[GrowthStageResponse],
+)
+async def update_growth_stages(
+    cycle_id: str,
+    payload: GrowthStageDateUpdateRequest,
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(require_role("owner", "admin", "member")),
+) -> list[dict[str, Any]]:
+    stages = [stage.model_dump(by_alias=True) for stage in payload.stages]
+    result = await _run_blocking(
+        fields_repo.update_vegetation_cycle_growth_stages,
+        cycle_id,
+        user.id,
+        stages,
+        team.id,
+    )
+    if result is None:
+        raise not_found(
+            "Vegetation cycle not found.",
+            code="VEGETATION_CYCLE_NOT_FOUND",
+            cycleId=cycle_id,
+        )
+    return result
 
 
 @router.patch("/fields/{field_id}", response_model=FieldResponse)

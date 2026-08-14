@@ -28,12 +28,12 @@ export default function DataManagerPage() {
         <h1 className="mt-1 text-2xl font-semibold">Dataset uploads</h1>
         <p className="mt-1 text-sm text-muted-foreground">Upload GeoJSON, SHP ZIP, or ISO-XML ZIP metadata. Max upload: 1 MiB in this demo build.</p>
       </section>
-      <section className="mt-4 rounded-xl border border-border/80 bg-card/90 p-4">
+      <section className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-border/80 bg-card/90 p-4">
         <Select
           value={ datasetType }
           onValueChange={ (value) => setDatasetType(value as UploadedDataset['datasetType']) }
         >
-          <SelectTrigger className="w-auto">
+          <SelectTrigger className="w-full sm:w-auto">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -42,7 +42,7 @@ export default function DataManagerPage() {
             <SelectItem value="iso_xml">ISO-XML ZIP</SelectItem>
           </SelectContent>
         </Select>
-        <input className="ml-3" type="file" onChange={ (event) => void onFile(event.target.files?.[0]) } />
+        <input className="min-w-0 flex-1 text-sm sm:flex-none" type="file" onChange={ (event) => void onFile(event.target.files?.[0]) } />
       </section>
       { error && <p className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">{ reportErrorMessage(error) }</p> }
       <section className="mt-4 grid gap-2 rounded-xl border border-border/80 bg-card/90 p-4">

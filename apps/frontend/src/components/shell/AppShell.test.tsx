@@ -147,6 +147,15 @@ describe('AppShell', () => {
     },
   );
 
+  it('exposes sign out in the mobile account menu', async () => {
+    renderShell('/weather/forecast');
+
+    await waitFor(() => expect(screen.getByText('Team')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('mobile-account-menu-trigger'));
+
+    expect(screen.getByTestId('mobile-sign-out-action')).toBeTruthy();
+  });
+
   it.each(['member', 'viewer'] as const)(
     'keeps ingestion overview out of the product Monitoring navigation for %s users',
     async (role) => {

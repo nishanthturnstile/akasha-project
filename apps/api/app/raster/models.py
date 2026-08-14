@@ -5,7 +5,7 @@ typed and self-documenting. Kept intentionally small — only what Phase 2 needs
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,6 +42,28 @@ class PixelCounts(BaseModel):
     coveragePixels: int = 0
     maskedPixels: int = 0
     validPixels: int = 0
+
+
+class ValueSplitCategory(BaseModel):
+    id: str
+    label: str
+    minInclusive: float | None = None
+    maxExclusive: float | None = None
+    pixelCount: int | None = None
+    areaSqM: float | None = None
+    percentage: float = Field(ge=0, le=100)
+
+
+class IndexValueSplit(BaseModel):
+    indexType: Literal["NDVI"] = "NDVI"
+    profileId: str
+    percentageBasis: Literal["classifiablePixels"] = "classifiablePixels"
+    thresholds: list[float]
+    totalPixels: int | None = None
+    classifiablePixels: int | None = None
+    noDataPixels: int | None = None
+    unclassifiedPixels: int | None = None
+    categories: list[ValueSplitCategory]
 
 
 class StatisticsMetadata(BaseModel):
@@ -94,5 +116,6 @@ class StatisticsResponse(BaseModel):
     acquisitionDate: str
     statistics: IndexStatisticsModel
     pixelCounts: PixelCounts
+    valueSplit: IndexValueSplit | None = None
     metadata: StatisticsMetadata
     sarSupport: SarSupport | None = None

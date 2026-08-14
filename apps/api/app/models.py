@@ -725,6 +725,56 @@ class Crop(Base):
     )
 
 
+class CropGrowthStage(Base):
+    __tablename__ = "crop_growth_stages"
+    __table_args__ = (
+        UniqueConstraint("crop_id", "seq", name="crop_growth_stages_crop_id_seq_key"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    crop_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.crops.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    duration: Mapped[str | None] = mapped_column(Text)
+
+
+class VegetationCycleGrowthStage(UuidPkMixin, TimestampMixin, Base):
+    __tablename__ = "vegetation_cycle_growth_stages"
+    __table_args__ = (
+        UniqueConstraint(
+            "vegetation_cycle_id",
+            "seq",
+            name="vegetation_cycle_growth_stages_cycle_seq_key",
+        ),
+        Index(
+            "vegetation_cycle_growth_stages_cycle_idx",
+            "vegetation_cycle_id",
+        ),
+        Index("vegetation_cycle_growth_stages_crop_idx", "crop_id"),
+        {"schema": AKASHA_SCHEMA},
+    )
+
+    vegetation_cycle_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{AKASHA_SCHEMA}.vegetation_cycles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    crop_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey(f"{AKASHA_SCHEMA}.crops.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    duration: Mapped[str | None] = mapped_column(Text)
+    start_date: Mapped[date | None] = mapped_column(Date)
+
+
 class Variety(Base):
     __tablename__ = "varieties"
     __table_args__ = (

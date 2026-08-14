@@ -698,6 +698,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     mapDiscoveryFilters,
     seasonId,
     selectedPlotId,
+    view.discoveryRefreshNonce,
   ]);
 
   useEffect(() => {
@@ -1654,7 +1655,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
         onRequestTool={ requestMapTool }
         onReleaseTool={ releaseMapTool }
         onPolygonComplete={ (geometry) => setDraftGeometry(geometry) }
-        className="absolute right-4 top-70 z-popover max-[760px]:right-4 max-[760px]:top-150"
+        className="absolute right-4 top-[150px] z-popover md:top-70"
       />
 
       { !overlaysVisible && (
@@ -1662,7 +1663,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
           <div className="glass-card flex items-center justify-center rounded-md px-2 py-2 shadow-e2">
             <BrandLockup variant="icon" />
           </div>
-          <LocationSearch map={ map } className="w-72" />
+          <LocationSearch map={ map } className="w-full max-w-72" />
         </div>
       ) }
 
@@ -1758,7 +1759,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       </div> }
 
       {/* Persistent left-side map overlay controls, grouped like the reference layout. */ }
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-toolbar flex flex-col items-start gap-2">
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-toolbar flex max-h-[70vh] flex-col items-start gap-2 overflow-y-auto">
         <SplitViewControl
           available={ Boolean(selectedPlot && config.features?.cropMapSplitEnabled) }
           enabled={ splitEnabled }

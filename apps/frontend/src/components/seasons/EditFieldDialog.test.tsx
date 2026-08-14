@@ -2,13 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import EditFieldDialog from '@/components/seasons/EditFieldDialog';
+import EditFieldDialog, { sortVegetationCyclesForDisplay } from '@/components/seasons/EditFieldDialog';
 import type { ResolvedBasemapConfig } from '@/map/basemap';
 import type { Field } from '@/types/api';
 
 const state = vi.hoisted(() => ({
     config: null as unknown as Record<string, unknown>,
     basemaps: [] as ResolvedBasemapConfig[],
+    seasons: [] as Array<{ id: string; name: string; startDate?: string | null; endDate?: string | null; createdAt?: string | null }>,
+    vegetationCycles: {} as Record<string, Array<Record<string, unknown>>>,
+    crops: [] as Array<{ id: number; name: string }>,
+    addCycle: vi.fn(),
+    clearSeasonCycles: vi.fn(),
 }));
 
 vi.mock('@/components/map/MapLayerManager', () => ({
@@ -38,23 +43,23 @@ vi.mock('@/components/fields/FieldBoundaryLayer', () => ({
 
 vi.mock('@/hooks/useVegetationCycles', () => ({
     useVegetationCycles: () => ({
-        cycles: {},
+        cycles: state.vegetationCycles,
         setFieldCycles: vi.fn(),
-        addCycle: vi.fn(),
+        addCycle: state.addCycle,
         removeCycle: vi.fn(),
         updateCycle: vi.fn(),
-        clearSeasonCycles: vi.fn(),
+        clearSeasonCycles: state.clearSeasonCycles,
     }),
 }));
 
 vi.mock('@/lib/queries', () => ({
     queryKeys: { varieties: (cropId: number) => ['varieties', cropId] },
     useConfig: () => ({ data: state.config }),
-    useCrops: () => ({ data: [] }),
+    useCrops: () => ({ data: state.crops }),
     useFieldGroups: () => ({ data: [] }),
     useFields: () => ({ data: [FIELD] }),
     useIrrigationTypes: () => ({ data: [] }),
-    useSeasons: () => ({ data: [] }),
+    useSeasons: () => ({ data: state.seasons }),
     useTillageTypes: () => ({ data: [] }),
     useVarieties: () => ({ data: { items: [] } }),
 }));
@@ -103,7 +108,7 @@ function config(usageModel: string) {
     };
 }
 
-function renderDialog() {
+function renderDialog(field: Field = FIELD, overrides: Partial<Parameters<typeof EditFieldDialog>[0]> = {}) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
@@ -111,11 +116,12 @@ function renderDialog() {
         <MemoryRouter>
             <QueryClientProvider client={ queryClient }>
                 <EditFieldDialog
-                    field={ FIELD }
+                    field={ field }
                     open
                     onOpenChange={ vi.fn() }
                     onSave={ vi.fn() }
                     onDelete={ vi.fn() }
+                    { ...overrides }
                 />
             </QueryClientProvider>
         </MemoryRouter>,
@@ -124,7 +130,51 @@ function renderDialog() {
 
 afterEach(() => {
     state.basemaps.length = 0;
+    state.seasons = [];
+    state.vegetationCycles = {};
+    state.crops = [];
+    state.addCycle.mockReset();
+    state.clearSeasonCycles.mockReset();
     vi.unstubAllEnvs();
+});
+
+describe('sortVegetationCyclesForDisplay', () => {
+    it('keeps a newly added draft cycle at the top of the list', () => {
+        const cycles = [
+            {
+                id: 'existing',
+                cropName: 'Wheat',
+                variety: '',
+                maturity: '',
+                year: 2024,
+                plantingDate: '2024-01-10',
+                irrigationType: '',
+                targetYield: null,
+                harvestingDate: '2024-05-15',
+                tillageType: '',
+                actualYield: null,
+                isCutOff: false,
+                notes: '',
+            },
+            {
+                id: 'draft',
+                cropName: '',
+                variety: '',
+                maturity: '',
+                year: 2025,
+                plantingDate: '',
+                irrigationType: '',
+                targetYield: null,
+                harvestingDate: '',
+                tillageType: '',
+                actualYield: null,
+                isCutOff: false,
+                notes: '',
+            },
+        ];
+
+        expect(sortVegetationCyclesForDisplay(cycles).map((cycle) => cycle.id)).toEqual(['draft', 'existing']);
+    });
 });
 
 describe('EditFieldDialog basemap behavior', () => {
@@ -171,5 +221,92 @@ describe('EditFieldDialog basemap behavior', () => {
         );
         expect(screen.getByDisplayValue('North field')).toBeTruthy();
         expect(screen.queryByTestId('map-layer-manager')).toBeNull();
+    });
+});
+
+describe('EditFieldDialog single-crop-per-season validation', () => {
+    const season = { id: 'season-1', name: 'Kharif 2025', startDate: null, endDate: null, createdAt: null };
+    const cropCycle = {
+        id: 'cycle-1',
+        cropName: 'Wheat',
+        variety: '',
+        maturity: '',
+        year: 2025,
+        plantingDate: '',
+        irrigationType: '',
+        targetYield: null,
+        harvestingDate: '',
+        tillageType: '',
+        actualYield: null,
+        isCutOff: false,
+        notes: '',
+    };
+
+    function stubEnv() {
+        vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+        vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
+        state.config = config('tile');
+    }
+
+    it('blocks adding a cycle when the season already has a crop', () => {
+        stubEnv();
+        state.seasons = [season];
+        state.vegetationCycles = { 'season-1': [cropCycle] };
+
+        renderDialog({ ...FIELD, seasonIds: ['season-1'] });
+        fireEvent.click(screen.getByRole('button', { name: /add vegetation cycle/i }));
+
+        expect(screen.getByText(/Wheat is already added for this season/i)).toBeTruthy();
+        expect(state.addCycle).not.toHaveBeenCalled();
+    });
+
+    it('adds a cycle when the season has no crop', () => {
+        stubEnv();
+        state.seasons = [season];
+        state.vegetationCycles = {};
+
+        renderDialog({ ...FIELD, seasonIds: ['season-1'] });
+        fireEvent.click(screen.getByRole('button', { name: /add vegetation cycle/i }));
+
+        expect(state.addCycle).toHaveBeenCalledWith('season-1', undefined);
+    });
+
+    it('removes the current crop and shows a fresh default crop form after confirming the replacement', () => {
+        stubEnv();
+        state.seasons = [season];
+        state.vegetationCycles = { 'season-1': [cropCycle] };
+
+        renderDialog({ ...FIELD, seasonIds: ['season-1'] });
+        fireEvent.click(screen.getByRole('button', { name: /add vegetation cycle/i }));
+        fireEvent.click(screen.getByRole('button', { name: /replace crop/i }));
+
+        expect(state.clearSeasonCycles).toHaveBeenCalledWith('season-1');
+        expect(state.addCycle).toHaveBeenCalledWith('season-1', undefined);
+    });
+
+    it('blocks save when a cycle has no crop selected', () => {
+        stubEnv();
+        state.seasons = [season];
+        state.vegetationCycles = { 'season-1': [{ ...cropCycle, cropName: '' }] };
+        const onSave = vi.fn();
+
+        renderDialog({ ...FIELD, seasonIds: ['season-1'] }, { onSave });
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        expect(screen.getByText(/select a crop for each vegetation cycle/i)).toBeTruthy();
+        expect(onSave).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a backend save error in the dialog', async () => {
+        stubEnv();
+        state.seasons = [season];
+        state.crops = [{ id: 1, name: 'Wheat' }];
+        state.vegetationCycles = { 'season-1': [cropCycle] };
+        const onSave = vi.fn().mockRejectedValue(new Error('Crop not found.'));
+
+        renderDialog({ ...FIELD, seasonIds: ['season-1'] }, { onSave });
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        expect(await screen.findByText('Crop not found.')).toBeTruthy();
     });
 });

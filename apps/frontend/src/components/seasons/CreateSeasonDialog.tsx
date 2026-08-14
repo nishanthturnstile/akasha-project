@@ -27,6 +27,18 @@ import {
 const CUSTOM = '__custom__';
 const INITIAL = '__initial__';
 
+// Clears the body/html scroll-lock styles that Radix Dialog/AlertDialog and
+// react-remove-scroll set while a dialog is open. If Radix fails to restore them
+// (nested dialog close ordering bug), the page is left unclickable — resetting
+// here un-freezes it.
+function resetDialogLockStyles(): void {
+  const { body } = document;
+  body.style.pointerEvents = '';
+  body.style.overflow = '';
+  body.style.position = '';
+  document.documentElement.style.overflow = '';
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -50,7 +62,6 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   const [endDateError, setEndDateError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string>(INITIAL);
-  const forceCloseRef = useRef(false);
   const [customNameDraft, setCustomNameDraft] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -215,6 +226,15 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
     }
   }, [dirty, onOpenChange]);
 
+  const handleKeepEditing = useCallback(() => {
+    setConfirmClose(false);
+  }, []);
+
+  const handleDiscardChanges = useCallback(() => {
+    setConfirmClose(false);
+    onOpenChange(false);
+  }, [onOpenChange]);
+
   const handleCreate = async () => {
     let hasError = false;
     if (!name.trim()) { setNameError('Season name is required'); hasError = true; }
@@ -238,28 +258,40 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
   };
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen && dirty && !forceCloseRef.current) {
-      setConfirmClose(true);
+    if (!nextOpen) {
+      if (confirmClose) return;
+      if (dirty) {
+        setConfirmClose(true);
+      } else {
+        onOpenChange(false);
+      }
     } else {
-      forceCloseRef.current = false;
       onOpenChange(nextOpen);
     }
-  }, [dirty, onOpenChange]);
+  }, [dirty, confirmClose, onOpenChange]);
 
+  // Safety net: if Radix ever leaves body pointer-events locked after the dialog
+  // closes (the nested-dialog freeze), force-clear it so the page stays usable.
+  // Runs both when `open` flips to false AND on unmount.
   useEffect(() => {
-    if (!confirmClose && forceCloseRef.current) {
-      forceCloseRef.current = false;
-      onOpenChange(false);
-    }
-  }, [confirmClose, onOpenChange]);
+    if (!open) resetDialogLockStyles();
+    return () => resetDialogLockStyles();
+  }, [open]);
+
+  const handleDialogInteractOutside = useCallback((event: { preventDefault: () => void }) => {
+    if (confirmClose) event.preventDefault();
+  }, [confirmClose]);
 
   return (
+    <>
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Create season"
-          className="glass fixed left-1/2 top-[12vh] z-modal w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg p-0"
+          onInteractOutside={ handleDialogInteractOutside }
+          onEscapeKeyDown={ (e) => { if (confirmClose) e.preventDefault(); } }
+          className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-0 sm:w-[calc(100vw-2rem)] lg:max-w-2xl"
         >
           <VisuallyHidden>
             <Dialog.Title>Create season</Dialog.Title>
@@ -328,7 +360,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
               { nameError && <p className="text-sm text-destructive">{ nameError }</p> }
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-sm">Start date <span className="text-destructive">*</span></label>
                 <DatePicker
@@ -450,14 +482,14 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
 
             { error && <p className="text-sm text-destructive">{ error }</p> }
 
-            <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
-              <Button variant="outline" size="lg" className="min-w-[120px]" onClick={handleCancel}>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border/60 pt-3">
+              <Button variant="outline" size="lg" className="min-w-[120px] flex-1 sm:flex-none" onClick={handleCancel}>
                 Cancel
               </Button>
               <Button
                 variant="primary"
                 size="lg"
-                className="min-w-[120px]"
+                className="min-w-[120px] flex-1 sm:flex-none"
                 onClick={ handleCreate }
                 disabled={ !canCreate || createSeason.isPending }
               >
@@ -467,6 +499,7 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      </Dialog.Root>
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
@@ -475,14 +508,14 @@ export default function CreateSeasonDialog({ open, onOpenChange, onCreated }: Pr
             All unsaved changes will be lost.
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel className="cursor-pointer" onClick={() => setConfirmClose(false)}>No</AlertDialogCancel>
-            <AlertDialogAction className="cursor-pointer" onClick={() => { forceCloseRef.current = true; setConfirmClose(false); }}>
+            <AlertDialogCancel className="cursor-pointer" onClick={handleKeepEditing}>No</AlertDialogCancel>
+            <AlertDialogAction className="cursor-pointer" onClick={handleDiscardChanges}>
               Yes
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
-    </Dialog.Root>
+    </>
   );
 }
 

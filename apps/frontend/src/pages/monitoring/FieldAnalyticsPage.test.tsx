@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MapViewProvider } from '@/state/mapViewContext';
+import { SeasonProvider } from '@/state/seasonContext';
+import { useMapView } from '@/state/useMapView';
 import type { Field, FieldStatisticsResponse, FieldTrendResponse, SceneDate, Source } from '@/types/api';
 
 vi.mock('@/pages/MapPage', () => ({
@@ -153,6 +155,68 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function GlobalViewProbe() {
+  const { globalViewOpen } = useMapView();
+  return <div data-testid="global-view-probe">{String(globalViewOpen)}</div>;
+}
+
+function SelectedPlotProbe() {
+  const { selectedPlotId } = useMapView();
+  return <div data-testid="selected-plot-probe">{selectedPlotId ?? ''}</div>;
+}
+
+function renderSeasonWithFieldsPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={ queryClient }>
+        <MapViewProvider
+          initialState={ {
+            overlaysVisible: true,
+            activeSourceId: 'sentinel-2-l2a',
+            selectedPlotId: null,
+            mapFullscreen: false,
+          } }
+        >
+          <SeasonProvider seasonId="season-1">
+            <SelectedPlotProbe />
+            <FieldAnalyticsPage />
+          </SeasonProvider>
+        </MapViewProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+function renderEmptySeasonPage({ globalView = false, selectedPlotId = null }: { globalView?: boolean; selectedPlotId?: string | null } = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={ queryClient }>
+        <MapViewProvider
+          initialState={ {
+            overlaysVisible: !globalView,
+            globalViewOpen: globalView,
+            activeSourceId: 'sentinel-2-l2a',
+            selectedPlotId,
+            mapFullscreen: false,
+          } }
+        >
+          <SeasonProvider seasonId="season-empty">
+            <GlobalViewProbe />
+            <SelectedPlotProbe />
+            <FieldAnalyticsPage />
+          </SeasonProvider>
+        </MapViewProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
 describe('FieldAnalyticsPage pipeline integration', () => {
   it('renders the real index panel and posts selected field stats to the Sentinel-2 pipeline source', async () => {
     const requests: Array<{ url: string; body?: unknown }> = [];
@@ -215,5 +279,173 @@ describe('FieldAnalyticsPage pipeline integration', () => {
       indexType: 'NDVI',
     });
     expect(screen.getByTestId('index-panel')).toBeTruthy();
+    expect(screen.queryByText('No fields in this season')).toBeNull();
+  });
+
+  it('alerts when the active season has no fields and Cancel opens Global View', async () => {
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/config') {
+        return jsonResponse({
+          appName: 'Akasha',
+          aoi: { id: 'aoi', name: 'AOI', center: [77, 13], zoom: 10, bounds: [76, 12, 78, 14] },
+          basemapStyleUrl: '',
+          basemap: {
+            provider: 'empty',
+            style: 'empty',
+            styleFamily: 'empty',
+            usageModel: 'session',
+            places: 'none',
+            sessionDurationSeconds: 3600,
+          },
+          maxPolygonAreaHa: 1000,
+          maxPolygonVertices: 500,
+          usablePixelThresholdPercent: 70,
+          supportedIndices: ['NDVI'],
+          defaultIndex: 'NDVI',
+          adminIngestionLiveTriggerEnabled: false,
+        });
+      }
+      if (url === '/api/sources') return jsonResponse([sentinelSource]);
+      if (url === '/api/fields') return jsonResponse([]);
+      return jsonResponse({});
+    });
+
+    renderEmptySeasonPage();
+
+    await screen.findByText('No fields in this season');
+    expect(screen.getByRole('button', { name: 'Draw field' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('global-view-probe').textContent).toBe('true');
+    });
+    expect(screen.queryByText('No fields in this season')).toBeNull();
+  });
+
+  it('does not alert for an empty season while in Global View', async () => {
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/config') {
+        return jsonResponse({
+          appName: 'Akasha',
+          aoi: { id: 'aoi', name: 'AOI', center: [77, 13], zoom: 10, bounds: [76, 12, 78, 14] },
+          basemapStyleUrl: '',
+          basemap: {
+            provider: 'empty',
+            style: 'empty',
+            styleFamily: 'empty',
+            usageModel: 'session',
+            places: 'none',
+            sessionDurationSeconds: 3600,
+          },
+          maxPolygonAreaHa: 1000,
+          maxPolygonVertices: 500,
+          usablePixelThresholdPercent: 70,
+          supportedIndices: ['NDVI'],
+          defaultIndex: 'NDVI',
+          adminIngestionLiveTriggerEnabled: false,
+        });
+      }
+      if (url === '/api/sources') return jsonResponse([sentinelSource]);
+      if (url === '/api/fields') return jsonResponse([]);
+      return jsonResponse({});
+    });
+
+    renderEmptySeasonPage({ globalView: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('global-view-probe').textContent).toBe('true');
+    });
+    expect(screen.queryByText('No fields in this season')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Draw field' })).toBeNull();
+  });
+
+  it('auto-selects the most recent season field when no last field is remembered', async () => {
+    localStorage.clear();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/config') {
+        return jsonResponse({
+          appName: 'Akasha',
+          aoi: { id: 'aoi', name: 'AOI', center: [77, 13], zoom: 10, bounds: [76, 12, 78, 14] },
+          basemapStyleUrl: '',
+          basemap: {
+            provider: 'empty',
+            style: 'empty',
+            styleFamily: 'empty',
+            usageModel: 'session',
+            places: 'none',
+            sessionDurationSeconds: 3600,
+          },
+          maxPolygonAreaHa: 1000,
+          maxPolygonVertices: 500,
+          usablePixelThresholdPercent: 70,
+          supportedIndices: ['NDVI'],
+          defaultIndex: 'NDVI',
+          adminIngestionLiveTriggerEnabled: false,
+        });
+      }
+      if (url === '/api/sources') return jsonResponse([sentinelSource]);
+      if (url === '/api/fields') {
+        return jsonResponse([
+          { ...field, id: 'field-old', name: 'Older field', seasonIds: ['season-1'], createdAt: '2025-01-01T00:00:00Z' },
+          { ...field, id: 'field-new', name: 'Newer field', seasonIds: ['season-1'], createdAt: '2026-01-01T00:00:00Z' },
+        ]);
+      }
+      if (url === '/api/seasons') return jsonResponse([]);
+      return jsonResponse({});
+    });
+
+    renderSeasonWithFieldsPage();
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('selected-plot-probe').textContent).toBe('field-new');
+      },
+      { timeout: 15_000 },
+    );
+    expect(screen.queryByText('No field selected')).toBeNull();
+  });
+
+  it('clears a stale field selection when the season has no fields so the map shows no boundary', async () => {
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/config') {
+        return jsonResponse({
+          appName: 'Akasha',
+          aoi: { id: 'aoi', name: 'AOI', center: [77, 13], zoom: 10, bounds: [76, 12, 78, 14] },
+          basemapStyleUrl: '',
+          basemap: {
+            provider: 'empty',
+            style: 'empty',
+            styleFamily: 'empty',
+            usageModel: 'session',
+            places: 'none',
+            sessionDurationSeconds: 3600,
+          },
+          maxPolygonAreaHa: 1000,
+          maxPolygonVertices: 500,
+          usablePixelThresholdPercent: 70,
+          supportedIndices: ['NDVI'],
+          defaultIndex: 'NDVI',
+          adminIngestionLiveTriggerEnabled: false,
+        });
+      }
+      if (url === '/api/sources') return jsonResponse([sentinelSource]);
+      if (url === '/api/fields') return jsonResponse([]);
+      return jsonResponse({});
+    });
+
+    renderEmptySeasonPage({ selectedPlotId: 'field-other-season' });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('selected-plot-probe').textContent).toBe('');
+      },
+      { timeout: 15_000 },
+    );
+    expect(screen.getByText('No fields in this season')).toBeTruthy();
   });
 });

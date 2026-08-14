@@ -19,7 +19,12 @@ import anyio
 from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
-from ..api_models import CloudMaskOptions, FieldTrendPoint, FieldTrendResponse
+from ..api_models import (
+    CloudMaskMapping,
+    CloudMaskOptions,
+    FieldTrendPoint,
+    FieldTrendResponse,
+)
 from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping, source_excluded_mask_classes
 from ..config import settings
@@ -731,20 +736,43 @@ def _field_statistics(
         acquisition_date=acquisition_date or "",
         prefer_high_res=prefer_high_res,
     )
-    effective_source_id = resolution.source_id
-    effective_date = resolution.basis_date if resolution.enhanced else acquisition_date
 
-    source = catalog.get_source(effective_source_id)
-    mask_mapping = source_cloud_mask_mapping(source, cloud_mask)
-    computed = compute_statistics(
-        geometry=plot["geometry"],
-        source_id=effective_source_id,
-        acquisition_date=effective_date,
-        index_type=index_type,
-        max_area_ha=settings.max_polygon_area_ha,
-        max_vertices=settings.max_polygon_vertices,
-        excluded_mask_classes=source_excluded_mask_classes(source, cloud_mask),
-    )
+    def _compute_for_resolution(
+        selected: catalog.ResolutionResult,
+    ) -> tuple[dict[str, Any], CloudMaskMapping]:
+        effective_source_id = selected.source_id
+        effective_date = selected.basis_date if selected.enhanced else acquisition_date
+        effective_source = catalog.get_source(effective_source_id)
+        return (
+            compute_statistics(
+                geometry=plot["geometry"],
+                source_id=effective_source_id,
+                acquisition_date=effective_date,
+                index_type=index_type,
+                max_area_ha=settings.max_polygon_area_ha,
+                max_vertices=settings.max_polygon_vertices,
+                excluded_mask_classes=source_excluded_mask_classes(
+                    effective_source, cloud_mask
+                ),
+            ),
+            source_cloud_mask_mapping(effective_source, cloud_mask),
+        )
+
+    try:
+        computed, mask_mapping = _compute_for_resolution(resolution)
+    except AkashaError as exc:
+        if not resolution.enhanced or exc.code != "RASTER_BACKEND_UNAVAILABLE":
+            raise
+        primary_source = catalog.get_source(source_id)
+        resolution = catalog.ResolutionResult(
+            source_id=source_id,
+            resolution_meters=primary_source.get("resolutionMeters"),
+            enhanced=False,
+            basis_date=None,
+            provenance_note="High-resolution enhancement unavailable; served from the primary source.",
+        )
+        computed, mask_mapping = _compute_for_resolution(resolution)
+
     metadata = dict(computed["metadata"])
     metadata.update(
         {
@@ -762,6 +790,7 @@ def _field_statistics(
         cloud_mask=cloud_mask,
         statistics=IndexStatisticsModel(**computed["statistics"]),
         pixel_counts=PixelCounts(**computed["pixelCounts"]),
+        value_split=computed.get("valueSplit"),
         metadata=metadata,
         sar_support=computed.get("sarSupport"),
         resolved_source_id=resolution.source_id,

@@ -18,6 +18,7 @@ import { Separator } from '@/components/ui/separator';
 import {
   SheetRoot,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
@@ -31,6 +32,7 @@ import { FieldCreateOptionsDialog } from '@/components/fields/FieldCreateOptions
 import GlobalViewPanel, { setLastFieldForSeason } from '@/components/fields/GlobalViewPanel';
 import { SeasonProvider } from '@/state/seasonContext';
 import { useMapView } from '@/state/useMapView';
+import { useIsLargeScreen } from '@/hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
 import { useAccountMe, useLogout, useSeasons, useUpdateSeason, useFields } from '@/lib/queries';
 import {
@@ -143,6 +145,7 @@ export function AppShell() {
   // Utility footer menu (AI assistant / Notifications / Help / Marketplace / Settings /
   // API + Sign out). Collapsed by default so the footer shows only the account trigger.
   const [utilityOpen, setUtilityOpen] = useState(false);
+  const [mobileUtilityOpen, setMobileUtilityOpen] = useState(false);
 
   const setGlobalViewMode = (isGlobalView: boolean) => {
     view.setGlobalViewOpen(isGlobalView);
@@ -266,6 +269,7 @@ export function AppShell() {
 
   const effectiveSeasonId = currentSeasonId ?? sortedSeasons[0]?.id ?? null;
   const showGlobalViewPanel = !isAdminIngestionRoute && view.globalViewOpen;
+  const isLargeScreen = useIsLargeScreen();
 
   const currentSeason = useMemo(
     () => (effectiveSeasonId ? sortedSeasons.find((s) => s.id === effectiveSeasonId) ?? null : null),
@@ -356,11 +360,11 @@ export function AppShell() {
       ) }
       <div
         className={ cn(
-          'grid h-screen w-screen overflow-hidden bg-background text-foreground lg:grid-rows-1',
+          'grid h-screen w-screen overflow-hidden bg-background text-foreground',
           'grid-cols-1 grid-rows-[auto_minmax(0,1fr)]',
-          showGlobalViewPanel
-            ? 'lg:grid-cols-[minmax(0,1fr)_20rem_var(--rail-w)]'
-            : 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)]',
+          isLargeScreen && showGlobalViewPanel
+            ? 'lg:grid-cols-[minmax(0,1fr)_20rem_var(--rail-w)] lg:grid-rows-1'
+            : 'lg:grid-cols-[minmax(0,1fr)_var(--rail-w)] lg:grid-rows-1',
         ) }
         style={ { '--rail-w': railWidth } as CSSProperties }
         data-testid="product-shell"
@@ -375,6 +379,15 @@ export function AppShell() {
             >
               <BrandLockup variant="compact" />
             </NavLink>
+            <button
+              type="button"
+              aria-label="Account menu"
+              data-testid="mobile-account-menu-trigger"
+              onClick={ () => setMobileUtilityOpen(true) }
+              className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <UserCircle2 className="size-6" strokeWidth={ 1.5 } aria-hidden="true" />
+            </button>
           </div>
           <nav aria-label="Product modules" className="-mx-1 overflow-x-auto px-1">
             <div className="flex min-w-max gap-1 pb-1">
@@ -405,14 +418,72 @@ export function AppShell() {
           </nav>
         </header>
 
+        { !isLargeScreen && utilityGroup && (
+          <SheetRoot open={ mobileUtilityOpen } onOpenChange={ setMobileUtilityOpen }>
+            <SheetContent side="right" className="flex flex-col">
+              <SheetHeader>
+                <SheetTitle>Account & more</SheetTitle>
+                <SheetDescription>Access settings, notifications, and sign out.</SheetDescription>
+              </SheetHeader>
+              <nav aria-label="Utility" className="flex flex-col gap-1 px-4 py-2">
+                { utilityGroup.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={ `mobile-${item.path}` }
+                      to={ item.path }
+                      end={ false }
+                      data-testid={ `mobile-${testIdFor(item.label)}` }
+                      onClick={ () => setMobileUtilityOpen(false) }
+                      className={ ({ isActive }) =>
+                        cn(
+                          'group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+                          isActive && 'bg-primary/15 text-foreground shadow-e1',
+                        )
+                      }
+                    >
+                      { Icon && <Icon className="size-5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" /> }
+                      <span className="min-w-0 flex-1 truncate">{ item.label }</span>
+                    </NavLink>
+                  );
+                }) }
+                <Separator className="my-1" />
+                <button
+                  type="button"
+                  onClick={ handleLogout }
+                  data-testid="mobile-sign-out-action"
+                  aria-label="Sign out"
+                  disabled={ logout.isPending }
+                  className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-accent-foreground disabled:cursor-wait disabled:opacity-70"
+                >
+                  <LogOut className="size-5 shrink-0" strokeWidth={ 1.75 } aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-left">Sign out</span>
+                </button>
+              </nav>
+            </SheetContent>
+          </SheetRoot>
+        ) }
+
         <section className="relative min-h-0 min-w-0 overflow-hidden" data-testid="shell-content">
           <SeasonProvider seasonId={ effectiveSeasonId }>
             <Outlet />
           </SeasonProvider>
         </section>
 
-        { showGlobalViewPanel && (
+        { isLargeScreen && showGlobalViewPanel && (
           <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewMode(false) } seasonId={ effectiveSeasonId } />
+        ) }
+
+        { !isLargeScreen && showGlobalViewPanel && (
+          <SheetRoot open onOpenChange={ (open) => { if (!open) setGlobalViewMode(false); } } modal={ false }>
+            <SheetContent hideClose className="p-0">
+              <div className="sr-only">
+                <SheetTitle>Global View</SheetTitle>
+                <SheetDescription>Season fields and scouting discovery panel.</SheetDescription>
+              </div>
+              <GlobalViewPanel key={ effectiveSeasonId ?? 'no-season' } onClose={ () => setGlobalViewMode(false) } seasonId={ effectiveSeasonId } className="border-l-0" />
+            </SheetContent>
+          </SheetRoot>
         ) }
 
         <aside

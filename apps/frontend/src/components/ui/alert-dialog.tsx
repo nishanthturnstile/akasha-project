@@ -13,7 +13,7 @@ const AlertDialogOverlay = forwardRef<
   <AlertDialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-modal bg-background/60 backdrop-blur-sm data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-in',
+      'fixed inset-0 z-modal bg-background/80 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-in',
       className,
     )}
     {...props}

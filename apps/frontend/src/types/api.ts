@@ -149,6 +149,15 @@ export interface Crop {
   hasVariety: boolean;
   bbchMode: string | null;
   characteristic: string | null;
+  stages?: CropGrowthStage[];
+}
+
+export interface CropGrowthStage {
+  id: number;
+  cropId: number;
+  seq: number;
+  name: string;
+  duration: string | null;
 }
 
 export interface CropVariety {
@@ -898,6 +907,28 @@ export interface FieldStatisticsRequest {
   preferHighRes?: boolean;
 }
 
+export interface NdviValueSplitCategory {
+  id: 'denseVegetation' | 'moderateVegetation' | 'sparseVegetation' | 'openSoil' | 'cloudiness' | string;
+  label: string;
+  minInclusive: number | null;
+  maxExclusive: number | null;
+  pixelCount: number | null;
+  areaSqM?: number | null;
+  percentage: number;
+}
+
+export interface NdviValueSplit {
+  indexType: 'NDVI';
+  profileId: string;
+  percentageBasis: 'classifiablePixels';
+  thresholds: number[];
+  totalPixels: number | null;
+  classifiablePixels: number | null;
+  noDataPixels: number | null;
+  unclassifiedPixels: number | null;
+  categories: NdviValueSplitCategory[];
+}
+
 export interface FieldMonitoringEvidence {
   fieldId: string;
   targetDate: string;
@@ -1008,6 +1039,7 @@ export interface FieldStatisticsResponse {
   cloudMask: CloudMaskOptions;
   statistics: IndexStatistics;
   pixelCounts: PixelCounts;
+  valueSplit?: NdviValueSplit | null;
   sarSupport?: SarSupport | null;
   maskedPixels?: number;
   maskMethod?: string | null;
@@ -1523,8 +1555,26 @@ export interface VegetationCycleResponse {
   ndviList?: string | null;
   notes?: string | null;
   isCutOff?: boolean | null;
+  growthStages?: VegetationCycleGrowthStage[];
   createdAt?: string | null;
   updatedAt?: string | null;
+}
+
+export interface VegetationCycleGrowthStage {
+  id: string | null;
+  cropId: number;
+  seq: number;
+  name: string;
+  duration: string | null;
+  startDate: string | null;
+  saved: boolean;
+}
+
+export interface VegetationCycleGrowthStagesPayload {
+  stages: Array<{
+    seq: number;
+    startDate: string | null;
+  }>;
 }
 
 export interface FieldIdEntry {

@@ -20,11 +20,18 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import session_scope
-from app.models import Crop, IrrigationType, PredefinedSeason, SeedingType, TillageType, Variety
+from app.models import (
+    Crop,
+    CropGrowthStage,
+    IrrigationType,
+    PredefinedSeason,
+    SeedingType,
+    TillageType,
+    Variety,
+)
 
 DEFAULT_DATA_DIR = Path("/app/data/reference")
 
@@ -135,22 +142,10 @@ SEEDING_INT_TO_NAME = {
 def generate_crops(session: Session) -> int:
     data_path = _data_path(CROP_JSON_FILENAME)
     data = json.loads(data_path.read_bytes())
-
-    db_count = session.query(Crop).count()
-    json_count = len(data)
-
-    if db_count == json_count:
-        return 0
-
-    if db_count > 0:
-        session.execute(text("DELETE FROM akasha.vegetation_cycles"))
-        session.query(Variety).delete()
-        session.query(Crop).delete()
-        session.flush()
-
     seeding_map = {st.name: st.id for st in session.query(SeedingType).all()}
+    crops_by_name = {crop.name: crop for crop in session.query(Crop).all()}
 
-    count = 0
+    created_count = 0
     for item in data:
         st_int = item["seeding_type"]
         st_name = SEEDING_INT_TO_NAME.get(st_int) if isinstance(st_int, int) else st_int
@@ -164,20 +159,37 @@ def generate_crops(session: Session) -> int:
         characteristic = item.get("characteristic")
         if isinstance(characteristic, int):
             characteristic = str(characteristic)
-        session.add(
-            Crop(
-                name=item["name_en"],
-                seeding_type_id=seeding_type_id,
-                color=item.get("color"),
-                maturity_options=maturity_options,
-                has_weather_risk=item.get("has_weather_risks", False),
-                bbch_mode=bbch,
-                characteristic=characteristic,
-                has_variety=item.get("has_varieties", False),
-            )
+        crop_name = item["name_en"]
+        crop = crops_by_name.get(crop_name)
+        if crop is None:
+            crop = Crop(name=crop_name)
+            session.add(crop)
+            session.flush()
+            crops_by_name[crop_name] = crop
+            created_count += 1
+
+        crop.seeding_type_id = seeding_type_id
+        crop.color = item.get("color")
+        crop.maturity_options = maturity_options
+        crop.has_weather_risk = item.get("has_weather_risks", False)
+        crop.bbch_mode = bbch
+        crop.characteristic = characteristic
+        crop.has_variety = item.get("has_varieties", False)
+
+        session.query(CropGrowthStage).filter(CropGrowthStage.crop_id == crop.id).delete(
+            synchronize_session=False
         )
-        count += 1
-    return count
+        for seq, stage in enumerate(item.get("stages") or [], start=1):
+            session.add(
+                CropGrowthStage(
+                    crop_id=crop.id,
+                    seq=seq,
+                    name=stage["name"],
+                    duration=stage.get("duration"),
+                )
+            )
+
+    return created_count
 
 
 def generate_varieties(session: Session) -> int:

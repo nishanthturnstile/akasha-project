@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from app.api_models import CloudMaskOptions
 from app.config import settings
 from app.main import app
 from app.raster import catalog_resolver as catalog
@@ -20,6 +21,7 @@ from app.raster.catalog_resolver import (
     ResolutionResult,
     resolve_best_resolution_source,
 )
+from app.raster.errors import raster_backend_unavailable
 from app.routers import analytics_router as field_analytics
 from fastapi.testclient import TestClient
 
@@ -409,6 +411,42 @@ def _fake_resolution(enhanced: bool = False, basis_date: str | None = None) -> R
         enhanced=False,
         basis_date=None,
         provenance_note=None,
+    )
+
+
+def test_field_statistics_falls_back_when_enhancement_raster_is_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        field_analytics.catalog,
+        "resolve_best_resolution_source",
+        lambda **_kw: _fake_resolution(enhanced=True, basis_date="2026-01-13"),
+    )
+    source_ids: list[str] = []
+
+    def fake_compute_statistics(**kwargs):
+        source_id = kwargs["source_id"]
+        source_ids.append(source_id)
+        if source_id == RESOURCESAT_LISS4_SOURCE_ID:
+            raise raster_backend_unavailable("enhancement COG unavailable")
+        return _stats_response(source_id=source_id)
+
+    monkeypatch.setattr(field_analytics, "compute_statistics", fake_compute_statistics)
+
+    result = field_analytics._field_statistics(
+        plot_id="field-1",
+        plot=_plot(),
+        source_id=RESOURCESAT_LISS3_SOURCE_ID,
+        acquisition_date="2026-01-15",
+        index_type="NDVI",
+        cloud_mask=CloudMaskOptions(),
+        prefer_high_res=True,
+    )
+
+    assert source_ids == [RESOURCESAT_LISS4_SOURCE_ID, RESOURCESAT_LISS3_SOURCE_ID]
+    assert result.resolved_source_id == RESOURCESAT_LISS3_SOURCE_ID
+    assert result.enhanced is False
+    assert result.basis_date is None
+    assert result.provenance_note == (
+        "High-resolution enhancement unavailable; served from the primary source."
     )
 
 

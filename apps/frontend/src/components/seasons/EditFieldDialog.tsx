@@ -599,8 +599,9 @@ export default function EditFieldDialog({
       return next;
     });
     setConfirmAddCycleSeasonId(null);
+    clearSeasonCycles(seasonId);
     addCycle(seasonId, computeDefaultCycleDate(seasonId) || undefined);
-  }, [confirmAddCycleSeasonId, addCycle, computeDefaultCycleDate]);
+  }, [confirmAddCycleSeasonId, addCycle, clearSeasonCycles, computeDefaultCycleDate]);
 
   const existingCropName = useMemo(() => {
     if (!confirmAddCycleSeasonId) return '';

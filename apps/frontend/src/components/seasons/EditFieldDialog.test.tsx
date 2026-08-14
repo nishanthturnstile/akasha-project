@@ -268,7 +268,7 @@ describe('EditFieldDialog single-crop-per-season validation', () => {
         expect(state.addCycle).toHaveBeenCalledWith('season-1', undefined);
     });
 
-    it('keeps the current crop and adds a new cycle after confirming the replacement', () => {
+    it('removes the current crop and shows a fresh default crop form after confirming the replacement', () => {
         stubEnv();
         state.seasons = [season];
         state.vegetationCycles = { 'season-1': [cropCycle] };
@@ -277,7 +277,7 @@ describe('EditFieldDialog single-crop-per-season validation', () => {
         fireEvent.click(screen.getByRole('button', { name: /add vegetation cycle/i }));
         fireEvent.click(screen.getByRole('button', { name: /replace crop/i }));
 
-        expect(state.clearSeasonCycles).not.toHaveBeenCalled();
+        expect(state.clearSeasonCycles).toHaveBeenCalledWith('season-1');
         expect(state.addCycle).toHaveBeenCalledWith('season-1', undefined);
     });
 });

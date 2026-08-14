@@ -13,7 +13,7 @@ nir/swir, uint16, scale 0.0001) with a smooth, realistic NDVI gradient, plus a
 declared by the seed STAC item.
 
 Run inside the ingestion image (has rasterio + boto3 + numpy):
-    docker compose -f infra/docker/docker-compose.yml run --rm \
+    docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm \
         ingestion-worker python /app/scripts/generate_synthetic_demo_cogs.py
 """
 from __future__ import annotations

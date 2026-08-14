@@ -348,6 +348,61 @@ def test_field_dates_posts_batch_and_parses_availability() -> None:
     assert result.dates[1].usable_pixel_percentage == pytest.approx(92.5)
 
 
+def test_field_dates_accepts_quality_evidence_for_typed_rejection() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "sourceId": "sentinel-2-l2a",
+                    "index": "NDVI",
+                    "dates": [
+                        {
+                            "status": "CLOUD_THRESHOLD_EXCEEDED",
+                            "acquisitionDate": "2026-06-28",
+                            "available": False,
+                            "selectedSceneDate": "2026-06-28",
+                            "usablePixelPercentage": 38.3,
+                            "cloudPercentage": 59.6,
+                            "fieldCoveragePercentage": 99.0,
+                            "shadowPercentage": 2.1,
+                            "obscuredPercentage": 61.7,
+                            "validPixelCount": 383,
+                            "appliedCloudThresholdPercent": 20,
+                            "reason": (
+                                "61.7% field cloud, cirrus, and shadow coverage "
+                                "exceeds your 20% limit."
+                            ),
+                        },
+                        {
+                            "status": "AVAILABLE",
+                            "acquisitionDate": "2026-05-19",
+                            "available": True,
+                            "selectedSceneDate": "2026-05-19",
+                            "usablePixelPercentage": 92.5,
+                            "cloudPercentage": 4.2,
+                            "fieldCoveragePercentage": 98.0,
+                            "shadowPercentage": 1.0,
+                            "obscuredPercentage": 5.2,
+                            "validPixelCount": 3456,
+                        },
+                    ],
+                },
+                "error": None,
+            },
+            request=request,
+        )
+
+    result = _client_for(handler).field_dates(_field_dates_payload())
+
+    rejected = result.dates[0]
+    assert rejected.availability_status == "CLOUD_THRESHOLD_EXCEEDED"
+    assert rejected.selected_scene_date == rejected.acquisition_date
+    assert rejected.obscured_percentage == pytest.approx(61.7)
+    assert rejected.applied_cloud_threshold_percent == pytest.approx(20)
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

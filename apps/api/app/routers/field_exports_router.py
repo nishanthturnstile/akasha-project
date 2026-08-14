@@ -17,6 +17,7 @@ from ..api_models import CloudMaskOptions
 from ..auth import CurrentUser, get_current_team, get_current_user
 from ..cloud_mask import source_cloud_mask_mapping
 from ..config import settings
+from ..optical_cloud import DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT, optical_cloud_threshold
 from ..raster import catalog_resolver as catalog
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from ..raster.indices import DEFAULT_INDEX
@@ -93,6 +94,7 @@ def _statistics_for_export(
     acquisition_date: date,
     index_type: str,
     cloud_mask: CloudMaskOptions,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ):
     if _uses_pipeline(source_id):
         return _pipeline_statistics_response(
@@ -102,6 +104,7 @@ def _statistics_for_export(
             acquisition_date=acquisition_date.isoformat(),
             index_type=index_type,
             cloud_mask=cloud_mask,
+            optical_cloud_threshold_percent=optical_cloud_threshold_percent,
         )
     return _field_statistics(
         plot_id=plot_id,
@@ -110,6 +113,7 @@ def _statistics_for_export(
         acquisition_date=acquisition_date.isoformat(),
         index_type=index_type,
         cloud_mask=cloud_mask,
+        optical_cloud_threshold_percent=optical_cloud_threshold_percent,
     )
 
 
@@ -272,6 +276,7 @@ async def export_field_index(
         acquisition_date=acquisition_date,
         index_type=index_type,
         cloud_mask=cloud_mask,
+        optical_cloud_threshold_percent=optical_cloud_threshold(user),
     )
 
     if format == "csv":
@@ -320,6 +325,7 @@ async def export_field_report_csv(
             date_start=date_start,
             date_end=date_end,
             cloud_mask=cloud_mask,
+            optical_cloud_threshold_percent=optical_cloud_threshold(user),
         )
     else:
         response = await _run_blocking(

@@ -37,15 +37,15 @@ PIN_API_PY = "python:3.11.14-slim-bookworm"
 PIN_INGESTION_PY = "python:3.11.14-slim-bookworm"
 PIN_NODE = "node:24-alpine"
 
-EXPECTED_SERVICES = {
+EXPECTED_PRODUCT_SERVICES = {
     "web",
     "api",
     "titiler",
     "stac-api",
     "postgis",
     "minio",
-    "ingestion-worker",
 }
+EXPECTED_LOCAL_INGESTION_SERVICES = {"ingestion-worker", "ingestion-sar"}
 
 REQUIRED_PATHS = [
     # active and archived source-of-truth/historical docs (kept safe)
@@ -80,6 +80,9 @@ REQUIRED_PATHS = [
     "infra/gateway/Caddyfile",
     "infra/gateway/.env.example",
     "infra/docker/docker-compose.yml",
+    "infra/docker/docker-compose.dev.yml",
+    "infra/docker/docker-compose.ingestion-local.yml",
+    "infra/docker/docker-compose.product-dev.yml",
     "infra/docker/.env.example",
     # root conventions
     "pyproject.toml",
@@ -142,8 +145,20 @@ if compose_path.exists():
 
 svcs = (compose or {}).get("services", {})
 check(
-    EXPECTED_SERVICES <= set(svcs.keys()),
-    f"all 7 services present ({sorted(EXPECTED_SERVICES)})",
+    set(svcs.keys()) == EXPECTED_PRODUCT_SERVICES,
+    f"product-only services present ({sorted(EXPECTED_PRODUCT_SERVICES)})",
+)
+check(
+    not (set(svcs.keys()) & EXPECTED_LOCAL_INGESTION_SERVICES),
+    "product base excludes local ingestion runtimes",
+)
+
+local_ingestion_path = REPO / "infra/docker/docker-compose.ingestion-local.yml"
+local_ingestion = yaml.safe_load(local_ingestion_path.read_text()) if local_ingestion_path.exists() else {}
+local_ingestion_services = set((local_ingestion or {}).get("services", {}))
+check(
+    EXPECTED_LOCAL_INGESTION_SERVICES <= local_ingestion_services,
+    f"local ingestion overlay contains worker + SAR ({sorted(EXPECTED_LOCAL_INGESTION_SERVICES)})",
 )
 
 # Only `web` publishes host ports.

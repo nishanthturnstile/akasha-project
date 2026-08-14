@@ -174,6 +174,10 @@ class User(UuidPkMixin, TimestampMixin, Base):
             "username IS NULL OR length(btrim(username)) > 0",
             name="users_username_not_blank",
         ),
+        CheckConstraint(
+            "optical_cloud_threshold_percent BETWEEN 0 AND 70",
+            name="users_optical_cloud_threshold_percent_chk",
+        ),
         {"schema": AKASHA_SCHEMA},
     )
 
@@ -186,6 +190,11 @@ class User(UuidPkMixin, TimestampMixin, Base):
         Boolean,
         nullable=False,
         server_default=text("false"),
+    )
+    optical_cloud_threshold_percent: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("20"),
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

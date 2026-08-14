@@ -130,6 +130,31 @@ def test_config_and_sources_expose_pipeline_default(monkeypatch) -> None:
     assert dates.json()[0]["acquisitionDate"] == "2026-03-20"
 
 
+def test_pipeline_dates_prefer_complete_and_pending_acquisition_history(monkeypatch) -> None:
+    monkeypatch.setattr(
+        product_router,
+        "get_readiness",
+        lambda *_args, **_kw: {
+            "acquisitionDates": [
+                {"acquisitionDate": "2026-03-22", "sceneCount": 1, "state": "partial"},
+                {"acquisitionDate": "2026-03-20", "sceneCount": 2, "state": "complete"},
+            ],
+            "availableDates": ["2026-03-20"],
+        },
+    )
+
+    response = client.get(f"/api/sources/{catalog.SENTINEL_2_SOURCE_ID}/dates")
+
+    assert response.status_code == 200
+    by_date = {item["acquisitionDate"]: item for item in response.json()}
+    assert set(by_date) == {"2026-03-22", "2026-03-20"}
+    assert by_date["2026-03-22"]["tileAvailable"] is False
+    assert by_date["2026-03-22"]["availabilityStatus"] == "PROCESSING_PENDING"
+    assert by_date["2026-03-22"]["sceneCount"] == 1
+    assert by_date["2026-03-20"]["tileAvailable"] is True
+    assert by_date["2026-03-20"]["sceneCount"] == 2
+
+
 def test_sentinel_default_layer_uses_pipeline_readiness(monkeypatch) -> None:
     monkeypatch.setattr(
         product_router,
@@ -163,7 +188,7 @@ def test_sentinel_default_layer_uses_pipeline_readiness(monkeypatch) -> None:
     assert body["tileUrlTemplate"] is None
 
 
-def test_field_dates_exclude_unusable_dates_and_recompute_latest(monkeypatch) -> None:
+def test_field_dates_retain_unusable_dates_and_recompute_latest(monkeypatch) -> None:
     monkeypatch.setattr(settings, "sar_support_cloud_threshold_percent", 35)
     monkeypatch.setattr(field_analytics.fields_repo, "get_field", lambda *_args: _plot())
     monkeypatch.setattr(
@@ -239,15 +264,95 @@ def test_field_dates_exclude_unusable_dates_and_recompute_latest(monkeypatch) ->
 
     assert response.status_code == 200
     body = response.json()
-    assert [item["acquisitionDate"] for item in body] == ["2026-05-19", "2026-05-12"]
-    assert body[0]["isLatestUsable"] is True
-    assert body[1]["isLatestUsable"] is False
-    assert body[0]["usablePixelPercent"] == pytest.approx(92.5)
-    assert body[0]["cloudMaskedPercent"] == pytest.approx(4.2)
+    assert [item["acquisitionDate"] for item in body] == [
+        "2026-06-28",
+        "2026-05-19",
+        "2026-05-12",
+    ]
+    assert body[0]["tileAvailable"] is True
+    assert body[0]["selectable"] is False
+    assert body[0]["availabilityStatus"] == "UNAVAILABLE"
+    assert body[0]["isLatestUsable"] is False
+    assert body[1]["isLatestUsable"] is True
+    assert body[2]["isLatestUsable"] is False
+    assert body[1]["usablePixelPercent"] == pytest.approx(92.5)
+    assert body[1]["cloudMaskedPercent"] == pytest.approx(4.2)
     assert calls[0]["geometry"] == _plot()["geometry"]
     assert calls[0]["max_cloud_percentage"] == 20.0
     assert calls[0]["acquisition_dates"] == ["2026-06-28", "2026-05-19", "2026-05-12"]
     _assert_no_leaks(body)
+
+
+def test_field_dates_report_requested_threshold_when_ingestion_omits_echo(monkeypatch) -> None:
+    monkeypatch.setattr(
+        field_analytics,
+        "_pipeline_dates",
+        lambda _source_id, **_kwargs: [
+            {"acquisitionDate": "2026-08-10", "tileAvailable": True}
+        ],
+    )
+    monkeypatch.setattr(
+        field_analytics,
+        "request_field_dates",
+        lambda *_args, **_kwargs: {
+            "sourceId": catalog.SENTINEL_2_SOURCE_ID,
+            "index": "NDVI",
+            "dates": [
+                {
+                    "acquisitionDate": "2026-08-10",
+                    "available": True,
+                    "selectedSceneDate": "2026-08-10",
+                    "usablePixelPercentage": 79.2,
+                    "cloudPercentage": 0.0,
+                    "fieldCoveragePercentage": 100.0,
+                    "shadowPercentage": 20.8,
+                    "obscuredPercentage": 20.8,
+                    "validPixelCount": 122,
+                    "appliedCloudThresholdPercent": None,
+                }
+            ],
+        },
+    )
+
+    result = field_analytics._field_dates_response(
+        plot=_plot(),
+        source_id=catalog.SENTINEL_2_SOURCE_ID,
+        index_type="NDVI",
+        start_date=None,
+        end_date=None,
+        lookback_days=None,
+        optical_cloud_threshold_percent=70,
+    )
+
+    assert result[0]["appliedCloudThresholdPercent"] == 70
+
+
+def test_field_history_window_defaults_to_365_days_and_clamps_older_ranges() -> None:
+    today = date(2026, 8, 14)
+
+    default_start, default_end = field_analytics._bounded_field_history_window(
+        start_date=None,
+        end_date=None,
+        lookback_days=None,
+        today=today,
+    )
+    clamped_start, clamped_end = field_analytics._bounded_field_history_window(
+        start_date=date(2020, 1, 1),
+        end_date=today,
+        lookback_days=None,
+    )
+
+    assert (default_start, default_end) == (date(2025, 8, 15), today)
+    assert (clamped_start, clamped_end) == (date(2025, 8, 15), today)
+
+
+def test_field_dates_reject_lookbacks_over_one_year() -> None:
+    response = client.get(
+        "/api/fields/field-1/dates"
+        "?sourceId=sentinel-2-l2a&indexType=NDVI&lookbackDays=366"
+    )
+
+    assert response.status_code == 422
 
 
 def test_field_dates_reject_unknown_or_unowned_field(monkeypatch) -> None:
@@ -561,11 +666,18 @@ def test_field_dates_include_field_qualified_regional_awifs(monkeypatch) -> None
             "tileAvailable": True,
             "sensor": "AWiFS",
             "resolutionMeters": 56,
+            "available": True,
+            "selectable": True,
+            "availabilityStatus": "AVAILABLE",
+            "appliedCloudThresholdPercent": 20,
             "usablePixelPercent": 84.0,
             "cloudMaskedPercent": 16.0,
             "coveragePercent": 100.0,
             "shadowPercent": 0.0,
             "obscuredPercent": 16.0,
+            "unavailableReason": None,
+            "selectedSceneDate": "2026-03-15",
+            "validPixelCount": 21,
             "isLatestUsable": True,
         }
     ]

@@ -42,6 +42,8 @@ function renderBar(props: Partial<React.ComponentProps<typeof TimelineBar>> = {}
                 onPeriodChange={ props.onPeriodChange }
                 bestMode={ props.bestMode ?? false }
                 onBestModeChange={ props.onBestModeChange }
+                historyExpanded={ props.historyExpanded ?? false }
+                onShowHistory={ props.onShowHistory }
             />
         </TooltipProvider>,
     );
@@ -56,6 +58,27 @@ describe('TimelineBar — date navigation behavior', () => {
     it('hides the calendar trigger when no period handler is wired', () => {
         renderBar();
         expect(screen.queryByTestId('timeline-period-trigger')).toBeNull();
+    });
+
+    it('requests the one-year history from the explicit timeline action', () => {
+        const onShowHistory = vi.fn();
+        renderBar({ onShowHistory });
+
+        fireEvent.click(screen.getByTestId('timeline-show-history'));
+
+        expect(onShowHistory).toHaveBeenCalledOnce();
+    });
+
+    it('hides the history action after the one-year history is expanded', () => {
+        renderBar({ historyExpanded: true, onShowHistory: vi.fn() });
+        expect(screen.queryByTestId('timeline-show-history')).toBeNull();
+    });
+
+    it('does not render playback, speed, or jump-to-latest controls', () => {
+        renderBar();
+        expect(screen.queryByTestId('playback-toggle')).toBeNull();
+        expect(screen.queryByTestId('playback-speed')).toBeNull();
+        expect(screen.queryByTestId('timeline-jump-latest')).toBeNull();
     });
 
     it('explains that an empty selected-field timeline is quality-filtered', () => {
@@ -88,13 +111,31 @@ describe('TimelineBar — date navigation behavior', () => {
         expect(screen.getByTestId('timeline-empty-period')).toBeTruthy();
     });
 
+    it('keeps rejected acquisitions visible and explains when none qualify', () => {
+        renderBar({
+            dates: dates.map((item) => ({
+                ...item,
+                tileAvailable: true,
+                selectable: false,
+                availabilityStatus: 'CLOUD_THRESHOLD_EXCEEDED',
+                unavailableReason: 'Combined field obscuration exceeds your limit.',
+            })),
+            selectedDate: null,
+        });
+
+        expect(screen.getByTestId('timeline-no-qualifying')).toBeTruthy();
+        expect(screen.getByTestId('date-chip-2026-03-01')).toBeTruthy();
+        expect(screen.getByTestId('date-chip-2026-04-10')).toBeTruthy();
+        expect(screen.getByTestId('date-chip-2026-05-11')).toBeTruthy();
+    });
+
     it('renders the BFF-projected strictly future expected pass', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-07-14T12:00:00Z'));
         try {
             renderBar({ nextExpectedAcquisitionDate: '2026-07-18' });
             const next = screen.getByTestId('timeline-next-image');
-            expect(next.textContent).toContain('Next expected pass');
+            expect(next.textContent).toContain('Next image');
             expect(next.textContent).toContain('Jul 18, 2026');
         } finally {
             vi.useRealTimers();

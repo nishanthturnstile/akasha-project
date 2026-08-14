@@ -14,7 +14,7 @@ Akasha is a multi-service Dockerized app. For local development, the backend and
 | MinIO | Docker | No | Local S3-compatible COG/object storage. |
 | STAC API | Docker | No | Catalog service backed by PostGIS/pgSTAC. |
 | TiTiler | Docker | No | Display tiles only. |
-| Ingestion worker | Docker one-shot | No | Seeds catalog/storage and runs ingestion jobs. |
+| Local ingestion worker / SAR | Optional Docker overlay | No | Only for explicitly requested local catalog/raster work; remote mode excludes both. |
 | React/Vite frontend | Host machine | Yes | Proxies `/api` and `/tiles` to the local Docker gateway. |
 
 ## 2. Prerequisites
@@ -107,7 +107,7 @@ This command:
 4. Waits for gateway/API health checks.
 5. Applies API Alembic migrations.
 6. Runs API storage checks.
-7. Seeds catalog/storage via the ingestion worker.
+7. Seeds catalog/storage via the optional local-ingestion overlay.
 8. Starts Vite with hot reload.
 
 The script prints the actual frontend, login, signup, and backend URLs. Default URLs are usually:
@@ -199,7 +199,104 @@ AUTH_ALLOW_SIGNUP=true
 
 Hosted/staging/production environments keep sign-up closed unless intentionally enabled.
 
-## 5. Local Sentinel-2 remote ingestion mode
+## 5. Remote-backed product development mode
+
+Use this mode for the normal development product app when satellite data must come
+from the single authoritative ingestion deployment on `akasha-staging`. It starts
+only `web`, `api`, `titiler`, `stac-api`, `postgis`, and `minio` locally. The local
+PostGIS and MinIO volumes are application-development state; they are separate from
+the ingestion deployment and are never used as a satellite archive.
+
+The mode uses the direct private endpoint `http://10.10.2.4:18080` from the API
+container. It does not create an SSH tunnel and does not run provider downloads,
+COG/composite processing, catalog seeding, `ingestion-worker`, or `ingestion-sar`.
+
+### 5.1 Inject the private key and start
+
+Read the existing ingestion key through the approved Coolify secret channel without
+printing it. Supply it to the launcher as a process environment variable; do not put
+it in `apps/frontend/.env`, a `VITE_*` variable, shell history, or a tracked file:
+
+```bash
+export INGESTION_API_KEY='<private Coolify value>'
+make dev-remote
+```
+
+The launcher writes only non-secret development settings to the ignored
+`infra/docker/.env` and starts a separate Compose project. The expected URLs are:
+
+```text
+http://localhost:15173/       Development UI
+http://localhost:15173/signup Development signup
+http://localhost:15173/login  Development login
+http://localhost:18082/health Development gateway health
+http://localhost:18082/api/health
+http://localhost:18082/api/docs
+```
+
+Run `make backend-remote` or `make frontend-remote` when starting the two halves in
+separate terminals. Stop this project with `make down-remote`.
+
+The remote mode configures these server-side API values:
+
+```env
+WEB_PORT=18082
+FRONTEND_PORT=15173
+INGESTION_API_URL=http://10.10.2.4:18080
+INGESTION_SIGNED_URL_ALLOWED_PREFIX=http://10.10.2.4:18080
+INGESTION_SIGNED_URL_FETCH_PREFIX=http://10.10.2.4:18080
+INGESTION_READINESS_ENABLED=true
+INGESTION_FIELD_INDEX_ENABLED=true
+INGESTION_RESOURCESAT_CUTOVER_ENABLED=true
+INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS=resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa
+ADMIN_INGESTION_LIVE_TRIGGER_ENABLED=false
+INGESTION_SSH_TUNNEL_ENABLED=false
+```
+
+### 5.2 Remote mode smoke checks
+
+After the gateway is healthy, the launcher runs the same non-secret BFF preflight
+manually with:
+
+```bash
+docker compose -p akasha-product-dev \
+  -f infra/docker/docker-compose.yml \
+  -f infra/docker/docker-compose.dev.yml \
+  -f infra/docker/docker-compose.product-dev.yml \
+  exec -T api python -m app.cli ingestion-check
+```
+
+The BFF health response must report `ingestionConfigured`,
+`ingestionReadinessEnabled`, and `ingestionFieldIndexEnabled` as `true`, without
+returning the API URL, API key, or signed URLs. A development user can then sign up,
+log in, view remote sources/dates, and use ingestion-backed field analytics.
+
+For the live product and ingestion checks, use:
+
+```text
+https://staging.gis.cidsaglobal.com/
+https://staging.gis.cidsaglobal.com/api/health
+https://staging.gis.cidsaglobal.com/api/docs
+http://10.10.2.4:18080/health  (SSH terminal only)
+```
+
+Do not use `http://localhost:18080` on this host. If browser access to ingestion is
+needed for a separate diagnostic, use a distinct tunnel such as:
+
+```bash
+ssh -N -L 18083:10.10.2.4:18080 <ssh-host-alias>
+```
+
+and browse `http://localhost:18083/health`.
+
+### 5.3 Browser leak-check
+
+Browser Network requests must remain same-origin local `/api/*` requests. They must
+not contain `10.10.2.4`, `host.docker.internal`, `sig`, `kid`, `exp`, `op`, an API key,
+MinIO, STAC, TiTiler, object-storage, or raw COG URLs. Signed ingestion resources are
+fetched and adapted by the BFF only.
+
+## Optional SSH-tunnel bridge (legacy alternative)
 
 Use this opt-in mode when you want the local product app to use the deployed ingestion
 pipeline for Sentinel-2 NDVI field analytics instead of local ResourceSat COGs. The
@@ -224,7 +321,7 @@ Related background: [staging ingestion developer guide](staging-ingestion-develo
 [engineering guardrails](engineering-dos-donts.md), and
 [self-hosted deployment guide](../infra/selfhosted/README.md).
 
-### 5.1 Open the SSH tunnel
+### Open the SSH tunnel
 
 Run the tunnel in its own Git Bash, WSL, macOS, or Linux terminal and keep it open while
 using the bridge. On Windows, prefer **Git Bash** or WSL; PowerShell is not the supported
@@ -255,7 +352,7 @@ ssh -N -L 127.0.0.1:18081:10.10.2.4:18080 akasha-control
 
 The helper intentionally does **not** print `INGESTION_API_KEY`.
 
-### 5.2 Set the local server-side `.env` values
+### Set the local server-side `.env` values
 
 Edit `infra/docker/.env` before starting or recreating the backend. These keys match the
 local Docker env template and are consumed by the `api` container:
@@ -290,7 +387,7 @@ frontend chooses another effective source. If field-index is omitted or disabled
 statistics, trend, and overlay requests silently fall back to the native ResourceSat path,
 which fails on a fresh checkout without local ResourceSat COGs.
 
-### 5.3 Start the local app
+### Start the local app
 
 With the tunnel terminal still open, start the app in the usual way:
 
@@ -317,7 +414,7 @@ make frontend
 Then sign up or log in through the printed local frontend URL. The browser should continue
 to use the local Vite/gateway origin only.
 
-### 5.4 Smoke checks
+### Smoke checks
 
 Run the bridge preflight inside the API container. It checks non-secret config,
 `INGESTION_API_URL/health`, and authenticated Sentinel-2 readiness for
@@ -361,7 +458,7 @@ logged-in user, so they are not part of automated docs validation:
    `provider: "pipeline"`.
 6. Confirm the UI shows Sentinel-2 10 m NDVI for the field analytics view.
 
-### 5.5 Browser leak-check
+### Browser leak-check
 
 In browser DevTools, open the **Network** panel, enable **Preserve log**, and filter to
 Fetch/XHR. Reload the local app and perform the Sentinel-2 date, overlay, statistics, and

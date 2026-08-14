@@ -8,28 +8,54 @@ ENV_FILE="$DOCKER_DIR/.env"
 FRONTEND_ENV_FILE="$FRONTEND_DIR/.env"
 COMPOSE_FILE="$DOCKER_DIR/docker-compose.yml"
 DEV_COMPOSE_FILE="$DOCKER_DIR/docker-compose.dev.yml"
-COMPOSE_ARGS=(-f "$COMPOSE_FILE" -f "$DEV_COMPOSE_FILE")
+INGESTION_LOCAL_COMPOSE_FILE="$DOCKER_DIR/docker-compose.ingestion-local.yml"
+PRODUCT_DEV_COMPOSE_FILE="$DOCKER_DIR/docker-compose.product-dev.yml"
+COMPOSE_ARGS=(-f "$COMPOSE_FILE" -f "$DEV_COMPOSE_FILE" -f "$INGESTION_LOCAL_COMPOSE_FILE")
 START_BACKEND=true
 START_FRONTEND=true
+REMOTE_INGESTION=false
 
-if [[ "${1:-}" == "--backend-only" ]]; then
-  START_FRONTEND=false
-elif [[ "${1:-}" == "--frontend-only" ]]; then
-  START_BACKEND=false
-elif [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  cat <<'EOF'
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --backend-only)
+      START_FRONTEND=false
+      ;;
+    --frontend-only)
+      START_BACKEND=false
+      ;;
+    --remote-ingestion)
+      REMOTE_INGESTION=true
+      ;;
+    -h|--help)
+      cat <<'EOF'
 Usage:
   bash scripts/dev-local.sh                 Start Docker stack + hot-reload Vite frontend.
   bash scripts/dev-local.sh --backend-only  Start/prepare only the Docker backend/gateway stack.
   bash scripts/dev-local.sh --frontend-only Start only the hot-reload Vite frontend.
+  bash scripts/dev-local.sh --remote-ingestion
+                                             Start product services with remote akasha-staging ingestion.
 
 Optional env vars:
   WEB_PORT                         Host port for the Docker gateway when .env is created (default: 8080).
   FRONTEND_PORT                    Preferred Vite dev-server port when .env is created (default: 5173).
   VITE_ESRI_API_KEY                Esri basemap key copied into generated local env files.
   INGESTION_SSH_TUNNEL_ENABLED     auto|true|false; best-effort local tunnel for staging ingestion (default: auto).
+  INGESTION_API_KEY                Remote ingestion key; inject from a private secret source, never commit it.
 EOF
-  exit 0
+      exit 0
+      ;;
+    *)
+      printf 'ERROR: Unknown option: %s\n' "$1" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+if [[ "$REMOTE_INGESTION" == true ]]; then
+  # A separate Compose project keeps product-development Postgres/MinIO
+  # volumes distinct from any other local or deployed ingestion project.
+  COMPOSE_ARGS=(-p akasha-product-dev -f "$COMPOSE_FILE" -f "$DEV_COMPOSE_FILE" -f "$PRODUCT_DEV_COMPOSE_FILE")
 fi
 
 log() {
@@ -257,6 +283,29 @@ ensure_ingestion_bridge_env() {
   ensure_env_value_if_missing INGESTION_SSH_TUNNEL_LOCAL_PORT "18081" "$ENV_FILE"
   ensure_env_value_if_missing INGESTION_SSH_TUNNEL_REMOTE_HOST "10.10.2.4" "$ENV_FILE"
   ensure_env_value_if_missing INGESTION_SSH_TUNNEL_REMOTE_PORT "18080" "$ENV_FILE"
+}
+
+configure_remote_ingestion_env() {
+  log "Configuring remote-backed product development mode"
+  upsert_env_value WEB_PORT "18082" "$ENV_FILE"
+  upsert_env_value FRONTEND_PORT "15173" "$ENV_FILE"
+  upsert_env_value DEFAULT_SOURCE_ID "resourcesat-2a-liss3-boa" "$ENV_FILE"
+  upsert_env_value INGESTION_API_URL "http://10.10.2.4:18080" "$ENV_FILE"
+  upsert_env_value INGESTION_SIGNED_URL_ALLOWED_PREFIX "http://10.10.2.4:18080" "$ENV_FILE"
+  upsert_env_value INGESTION_SIGNED_URL_FETCH_PREFIX "http://10.10.2.4:18080" "$ENV_FILE"
+  upsert_env_value INGESTION_READINESS_ENABLED "true" "$ENV_FILE"
+  upsert_env_value INGESTION_FIELD_INDEX_ENABLED "true" "$ENV_FILE"
+  upsert_env_value INGESTION_RESOURCESAT_CUTOVER_ENABLED "true" "$ENV_FILE"
+  upsert_env_value INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS "resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa" "$ENV_FILE"
+  upsert_env_value ADMIN_INGESTION_LIVE_TRIGGER_ENABLED "false" "$ENV_FILE"
+  upsert_env_value INGESTION_SSH_TUNNEL_ENABLED "false" "$ENV_FILE"
+
+  local file_key shell_key
+  file_key="$(read_env_value INGESTION_API_KEY "$ENV_FILE")"
+  shell_key="${INGESTION_API_KEY:-}"
+  if is_placeholder_or_empty "$file_key" && is_placeholder_or_empty "$shell_key"; then
+    die "Remote ingestion requires INGESTION_API_KEY from a private secret source; it was not written or printed by this launcher."
+  fi
 }
 
 configured_ingestion_url_port() {
@@ -521,16 +570,25 @@ start_backend() {
   wait_for_url "$gateway_url/health" "gateway health"
   wait_for_url "$gateway_url/api/health" "API health via gateway"
 
-  log "Applying API migrations and seeding catalog/storage"
+  log "Applying API app-schema migrations"
   docker compose "${COMPOSE_ARGS[@]}" exec -T api python -m app.cli db upgrade
   docker compose "${COMPOSE_ARGS[@]}" exec -T api python -m app.cli check
-  docker compose "${COMPOSE_ARGS[@]}" run --rm ingestion-worker python worker.py seed
+  if [[ "$REMOTE_INGESTION" == true ]]; then
+    log "Running remote ingestion preflight"
+    docker compose "${COMPOSE_ARGS[@]}" exec -T api python -m app.cli ingestion-check
+  else
+    log "Seeding local catalog/storage through the optional local ingestion runtime"
+    docker compose "${COMPOSE_ARGS[@]}" run --rm ingestion-worker python worker.py seed
+  fi
 
   printf '%s' "$gateway_url"
 }
 
 preflight
 ensure_docker_env
+if [[ "$REMOTE_INGESTION" == true ]]; then
+  configure_remote_ingestion_env
+fi
 if [[ "$START_BACKEND" == true ]]; then
   ensure_web_port_available
 fi
@@ -543,7 +601,11 @@ else
   WEB_PORT_VALUE="${WEB_PORT_VALUE:-8080}"
   GATEWAY_URL="http://localhost:${WEB_PORT_VALUE}"
   if ! gateway_health_ok "$WEB_PORT_VALUE"; then
-    die "Backend gateway is not reachable at $GATEWAY_URL. Start it first with: make backend"
+    if [[ "$REMOTE_INGESTION" == true ]]; then
+      die "Backend gateway is not reachable at $GATEWAY_URL. Start it first with: make backend-remote"
+    else
+      die "Backend gateway is not reachable at $GATEWAY_URL. Start it first with: make backend"
+    fi
   fi
 fi
 
@@ -567,6 +629,10 @@ echo "Frontend: http://localhost:${FRONTEND_DEV_PORT}/"
 echo "Login:    http://localhost:${FRONTEND_DEV_PORT}/login"
 echo "Sign up:  http://localhost:${FRONTEND_DEV_PORT}/signup"
 echo "Backend:  $GATEWAY_URL"
-echo "Press Ctrl+C to stop Vite. Docker services keep running; stop them with: make down"
+if [[ "$REMOTE_INGESTION" == true ]]; then
+  echo "Press Ctrl+C to stop Vite. Docker services keep running; stop them with: make down-remote"
+else
+  echo "Press Ctrl+C to stop Vite. Docker services keep running; stop them with: make down"
+fi
 
 AKASHA_DEV_PROXY_TARGET="$GATEWAY_URL" run_yarn dev --host 127.0.0.1 --port "$FRONTEND_DEV_PORT" --strictPort

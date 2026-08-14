@@ -21,7 +21,7 @@ same-date tile collisions.
 
 Run inside the ingestion container for the least GDAL friction on Windows:
 
-    docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+    docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
         python scripts/prepare_sentinel2_l2a_cogs.py --overwrite
 """
 

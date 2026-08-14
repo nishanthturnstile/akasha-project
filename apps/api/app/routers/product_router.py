@@ -26,13 +26,18 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import Response
 
 from ..aoi import load_aoi_configs, select_default_aoi
-from ..auth import get_current_team
+from ..auth import CurrentUser, get_current_team, get_current_user
 from ..config import settings
 from ..ingestion_client import (
     fetch_natural_source_tile,
     get_natural_source_dates,
     get_readiness,
     is_ingestion_configured,
+)
+from ..optical_cloud import (
+    DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
+    apply_optical_threshold_to_dates,
+    optical_cloud_threshold,
 )
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
@@ -341,6 +346,7 @@ def _pipeline_dates(
     source_id: str,
     *,
     timeout_seconds: float | None = None,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> list[dict[str, Any]] | None:
     if not _is_pipeline_source(source_id):
         return None
@@ -375,7 +381,21 @@ def _pipeline_dates(
             code="INGESTION_READINESS_UNAVAILABLE",
             sourceId=source_id,
         )
-    dates = [str(value) for value in readiness.get("availableDates") or []]
+    # New ingestion deployments expose every discovered acquisition separately
+    # from field usability. Fall back to the legacy processed-date projection
+    # during rolling deployment.
+    raw_dates = (
+        readiness.get("acquisitionDates")
+        or readiness.get("dates")
+        or readiness.get("availableDates")
+        or []
+    )
+    date_records = [value for value in raw_dates if isinstance(value, dict)]
+    dates = [
+        str(value.get("acquisitionDate"))
+        for value in date_records
+        if value.get("acquisitionDate")
+    ] or [str(value) for value in raw_dates if not isinstance(value, dict)]
     if not dates:
         raise upstream_error(
             "Standalone ingestion readiness has no available dates.",
@@ -404,7 +424,7 @@ def _pipeline_dates(
             for value in natural_response.get("dates", [])
             if value.get("acquisitionDate")
         }
-    return [
+    dates_payload = [
         {
             "acquisitionDate": value,
             "datetime": f"{value}T00:00:00Z",
@@ -412,22 +432,59 @@ def _pipeline_dates(
             "cloudMaskedPercent": None,
             "coveragePercent": ndvi_coverage.get("coveragePercent"),
             "isLatestUsable": value == newest,
+            "availabilityStatus": next(
+                (
+                    _readiness_acquisition_status(record)
+                    for record in date_records
+                    if str(record.get("acquisitionDate")) == value
+                ),
+                "AVAILABLE",
+            ),
+            "appliedCloudThresholdPercent": optical_cloud_threshold_percent,
             "metricsProvisional": bool(source.get("metricsProvisional", False)),
             "tileAvailable": bool(natural_by_date[value].get("tileAvailable"))
             if source_id == catalog.LANDSAT_SOURCE_ID and value in natural_by_date
-            else source_id != catalog.LANDSAT_SOURCE_ID,
+            else next(
+                (
+                    (
+                        bool(record.get("tileAvailable"))
+                        if record.get("tileAvailable") is not None
+                        else str(record.get("state", "complete")).lower() == "complete"
+                    )
+                    for record in date_records
+                    if str(record.get("acquisitionDate")) == value
+                ),
+                source_id != catalog.LANDSAT_SOURCE_ID,
+            ),
             "sceneCount": natural_by_date[value].get("sceneCount", 1)
             if value in natural_by_date
             else 0
             if source_id == catalog.LANDSAT_SOURCE_ID
-            else 1,
+            else next(
+                (
+                    int(record.get("sceneCount", 1))
+                    for record in date_records
+                    if str(record.get("acquisitionDate")) == value
+                ),
+                1,
+            ),
             "bounds": natural_by_date[value].get("bounds") if value in natural_by_date else None,
             "unavailableReason": natural_by_date[value].get("unavailableReason")
             if value in natural_by_date
             else (
+                next(
+                    (
+                        record.get("unavailableReason") or record.get("reason")
+                        for record in date_records
+                        if str(record.get("acquisitionDate")) == value
+                    ),
+                    None,
+                )
+                or (
                 "No prepared Landsat natural-imagery scene is registered for this date."
                 if source_id == catalog.LANDSAT_SOURCE_ID
                 else None
+                )
             ),
             "sensor": sensor,
             "provenanceLabel": provenance_label,
@@ -436,6 +493,33 @@ def _pipeline_dates(
         }
         for value in sorted(dates, reverse=True)
     ]
+    selectable_dates = [
+        item
+        for item in dates_payload
+        if item.get("tileAvailable")
+        and item.get("availabilityStatus") in {"AVAILABLE", "SELECTABLE", "USABLE"}
+    ]
+    newest_selectable = max(
+        (str(item["acquisitionDate"]) for item in selectable_dates), default=None
+    )
+    for item in dates_payload:
+        item["isLatestUsable"] = (
+            newest_selectable is not None and item["acquisitionDate"] == newest_selectable
+        )
+    return dates_payload
+
+
+def _readiness_acquisition_status(record: dict[str, Any]) -> str:
+    explicit = record.get("availabilityStatus") or record.get("status")
+    if explicit:
+        return str(explicit).upper()
+    return {
+        "complete": "AVAILABLE",
+        "failed": "PROCESSING_FAILED",
+        "running": "PROCESSING_PENDING",
+        "partial": "PROCESSING_PENDING",
+        "retry": "PROCESSING_PENDING",
+    }.get(str(record.get("state", "complete")).lower(), "AVAILABLE")
 
 
 def _sensor_label(source_id: str) -> str:
@@ -540,6 +624,7 @@ async def get_source_dates(
     startDate: date | None = Query(default=None),
     endDate: date | None = Query(default=None),
     lookbackDays: int | None = Query(default=None, ge=1, le=MAX_IMAGERY_HISTORY_DAYS),
+    user: CurrentUser = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """Available acquisition dates with source-specific metadata semantics."""
     natural_dates = _natural_dates(source_id)
@@ -550,7 +635,10 @@ async def get_source_dates(
             end_date=endDate,
             lookback_days=lookbackDays,
         )
-    pipeline_dates = _pipeline_dates(source_id)
+    pipeline_dates = _pipeline_dates(
+        source_id,
+        optical_cloud_threshold_percent=optical_cloud_threshold(user),
+    )
     if pipeline_dates is not None:
         return _filter_source_dates(
             pipeline_dates,
@@ -558,8 +646,12 @@ async def get_source_dates(
             end_date=endDate,
             lookback_days=lookbackDays,
         )
+    dates = catalog.list_dates(source_id)
+    source = catalog.source_payload(source_id)
+    if source.get("kind") == "optical":
+        dates = apply_optical_threshold_to_dates(dates, optical_cloud_threshold(user))
     return _filter_source_dates(
-        catalog.list_dates(source_id),
+        dates,
         start_date=startDate,
         end_date=endDate,
         lookback_days=lookbackDays,
@@ -567,7 +659,10 @@ async def get_source_dates(
 
 
 @router.get("/layers/default")
-async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
+async def get_default_layer(
+    sourceId: str | None = None,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Default source/date/layer metadata + same-origin tile template."""
     source_id = sourceId or settings.default_source_id or catalog.COLLECTION_ID
     if _uses_natural_pipeline(source_id):
@@ -610,7 +705,10 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         }
     if _uses_ingestion_pipeline(source_id):
         source = _pipeline_source_payload(source_id) or catalog.source_payload(source_id)
-        dates = _pipeline_dates(source_id) or []
+        dates = _pipeline_dates(
+            source_id,
+            optical_cloud_threshold_percent=optical_cloud_threshold(user),
+        ) or []
         date = (
             next((d for d in dates if d.get("tileAvailable")), dates[0])
             if source_id == catalog.LANDSAT_SOURCE_ID
@@ -666,7 +764,11 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         }
     source = catalog.get_source(source_id)
     dates = catalog.list_dates(source_id)
-    selectable_dates = [d for d in dates if bool(d.get("tileAvailable", True))]
+    if source.get("kind") == "optical":
+        dates = apply_optical_threshold_to_dates(dates, optical_cloud_threshold(user))
+    selectable_dates = [
+        d for d in dates if bool(d.get("selectable", d.get("tileAvailable", True)))
+    ]
     date_pool = selectable_dates or dates
     map_display_modes = list(source.get("mapDisplayModes", source["displayModes"]))
     default_map_display_mode = str(
@@ -695,6 +797,9 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
             "coveragePercent": None,
             "metricsProvisional": bool(source.get("metricsProvisional", False)),
             "tileAvailable": False,
+            "selectable": False,
+            "availabilityStatus": "UNAVAILABLE",
+            "appliedCloudThresholdPercent": optical_cloud_threshold(user),
             "unavailableReason": source.get("gatedReason") or "No catalog dates are available.",
         }
     date = next((d for d in date_pool if d["isLatestUsable"]), date_pool[0])
@@ -728,6 +833,10 @@ async def get_default_layer(sourceId: str | None = None) -> dict[str, Any]:
         "coveragePercent": date.get("coveragePercent"),
         "metricsProvisional": bool(date.get("metricsProvisional", False)),
         "tileAvailable": bool(date.get("tileAvailable", True)),
+        "selectable": bool(date.get("selectable", date.get("tileAvailable", True))),
+        "availabilityStatus": date.get("availabilityStatus")
+        or ("AVAILABLE" if date.get("tileAvailable", True) else "UNAVAILABLE"),
+        "appliedCloudThresholdPercent": optical_cloud_threshold(user),
         "unavailableReason": date.get("unavailableReason"),
     }
 

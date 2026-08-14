@@ -499,6 +499,68 @@ def test_onboarding_complete_marks_current_user_and_returns_account(monkeypatch)
     assert response.json()["user"]["onboardingCompleted"] is True
 
 
+def test_account_settings_reads_and_updates_only_the_current_user(monkeypatch):
+    team_id = "22222222-2222-4222-8222-222222222222"
+
+    def current_user(user_id: str, threshold: int) -> CurrentUser:
+        return CurrentUser(
+            id=user_id,
+            username=f"{user_id}@example.test",
+            email=f"{user_id}@example.test",
+            display_name=user_id,
+            role="owner",
+            optical_cloud_threshold_percent=threshold,
+            current_team_id=team_id,
+            memberships=(TeamMembership(id=team_id, name="Owner Team", role="owner"),),
+        )
+
+    persisted: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        auth_repo,
+        "update_optical_cloud_threshold",
+        lambda user_id, value: persisted.append((user_id, value)) or True,
+    )
+    first = current_user("11111111-1111-4111-8111-111111111111", 37)
+    app.dependency_overrides[get_current_user] = lambda: first
+    try:
+        loaded = client.get("/api/account/settings")
+        updated = client.patch(
+            "/api/account/settings",
+            json={"opticalCloudThresholdPercent": 0},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert loaded.status_code == 200
+    assert loaded.json()["opticalCloudThresholdPercent"] == 37
+    assert updated.status_code == 200
+    assert updated.json()["opticalCloudThresholdPercent"] == 0
+    assert persisted == [(first.id, 0)]
+
+
+@pytest.mark.parametrize("value", [-1, 71])
+def test_account_settings_rejects_out_of_range_threshold(value):
+    team_id = "22222222-2222-4222-8222-222222222222"
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        id="11111111-1111-4111-8111-111111111111",
+        username="owner",
+        email="owner@example.test",
+        display_name="Owner",
+        role="owner",
+        current_team_id=team_id,
+        memberships=(TeamMembership(id=team_id, name="Owner Team", role="owner"),),
+    )
+    try:
+        response = client.patch(
+            "/api/account/settings",
+            json={"opticalCloudThresholdPercent": value},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+
+
 def test_refresh_fails_if_session_rotation_did_not_persist(monkeypatch):
     monkeypatch.setattr(settings, "auth_mode", "enabled")
     monkeypatch.setattr(settings, "auth_password_pepper", "test-pepper")

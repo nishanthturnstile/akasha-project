@@ -71,7 +71,8 @@ const sceneDate: SceneDate = {
   coveragePercent: 100,
   isLatestUsable: true,
   metricsProvisional: true,
-  tileAvailable: false,
+  tileAvailable: true,
+  selectable: true,
   sensor: 'S2',
 };
 

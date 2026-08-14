@@ -24,7 +24,7 @@ Browser ──> web (Caddy + React SPA)  ── /api/*  ──> api (FastAPI BFF
                   │
    api ──> stac-api (pgSTAC) ──> postgis (PostgreSQL + PostGIS)
    api ──> titiler ──> minio (S3-compatible COG storage)
-   ingestion-worker ──> minio / stac-api / postgis / Bhoonidhi (ISRO)
+   standalone akasha-staging ingestion ──> its own storage/catalog/provider APIs
 ```
 
 Only the **`web`** gateway is publicly reachable. The browser calls `/api/*`
@@ -63,7 +63,7 @@ When changing application behavior, edit `apps/api` and `apps/frontend`.
 | stac-api | no | 8080 | `GET /_mgmt/ping` | `ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2` |
 | postgis | no | 5432 | `pg_isready` | `postgis/postgis:16-3.5` |
 | minio | no | 9000 | `/minio/health/live` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
-| ingestion-worker | no | — | CLI | `python:3.11.14-slim-bookworm` |
+| local ingestion overlay | no | — | optional CLI only | `python:3.11.14-slim-bookworm` |
 
 ## Local development: one command with frontend hot reload
 
@@ -127,7 +127,7 @@ The command does the boring-but-important setup automatically:
 5. Waits for gateway/API health checks
 6. Applies API migrations with `python -m app.cli db upgrade`
 7. Runs API storage checks with `python -m app.cli check`
-8. Seeds catalog/storage with `worker.py seed`
+8. Seeds catalog/storage with `worker.py seed` through the explicit local-ingestion overlay
 9. Starts Vite with hot reload, using the next free frontend port if `5173` is busy
 
 The same command is safe for both **first run** and **repeat runs**. Migrations,
@@ -148,6 +148,32 @@ Open:
 ```text
 http://localhost:5173/   # default FRONTEND_PORT; use the printed URL if the script moved it
 ```
+
+### Remote-backed product development
+
+To run only the product app and its local application dependencies while using the
+authoritative ingestion API on `akasha-staging`, inject `INGESTION_API_KEY` from the
+approved private secret source and run:
+
+```bash
+export INGESTION_API_KEY='<private Coolify ingestion key>'
+make dev-remote
+```
+
+This uses the separate `akasha-product-dev` Compose project, ports `15173` (Vite)
+and `18082` (gateway), skips local catalog/storage seeding, disables SSH tunneling,
+and does not define or start `ingestion-worker` or `ingestion-sar`. The browser stays
+on the product app origin; the BFF calls `http://10.10.2.4:18080` server-to-server.
+The key is never written to tracked files or exposed to the frontend.
+
+```text
+http://localhost:15173/       Development UI
+http://localhost:15173/signup Development signup
+http://localhost:15173/login  Development login
+http://localhost:18082/health Development gateway health
+```
+
+Stop it with `make down-remote`. Do not use `localhost:18080` for ingestion on this host.
 
 Create your first local account through sign-up, then use those credentials to log in:
 

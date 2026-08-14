@@ -29,6 +29,11 @@ def _user(row: User) -> dict[str, Any]:
         "email": row.email,
         "displayName": row.display_name or row.username or row.email,
         "onboardingCompleted": bool(row.onboarding_completed),
+        "opticalCloudThresholdPercent": int(
+            row.optical_cloud_threshold_percent
+            if row.optical_cloud_threshold_percent is not None
+            else 20
+        ),
         "status": row.status,
         "passwordHash": row.password_hash,
         "failedLoginCount": int(row.failed_login_count or 0),
@@ -203,6 +208,16 @@ def mark_onboarding_completed(user_id: str) -> None:
     stmt = update(User).where(User.id == _uuid(user_id)).values(onboarding_completed=True)
     with session_scope() as session:
         session.execute(stmt)
+
+
+def update_optical_cloud_threshold(user_id: str, threshold_percent: int) -> bool:
+    stmt = (
+        update(User)
+        .where(User.id == _uuid(user_id))
+        .values(optical_cloud_threshold_percent=threshold_percent)
+    )
+    with session_scope() as session:
+        return session.execute(stmt).rowcount > 0
 
 
 def create_user_with_team(

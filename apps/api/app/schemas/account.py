@@ -16,6 +16,10 @@ class AccountMe(ApiModel):
     auth_mode: str = "dev"
 
 
+class AccountSettingsUpdate(ApiModel):
+    optical_cloud_threshold_percent: int = Field(ge=0, le=70)
+
+
 class ApiKeyCreate(ApiModel):
     name: str
 

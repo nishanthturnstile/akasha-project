@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { AlertTriangle, CalendarClock, ChevronsRight, Info, RefreshCw, Layers } from 'lucide-react';
+import { AlertTriangle, CalendarClock, History, Info, RefreshCw, Layers } from 'lucide-react';
 import type { SceneDate, SourceKind } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -7,7 +7,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { CalendarRangePicker } from './CalendarRangePicker';
 import { DateChip } from './DateChip';
-import { PlaybackControls } from './PlaybackControls';
 
 interface TimelineBarProps {
     dates: SceneDate[] | undefined;
@@ -37,6 +36,10 @@ interface TimelineBarProps {
     bestMode?: boolean;
     /** When provided, renders a Best / Source toggle button. */
     onBestModeChange?: (on: boolean) => void;
+    /** Whether the rolling one-year acquisition history has been requested. */
+    historyExpanded?: boolean;
+    /** Requests the rolling one-year acquisition history. */
+    onShowHistory?: () => void;
     /** Compact single-row filmstrip: shorter chips with no per-chip badge line. */
     compact?: boolean;
 }
@@ -67,9 +70,9 @@ function NoteRow({
 }
 
 /**
- * Map-first temporal navigator: a horizontal filmstrip of acquisition dates with a
- * jump-to-latest affordance. Replaces the old vertical `DateList`. Dates render
- * oldest → newest; ←/→ step between selectable chips, Home/End jump to ends.
+ * Map-first temporal navigator: a horizontal filmstrip of acquisition dates.
+ * Dates render oldest → newest; ←/→ step between selectable chips, while Home/End
+ * jump to the first/last selectable date.
  */
 export function TimelineBar({
     dates,
@@ -90,6 +93,8 @@ export function TimelineBar({
     onPeriodChange,
     bestMode = false,
     onBestModeChange,
+    historyExpanded = false,
+    onShowHistory,
     compact = false,
 }: TimelineBarProps) {
     const trackRef = useRef<HTMLDivElement | null>(null);
@@ -113,13 +118,10 @@ export function TimelineBar({
         });
     }, [ordered, periodFrom, periodTo, selectedDate]);
 
-    const selectable = useMemo(() => visible.filter((d) => d.tileAvailable), [visible]);
-
-    const jumpTarget = useMemo(() => {
-        if (selectable.length === 0) return null;
-        const latestUsable = [...selectable].reverse().find((d) => d.isLatestUsable);
-        return (latestUsable ?? selectable[selectable.length - 1]).acquisitionDate;
-    }, [selectable]);
+    const selectable = useMemo(
+        () => visible.filter((d) => d.selectable ?? d.tileAvailable !== false),
+        [visible],
+    );
 
     /** Format the authoritative BFF projection and fail closed on stale values. */
     const nextImage = useMemo<{ iso: string; label: string } | null>(() => {
@@ -169,8 +171,6 @@ export function TimelineBar({
         [selectable, selectedDate, onSelect],
     );
 
-    const atLatest = jumpTarget != null && jumpTarget === selectedDate;
-
     let content: React.ReactNode;
     if (loading) {
         content = (
@@ -185,6 +185,12 @@ export function TimelineBar({
         );
     } else if (error) {
         content = (
+            <>
+            { selectable.length === 0 && (
+                <p className="mb-1 text-[13px] text-muted-foreground" data-testid="timeline-no-qualifying">
+                    No acquisition meets the current imagery quality limit. Adjust the limit in Account settings to include more dates.
+                </p>
+            ) }
             <div
                 className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2"
                 data-testid="timeline-error"
@@ -196,6 +202,7 @@ export function TimelineBar({
                     <RefreshCw className="size-4" strokeWidth={ 1.75 } /> Retry
                 </Button>
             </div>
+            </>
         );
     } else if (ordered.length === 0) {
         content = (
@@ -211,6 +218,12 @@ export function TimelineBar({
         );
     } else {
         content = (
+            <>
+            { selectable.length === 0 && (
+                <p className="mb-1 text-[13px] text-muted-foreground" data-testid="timeline-no-qualifying">
+                    No acquisition meets the current imagery quality limit. Adjust the limit in Account settings to include more dates.
+                </p>
+            ) }
             <div
                 ref={ trackRef }
                 role="listbox"
@@ -245,6 +258,7 @@ export function TimelineBar({
                     }) }
                 </div>
             </div>
+            </>
         );
     }
 
@@ -262,6 +276,41 @@ export function TimelineBar({
                         onChange={ onPeriodChange }
                         disabled={ loading || ordered.length === 0 }
                     />
+                ) }
+                { onShowHistory && !historyExpanded && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={ loading }
+                        onClick={ onShowHistory }
+                        data-testid="timeline-show-history"
+                        className="h-8 shrink-0 gap-1.5 px-2 text-primary hover:text-primary"
+                    >
+                        <History className="size-4" strokeWidth={ 1.75 } />
+                        <span>Show historical images</span>
+                    </Button>
+                ) }
+                { !compact && onBestModeChange && (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant={ bestMode ? 'primary' : 'outline' }
+                                size="sm"
+                                onClick={ () => onBestModeChange(!bestMode) }
+                                data-testid="timeline-best-mode-toggle"
+                                className="h-8 shrink-0 gap-1 px-2"
+                                aria-pressed={ bestMode }
+                            >
+                                <Layers className="size-3.5" strokeWidth={ 1.75 } />
+                                <span className="hidden sm:inline">{ bestMode ? 'Best' : 'Source' }</span>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            { bestMode
+                                ? 'Best-available mode: showing best source per date. Click to switch to source-specific mode.'
+                                : 'Switch to best-available mode: auto-selects the best source per date.' }
+                        </TooltipContent>
+                    </Tooltip>
                 ) }
                 { (marginalNote || nearestPassNote || radarEventDates.length > 0) && (
                     <div className="hidden max-w-[28vw] shrink-0 flex-col gap-1 lg:flex">
@@ -285,28 +334,6 @@ export function TimelineBar({
                 ) }
                 <div className="min-w-0 flex-1">{ content }</div>
                 <div className={ cn('flex shrink-0 items-center', compact ? 'gap-1' : 'gap-1.5') }>
-                    { !compact && onBestModeChange && (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant={ bestMode ? 'primary' : 'outline' }
-                                    size="sm"
-                                    onClick={ () => onBestModeChange(!bestMode) }
-                                    data-testid="timeline-best-mode-toggle"
-                                    className="h-8 gap-1 px-2"
-                                    aria-pressed={ bestMode }
-                                >
-                                    <Layers className="size-3.5" strokeWidth={ 1.75 } />
-                                    <span className="hidden sm:inline">{ bestMode ? 'Best' : 'Source' }</span>
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                { bestMode
-                                    ? 'Best-available mode: showing best source per date. Click to switch to source-specific mode.'
-                                    : 'Switch to best-available mode: auto-selects the best source per date.' }
-                            </TooltipContent>
-                        </Tooltip>
-                    ) }
                     { nextImage && (
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -320,7 +347,7 @@ export function TimelineBar({
                                 >
                                     <CalendarClock className="size-3.5" strokeWidth={ 1.75 } />
                                     <span>
-                                        { !compact && <span className="hidden lg:inline">Next expected pass </span> }
+                                        <span className="hidden lg:inline">Next image </span>
                                         <span className="font-mono tnum">{ nextImage.label }</span>
                                     </span>
                                 </span>
@@ -331,26 +358,6 @@ export function TimelineBar({
                             </TooltipContent>
                         </Tooltip>
                     ) }
-                    { selectable.length >= 2 && (
-                        <PlaybackControls
-                            dates={ selectable }
-                            selectedDate={ selectedDate }
-                            onSelect={ onSelect }
-                            onPrefetch={ onPrefetchDate }
-                        />
-                    ) }
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={ atLatest || jumpTarget == null }
-                        onClick={ () => jumpTarget && onSelect(jumpTarget) }
-                        data-testid="timeline-jump-latest"
-                        title="Jump to latest"
-                        className="h-8 px-2"
-                    >
-                        <ChevronsRight className="size-4" strokeWidth={ 1.75 } />
-                        <span className={ cn(compact ? 'hidden' : 'hidden sm:inline') }>Latest</span>
-                    </Button>
                 </div>
             </div>
         </section>

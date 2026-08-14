@@ -18,6 +18,7 @@ from fastapi.responses import Response
 from ..api_models import CloudMaskOptions
 from ..auth import CurrentTeam, CurrentUser, get_current_team, get_current_user, require_role
 from ..config import settings
+from ..optical_cloud import DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT, optical_cloud_threshold
 from ..raster import catalog_resolver as catalog
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from ..raster.indices import DEFAULT_INDEX
@@ -263,16 +264,18 @@ def _filter_plots(
     return [plot for plot in plots if matches(plot)]
 
 
-def _is_usable(stats) -> bool:
+def _is_usable(
+    stats, optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT
+) -> bool:
     s = stats.statistics
-    threshold = settings.usable_pixel_threshold_percent
     if s.mean is None:
         return False
     if bool(stats.metadata.get("metricsProvisional", False)):
         return False
-    if s.validPixelPercent < threshold:
-        return False
-    if s.cloudMaskedPercent is not None and s.cloudMaskedPercent > (100 - threshold):
+    if (
+        s.cloudMaskedPercent is not None
+        and s.cloudMaskedPercent > optical_cloud_threshold_percent
+    ):
         return False
     return True
 
@@ -284,6 +287,7 @@ def _latest_usable_points(
     source_id: str,
     index_type: str,
     dates: list[str],
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> list[UsablePoint]:
     points: list[UsablePoint] = []
     for acquisition_date in dates:
@@ -295,7 +299,7 @@ def _latest_usable_points(
             index_type=index_type,
             cloud_mask=CloudMaskOptions(),
         )
-        if not _is_usable(stats):
+        if not _is_usable(stats, optical_cloud_threshold_percent):
             continue
         points.append(
             UsablePoint(
@@ -338,6 +342,7 @@ async def _row_for_plot(
     index_type: str,
     source_id: str,
     dates: list[str],
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> FieldLeaderboardRow:
     coords = _coordinates(plot)
     base = {
@@ -366,6 +371,7 @@ async def _row_for_plot(
                 source_id=source_id,
                 index_type=index_type,
                 dates=dates,
+                optical_cloud_threshold_percent=optical_cloud_threshold_percent,
             ),
             timeout=settings.index_request_timeout_seconds,
         )
@@ -461,6 +467,7 @@ async def _leaderboard(
     evaluation_limit: int,
     scene_scan_limit: int,
     team_id: str | None,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> FieldLeaderboardResponse:
     plots = await _run_blocking(plots_repo.list_plots, team_id)
     filtered = _filter_plots(
@@ -478,7 +485,13 @@ async def _leaderboard(
     evaluated = candidates[:evaluation_limit]
     dates = _scene_dates(source_id, start_date, end_date, scene_scan_limit)
     rows = [
-        await _row_for_plot(plot=plot, index_type=index_type, source_id=source_id, dates=dates)
+        await _row_for_plot(
+            plot=plot,
+            index_type=index_type,
+            source_id=source_id,
+            dates=dates,
+            optical_cloud_threshold_percent=optical_cloud_threshold_percent,
+        )
         for plot in evaluated
     ]
     ranked = _sort_rows(rows, sort_by, sort_order)
@@ -501,6 +514,7 @@ async def _leaderboard(
             "rankingScope": "first_N_filtered_fields" if truncated else "all_filtered_fields",
             "sceneScanLimit": scene_scan_limit,
             "usablePixelThreshold": settings.usable_pixel_threshold_percent,
+            "appliedCloudThresholdPercent": optical_cloud_threshold_percent,
             "partialUnavailableCount": sum(1 for row in ranked if not row.data_available),
             "weatherRiskAvailable": False,
             "weatherRiskSource": "pending",
@@ -581,6 +595,7 @@ async def get_field_leaderboard(
     evaluationLimit: int = Query(default=DEFAULT_EVALUATION_LIMIT),
     sceneScanLimit: int = Query(default=DEFAULT_SCENE_SCAN_LIMIT),
     team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> FieldLeaderboardResponse:
     if sortBy not in SORT_KEYS:
         raise bad_request(
@@ -607,6 +622,7 @@ async def get_field_leaderboard(
         evaluation_limit=evaluationLimit,
         scene_scan_limit=sceneScanLimit,
         team_id=team.id,
+        optical_cloud_threshold_percent=optical_cloud_threshold(user),
     )
 
 
@@ -646,6 +662,7 @@ async def export_field_leaderboard_csv(
     evaluationLimit: int = Query(default=DEFAULT_EVALUATION_LIMIT),
     sceneScanLimit: int = Query(default=DEFAULT_SCENE_SCAN_LIMIT),
     team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> Response:
     if sortBy not in SORT_KEYS:
         raise bad_request(
@@ -673,6 +690,7 @@ async def export_field_leaderboard_csv(
         evaluation_limit=evaluationLimit,
         scene_scan_limit=sceneScanLimit,
         team_id=team.id,
+        optical_cloud_threshold_percent=optical_cloud_threshold(user),
     )
     filename = f"field-leaderboard_{_safe_filename(response.index_type)}.csv"
     return Response(

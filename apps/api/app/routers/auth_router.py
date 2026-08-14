@@ -209,6 +209,7 @@ async def login(payload: LoginPayload, request: Request, response: Response) -> 
         username=user.get("username"),
         role=memberships[0]["role"],
         onboarding_completed=bool(user.get("onboardingCompleted", False)),
+        optical_cloud_threshold_percent=int(user.get("opticalCloudThresholdPercent", 20)),
         current_team_id=memberships[0]["id"],
         memberships=tuple(
             TeamMembership(id=item["id"], name=item["name"], role=item["role"])
@@ -273,6 +274,7 @@ async def signup(payload: SignupPayload, request: Request, response: Response) -
         username=email,
         role=memberships[0]["role"],
         onboarding_completed=False,
+        optical_cloud_threshold_percent=20,
         current_team_id=memberships[0]["id"],
         memberships=tuple(
             TeamMembership(id=item["id"], name=item["name"], role=item["role"])

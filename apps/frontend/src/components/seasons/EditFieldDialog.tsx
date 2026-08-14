@@ -51,7 +51,7 @@ interface Props {
   field: Field;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null, areaHa?: number | null) => void;
+  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null, areaHa?: number | null) => void | Promise<void>;
   onDelete?: (fieldId: string) => void;
   saving?: boolean;
   initialSeasonId?: string;
@@ -609,7 +609,7 @@ export default function EditFieldDialog({
     return existing.find((c) => c.cropName.trim() !== '')?.cropName ?? '';
   }, [confirmAddCycleSeasonId, vegetationCycles]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       setError('Field name is required');
       return;
@@ -624,20 +624,31 @@ export default function EditFieldDialog({
         return;
       }
     }
+    const emptyCrop = Object.values(vegetationCycles)
+      .flat()
+      .find((c) => !c.cropName.trim() || !cropsQ.data?.some((crop) => crop.name === c.cropName));
+    if (emptyCrop) {
+      setError('Select a crop for each vegetation cycle');
+      return;
+    }
     setError(null);
 
-    onSave?.(
-      field.id,
-      trimmedName,
-      geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
-      vegPayload.length > 0 ? vegPayload : undefined,
-      groupId || null,
-      // Recomputed from the actual edited geometry -- without this, resizing/moving
-      // a field (especially a dragged circle, where the area can change drastically)
-      // saves the new boundary but leaves the old area displayed everywhere else
-      // until the field happens to be re-saved for an unrelated reason.
-      geometryChanged ? currentArea : undefined,
-    );
+    try {
+      await onSave?.(
+        field.id,
+        trimmedName,
+        geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
+        vegPayload.length > 0 ? vegPayload : undefined,
+        groupId || null,
+        // Recomputed from the actual edited geometry -- without this, resizing/moving
+        // a field (especially a dragged circle, where the area can change drastically)
+        // saves the new boundary but leaves the old area displayed everywhere else
+        // until the field happens to be re-saved for an unrelated reason.
+        geometryChanged ? currentArea : undefined,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save field');
+    }
   };
 
   const handleDelete = () => {

@@ -18,7 +18,7 @@ class SeasonItem(ApiModel):
 class VegetationCycleCreate(ApiModel):
     season_id: str
     year: int
-    crop_type: int
+    crop_type: int = Field(ge=1)
     crop_variety: int | None = None
     sowing_date: str | None = None
     harvesting_date: str | None = None

@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
     basemaps: [] as ResolvedBasemapConfig[],
     seasons: [] as Array<{ id: string; name: string; startDate?: string | null; endDate?: string | null; createdAt?: string | null }>,
     vegetationCycles: {} as Record<string, Array<Record<string, unknown>>>,
+    crops: [] as Array<{ id: number; name: string }>,
     addCycle: vi.fn(),
     clearSeasonCycles: vi.fn(),
 }));
@@ -54,7 +55,7 @@ vi.mock('@/hooks/useVegetationCycles', () => ({
 vi.mock('@/lib/queries', () => ({
     queryKeys: { varieties: (cropId: number) => ['varieties', cropId] },
     useConfig: () => ({ data: state.config }),
-    useCrops: () => ({ data: [] }),
+    useCrops: () => ({ data: state.crops }),
     useFieldGroups: () => ({ data: [] }),
     useFields: () => ({ data: [FIELD] }),
     useIrrigationTypes: () => ({ data: [] }),
@@ -107,7 +108,7 @@ function config(usageModel: string) {
     };
 }
 
-function renderDialog(field: Field = FIELD) {
+function renderDialog(field: Field = FIELD, overrides: Partial<Parameters<typeof EditFieldDialog>[0]> = {}) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
@@ -120,6 +121,7 @@ function renderDialog(field: Field = FIELD) {
                     onOpenChange={ vi.fn() }
                     onSave={ vi.fn() }
                     onDelete={ vi.fn() }
+                    { ...overrides }
                 />
             </QueryClientProvider>
         </MemoryRouter>,
@@ -130,6 +132,7 @@ afterEach(() => {
     state.basemaps.length = 0;
     state.seasons = [];
     state.vegetationCycles = {};
+    state.crops = [];
     state.addCycle.mockReset();
     state.clearSeasonCycles.mockReset();
     vi.unstubAllEnvs();
@@ -279,5 +282,31 @@ describe('EditFieldDialog single-crop-per-season validation', () => {
 
         expect(state.clearSeasonCycles).toHaveBeenCalledWith('season-1');
         expect(state.addCycle).toHaveBeenCalledWith('season-1', undefined);
+    });
+
+    it('blocks save when a cycle has no crop selected', () => {
+        stubEnv();
+        state.seasons = [season];
+        state.vegetationCycles = { 'season-1': [{ ...cropCycle, cropName: '' }] };
+        const onSave = vi.fn();
+
+        renderDialog({ ...FIELD, seasonIds: ['season-1'] }, { onSave });
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        expect(screen.getByText(/select a crop for each vegetation cycle/i)).toBeTruthy();
+        expect(onSave).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a backend save error in the dialog', async () => {
+        stubEnv();
+        state.seasons = [season];
+        state.crops = [{ id: 1, name: 'Wheat' }];
+        state.vegetationCycles = { 'season-1': [cropCycle] };
+        const onSave = vi.fn().mockRejectedValue(new Error('Crop not found.'));
+
+        renderDialog({ ...FIELD, seasonIds: ['season-1'] }, { onSave });
+        fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+        expect(await screen.findByText('Crop not found.')).toBeTruthy();
     });
 });

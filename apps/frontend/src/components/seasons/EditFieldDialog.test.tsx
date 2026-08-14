@@ -253,7 +253,7 @@ describe('EditFieldDialog single-crop-per-season validation', () => {
         renderDialog({ ...FIELD, seasonIds: ['season-1'] });
         fireEvent.click(screen.getByRole('button', { name: /add vegetation cycle/i }));
 
-        expect(screen.getByText(/only one crop is allowed per season/i)).toBeTruthy();
+        expect(screen.getByText(/Wheat is already added for this season/i)).toBeTruthy();
         expect(state.addCycle).not.toHaveBeenCalled();
     });
 
@@ -275,7 +275,7 @@ describe('EditFieldDialog single-crop-per-season validation', () => {
 
         renderDialog({ ...FIELD, seasonIds: ['season-1'] });
         fireEvent.click(screen.getByRole('button', { name: /add vegetation cycle/i }));
-        fireEvent.click(screen.getByRole('button', { name: /yes, remove crop/i }));
+        fireEvent.click(screen.getByRole('button', { name: /replace crop/i }));
 
         expect(state.clearSeasonCycles).toHaveBeenCalledWith('season-1');
         expect(state.addCycle).not.toHaveBeenCalled();

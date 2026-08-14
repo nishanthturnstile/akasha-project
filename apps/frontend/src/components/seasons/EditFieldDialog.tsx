@@ -591,6 +591,12 @@ export default function EditFieldDialog({
     setConfirmAddCycleSeasonId(null);
   }, [confirmAddCycleSeasonId, clearSeasonCycles]);
 
+  const existingCropName = useMemo(() => {
+    if (!confirmAddCycleSeasonId) return '';
+    const existing = vegetationCycles[confirmAddCycleSeasonId] ?? [];
+    return existing.find((c) => c.cropName.trim() !== '')?.cropName ?? '';
+  }, [confirmAddCycleSeasonId, vegetationCycles]);
+
   const handleSave = () => {
     if (!name.trim()) {
       setError('Field name is required');
@@ -955,14 +961,14 @@ export default function EditFieldDialog({
         onOpenChange={ (open) => { if (!open) setConfirmAddCycleSeasonId(null); } }
       >
         <AlertDialogContent>
-          <AlertDialogTitle>Remove current crop?</AlertDialogTitle>
+          <AlertDialogTitle>Crop already added</AlertDialogTitle>
           <AlertDialogDescription>
-            A crop is already added for this season. Only one crop is allowed per season. Remove the current crop to select a new one. Do you want to continue?
+            { existingCropName || 'This crop' } is already added for this season. Would you like to replace it with the new crop?
           </AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={ () => setConfirmAddCycleSeasonId(null) }>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={ () => setConfirmAddCycleSeasonId(null) }>Keep existing crop</AlertDialogCancel>
             <AlertDialogAction onClick={ handleConfirmReplaceCrop }>
-              Yes, remove crop
+              Replace crop
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

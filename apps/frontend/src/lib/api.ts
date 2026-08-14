@@ -64,6 +64,8 @@ import type {
   Field,
   FieldCreatePayload,
   FieldUpdatePayload,
+  VegetationCycleGrowthStage,
+  VegetationCycleGrowthStagesPayload,
   SignupPayload,
   LatestImageryResult,
   RenderProfileName,
@@ -514,6 +516,15 @@ export const createField = (payload: FieldCreatePayload): Promise<Field> =>
 
 export const getField = (fieldId: string): Promise<Field> =>
   request<Field>(`/api/fields/${encodeURIComponent(fieldId)}`);
+
+export const updateVegetationCycleGrowthStages = (
+  cycleId: string,
+  payload: VegetationCycleGrowthStagesPayload,
+): Promise<VegetationCycleGrowthStage[]> =>
+  request<VegetationCycleGrowthStage[]>(
+    `/api/vegetation-cycles/${encodeURIComponent(cycleId)}/growth-stages`,
+    { method: 'PATCH', body: payload },
+  );
 
 function discoveryParams(filters: DiscoveryFilters): URLSearchParams {
   const params = new URLSearchParams({ seasonId: filters.seasonId });

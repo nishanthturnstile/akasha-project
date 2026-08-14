@@ -179,6 +179,7 @@ export default function EditFieldDialog({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDeleteField, setConfirmDeleteField] = useState(false);
   const [confirmClearSeasonId, setConfirmClearSeasonId] = useState<string | null>(null);
+  const [confirmAddCycleSeasonId, setConfirmAddCycleSeasonId] = useState<string | null>(null);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
@@ -551,6 +552,33 @@ export default function EditFieldDialog({
     setConfirmClearSeasonId(null);
   }, [confirmClearSeasonId, clearSeasonCycles]);
 
+  const handleAddCycleClick = useCallback((seasonId: string) => {
+    const existing = vegetationCycles[seasonId] ?? [];
+    const hasCrop = existing.some((c) => c.cropName.trim() !== '');
+    if (hasCrop) {
+      setConfirmAddCycleSeasonId(seasonId);
+      return;
+    }
+    const last = existing[existing.length - 1];
+    let defaultDate = seasonsQ.data?.find((s) => s.id === seasonId)?.startDate ?? '';
+    if (last?.harvestingDate) {
+      const [y, m, d] = last.harvestingDate.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + 1);
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      defaultDate = `${yy}-${mm}-${dd}`;
+    }
+    addCycle(seasonId, defaultDate || undefined);
+  }, [vegetationCycles, seasonsQ.data, addCycle]);
+
+  const handleConfirmReplaceCrop = useCallback(() => {
+    if (!confirmAddCycleSeasonId) return;
+    clearSeasonCycles(confirmAddCycleSeasonId);
+    setConfirmAddCycleSeasonId(null);
+  }, [confirmAddCycleSeasonId, clearSeasonCycles]);
+
   const handleSave = () => {
     if (!name.trim()) {
       setError('Field name is required');
@@ -611,12 +639,12 @@ export default function EditFieldDialog({
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
-      if (confirmDeleteField || confirmClearSeasonId) return;
+      if (confirmDeleteField || confirmClearSeasonId || confirmAddCycleSeasonId) return;
       setConfirmClose(true);
     } else {
       onOpenChange(nextOpen);
     }
-  }, [onOpenChange, confirmDeleteField, confirmClearSeasonId]);
+  }, [onOpenChange, confirmDeleteField, confirmClearSeasonId, confirmAddCycleSeasonId]);
 
   return (
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
@@ -771,21 +799,7 @@ export default function EditFieldDialog({
                                 <div className="border-t-2 border-border/60 p-4 space-y-4">
                                   <button
                                     type="button"
-                                    onClick={ () => {
-                                    const existing = vegetationCycles[season.id] ?? [];
-                                    const last = existing[existing.length - 1];
-                                    let defaultDate = season.startDate ?? '';
-                                    if (last?.harvestingDate) {
-                                      const [y, m, d] = last.harvestingDate.split('-').map(Number);
-                                      const dt = new Date(y, m - 1, d);
-                                      dt.setDate(dt.getDate() + 1);
-                                      const yy = dt.getFullYear();
-                                      const mm = String(dt.getMonth() + 1).padStart(2, '0');
-                                      const dd = String(dt.getDate()).padStart(2, '0');
-                                      defaultDate = `${yy}-${mm}-${dd}`;
-                                    }
-                                    addCycle(season.id, defaultDate || undefined);
-                                  } }
+                                    onClick={ () => handleAddCycleClick(season.id) }
                                     className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                                   >
                                     <Plus className="size-4" strokeWidth={ 1.75 } />
@@ -901,6 +915,24 @@ export default function EditFieldDialog({
           </AlertDialogContent>
         </AlertDialogRoot>
       ) }
+
+      <AlertDialogRoot
+        open={ confirmAddCycleSeasonId !== null }
+        onOpenChange={ (open) => { if (!open) setConfirmAddCycleSeasonId(null); } }
+      >
+        <AlertDialogContent>
+          <AlertDialogTitle>Remove current crop?</AlertDialogTitle>
+          <AlertDialogDescription>
+            A crop is already added for this season. Only one crop is allowed per season. Remove the current crop to select a new one. Do you want to continue?
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={ () => setConfirmAddCycleSeasonId(null) }>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={ handleConfirmReplaceCrop }>
+              Yes, remove crop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
     </Dialog.Root>
   );
 }

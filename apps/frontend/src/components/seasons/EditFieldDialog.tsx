@@ -564,13 +564,8 @@ export default function EditFieldDialog({
     setConfirmClearSeasonId(null);
   }, [confirmClearSeasonId, clearSeasonCycles]);
 
-  const handleAddCycleClick = useCallback((seasonId: string) => {
+  const computeDefaultCycleDate = useCallback((seasonId: string) => {
     const existing = vegetationCycles[seasonId] ?? [];
-    const hasCrop = existing.some((c) => c.cropName.trim() !== '');
-    if (hasCrop) {
-      setConfirmAddCycleSeasonId(seasonId);
-      return;
-    }
     const last = existing[existing.length - 1];
     let defaultDate = seasonsQ.data?.find((s) => s.id === seasonId)?.startDate ?? '';
     if (last?.harvestingDate) {
@@ -582,14 +577,30 @@ export default function EditFieldDialog({
       const dd = String(dt.getDate()).padStart(2, '0');
       defaultDate = `${yy}-${mm}-${dd}`;
     }
-    addCycle(seasonId, defaultDate || undefined);
-  }, [vegetationCycles, seasonsQ.data, addCycle]);
+    return defaultDate;
+  }, [vegetationCycles, seasonsQ.data]);
+
+  const handleAddCycleClick = useCallback((seasonId: string) => {
+    const existing = vegetationCycles[seasonId] ?? [];
+    const hasCrop = existing.some((c) => c.cropName.trim() !== '');
+    if (hasCrop) {
+      setConfirmAddCycleSeasonId(seasonId);
+      return;
+    }
+    addCycle(seasonId, computeDefaultCycleDate(seasonId) || undefined);
+  }, [vegetationCycles, addCycle, computeDefaultCycleDate]);
 
   const handleConfirmReplaceCrop = useCallback(() => {
     if (!confirmAddCycleSeasonId) return;
-    clearSeasonCycles(confirmAddCycleSeasonId);
+    const seasonId = confirmAddCycleSeasonId;
+    setExpandedSeasons((prev) => {
+      const next = new Set(prev);
+      next.add(seasonId);
+      return next;
+    });
     setConfirmAddCycleSeasonId(null);
-  }, [confirmAddCycleSeasonId, clearSeasonCycles]);
+    addCycle(seasonId, computeDefaultCycleDate(seasonId) || undefined);
+  }, [confirmAddCycleSeasonId, addCycle, computeDefaultCycleDate]);
 
   const existingCropName = useMemo(() => {
     if (!confirmAddCycleSeasonId) return '';

@@ -305,3 +305,31 @@ def test_invalid_field_name_uses_standard_error_shape(store, name, message):
     assert body["error"]["code"] == "INVALID_NAME"
     assert body["error"]["message"] == message
     assert "Traceback" not in r.text
+
+
+# --------------------------------------------------------------------------
+# 6) vegetation cycle crop type must be a positive crop id (regression: the
+# edit-field dialog sends cropType 0 for an empty/unresolved crop, which used
+# to slip past the schema and surface as a confusing 404 CROP_NOT_FOUND).
+# --------------------------------------------------------------------------
+def test_vegetation_cycle_with_zero_crop_type_is_rejected(store):
+    sid = store.create_season("Kharif 2026", can_delete=True)
+    created = store.create_field(TEST_USER, "Field A", VALID_POLY, season_ids=[sid])
+    fid = created["id"]
+
+    r = client.patch(
+        f"/api/fields/{fid}",
+        json={
+            "vegetationData": [
+                {
+                    "seasonId": sid,
+                    "year": 2026,
+                    "cropType": 0,
+                    "sowingDate": "2026-06-01",
+                }
+            ],
+        },
+    )
+
+    assert r.status_code == 422
+    assert "Traceback" not in r.text

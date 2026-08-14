@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from geoalchemy2.shape import from_shape, to_shape
@@ -17,6 +17,7 @@ from ..discovery_normalization import natural_sort_key, normalize_search_text
 from ..models import (
     AppSetting,
     Crop,
+    CropGrowthStage,
     Field,
     FieldGroup,
     FieldSeason,
@@ -25,6 +26,7 @@ from ..models import (
     TillageType,
     Variety,
     VegetationCycle,
+    VegetationCycleGrowthStage,
 )
 from ..raster.errors import bad_request, invalid_geometry, not_found
 from ..raster.geo_validate import validate_polygon
@@ -41,6 +43,14 @@ def _uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
             code="INVALID_UUID",
             value=str(value),
         ) from exc
+
+
+def _date_value(value: Any) -> date | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value)).date()
 
 
 def _geometry_value(geometry: dict[str, Any]):
@@ -218,6 +228,7 @@ def _veg_cycle_to_dict(
     variety_name: str | None = None,
     irrigation_type_name: str | None = None,
     tillage_type_name: str | None = None,
+    growth_stages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": str(row.id),
@@ -243,6 +254,7 @@ def _veg_cycle_to_dict(
         "ndviList": row.ndvi_list,
         "notes": row.notes,
         "isCutOff": row.is_cut_off,
+        "growthStages": growth_stages or [],
         "createdAt": (
             row.created_at.isoformat().replace("+00:00", "Z")
             if row.created_at
@@ -254,6 +266,73 @@ def _veg_cycle_to_dict(
             else None
         ),
     }
+
+
+def _growth_stage_data(
+    session: Any, cycles: list[Any]
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    if not cycles:
+        return {}
+
+    cycle_ids = [cycle.id for cycle in cycles]
+    saved_rows = session.execute(
+        select(VegetationCycleGrowthStage)
+        .where(VegetationCycleGrowthStage.vegetation_cycle_id.in_(cycle_ids))
+        .order_by(
+            VegetationCycleGrowthStage.vegetation_cycle_id,
+            VegetationCycleGrowthStage.seq,
+        )
+    ).scalars().all()
+    saved_by_cycle: dict[uuid.UUID, dict[int, VegetationCycleGrowthStage]] = {}
+    for stage in saved_rows:
+        saved_by_cycle.setdefault(stage.vegetation_cycle_id, {})[stage.seq] = stage
+
+    crop_ids = {cycle.crop_id for cycle in cycles}
+    templates = session.execute(
+        select(CropGrowthStage)
+        .where(CropGrowthStage.crop_id.in_(crop_ids))
+        .order_by(CropGrowthStage.crop_id, CropGrowthStage.seq)
+    ).scalars().all()
+    templates_by_crop: dict[int, list[CropGrowthStage]] = {}
+    for template in templates:
+        templates_by_crop.setdefault(template.crop_id, []).append(template)
+
+    result: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for cycle in cycles:
+        result[cycle.id] = [
+            {
+                "id": str(saved_by_cycle[cycle.id][template.seq].id)
+                if template.seq in saved_by_cycle.get(cycle.id, {})
+                else None,
+                "cropId": cycle.crop_id,
+                "seq": template.seq,
+                "name": template.name,
+                "duration": template.duration,
+                "startDate": (
+                    saved_by_cycle[cycle.id][template.seq].start_date.isoformat()
+                    if template.seq in saved_by_cycle.get(cycle.id, {})
+                    and saved_by_cycle[cycle.id][template.seq].start_date
+                    else None
+                ),
+                "saved": template.seq in saved_by_cycle.get(cycle.id, {}),
+            }
+            for template in templates_by_crop.get(cycle.crop_id, [])
+        ]
+    return result
+
+
+def _harvest_template(templates: list[CropGrowthStage]) -> CropGrowthStage | None:
+    return next(
+        (
+            template
+            for template in templates
+            if any(
+                keyword in template.name.casefold()
+                for keyword in ("harvest", "cutting", "tapping")
+            )
+        ),
+        None,
+    )
 
 
 def _vegetation_cycle_data(
@@ -281,6 +360,8 @@ def _vegetation_cycle_data(
         stmt = stmt.where(VegetationCycle.season_id == season_id)
     stmt = stmt.order_by(VegetationCycle.created_at)
     rows = session.execute(stmt).all()
+    cycles = [row[0] for row in rows]
+    stages_by_cycle = _growth_stage_data(session, cycles)
     return [
         _veg_cycle_to_dict(
             row[0],
@@ -289,6 +370,7 @@ def _vegetation_cycle_data(
             variety_name=row[3],
             irrigation_type_name=row[4],
             tillage_type_name=row[5],
+            growth_stages=stages_by_cycle.get(row[0].id, []),
         )
         for row in rows
     ]
@@ -318,6 +400,8 @@ def _vegetation_cycle_data_bulk(
         .outerjoin(TillageType, VegetationCycle.tillage_type_id == TillageType.id)
         .order_by(VegetationCycle.created_at)
     ).all()
+    cycles = [row[0] for row in rows]
+    stages_by_cycle = _growth_stage_data(session, cycles)
     result: dict[uuid.UUID, list[dict[str, Any]]] = {}
     for row in rows:
         vc = row[0]
@@ -328,6 +412,7 @@ def _vegetation_cycle_data_bulk(
             variety_name=row[3],
             irrigation_type_name=row[4],
             tillage_type_name=row[5],
+            growth_stages=stages_by_cycle.get(vc.id, []),
         )
         result.setdefault(vc.field_id, []).append(entry)
     return result
@@ -342,29 +427,49 @@ def _insert_vegetation_cycles(
     if not vegetation_data:
         return
     for item in vegetation_data:
-        session.add(
-            VegetationCycle(
-                id=uuid.uuid4(),
-                field_id=field_id,
-                season_id=_uuid(item["seasonId"]),
-                year=item["year"],
-                crop_id=item["cropType"],
-                variety_id=item.get("cropVariety"),
-                sowing_date=item.get("sowingDate"),
-                harvesting_date=item.get("harvestingDate"),
-                target_yield=item.get("targetYield"),
-                actual_yield=item.get("actualYield"),
-                irrigation_type_id=item.get("irrigationType"),
-                tillage_type_id=item.get("tillageType"),
-                maturity=item.get("maturity"),
-                fertilizer=item.get("fertilizer"),
-                hybrid=item.get("hybrid"),
-                ndvi_list=item.get("ndviList"),
-                notes=item.get("notes"),
-                is_cut_off=item.get("isCutOff"),
-                user_id=user_id,
-            )
+        harvesting_date = _date_value(item.get("harvestingDate"))
+        cycle = VegetationCycle(
+            id=uuid.uuid4(),
+            field_id=field_id,
+            season_id=_uuid(item["seasonId"]),
+            year=item["year"],
+            crop_id=item["cropType"],
+            variety_id=item.get("cropVariety"),
+            sowing_date=item.get("sowingDate"),
+            harvesting_date=harvesting_date,
+            target_yield=item.get("targetYield"),
+            actual_yield=item.get("actualYield"),
+            irrigation_type_id=item.get("irrigationType"),
+            tillage_type_id=item.get("tillageType"),
+            maturity=item.get("maturity"),
+            fertilizer=item.get("fertilizer"),
+            hybrid=item.get("hybrid"),
+            ndvi_list=item.get("ndviList"),
+            notes=item.get("notes"),
+            is_cut_off=item.get("isCutOff"),
+            user_id=user_id,
         )
+        session.add(cycle)
+        session.flush()
+        if harvesting_date:
+            templates = session.execute(
+                select(CropGrowthStage)
+                .where(CropGrowthStage.crop_id == cycle.crop_id)
+                .order_by(CropGrowthStage.seq)
+            ).scalars().all()
+            harvest_template = _harvest_template(templates)
+            if harvest_template:
+                session.add(
+                    VegetationCycleGrowthStage(
+                        id=uuid.uuid4(),
+                        vegetation_cycle_id=cycle.id,
+                        crop_id=cycle.crop_id,
+                        seq=harvest_template.seq,
+                        name=harvest_template.name,
+                        duration=harvest_template.duration,
+                        start_date=cycle.harvesting_date,
+                    )
+                )
 
 
 def _row_to_field(
@@ -629,7 +734,6 @@ def update_field(
             )
         for key in ("name", "geometry", "groupId", "district", "country"):
             if key in values:
-                value = values[key]
                 if key == "geometry":
                     values["area_ha"] = _validated_geometry_facts(values[key])["areaHa"]
                     values[key] = _geometry_value(values[key])
@@ -688,6 +792,118 @@ def list_vegetation_cycles(
         if field is None:
             return []
         return _vegetation_cycle_data(session, _uuid(field_id), _uuid(season_id))
+
+
+def update_vegetation_cycle_growth_stages(
+    cycle_id: str,
+    user_id: str,
+    stages: list[dict[str, Any]],
+    team_id: str | None = None,
+) -> list[dict[str, Any]] | None:
+    cycle_uuid = _uuid(cycle_id)
+    with session_scope() as session:
+        cycle = session.execute(
+            select(VegetationCycle)
+            .join(Field, VegetationCycle.field_id == Field.id)
+            .where(
+                VegetationCycle.id == cycle_uuid,
+                (
+                    Field.team_id == _uuid(team_id)
+                    if team_id is not None
+                    else Field.user_id == _uuid(user_id)
+                ),
+            )
+        ).scalar_one_or_none()
+        if cycle is None:
+            return None
+
+        templates = session.execute(
+            select(CropGrowthStage)
+            .where(CropGrowthStage.crop_id == cycle.crop_id)
+            .order_by(CropGrowthStage.seq)
+        ).scalars().all()
+        template_by_seq = {template.seq: template for template in templates}
+        harvest_template = _harvest_template(templates)
+        requested_by_seq = {item["seq"]: item.get("startDate") for item in stages}
+        unknown = sorted(set(requested_by_seq) - set(template_by_seq))
+        if unknown:
+            raise bad_request(
+                "One or more growth stages do not belong to this crop.",
+                code="GROWTH_STAGE_NOT_FOUND",
+                sequences=unknown,
+            )
+
+        parsed_dates: dict[int, Any] = {}
+        for seq, value in requested_by_seq.items():
+            if value is None or value == "":
+                parsed_dates[seq] = None
+                continue
+            try:
+                parsed_dates[seq] = datetime.fromisoformat(value).date()
+            except (TypeError, ValueError) as exc:
+                raise bad_request(
+                    "Growth-stage start dates must use YYYY-MM-DD.",
+                    code="INVALID_GROWTH_STAGE_DATE",
+                    seq=seq,
+                ) from exc
+
+        if harvest_template and harvest_template.seq in parsed_dates:
+            cycle.harvesting_date = parsed_dates[harvest_template.seq]
+
+        existing = session.execute(
+            select(VegetationCycleGrowthStage)
+            .where(VegetationCycleGrowthStage.vegetation_cycle_id == cycle.id)
+            .order_by(VegetationCycleGrowthStage.seq)
+        ).scalars().all()
+        merged_dates = {stage.seq: stage.start_date for stage in existing}
+        merged_dates.update(parsed_dates)
+        ordered_dates = [
+            merged_dates[seq]
+            for seq in sorted(merged_dates)
+            if merged_dates[seq]
+        ]
+        if any(
+            left >= right
+            for left, right in zip(ordered_dates, ordered_dates[1:], strict=False)
+        ):
+            raise bad_request(
+                "Growth-stage start dates must be strictly after the previous stage.",
+                code="GROWTH_STAGE_DATE_ORDER_INVALID",
+            )
+
+        if not existing:
+            for template in templates:
+                session.add(
+                    VegetationCycleGrowthStage(
+                        id=uuid.uuid4(),
+                        vegetation_cycle_id=cycle.id,
+                        crop_id=cycle.crop_id,
+                        seq=template.seq,
+                        name=template.name,
+                        duration=template.duration,
+                        start_date=parsed_dates.get(template.seq),
+                    )
+                )
+        else:
+            existing_by_seq = {stage.seq: stage for stage in existing}
+            for template in templates:
+                if template.seq not in existing_by_seq:
+                    stage = VegetationCycleGrowthStage(
+                        id=uuid.uuid4(),
+                        vegetation_cycle_id=cycle.id,
+                        crop_id=cycle.crop_id,
+                        seq=template.seq,
+                        name=template.name,
+                        duration=template.duration,
+                        start_date=None,
+                    )
+                    session.add(stage)
+                    existing_by_seq[template.seq] = stage
+            for seq, value in parsed_dates.items():
+                existing_by_seq[seq].start_date = value
+
+        session.flush()
+        return _growth_stage_data(session, [cycle])[cycle.id]
 
 
 def delete_field(field_id: str, user_id: str, team_id: str | None = None) -> bool:

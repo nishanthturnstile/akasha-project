@@ -7,9 +7,26 @@ import logging
 from sqlalchemy import select
 
 from ..db import session_scope
-from ..models import Crop, IrrigationType, SeedingType, TillageType, Variety
+from ..models import Crop, CropGrowthStage, IrrigationType, SeedingType, TillageType, Variety
 
 logger = logging.getLogger(__name__)
+
+
+def _crop_stages(session, crop_id: int) -> list[dict]:
+    return [
+        {
+            "id": stage.id,
+            "cropId": stage.crop_id,
+            "seq": stage.seq,
+            "name": stage.name,
+            "duration": stage.duration,
+        }
+        for stage in session.execute(
+            select(CropGrowthStage)
+            .where(CropGrowthStage.crop_id == crop_id)
+            .order_by(CropGrowthStage.seq)
+        ).scalars().all()
+    ]
 
 
 def list_irrigation_types() -> list[dict]:
@@ -53,6 +70,7 @@ def list_crops() -> list[dict]:
                 "has_variety": r.has_variety,
                 "bbch_mode": r.bbch_mode,
                 "characteristic": r.characteristic,
+                "stages": _crop_stages(session, r.id),
             }
             for r in session.execute(stmt).scalars().all()
         ]
@@ -74,6 +92,7 @@ def get_crop(crop_id: int) -> dict | None:
             "has_variety": r.has_variety,
             "bbch_mode": r.bbch_mode,
             "characteristic": r.characteristic,
+            "stages": _crop_stages(session, r.id),
         }
 
 
@@ -114,7 +133,7 @@ def ensure_reference_data() -> None:
             logger.info("Seeded reference data: %s", counts)
         return
 
-    # Seeding types exist — just ensure crops are in sync via row-count check
+    # Seeding types exist — apply the full crop and stage upsert on every check.
     from ..bulk_creation import generate_crops
     with session_scope() as session:
         count = generate_crops(session)

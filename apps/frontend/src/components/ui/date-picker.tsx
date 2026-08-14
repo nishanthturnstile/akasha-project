@@ -26,6 +26,7 @@ interface DatePickerProps {
   overlapRanges?: DateRange[];
   blockedRanges?: DateRange[];
   showLegend?: boolean;
+  theme?: 'light' | 'dark';
 }
 
 const MONTHS = [
@@ -66,6 +67,7 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
   overlapRanges,
   blockedRanges,
   showLegend = false,
+  theme = 'light',
 }, ref) {
   const hasLegend = showLegend && (!!minDate || !!maxDate || (overlapRanges && overlapRanges.length > 0));
   const [open, setOpen] = React.useState(false);
@@ -132,10 +134,15 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
     if (!open) return;
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) {
+      const calendarHeight = 360;
+      const calendarWidth = Math.max(rect.width, 280);
+      const openAbove = window.innerHeight - rect.bottom < calendarHeight && rect.top > calendarHeight;
       setFixedStyle({
-        top: rect.bottom + 4,
-        left: rect.left,
-        minWidth: Math.max(rect.width, 280),
+        top: openAbove
+          ? Math.max(8, rect.top - calendarHeight - 4)
+          : Math.min(rect.bottom + 4, Math.max(8, window.innerHeight - calendarHeight - 8)),
+        left: Math.min(rect.left, Math.max(8, window.innerWidth - calendarWidth - 8)),
+        minWidth: calendarWidth,
       });
     }
     const onScroll = () => setOpen(false);
@@ -246,7 +253,10 @@ export const DatePicker = React.forwardRef<DatePickerHandle, DatePickerProps>(fu
       ref={calendarRef}
       role="dialog"
       aria-label="Pick a date"
-      className="fixed z-picker rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-e3 pointer-events-auto"
+      className={ cn(
+        'fixed z-picker rounded-lg border bg-popover p-3 text-popover-foreground shadow-e3 pointer-events-auto',
+        theme === 'dark' ? 'dark border-slate-500/70' : 'border-border',
+      ) }
       style={fixedStyle}
     >
       {/* Header */}

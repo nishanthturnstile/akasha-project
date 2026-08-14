@@ -12,6 +12,18 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
+
+// Clears the body/html scroll-lock styles that Radix Dialog/AlertDialog and
+// react-remove-scroll set while a dialog is open. If Radix fails to restore them
+// (nested dialog close ordering bug), the page is left unclickable — resetting
+// here un-freezes it.
+function resetDialogLockStyles(): void {
+  const { body } = document;
+  body.style.pointerEvents = '';
+  body.style.overflow = '';
+  body.style.position = '';
+  document.documentElement.style.overflow = '';
+}
 import { usePredefinedSeasons } from '@/lib/queries';
 import {
   AlertDialogAction,
@@ -240,19 +252,34 @@ export default function EditSeasonDialog({
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
-      if (confirmSeasonEdit) return;
+      if (confirmClose || confirmSeasonEdit) return;
       setConfirmClose(true);
     } else {
       onOpenChange(nextOpen);
     }
-  }, [onOpenChange, confirmSeasonEdit]);
+  }, [onOpenChange, confirmClose, confirmSeasonEdit]);
+
+  // Safety net: if Radix ever leaves body pointer-events locked after the dialog
+  // closes (the nested-dialog freeze), force-clear it so the page stays usable.
+  // Runs both when `open` flips to false AND on unmount.
+  useEffect(() => {
+    if (!open) resetDialogLockStyles();
+    return () => resetDialogLockStyles();
+  }, [open]);
+
+  const handleDialogInteractOutside = useCallback((event: { preventDefault: () => void }) => {
+    if (confirmClose || confirmSeasonEdit) event.preventDefault();
+  }, [confirmClose, confirmSeasonEdit]);
 
   return (
+    <>
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit season"
+          onInteractOutside={ handleDialogInteractOutside }
+          onEscapeKeyDown={ (e) => { if (confirmClose || confirmSeasonEdit) e.preventDefault(); } }
           className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-0 sm:w-[calc(100vw-2rem)] lg:max-w-2xl"
         >
           <VisuallyHidden>
@@ -504,6 +531,7 @@ export default function EditSeasonDialog({
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      </Dialog.Root>
 
       <AlertDialogRoot open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent>
@@ -542,6 +570,6 @@ export default function EditSeasonDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialogRoot>
-    </Dialog.Root>
+    </>
   );
 }

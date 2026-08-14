@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronRight, Info, Layers, Lock, Plus, Satellite, Sprout, Zap } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Info, Layers, Lock, Pencil, Plus, Satellite, Sprout, X, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FieldTrendChart } from '@/components/monitoring/FieldTrendChart';
 import { NdviValueSplit } from '@/components/analytics/NdviValueSplit';
-import { useFieldMonitoringEvidence, useFieldStatistics, useFieldTrend, useSeasons } from '@/lib/queries';
+import { useFieldMonitoringEvidence, useFieldStatistics, useFieldTrend, useSeasons, useUpdateVegetationCycleGrowthStages } from '@/lib/queries';
 import { radarEvidenceDescription } from '@/lib/radarEvidence';
 import { cn } from '@/lib/utils';
-import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, NdviValueSplit as NdviValueSplitData, Plot, SarSupport, VegetationCycleResponse } from '@/types/api';
+import type { CloudMaskOptions, FieldStatisticsPipelineMetadata, FieldTrendPoint, NdviValueSplit as NdviValueSplitData, Plot, SarSupport, VegetationCycleGrowthStage, VegetationCycleResponse } from '@/types/api';
 
 type AnalyticsTab = 'crop-info' | 'chart' | 'activities';
 
@@ -365,8 +367,6 @@ export function IndexPanel({
   );
 }
 
-const STAGE_LABELS = ['Seeding', 'Germination', 'Vegetative', 'Branching', 'Flowering', 'Fruiting', 'Ripening', 'Harvest'];
-
 function CropInfoTab({
   vegetationData,
   seasonIds,
@@ -399,6 +399,7 @@ function CropInfoTab({
   const [selectedCropId, setSelectedCropId] = useState<string | null>(() =>
     vegetationData.length > 0 ? vegetationData[0].id : null,
   );
+  const selectedCycle = vegetationData.find((cycle) => cycle.id === selectedCropId) ?? vegetationData[0] ?? null;
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
@@ -546,50 +547,7 @@ function CropInfoTab({
         </div>
       </div>
 
-      {/* ── Card 2: Growth Stages ── */ }
-      <div
-        data-testid="crop-info-card-growth-stages"
-        className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-background/40 p-2.5"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Sprout className="size-4 text-primary" strokeWidth={ 1.75 } />
-            <span className="text-sm font-semibold text-foreground">Growth Stages</span>
-            <Info className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } />
-          </div>
-          <span className="text-xs font-medium text-primary cursor-default">Edit</span>
-        </div>
-
-        <div className="relative py-1.5">
-          <div className="absolute left-[7px] right-[7px] top-[13px] h-0.5 bg-border" />
-          <div className="relative flex justify-between">
-            { STAGE_LABELS.map((label, i) => (
-              <div key={ label } className="flex flex-col items-center gap-1">
-                <div
-                  className={ cn(
-                    'relative z-10 size-3.5 rounded-full border-2',
-                    i === 0
-                      ? 'border-primary bg-primary'
-                      : 'border-border bg-background',
-                  ) }
-                />
-                <span className={ cn(
-                  'text-[10px] leading-tight text-center',
-                  i === 0 ? 'text-primary font-medium' : 'text-muted-foreground',
-                ) }>
-                  { label }
-                </span>
-              </div>
-            )) }
-          </div>
-        </div>
-
-        <div className="mt-1 rounded-md border border-dashed border-border/70 bg-background/50 px-3 py-2.5 text-center">
-          <p className="text-xs leading-4 text-muted-foreground">
-            Growth stages will become available once crop vegetation begins.
-          </p>
-        </div>
-      </div>
+      <GrowthStagesCard key={ selectedCycle?.id ?? 'no-cycle' } cycle={ selectedCycle } />
 
       { valueSplit?.indexType === 'NDVI' && (
         <NdviValueSplit valueSplit={ valueSplit } selectedDate={ selectedDate } />
@@ -618,6 +576,323 @@ function CropInfoTab({
         </p>
       </div>
     </div>
+  );
+}
+
+function GrowthStagesCard({ cycle }: { cycle: VegetationCycleResponse | null }) {
+  const updateStages = useUpdateVegetationCycleGrowthStages();
+  const [editing, setEditing] = useState(false);
+  const [draftStages, setDraftStages] = useState<VegetationCycleGrowthStage[]>(
+    cycle?.growthStages ?? [],
+  );
+  const [activeSeq, setActiveSeq] = useState<number | null>(null);
+  const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
+  const swipeStartX = useRef<number | null>(null);
+
+  const stages = cycle?.growthStages ?? [];
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const savedStages = stages.filter((stage) => stage.startDate);
+  const lastStartedStage = [...savedStages]
+    .filter((stage) => (stage.startDate ?? '') <= todayIso)
+    .sort((left, right) => right.seq - left.seq)[0] ?? null;
+  const currentStage = (() => {
+    if (!lastStartedStage) return null;
+    if (lastStartedStage.startDate === todayIso) return lastStartedStage;
+
+    const nextStage = stages.find((stage) => stage.seq > lastStartedStage.seq);
+    if (nextStage && !nextStage.startDate) return nextStage;
+    return lastStartedStage;
+  })();
+  const displayedSeq = selectedSeq ?? currentStage?.seq ?? null;
+  const selectedStage = stages.find((stage) => stage.seq === displayedSeq) ?? null;
+  const selectedIndex = selectedStage ? stages.findIndex((stage) => stage.seq === selectedStage.seq) : -1;
+
+  const openEditor = (seq?: number) => {
+    if (!cycle) return;
+    const nextStages = cycle.growthStages ?? [];
+    setDraftStages(nextStages);
+    setActiveSeq(seq ?? nextStages.find((stage) => !stage.startDate)?.seq ?? nextStages[0]?.seq ?? null);
+    setEditing(true);
+  };
+
+  const closeEditor = () => {
+    setDraftStages(cycle?.growthStages ?? []);
+    setActiveSeq(null);
+    setEditing(false);
+  };
+
+  const applyStageDate = (seq: number) => {
+    if (!cycle) return;
+    const stage = draftStages.find((item) => item.seq === seq);
+    const savedStage = stages.find((item) => item.seq === seq);
+    if (!stage || (!stage.startDate && !savedStage?.startDate)) return;
+    updateStages.mutate(
+      {
+        cycleId: cycle.id,
+        payload: {
+          stages: [{ seq, startDate: stage.startDate }],
+        },
+      },
+      {
+        onSuccess: () => {
+          setSelectedSeq(seq);
+          setActiveSeq(null);
+        },
+      },
+    );
+  };
+
+  const cancelStageDate = (seq: number) => {
+    const savedStage = stages.find((stage) => stage.seq === seq);
+    setDraftStages((current) => current.map((stage) => (
+      stage.seq === seq ? { ...stage, startDate: savedStage?.startDate ?? null } : stage
+    )));
+    setActiveSeq(null);
+  };
+
+  const moveSelectedStage = (offset: number) => {
+    if (stages.length === 0) return;
+    const nextIndex = Math.min(Math.max(selectedIndex + offset, 0), stages.length - 1);
+    setSelectedSeq(stages[nextIndex].seq);
+  };
+
+  const handleRailPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    swipeStartX.current = event.clientX;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleRailPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    if (swipeStartX.current === null) return;
+    const deltaX = event.clientX - swipeStartX.current;
+    swipeStartX.current = null;
+    if (Math.abs(deltaX) < 32) return;
+    if (selectedIndex < 0) {
+      setSelectedSeq(deltaX < 0 ? stages[0].seq : stages[stages.length - 1].seq);
+      return;
+    }
+    moveSelectedStage(deltaX < 0 ? 1 : -1);
+  };
+
+  const formatStartDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  const shiftDate = (value: string, days: number) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+
+  return (
+    <Dialog.Root open={ editing } onOpenChange={ (open) => { if (open) setEditing(true); else closeEditor(); } }>
+      <div
+        data-testid="crop-info-card-growth-stages"
+        className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-background/40 p-2.5"
+      >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Sprout className="size-4 text-primary" strokeWidth={ 1.75 } />
+          <span className="text-sm font-semibold text-foreground">Growth Stages</span>
+          <Info className="size-3.5 text-muted-foreground" strokeWidth={ 1.75 } />
+        </div>
+        { cycle && (
+          <Dialog.Trigger asChild>
+            <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={ () => openEditor() }>
+              Edit
+            </button>
+          </Dialog.Trigger>
+        ) }
+      </div>
+
+      { !cycle ? (
+        <p className="text-xs text-muted-foreground">Select a crop to view its growth stages.</p>
+      ) : stages.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No growth stages are configured for this crop.</p>
+      ) : (
+        <>
+          <div
+            className="relative pb-0.5 touch-pan-y"
+            data-testid="growth-stages-timeline"
+            onPointerDown={ handleRailPointerDown }
+            onPointerUp={ handleRailPointerUp }
+          >
+            <div
+              className="relative grid w-full px-1 pt-1.5"
+              style={ { gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` } }
+            >
+              <div className="absolute left-3 right-3 top-2.75 h-0.5 bg-border/80" />
+            { stages.map((stage) => (
+                <button
+                  key={ stage.id ?? `${stage.seq}-${stage.name}` }
+                  type="button"
+                  aria-label={`Select ${stage.name}`}
+                  aria-pressed={ selectedSeq === stage.seq }
+                  title={ stage.startDate ? `${stage.name} · ${stage.startDate}` : stage.name }
+                  onClick={ () => setSelectedSeq(stage.seq) }
+                  className="relative z-10 flex min-w-13 flex-1 cursor-pointer flex-col items-center gap-1 text-center"
+                >
+                  <span
+                    className={ cn(
+                      'pointer-events-none size-3.5 rounded-full border-2 transition-colors',
+                      displayedSeq === stage.seq
+                        ? 'border-primary bg-background ring-2 ring-primary/30'
+                        : stage.startDate
+                          ? 'border-primary bg-primary'
+                          : 'border-border bg-background',
+                    ) }
+                  />
+                </button>
+            )) }
+            </div>
+          </div>
+          { selectedStage ? (
+            <div className="mt-2 flex items-center justify-center gap-2 rounded-md border border-border/70 bg-muted/35 px-2 py-2.5" data-testid="growth-stage-selected-info">
+              <button
+                type="button"
+                aria-label="Previous growth stage"
+                disabled={ selectedIndex <= 0 }
+                onClick={ () => moveSelectedStage(-1) }
+                className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <div className="min-w-0 flex-1 text-center">
+                <div className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground" data-testid="growth-stage-selected-crop">
+                  { selectedStage.cropId === cycle?.cropType ? (cycle.cropName ?? 'Selected crop') : 'Selected crop' }
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Start date:{ ' ' }
+                  { selectedStage.startDate ? (
+                    <span className="font-medium text-primary">{ formatStartDate(selectedStage.startDate) }</span>
+                  ) : (
+                    <Dialog.Trigger asChild>
+                      <button type="button" onClick={ () => openEditor(selectedStage.seq) } className="font-medium text-primary hover:underline">+ Add</button>
+                    </Dialog.Trigger>
+                  ) }
+                </div>
+                <div className="mt-0.5 truncate text-sm font-semibold text-foreground" title={ selectedStage.name }>
+                  { selectedStage.name }
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Next growth stage"
+                disabled={ selectedIndex < 0 || selectedIndex >= stages.length - 1 }
+                onClick={ () => moveSelectedStage(1) }
+                className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+          ) : (
+            <Dialog.Trigger asChild>
+              <button type="button" onClick={ () => openEditor() } className="mt-2 w-full rounded-md border border-dashed border-border/70 bg-background/50 px-3 py-2 text-center text-xs leading-4 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary">
+                No start date for the growth stage
+                <span className="ml-1 text-primary">+ Add</span>
+              </button>
+            </Dialog.Trigger>
+          ) }
+        </>
+      ) }
+
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-modal bg-background/70 backdrop-blur-sm" />
+          <Dialog.Content
+            aria-label="Edit growth stages"
+            className="fixed left-1/2 top-1/2 z-modal flex max-h-[82vh] w-[min(35.5rem,calc(100vw-1rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-e3"
+          >
+            <div className="relative border-b border-border/70 px-5 pb-3 pt-4 text-center sm:px-8">
+              <Dialog.Title className="font-display text-lg font-semibold text-popover-foreground">Edit growth stages</Dialog.Title>
+              <Dialog.Description className="mx-auto mt-2 max-w-md text-xs leading-5 text-muted-foreground">
+                Set the start date for each stage. Changes apply only to this vegetation cycle.
+              </Dialog.Description>
+              <Dialog.Close asChild>
+                <button type="button" aria-label="Close" className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground">
+                  <X className="size-5" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6">
+              <div className="relative space-y-1.5 pl-11">
+                <div className="absolute bottom-4 left-4.75 top-4 w-0.5 bg-border/80" />
+                { [...draftStages].sort((a, b) => b.seq - a.seq).map((stage) => {
+                  const isActive = activeSeq === stage.seq;
+                  const previousStage = draftStages
+                    .filter((item) => item.seq < stage.seq && item.startDate)
+                    .sort((left, right) => right.seq - left.seq)[0] ?? null;
+                  const nextStage = draftStages
+                    .filter((item) => item.seq > stage.seq && item.startDate)
+                    .sort((left, right) => left.seq - right.seq)[0] ?? null;
+                  return (
+                    <div key={ stage.id ?? `${stage.seq}-${stage.name}` } className={ cn(
+                      'relative rounded-lg border bg-muted px-3 py-2.5 text-card-foreground shadow-e1',
+                      stage.startDate ? 'border-primary/50' : 'border-border',
+                    ) }>
+                      <span className={ cn(
+                        'absolute -left-9.75 top-3 flex size-7 items-center justify-center rounded-full border text-xs font-semibold',
+                        stage.startDate
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-muted text-foreground',
+                      ) }>
+                        { stage.seq }
+                      </span>
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium leading-5 text-card-foreground">{ stage.name }</p>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Duration: { stage.duration ?? 'Not specified'}
+                          </p>
+                          { stage.startDate && !isActive && (
+                            <p className="mt-1 text-[11px] font-medium text-primary">
+                              Start date: { formatStartDate(stage.startDate) }
+                            </p>
+                          ) }
+                          { isActive && (
+                            <DatePicker
+                              value={ stage.startDate ?? '' }
+                              onChange={ (value) => setDraftStages((current) => current.map((item) => item.seq === stage.seq ? { ...item, startDate: value || null } : item)) }
+                              placeholder="Select start date"
+                              minDate={ previousStage?.startDate ? shiftDate(previousStage.startDate, 1) : undefined }
+                              maxDate={ nextStage?.startDate ? shiftDate(nextStage.startDate, -1) : undefined }
+                              className="mt-2"
+                            />
+                          ) }
+                        </div>
+                        <button type="button" aria-label={`Edit ${stage.name} start date`} onClick={ () => setActiveSeq(isActive ? null : stage.seq) } className={ cn('shrink-0 rounded-md p-1.5 transition-colors', isActive ? 'bg-primary/15 text-primary' : 'text-primary/80 hover:bg-primary/10 hover:text-primary') }>
+                          <Pencil className="size-4" />
+                        </button>
+                      </div>
+                      { isActive && (
+                        <div className="mt-1.5 flex items-center justify-end gap-2 border-t border-border/70 pt-1.5">
+                          <button type="button" onClick={ () => cancelStageDate(stage.seq) } className="rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground">
+                            Cancel
+                          </button>
+                          <Button type="button" size="sm" disabled={ updateStages.isPending || (!stage.startDate && !stages.find((item) => item.seq === stage.seq)?.startDate) } onClick={ () => applyStageDate(stage.seq) } className="h-7 px-3 text-[11px] uppercase tracking-wide">
+                            { updateStages.isPending ? 'Saving...' : 'Apply' }
+                          </Button>
+                        </div>
+                      ) }
+                      { isActive && updateStages.isError && <p className="mt-2 text-xs text-destructive">Unable to save this stage date.</p> }
+                    </div>
+                  );
+                }) }
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-border/70 px-4 py-2 sm:px-6">
+              <Dialog.Close asChild>
+                <button type="button" onClick={ closeEditor } className="rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground">Close</button>
+              </Dialog.Close>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </div>
+    </Dialog.Root>
   );
 }
 

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -332,6 +332,121 @@ describe('IndexPanel tabbed analytics (Phase F)', () => {
         expect(screen.getByTestId('crop-info-card-crop-rotation')).toBeTruthy();
         expect(screen.getByTestId('crop-info-card-growth-stages')).toBeTruthy();
         expect(screen.getByTestId('crop-info-card-current-risks')).toBeTruthy();
+    });
+
+    it('opens the EOS-style growth stages editor for the selected crop cycle', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                if (path.includes('/indices/statistics')) {
+                    return Promise.resolve(jsonResponse({
+                        statistics: {
+                            min: 0.1,
+                            max: 0.8,
+                            mean: 0.5,
+                            stddev: 0.1,
+                            validPixelPercent: 90,
+                            cloudMaskedPercent: 5,
+                            coveragePercent: 95,
+                        },
+                        pixelCounts: { maskedPixels: 0 },
+                        metadata: { warnings: [] },
+                    }));
+                }
+                if (path.includes('/analytics/trend')) {
+                    return Promise.resolve(jsonResponse({ points: [], metadata: { bands: [] } }));
+                }
+                return Promise.resolve(jsonResponse({}));
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-07-18"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+                vegetationData={ [{
+                    id: 'cycle-1',
+                    fieldId: 'field-1',
+                    seasonId: 'season-1',
+                    year: 2026,
+                    cropType: 14,
+                    cropName: 'Rice',
+                    growthStages: [{
+                        id: null,
+                        cropId: 14,
+                        seq: 1,
+                        name: 'Germination',
+                        duration: '0-21',
+                        startDate: null,
+                        saved: false,
+                    }],
+                }] }
+            />,
+        );
+
+        const card = await screen.findByTestId('crop-info-card-growth-stages');
+        fireEvent.click(within(card).getByRole('button', { name: /No start date for the growth stage/ }));
+        expect(await screen.findByRole('dialog', { name: 'Edit growth stages' })).toBeTruthy();
+        const closeButtons = screen.getAllByRole('button', { name: 'Close' });
+        fireEvent.click(closeButtons[closeButtons.length - 1]);
+
+        const germinationDot = within(card).getByRole('button', { name: 'Select Germination' }).querySelector('span');
+        expect(germinationDot).toBeTruthy();
+        fireEvent.click(germinationDot as HTMLElement);
+        expect(screen.getByTestId('growth-stage-selected-crop').textContent).toContain('Rice');
+        expect(screen.getByTestId('growth-stage-selected-info').textContent).toContain('Germination');
+        fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
+
+        expect(await screen.findByRole('dialog', { name: 'Edit growth stages' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Select start date' })).toBeTruthy();
+    });
+
+    it('shows the stage active today when the cycle has saved start dates', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((input: RequestInfo | URL) => {
+                const path = String(input);
+                if (path.startsWith('/api/seasons')) return Promise.resolve(jsonResponse([]));
+                if (path.includes('/indices/statistics')) {
+                    return Promise.resolve(jsonResponse({
+                        statistics: { min: 0, max: 1, mean: 0.5, stddev: 0.1, validPixelPercent: 100, cloudMaskedPercent: 0, coveragePercent: 100 },
+                        pixelCounts: { maskedPixels: 0 },
+                        metadata: { warnings: [] },
+                    }));
+                }
+                if (path.includes('/analytics/trend')) return Promise.resolve(jsonResponse({ points: [], metadata: { bands: [] } }));
+                return Promise.resolve(jsonResponse({}));
+            }),
+        );
+
+        renderPanel(
+            <IndexPanel
+                selectedPlot={ plot }
+                selectedDate="2026-08-14"
+                sourceId="resourcesat-2a-liss3-boa"
+                displayMode="NDVI"
+                supportedIndices={ ['NDVI'] }
+                cloudMask={ cloudMask }
+                vegetationData={ [{
+                    id: 'cycle-1', fieldId: 'field-1', seasonId: 'season-1', year: 2026,
+                    cropType: 14, cropName: 'Rice',
+                    growthStages: [
+                        { id: 'stage-1', cropId: 14, seq: 1, name: 'Germination', duration: '0-21', startDate: '2000-01-01', saved: true },
+                        { id: null, cropId: 14, seq: 2, name: 'Tillering', duration: '21-45', startDate: null, saved: false },
+                    ],
+                }] }
+            />,
+        );
+
+        const selectedInfo = await screen.findByTestId('growth-stage-selected-info');
+        expect(selectedInfo.textContent).toContain('Tillering');
+        expect(selectedInfo.textContent).not.toContain('Jan 1, 2000');
     });
 
     it('switches to the Chart tab and exposes the index selector and trend chart', () => {

@@ -15,10 +15,29 @@ class SeasonItem(ApiModel):
     can_delete: bool = True
 
 
+class GrowthStageResponse(ApiModel):
+    id: str | None = None
+    crop_id: int
+    seq: int
+    name: str
+    duration: str | None = None
+    start_date: str | None = None
+    saved: bool = False
+
+
+class GrowthStageDateUpdate(ApiModel):
+    seq: int
+    start_date: str | None = None
+
+
+class GrowthStageDateUpdateRequest(ApiModel):
+    stages: list[GrowthStageDateUpdate]
+
+
 class VegetationCycleCreate(ApiModel):
     season_id: str
     year: int
-    crop_type: int
+    crop_type: int = Field(ge=1)
     crop_variety: int | None = None
     sowing_date: str | None = None
     harvesting_date: str | None = None
@@ -58,6 +77,7 @@ class VegetationCycleResponse(ApiModel):
     ndvi_list: str | None = None
     notes: str | None = None
     is_cut_off: bool | None = None
+    growth_stages: list[GrowthStageResponse] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 

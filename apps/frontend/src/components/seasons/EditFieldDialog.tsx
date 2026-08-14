@@ -35,11 +35,23 @@ import type { TerraDraw } from 'terra-draw';
 import type { Crop, Field, GeoJsonPosition, IrrigationType, PlotGeometry, TillageType, VegetationCycleCreate } from '@/types/api';
 import { deriveCircleFromRing, sanitizeRingPrecision } from '@/components/fields/circleGeometry';
 
+// Clears the body/html scroll-lock styles that Radix Dialog/AlertDialog and
+// react-remove-scroll set while a dialog is open. If Radix fails to restore them
+// (nested dialog close ordering bug), the page is left unclickable — resetting
+// here un-freezes it.
+function resetDialogLockStyles(): void {
+  const { body } = document;
+  body.style.pointerEvents = '';
+  body.style.overflow = '';
+  body.style.position = '';
+  document.documentElement.style.overflow = '';
+}
+
 interface Props {
   field: Field;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null, areaHa?: number | null) => void;
+  onSave?: (fieldId: string, name: string, geometry?: PlotGeometry, vegetationData?: VegetationCycleCreate[], groupId?: string | null, areaHa?: number | null) => void | Promise<void>;
   onDelete?: (fieldId: string) => void;
   saving?: boolean;
   initialSeasonId?: string;
@@ -179,6 +191,7 @@ export default function EditFieldDialog({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDeleteField, setConfirmDeleteField] = useState(false);
   const [confirmClearSeasonId, setConfirmClearSeasonId] = useState<string | null>(null);
+  const [confirmAddCycleSeasonId, setConfirmAddCycleSeasonId] = useState<string | null>(null);
   const [miniMap, setMiniMap] = useState<maplibregl.Map | null>(null);
   const [editedGeometry, setEditedGeometry] = useState<PlotGeometry | null>(null);
   const [basemapRuntimeError, setBasemapRuntimeError] = useState<Error | null>(null);
@@ -551,7 +564,52 @@ export default function EditFieldDialog({
     setConfirmClearSeasonId(null);
   }, [confirmClearSeasonId, clearSeasonCycles]);
 
-  const handleSave = () => {
+  const computeDefaultCycleDate = useCallback((seasonId: string) => {
+    const existing = vegetationCycles[seasonId] ?? [];
+    const last = existing[existing.length - 1];
+    let defaultDate = seasonsQ.data?.find((s) => s.id === seasonId)?.startDate ?? '';
+    if (last?.harvestingDate) {
+      const [y, m, d] = last.harvestingDate.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + 1);
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      defaultDate = `${yy}-${mm}-${dd}`;
+    }
+    return defaultDate;
+  }, [vegetationCycles, seasonsQ.data]);
+
+  const handleAddCycleClick = useCallback((seasonId: string) => {
+    const existing = vegetationCycles[seasonId] ?? [];
+    const hasCrop = existing.some((c) => c.cropName.trim() !== '');
+    if (hasCrop) {
+      setConfirmAddCycleSeasonId(seasonId);
+      return;
+    }
+    addCycle(seasonId, computeDefaultCycleDate(seasonId) || undefined);
+  }, [vegetationCycles, addCycle, computeDefaultCycleDate]);
+
+  const handleConfirmReplaceCrop = useCallback(() => {
+    if (!confirmAddCycleSeasonId) return;
+    const seasonId = confirmAddCycleSeasonId;
+    setExpandedSeasons((prev) => {
+      const next = new Set(prev);
+      next.add(seasonId);
+      return next;
+    });
+    setConfirmAddCycleSeasonId(null);
+    clearSeasonCycles(seasonId);
+    addCycle(seasonId, computeDefaultCycleDate(seasonId) || undefined);
+  }, [confirmAddCycleSeasonId, addCycle, clearSeasonCycles, computeDefaultCycleDate]);
+
+  const existingCropName = useMemo(() => {
+    if (!confirmAddCycleSeasonId) return '';
+    const existing = vegetationCycles[confirmAddCycleSeasonId] ?? [];
+    return existing.find((c) => c.cropName.trim() !== '')?.cropName ?? '';
+  }, [confirmAddCycleSeasonId, vegetationCycles]);
+
+  const handleSave = async () => {
     if (!name.trim()) {
       setError('Field name is required');
       return;
@@ -566,20 +624,31 @@ export default function EditFieldDialog({
         return;
       }
     }
+    const emptyCrop = Object.values(vegetationCycles)
+      .flat()
+      .find((c) => !c.cropName.trim() || !cropsQ.data?.some((crop) => crop.name === c.cropName));
+    if (emptyCrop) {
+      setError('Select a crop for each vegetation cycle');
+      return;
+    }
     setError(null);
 
-    onSave?.(
-      field.id,
-      trimmedName,
-      geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
-      vegPayload.length > 0 ? vegPayload : undefined,
-      groupId || null,
-      // Recomputed from the actual edited geometry -- without this, resizing/moving
-      // a field (especially a dragged circle, where the area can change drastically)
-      // saves the new boundary but leaves the old area displayed everywhere else
-      // until the field happens to be re-saved for an unrelated reason.
-      geometryChanged ? currentArea : undefined,
-    );
+    try {
+      await onSave?.(
+        field.id,
+        trimmedName,
+        geometryChanged ? (editedGeometry as PlotGeometry) : undefined,
+        vegPayload.length > 0 ? vegPayload : undefined,
+        groupId || null,
+        // Recomputed from the actual edited geometry -- without this, resizing/moving
+        // a field (especially a dragged circle, where the area can change drastically)
+        // saves the new boundary but leaves the old area displayed everywhere else
+        // until the field happens to be re-saved for an unrelated reason.
+        geometryChanged ? currentArea : undefined,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save field');
+    }
   };
 
   const handleDelete = () => {
@@ -611,19 +680,40 @@ export default function EditFieldDialog({
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) {
-      if (confirmDeleteField || confirmClearSeasonId) return;
+      if (confirmClose || confirmDeleteField || confirmClearSeasonId || confirmAddCycleSeasonId) return;
       setConfirmClose(true);
     } else {
       onOpenChange(nextOpen);
     }
-  }, [onOpenChange, confirmDeleteField, confirmClearSeasonId]);
+  }, [onOpenChange, confirmClose, confirmDeleteField, confirmClearSeasonId, confirmAddCycleSeasonId]);
+
+  const confirmActive = confirmClose || confirmDeleteField || confirmClearSeasonId !== null || confirmAddCycleSeasonId !== null;
+
+  // When any confirm dialog is open over this dialog, ignore outside clicks/Escape
+  // so the outer dialog cannot be dismissed (or re-open its own confirm) mid-flow.
+  const handleDialogInteractOutside = useCallback((event: { preventDefault: () => void }) => {
+    if (confirmActive) event.preventDefault();
+  }, [confirmActive]);
+
+  // Safety net: if Radix ever leaves body pointer-events locked after the dialog
+  // closes (the nested-dialog freeze), force-clear it so the page stays usable.
+  // Runs both when `open` flips to false AND on unmount (parents that conditionally
+  // mount this dialog, e.g. field-create, unmount it on close so the open-effect
+  // alone would never fire).
+  useEffect(() => {
+    if (!open) resetDialogLockStyles();
+    return () => resetDialogLockStyles();
+  }, [open]);
 
   return (
+    <>
     <Dialog.Root open={ open } onOpenChange={ handleOpenChange }>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-modal bg-background/60 backdrop-blur-sm" />
         <Dialog.Content
           aria-label="Edit field"
+          onInteractOutside={ handleDialogInteractOutside }
+          onEscapeKeyDown={ (e) => { if (confirmActive) e.preventDefault(); } }
           className="glass fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl p-0 sm:w-[calc(100vw-2rem)] lg:w-[min(72rem,calc(100vw-3rem))]"
         >
           <VisuallyHidden>
@@ -771,21 +861,7 @@ export default function EditFieldDialog({
                                 <div className="border-t-2 border-border/60 p-4 space-y-4">
                                   <button
                                     type="button"
-                                    onClick={ () => {
-                                    const existing = vegetationCycles[season.id] ?? [];
-                                    const last = existing[existing.length - 1];
-                                    let defaultDate = season.startDate ?? '';
-                                    if (last?.harvestingDate) {
-                                      const [y, m, d] = last.harvestingDate.split('-').map(Number);
-                                      const dt = new Date(y, m - 1, d);
-                                      dt.setDate(dt.getDate() + 1);
-                                      const yy = dt.getFullYear();
-                                      const mm = String(dt.getMonth() + 1).padStart(2, '0');
-                                      const dd = String(dt.getDate()).padStart(2, '0');
-                                      defaultDate = `${yy}-${mm}-${dd}`;
-                                    }
-                                    addCycle(season.id, defaultDate || undefined);
-                                  } }
+                                    onClick={ () => handleAddCycleClick(season.id) }
                                     className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                                   >
                                     <Plus className="size-4" strokeWidth={ 1.75 } />
@@ -847,6 +923,7 @@ export default function EditFieldDialog({
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      </Dialog.Root>
 
       <AlertDialogRoot open={ confirmClose } onOpenChange={ setConfirmClose }>
         <AlertDialogContent>
@@ -901,7 +978,25 @@ export default function EditFieldDialog({
           </AlertDialogContent>
         </AlertDialogRoot>
       ) }
-    </Dialog.Root>
+
+      <AlertDialogRoot
+        open={ confirmAddCycleSeasonId !== null }
+        onOpenChange={ (open) => { if (!open) setConfirmAddCycleSeasonId(null); } }
+      >
+        <AlertDialogContent>
+          <AlertDialogTitle>Crop already added</AlertDialogTitle>
+          <AlertDialogDescription>
+            { existingCropName || 'This crop' } is already added for this season. Would you like to replace it with the new crop?
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={ () => setConfirmAddCycleSeasonId(null) }>Keep existing crop</AlertDialogCancel>
+            <AlertDialogAction onClick={ handleConfirmReplaceCrop }>
+              Replace crop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogRoot>
+    </>
   );
 }
 

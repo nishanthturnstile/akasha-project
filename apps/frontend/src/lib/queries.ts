@@ -67,6 +67,7 @@ import {
   refreshSession,
   completeOnboarding,
   updatePlot,
+  updateVegetationCycleGrowthStages,
   getSeason,
   listSeasons,
   createSeason,
@@ -101,6 +102,7 @@ import type {
   SeasonUpdatePayload,
   FieldCreatePayload,
   FieldUpdatePayload,
+  VegetationCycleGrowthStagesPayload,
   SignupPayload,
   IngestionJobFilters,
   TriggerIngestionJobRequest,
@@ -889,6 +891,17 @@ export function useField(fieldId: string | null | undefined) {
     queryKey: queryKeys.field(fieldId ?? 'none'),
     queryFn: () => getField(fieldId as string),
     enabled: Boolean(fieldId),
+  });
+}
+
+export function useUpdateVegetationCycleGrowthStages() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ cycleId, payload }: { cycleId: string; payload: VegetationCycleGrowthStagesPayload }) =>
+      updateVegetationCycleGrowthStages(cycleId, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fields });
+    },
   });
 }
 

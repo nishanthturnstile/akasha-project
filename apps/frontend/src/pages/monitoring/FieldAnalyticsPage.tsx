@@ -346,12 +346,19 @@ export default function FieldAnalyticsPage() {
           field={ selectedField }
           open={ editFieldOpen }
           onOpenChange={ (open) => { if (!open) setInitialVegSeasonId(undefined); setEditFieldOpen(open); } }
-          onSave={ (fieldId, name, geometry, vegetationData, groupId, areaHa) => {
+          onSave={ async (fieldId, name, geometry, vegetationData, groupId, areaHa) => {
             setSavingField(true);
-            updateField.mutate(
-              { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}), ...(areaHa !== undefined ? { areaHa } : {}) } },
-              { onSuccess: () => { setSavingField(false); setEditFieldOpen(false); setInitialVegSeasonId(undefined); }, onError: () => setSavingField(false) },
-            );
+            try {
+              await updateField.mutateAsync(
+                { fieldId, payload: { name, ...(geometry ? { geometry } : {}), ...(vegetationData ? { vegetationData } : {}), ...(groupId !== undefined ? { groupId } : {}), ...(areaHa !== undefined ? { areaHa } : {}) } },
+              );
+              setSavingField(false);
+              setEditFieldOpen(false);
+              setInitialVegSeasonId(undefined);
+            } catch (err) {
+              setSavingField(false);
+              throw err;
+            }
           } }
           saving={ savingField }
           onDelete={ (fieldId) => deleteField.mutateAsync(fieldId) }

@@ -680,24 +680,27 @@ export function DiscoveryBrowser({ target, seasonId, className }: DiscoveryBrows
           field={editingFieldQ.data}
           open
           onOpenChange={(open) => { if (!open) setEditingFieldId(null); }}
-          onSave={(fieldId, name, geometry, vegetationData, groupId, areaHa) => {
+          onSave={ async (fieldId, name, geometry, vegetationData, groupId, areaHa) => {
             setSavingField(true);
-            updateField.mutate(
-              {
-                fieldId,
-                payload: {
-                  name,
-                  ...(geometry ? { geometry } : {}),
-                  ...(vegetationData ? { vegetationData } : {}),
-                  ...(groupId !== undefined ? { groupId } : {}),
-                  ...(areaHa !== undefined ? { areaHa } : {}),
+            try {
+              await updateField.mutateAsync(
+                {
+                  fieldId,
+                  payload: {
+                    name,
+                    ...(geometry ? { geometry } : {}),
+                    ...(vegetationData ? { vegetationData } : {}),
+                    ...(groupId !== undefined ? { groupId } : {}),
+                    ...(areaHa !== undefined ? { areaHa } : {}),
+                  },
                 },
-              },
-              {
-                onSuccess: () => { setSavingField(false); setEditingFieldId(null); },
-                onError: () => setSavingField(false),
-              },
-            );
+              );
+              setSavingField(false);
+              setEditingFieldId(null);
+            } catch (err) {
+              setSavingField(false);
+              throw err;
+            }
           }}
           saving={savingField}
           onDelete={async (fieldId) => {

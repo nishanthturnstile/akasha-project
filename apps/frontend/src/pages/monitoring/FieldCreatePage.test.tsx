@@ -181,6 +181,24 @@ describe('FieldCreatePage basemap behavior', () => {
         expect(screen.queryByTestId('map-layer-manager')).toBeNull();
     });
 
+    it('fails gracefully instead of crashing when the save response is missing a field id', async () => {
+        vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+        vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
+        state.config = config('session');
+        state.createField.mockResolvedValue(undefined as never);
+
+        renderPage();
+
+        fireEvent.click(screen.getByTestId('complete-field-draw'));
+        fireEvent.click(screen.getByRole('button', { name: 'Save 1 field' }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Field was saved but no valid ID was returned/i)).toBeTruthy();
+        });
+        expect(screen.getByRole('heading', { name: 'Add field' })).toBeTruthy();
+        expect(window.location.pathname).not.toContain('/monitoring/field-analytics');
+    });
+
     it('lands in Global View after saving a drawn field', async () => {
         state.config = config('session');
         state.createField.mockResolvedValue({

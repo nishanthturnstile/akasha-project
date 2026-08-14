@@ -23,6 +23,14 @@ class SeedingTypeResponse(ApiModel):
     description: str | None = None
 
 
+class CropGrowthStageResponse(ApiModel):
+    id: int
+    crop_id: int
+    seq: int
+    name: str
+    duration: str | None = None
+
+
 class CropResponse(ApiModel):
     id: int
     name: str
@@ -33,6 +41,7 @@ class CropResponse(ApiModel):
     has_variety: bool = False
     bbch_mode: str | None = None
     characteristic: str | None = None
+    stages: list[CropGrowthStageResponse] = []
 
 
 class VarietyResponse(ApiModel):

@@ -1,32 +1,7 @@
 [
   {
-    "name_en": "Almond",
-    "color": "#D4A574",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Almond",
+    "crop_name_en": "Almond",
     "stages": [
       {
         "name": "Dormancy & Chilling",
@@ -59,33 +34,8 @@
     ]
   },
   {
-    "name_en": "Apple",
-    "color": "#FF6B6B",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Apple",
+    "crop_name_en": "Apple",
     "stages": [
       {
         "name": "Dormancy & Chilling",
@@ -138,33 +88,8 @@
     ]
   },
   {
-    "name_en": "Areca",
-    "color": "#8B6914",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Areca",
+    "crop_name_en": "Areca",
     "stages": [
       {
         "name": "Nursery & Seed-Nut Selection",
@@ -221,33 +146,8 @@
     ]
   },
   {
-    "name_en": "Bajra",
-    "color": "#C4A265",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Bajra",
+    "crop_name_en": "Bajra",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -308,33 +208,8 @@
     ]
   },
   {
-    "name_en": "Banana",
-    "color": "#FFE135",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Banana",
+    "crop_name_en": "Banana",
     "stages": [
       {
         "name": "Sucker / Tissue-Culture Nursery",
@@ -387,33 +262,8 @@
     ]
   },
   {
-    "name_en": "Barley",
-    "color": "#D4C56A",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Barley",
+    "crop_name_en": "Barley",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -474,33 +324,8 @@
     ]
   },
   {
-    "name_en": "Berseem",
-    "color": "#6B8E23",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Berseem",
+    "crop_name_en": "Berseem",
     "stages": [
       {
         "name": "Seed Selection & Inoculation",
@@ -553,33 +378,8 @@
     ]
   },
   {
-    "name_en": "Bitter Gourd",
-    "color": "#7CCD7C",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Bitter gourd",
+    "crop_name_en": "Bitter Gourd",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -632,33 +432,8 @@
     ]
   },
   {
-    "name_en": "Black Pepper",
-    "color": "#3D2B1F",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Black pepper",
+    "crop_name_en": "Black Pepper",
     "stages": [
       {
         "name": "Nursery (Cutting / Seedling Raising)",
@@ -711,33 +486,8 @@
     ]
   },
   {
-    "name_en": "Brinjal",
-    "color": "#614051",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Brinjal",
+    "crop_name_en": "Brinjal",
     "stages": [
       {
         "name": "Seed Selection & Nursery Raising",
@@ -794,33 +544,8 @@
     ]
   },
   {
-    "name_en": "Buckwheat",
-    "color": "#B8860B",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Buckwheat",
+    "crop_name_en": "Buckwheat",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -877,33 +602,8 @@
     ]
   },
   {
-    "name_en": "Cabbage",
-    "color": "#A8D5BA",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cabbage",
+    "crop_name_en": "Cabbage",
     "stages": [
       {
         "name": "Seed Selection & Nursery Raising",
@@ -952,33 +652,8 @@
     ]
   },
   {
-    "name_en": "Cardamom",
-    "color": "#5B7C2E",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cardamom",
+    "crop_name_en": "Cardamom",
     "stages": [
       {
         "name": "Nursery (Seedling/Sucker)",
@@ -1031,33 +706,8 @@
     ]
   },
   {
-    "name_en": "Carrot",
-    "color": "#FF8C00",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Carrot",
+    "crop_name_en": "Carrot",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -1106,33 +756,8 @@
     ]
   },
   {
-    "name_en": "Cashew",
-    "color": "#C28A3A",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cashew",
+    "crop_name_en": "Cashew",
     "stages": [
       {
         "name": "Nursery (Seedling / Softwood Grafting)",
@@ -1185,33 +810,8 @@
     ]
   },
   {
-    "name_en": "Castor",
-    "color": "#8B4513",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Castor",
+    "crop_name_en": "Castor",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -1256,33 +856,8 @@
     ]
   },
   {
-    "name_en": "Cauliflower",
-    "color": "#F5F5DC",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cauliflower",
+    "crop_name_en": "Cauliflower",
     "stages": [
       {
         "name": "Nursery / Seedling",
@@ -1335,33 +910,8 @@
     ]
   },
   {
-    "name_en": "Cherry",
-    "color": "#D2042D",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cherry",
+    "crop_name_en": "Cherry",
     "stages": [
       {
         "name": "Nursery (Stool Layering / Grafting)",
@@ -1418,33 +968,8 @@
     ]
   },
   {
-    "name_en": "Chickpea",
-    "color": "#D2B48C",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Chickpea",
+    "crop_name_en": "Chickpea",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -1485,33 +1010,8 @@
     ]
   },
   {
-    "name_en": "Chili",
-    "color": "#DC143C",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Chili",
+    "crop_name_en": "Chili",
     "stages": [
       {
         "name": "Seed Selection & Nursery Raising",
@@ -1552,33 +1052,8 @@
     ]
   },
   {
-    "name_en": "Citrus",
-    "color": "#FFA500",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Citrus",
+    "crop_name_en": "Citrus",
     "stages": [
       {
         "name": "Nursery Establishment",
@@ -1619,33 +1094,8 @@
     ]
   },
   {
-    "name_en": "Coconut",
-    "color": "#5C4033",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Coconut",
+    "crop_name_en": "Coconut",
     "stages": [
       {
         "name": "Seed Nut Selection & Nursery",
@@ -1686,33 +1136,8 @@
     ]
   },
   {
-    "name_en": "Coffee",
-    "color": "#6F4E37",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Coffee",
+    "crop_name_en": "Coffee",
     "stages": [
       {
         "name": "Seed Selection & Nursery",
@@ -1753,33 +1178,8 @@
     ]
   },
   {
-    "name_en": "Coriander",
-    "color": "#7EC850",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Coriander",
+    "crop_name_en": "Coriander",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -1820,33 +1220,8 @@
     ]
   },
   {
-    "name_en": "Cotton",
-    "color": "#F8F8FF",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cotton",
+    "crop_name_en": "Cotton",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -1887,33 +1262,8 @@
     ]
   },
   {
-    "name_en": "Cowpea",
-    "color": "#8A9A5B",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cowpea",
+    "crop_name_en": "Cowpea",
     "stages": [
       {
         "name": "Seed Selection & Inoculation",
@@ -1958,33 +1308,8 @@
     ]
   },
   {
-    "name_en": "Cucumber",
-    "color": "#2E8B2E",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cucumber",
+    "crop_name_en": "Cucumber",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -2029,33 +1354,8 @@
     ]
   },
   {
-    "name_en": "Cumin",
-    "color": "#A0522D",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cumin",
+    "crop_name_en": "Cumin",
     "stages": [
       {
         "name": "Seed Selection & Treatment",
@@ -2096,33 +1396,8 @@
     ]
   },
   {
-    "name_en": "Fennel",
-    "color": "#C8E6C9",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Fennel",
+    "crop_name_en": "Fennel",
     "stages": [
       {
         "name": "Seed Selection",
@@ -2199,33 +1474,8 @@
     ]
   },
   {
-    "name_en": "Fenugreek",
-    "color": "#BDB76B",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Fenugreek",
+    "crop_name_en": "Fenugreek",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -2250,33 +1500,8 @@
     ]
   },
   {
-    "name_en": "Field Pea",
-    "color": "#9ACD32",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Field pea",
+    "crop_name_en": "Field Pea",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -2301,33 +1526,8 @@
     ]
   },
   {
-    "name_en": "Garlic",
-    "color": "#F5F5F5",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Garlic",
+    "crop_name_en": "Garlic",
     "stages": [
       {
         "name": "Sprouting & Emergence",
@@ -2352,33 +1552,8 @@
     ]
   },
   {
-    "name_en": "Ginger",
-    "color": "#C68E17",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Ginger",
+    "crop_name_en": "Ginger",
     "stages": [
       {
         "name": "Sprouting & Emergence",
@@ -2403,33 +1578,8 @@
     ]
   },
   {
-    "name_en": "Grape",
-    "color": "#8B008B",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 3,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Grape",
+    "crop_name_en": "Grape",
     "stages": [
       {
         "name": "Establishment / Juvenile",
@@ -2458,33 +1608,8 @@
     ]
   },
   {
-    "name_en": "Groundnut",
-    "color": "#DAA520",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Groundnut",
+    "crop_name_en": "Groundnut",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -2509,33 +1634,8 @@
     ]
   },
   {
-    "name_en": "Guar",
-    "color": "#8FBC8F",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Guar",
+    "crop_name_en": "Guar",
     "stages": [
       {
         "name": "Seed Selection",
@@ -2612,33 +1712,8 @@
     ]
   },
   {
-    "name_en": "Guava",
-    "color": "#F4A460",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Guava",
+    "crop_name_en": "Guava",
     "stages": [
       {
         "name": "Juvenile / Establishment",
@@ -2663,33 +1738,8 @@
     ]
   },
   {
-    "name_en": "Jowar",
-    "color": "#CD853F",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Jowar",
+    "crop_name_en": "Jowar",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -2718,33 +1768,8 @@
     ]
   },
   {
-    "name_en": "Jute",
-    "color": "#C3B091",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Jute",
+    "crop_name_en": "Jute",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -2769,33 +1794,8 @@
     ]
   },
   {
-    "name_en": "Lentil",
-    "color": "#8B7355",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Lentil",
+    "crop_name_en": "Lentil",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -2820,759 +1820,8 @@
     ]
   },
   {
-    "name_en": "Lucerne / Alfalfa",
-    "color": "#7C9D8E",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence",
-        "duration": "0-10"
-      },
-      {
-        "name": "Establishment",
-        "duration": "10-60"
-      },
-      {
-        "name": "Vegetative Regrowth",
-        "duration": "After each cut"
-      },
-      {
-        "name": "Cutting Cycles",
-        "duration": "Every 30-40 days"
-      },
-      {
-        "name": "Stand Decline / Renewal",
-        "duration": "Year 3-4"
-      }
-    ]
-  },
-  {
-    "name_en": "Maize",
-    "color": "#F0C040",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence (VE)",
-        "duration": "0-10"
-      },
-      {
-        "name": "Seedling / Early Vegetative (V3-V6)",
-        "duration": "10-30"
-      },
-      {
-        "name": "Rapid Vegetative Growth (V6-V12)",
-        "duration": "30-50"
-      },
-      {
-        "name": "Tasseling & Silking (VT-R1)",
-        "duration": "50-65"
-      },
-      {
-        "name": "Grain Filling (Milk-Dough, R2-R5)",
-        "duration": "65-95"
-      },
-      {
-        "name": "Physiological Maturity & Harvest (R6)",
-        "duration": "95-115"
-      }
-    ]
-  },
-  {
-    "name_en": "Mango",
-    "color": "#FFD700",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Juvenile / Establishment",
-        "duration": "Years 1-5"
-      },
-      {
-        "name": "Vegetative Flush",
-        "duration": "Apr-Aug"
-      },
-      {
-        "name": "Dormancy & Flower Induction",
-        "duration": "Oct-Dec"
-      },
-      {
-        "name": "Flowering (Panicle)",
-        "duration": "Dec-Feb"
-      },
-      {
-        "name": "Fruit Set & Development",
-        "duration": "Feb-May"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "May-Jul"
-      }
-    ]
-  },
-  {
-    "name_en": "Mung Bean",
-    "color": "#A9C46A",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence",
-        "duration": "0-7"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "7-25"
-      },
-      {
-        "name": "Flowering",
-        "duration": "25-40"
-      },
-      {
-        "name": "Pod Development",
-        "duration": "40-55"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "55-70"
-      }
-    ]
-  },
-  {
-    "name_en": "Muskmelon",
-    "color": "#F5B041",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence",
-        "duration": "0-8"
-      },
-      {
-        "name": "Vegetative (Vining)",
-        "duration": "8-30"
-      },
-      {
-        "name": "Flowering",
-        "duration": "30-45"
-      },
-      {
-        "name": "Fruit Development",
-        "duration": "45-70"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "70-95"
-      }
-    ]
-  },
-  {
-    "name_en": "Mustard",
-    "color": "#E8D875",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence",
-        "duration": "0-10"
-      },
-      {
-        "name": "Vegetative (Rosette)",
-        "duration": "10-40"
-      },
-      {
-        "name": "Flowering",
-        "duration": "40-70"
-      },
-      {
-        "name": "Siliqua (Pod) Development",
-        "duration": "70-110"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "110-140"
-      }
-    ]
-  },
-  {
-    "name_en": "Okra",
-    "color": "#6B8E23",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence",
-        "duration": "0-10"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "10-35"
-      },
-      {
-        "name": "Flowering",
-        "duration": "35-50"
-      },
-      {
-        "name": "Fruiting & Harvest",
-        "duration": "50-115"
-      },
-      {
-        "name": "End of Harvest",
-        "duration": "115-130"
-      }
-    ]
-  },
-  {
-    "name_en": "Onion",
-    "color": "#E8A317",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Nursery / Seedling",
-        "duration": "0-40"
-      },
-      {
-        "name": "Transplanting & Establishment",
-        "duration": "40-55"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "55-95"
-      },
-      {
-        "name": "Bulb Development",
-        "duration": "95-130"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "130-150"
-      }
-    ]
-  },
-  {
-    "name_en": "Papaya",
-    "color": "#FF6F00",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Nursery / Seedling",
-        "duration": "0-2 months"
-      },
-      {
-        "name": "Transplanting & Establishment",
-        "duration": "2-3 months"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "3-6 months"
-      },
-      {
-        "name": "Flowering",
-        "duration": "4-6 months"
-      },
-      {
-        "name": "Fruit Development",
-        "duration": "6-10 months"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "10-15 months+"
-      }
-    ]
-  },
-  {
-    "name_en": "Peas",
-    "color": "#7CFC00",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence",
-        "duration": "0-10"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "10-35"
-      },
-      {
-        "name": "Flowering",
-        "duration": "35-55"
-      },
-      {
-        "name": "Pod Development",
-        "duration": "55-75"
-      },
-      {
-        "name": "Harvest",
-        "duration": "75-100"
-      }
-    ]
-  },
-  {
-    "name_en": "Pigeon Pea",
-    "color": "#C4A64A",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Germination & Emergence",
-        "duration": "0-12"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "12-60"
-      },
-      {
-        "name": "Flowering",
-        "duration": "60-120"
-      },
-      {
-        "name": "Pod Development",
-        "duration": "120-180"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "180-270"
-      }
-    ]
-  },
-  {
-    "name_en": "Pineapple",
-    "color": "#FFC02E",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Establishment (Planting)",
-        "duration": "0-3 months"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "3-12 months"
-      },
-      {
-        "name": "Flower Induction & Flowering",
-        "duration": "12-15 months"
-      },
-      {
-        "name": "Fruit Development",
-        "duration": "15-20 months"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "18-24 months"
-      }
-    ]
-  },
-  {
-    "name_en": "Pomegranate",
-    "color": "#C41E3A",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Juvenile / Establishment",
-        "duration": "Years 1-3"
-      },
-      {
-        "name": "Vegetative Flush (Bahar)",
-        "duration": "After rest period"
-      },
-      {
-        "name": "Flowering",
-        "duration": "Weeks after bahar"
-      },
-      {
-        "name": "Fruit Development",
-        "duration": "2-4 months"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "5-6 months from bloom"
-      }
-    ]
-  },
-  {
-    "name_en": "Potato",
-    "color": "#C0A060",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Sprouting & Emergence",
-        "duration": "0-20"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "20-45"
-      },
-      {
-        "name": "Tuber Initiation",
-        "duration": "45-60"
-      },
-      {
-        "name": "Tuber Bulking",
-        "duration": "60-90"
-      },
-      {
-        "name": "Maturity & Harvest",
-        "duration": "90-120"
-      }
-    ]
-  },
-  {
-    "name_en": "Pumpkin",
-    "color": "#FF7518",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Linseed",
+    "crop_name_en": "Linseed",
     "stages": [
       {
         "name": "Seed Selection",
@@ -3649,33 +1898,462 @@
     ]
   },
   {
-    "name_en": "Ragi",
-    "color": "#A0522D",
-    "maturities": [
+    "crop": "Lucerne",
+    "crop_name_en": "Lucerne / Alfalfa",
+    "stages": [
       {
-        "name": "default-maturity"
+        "name": "Germination & Emergence",
+        "duration": "0-10"
       },
       {
-        "name": "early"
+        "name": "Establishment",
+        "duration": "10-60"
       },
       {
-        "name": "early-middle"
+        "name": "Vegetative Regrowth",
+        "duration": "After each cut"
       },
       {
-        "name": "middle"
+        "name": "Cutting Cycles",
+        "duration": "Every 30-40 days"
       },
       {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
+        "name": "Stand Decline / Renewal",
+        "duration": "Year 3-4"
       }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    ]
+  },
+  {
+    "crop": "Maize",
+    "crop_name_en": "Maize",
+    "stages": [
+      {
+        "name": "Germination & Emergence (VE)",
+        "duration": "0-10"
+      },
+      {
+        "name": "Seedling / Early Vegetative (V3-V6)",
+        "duration": "10-30"
+      },
+      {
+        "name": "Rapid Vegetative Growth (V6-V12)",
+        "duration": "30-50"
+      },
+      {
+        "name": "Tasseling & Silking (VT-R1)",
+        "duration": "50-65"
+      },
+      {
+        "name": "Grain Filling (Milk-Dough, R2-R5)",
+        "duration": "65-95"
+      },
+      {
+        "name": "Physiological Maturity & Harvest (R6)",
+        "duration": "95-115"
+      }
+    ]
+  },
+  {
+    "crop": "Mango",
+    "crop_name_en": "Mango",
+    "stages": [
+      {
+        "name": "Juvenile / Establishment",
+        "duration": "Years 1-5"
+      },
+      {
+        "name": "Vegetative Flush",
+        "duration": "Apr-Aug"
+      },
+      {
+        "name": "Dormancy & Flower Induction",
+        "duration": "Oct-Dec"
+      },
+      {
+        "name": "Flowering (Panicle)",
+        "duration": "Dec-Feb"
+      },
+      {
+        "name": "Fruit Set & Development",
+        "duration": "Feb-May"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "May-Jul"
+      }
+    ]
+  },
+  {
+    "crop": "Mungbean",
+    "crop_name_en": "Mung Bean",
+    "stages": [
+      {
+        "name": "Germination & Emergence",
+        "duration": "0-7"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "7-25"
+      },
+      {
+        "name": "Flowering",
+        "duration": "25-40"
+      },
+      {
+        "name": "Pod Development",
+        "duration": "40-55"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "55-70"
+      }
+    ]
+  },
+  {
+    "crop": "Muskmelon",
+    "crop_name_en": "Muskmelon",
+    "stages": [
+      {
+        "name": "Germination & Emergence",
+        "duration": "0-8"
+      },
+      {
+        "name": "Vegetative (Vining)",
+        "duration": "8-30"
+      },
+      {
+        "name": "Flowering",
+        "duration": "30-45"
+      },
+      {
+        "name": "Fruit Development",
+        "duration": "45-70"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "70-95"
+      }
+    ]
+  },
+  {
+    "crop": "Mustard",
+    "crop_name_en": "Mustard",
+    "stages": [
+      {
+        "name": "Germination & Emergence",
+        "duration": "0-10"
+      },
+      {
+        "name": "Vegetative (Rosette)",
+        "duration": "10-40"
+      },
+      {
+        "name": "Flowering",
+        "duration": "40-70"
+      },
+      {
+        "name": "Siliqua (Pod) Development",
+        "duration": "70-110"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "110-140"
+      }
+    ]
+  },
+  {
+    "crop": "Okra",
+    "crop_name_en": "Okra",
+    "stages": [
+      {
+        "name": "Germination & Emergence",
+        "duration": "0-10"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "10-35"
+      },
+      {
+        "name": "Flowering",
+        "duration": "35-50"
+      },
+      {
+        "name": "Fruiting & Harvest",
+        "duration": "50-115"
+      },
+      {
+        "name": "End of Harvest",
+        "duration": "115-130"
+      }
+    ]
+  },
+  {
+    "crop": "Onion",
+    "crop_name_en": "Onion",
+    "stages": [
+      {
+        "name": "Nursery / Seedling",
+        "duration": "0-40"
+      },
+      {
+        "name": "Transplanting & Establishment",
+        "duration": "40-55"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "55-95"
+      },
+      {
+        "name": "Bulb Development",
+        "duration": "95-130"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "130-150"
+      }
+    ]
+  },
+  {
+    "crop": "Papaya",
+    "crop_name_en": "Papaya",
+    "stages": [
+      {
+        "name": "Nursery / Seedling",
+        "duration": "0-2 months"
+      },
+      {
+        "name": "Transplanting & Establishment",
+        "duration": "2-3 months"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "3-6 months"
+      },
+      {
+        "name": "Flowering",
+        "duration": "4-6 months"
+      },
+      {
+        "name": "Fruit Development",
+        "duration": "6-10 months"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "10-15 months+"
+      }
+    ]
+  },
+  {
+    "crop": "Peas (vegetable)",
+    "crop_name_en": "Peas",
+    "stages": [
+      {
+        "name": "Germination & Emergence",
+        "duration": "0-10"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "10-35"
+      },
+      {
+        "name": "Flowering",
+        "duration": "35-55"
+      },
+      {
+        "name": "Pod Development",
+        "duration": "55-75"
+      },
+      {
+        "name": "Harvest",
+        "duration": "75-100"
+      }
+    ]
+  },
+  {
+    "crop": "Pigeonpea",
+    "crop_name_en": "Pigeon Pea",
+    "stages": [
+      {
+        "name": "Germination & Emergence",
+        "duration": "0-12"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "12-60"
+      },
+      {
+        "name": "Flowering",
+        "duration": "60-120"
+      },
+      {
+        "name": "Pod Development",
+        "duration": "120-180"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "180-270"
+      }
+    ]
+  },
+  {
+    "crop": "Pineapple",
+    "crop_name_en": "Pineapple",
+    "stages": [
+      {
+        "name": "Establishment (Planting)",
+        "duration": "0-3 months"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "3-12 months"
+      },
+      {
+        "name": "Flower Induction & Flowering",
+        "duration": "12-15 months"
+      },
+      {
+        "name": "Fruit Development",
+        "duration": "15-20 months"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "18-24 months"
+      }
+    ]
+  },
+  {
+    "crop": "Pomegranate",
+    "crop_name_en": "Pomegranate",
+    "stages": [
+      {
+        "name": "Juvenile / Establishment",
+        "duration": "Years 1-3"
+      },
+      {
+        "name": "Vegetative Flush (Bahar)",
+        "duration": "After rest period"
+      },
+      {
+        "name": "Flowering",
+        "duration": "Weeks after bahar"
+      },
+      {
+        "name": "Fruit Development",
+        "duration": "2-4 months"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "5-6 months from bloom"
+      }
+    ]
+  },
+  {
+    "crop": "Potato",
+    "crop_name_en": "Potato",
+    "stages": [
+      {
+        "name": "Sprouting & Emergence",
+        "duration": "0-20"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "20-45"
+      },
+      {
+        "name": "Tuber Initiation",
+        "duration": "45-60"
+      },
+      {
+        "name": "Tuber Bulking",
+        "duration": "60-90"
+      },
+      {
+        "name": "Maturity & Harvest",
+        "duration": "90-120"
+      }
+    ]
+  },
+  {
+    "crop": "Pumpkin",
+    "crop_name_en": "Pumpkin",
+    "stages": [
+      {
+        "name": "Seed Selection",
+        "duration": "Pre-sowing"
+      },
+      {
+        "name": "Seed Treatment",
+        "duration": "Pre-sowing"
+      },
+      {
+        "name": "Land Preparation",
+        "duration": "Pre-sowing"
+      },
+      {
+        "name": "Soil Health & Basal Dose",
+        "duration": "Pre-sowing"
+      },
+      {
+        "name": "Sowing / Transplanting",
+        "duration": "Day 0"
+      },
+      {
+        "name": "Germination & Emergence",
+        "duration": "Early"
+      },
+      {
+        "name": "Seedling Establishment",
+        "duration": "Early"
+      },
+      {
+        "name": "Vegetative Growth",
+        "duration": "Mid"
+      },
+      {
+        "name": "Irrigation Management",
+        "duration": "Throughout"
+      },
+      {
+        "name": "Nutrient Top-Dressing",
+        "duration": "Mid"
+      },
+      {
+        "name": "Weed Management",
+        "duration": "Early-Mid"
+      },
+      {
+        "name": "Pest & Disease Management",
+        "duration": "Throughout"
+      },
+      {
+        "name": "Flowering & Pollination",
+        "duration": "Reproductive"
+      },
+      {
+        "name": "Fruit / Grain Development",
+        "duration": "Reproductive"
+      },
+      {
+        "name": "Maturity",
+        "duration": "Late"
+      },
+      {
+        "name": "Harvesting",
+        "duration": "Harvest"
+      },
+      {
+        "name": "Threshing & Drying",
+        "duration": "Post-harvest"
+      },
+      {
+        "name": "Grading, Storage & Market",
+        "duration": "Post-harvest"
+      }
+    ]
+  },
+  {
+    "crop": "Ragi",
+    "crop_name_en": "Ragi",
     "stages": [
       {
         "name": "Germination & Nursery",
@@ -3704,33 +2382,8 @@
     ]
   },
   {
-    "name_en": "Rice",
-    "color": "#F5F5DC",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Rice",
+    "crop_name_en": "Rice",
     "stages": [
       {
         "name": "Germination & Nursery",
@@ -3763,33 +2416,8 @@
     ]
   },
   {
-    "name_en": "Rubber",
-    "color": "#4A3728",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Rubber",
+    "crop_name_en": "Rubber",
     "stages": [
       {
         "name": "Nursery (Budded plants)",
@@ -3814,33 +2442,8 @@
     ]
   },
   {
-    "name_en": "Safflower",
-    "color": "#E67E22",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Safflower",
+    "crop_name_en": "Safflower",
     "stages": [
       {
         "name": "Seed Selection",
@@ -3917,33 +2520,8 @@
     ]
   },
   {
-    "name_en": "Saffron",
-    "color": "#9932CC",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Saffron",
+    "crop_name_en": "Saffron",
     "stages": [
       {
         "name": "Seed Selection",
@@ -4020,33 +2598,8 @@
     ]
   },
   {
-    "name_en": "Sesame",
-    "color": "#F5DEB3",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Sesame",
+    "crop_name_en": "Sesame",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -4071,33 +2624,8 @@
     ]
   },
   {
-    "name_en": "Soybean",
-    "color": "#9ACD32",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Soybean",
+    "crop_name_en": "Soybean",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -4122,33 +2650,8 @@
     ]
   },
   {
-    "name_en": "Strawberry",
-    "color": "#FC5A8D",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Strawberry",
+    "crop_name_en": "Strawberry",
     "stages": [
       {
         "name": "Establishment (Planting)",
@@ -4173,33 +2676,8 @@
     ]
   },
   {
-    "name_en": "Sugarcane",
-    "color": "#993D00",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 2,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Sugarcane",
+    "crop_name_en": "Sugarcane",
     "stages": [
       {
         "name": "Germination (Sprouting)",
@@ -4224,33 +2702,8 @@
     ]
   },
   {
-    "name_en": "Sunflower",
-    "color": "#FFD700",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Sunflower",
+    "crop_name_en": "Sunflower",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -4275,33 +2728,8 @@
     ]
   },
   {
-    "name_en": "Sweet Potato",
-    "color": "#E3735E",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Sweet potato",
+    "crop_name_en": "Sweet Potato",
     "stages": [
       {
         "name": "Establishment (Planting)",
@@ -4326,33 +2754,8 @@
     ]
   },
   {
-    "name_en": "Tapioca / Cassava",
-    "color": "#8B7355",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Cassava",
+    "crop_name_en": "Tapioca / Cassava",
     "stages": [
       {
         "name": "Establishment (Planting)",
@@ -4377,33 +2780,8 @@
     ]
   },
   {
-    "name_en": "Tea",
-    "color": "#5C7A29",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Tea",
+    "crop_name_en": "Tea",
     "stages": [
       {
         "name": "Nursery (Cuttings)",
@@ -4428,33 +2806,8 @@
     ]
   },
   {
-    "name_en": "Tobacco",
-    "color": "#8B7D6B",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Tobacco",
+    "crop_name_en": "Tobacco",
     "stages": [
       {
         "name": "Nursery / Seedling",
@@ -4479,33 +2832,8 @@
     ]
   },
   {
-    "name_en": "Tomato",
-    "color": "#FF2400",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Tomato",
+    "crop_name_en": "Tomato",
     "stages": [
       {
         "name": "Nursery / Seedling",
@@ -4534,33 +2862,8 @@
     ]
   },
   {
-    "name_en": "Turmeric",
-    "color": "#F4A460",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Turmeric",
+    "crop_name_en": "Turmeric",
     "stages": [
       {
         "name": "Sprouting & Emergence",
@@ -4585,33 +2888,8 @@
     ]
   },
   {
-    "name_en": "Urad",
-    "color": "#2F1B14",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Urad",
+    "crop_name_en": "Urad",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -4636,33 +2914,8 @@
     ]
   },
   {
-    "name_en": "Walnut",
-    "color": "#8B6914",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 1,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Walnut",
+    "crop_name_en": "Walnut",
     "stages": [
       {
         "name": "Seed Selection",
@@ -4739,33 +2992,8 @@
     ]
   },
   {
-    "name_en": "Watermelon",
-    "color": "#2E8B57",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Watermelon",
+    "crop_name_en": "Watermelon",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -4790,33 +3018,8 @@
     ]
   },
   {
-    "name_en": "Wheat",
-    "color": "#F5DEB3",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
+    "crop": "Wheat",
+    "crop_name_en": "Wheat",
     "stages": [
       {
         "name": "Germination & Emergence",
@@ -4849,109 +3052,6 @@
       {
         "name": "Maturity & Harvest",
         "duration": "120-145"
-      }
-    ]
-  },
-  {
-    "name_en": "Linseed",
-    "color": "#A0855B",
-    "maturities": [
-      {
-        "name": "default-maturity"
-      },
-      {
-        "name": "early"
-      },
-      {
-        "name": "early-middle"
-      },
-      {
-        "name": "middle"
-      },
-      {
-        "name": "middle-late"
-      },
-      {
-        "name": "late"
-      }
-    ],
-    "seeding_type": 0,
-    "has_varieties": false,
-    "has_weather_risks": false,
-    "bbch_mode": null,
-    "characteristic": null,
-    "stages": [
-      {
-        "name": "Seed Selection",
-        "duration": "Pre-sowing"
-      },
-      {
-        "name": "Seed Treatment",
-        "duration": "Pre-sowing"
-      },
-      {
-        "name": "Land Preparation",
-        "duration": "Pre-sowing"
-      },
-      {
-        "name": "Soil Health & Basal Dose",
-        "duration": "Pre-sowing"
-      },
-      {
-        "name": "Sowing / Transplanting",
-        "duration": "Day 0"
-      },
-      {
-        "name": "Germination & Emergence",
-        "duration": "Early"
-      },
-      {
-        "name": "Seedling Establishment",
-        "duration": "Early"
-      },
-      {
-        "name": "Vegetative Growth",
-        "duration": "Mid"
-      },
-      {
-        "name": "Irrigation Management",
-        "duration": "Throughout"
-      },
-      {
-        "name": "Nutrient Top-Dressing",
-        "duration": "Mid"
-      },
-      {
-        "name": "Weed Management",
-        "duration": "Early-Mid"
-      },
-      {
-        "name": "Pest & Disease Management",
-        "duration": "Throughout"
-      },
-      {
-        "name": "Flowering & Pollination",
-        "duration": "Reproductive"
-      },
-      {
-        "name": "Fruit / Grain Development",
-        "duration": "Reproductive"
-      },
-      {
-        "name": "Maturity",
-        "duration": "Late"
-      },
-      {
-        "name": "Harvesting",
-        "duration": "Harvest"
-      },
-      {
-        "name": "Threshing & Drying",
-        "duration": "Post-harvest"
-      },
-      {
-        "name": "Grading, Storage & Market",
-        "duration": "Post-harvest"
       }
     ]
   }

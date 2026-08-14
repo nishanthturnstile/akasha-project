@@ -119,12 +119,12 @@ function config(usageModel: string) {
     };
 }
 
-function renderPage() {
+function renderPage(initialEntries = ['/monitoring/field-create']) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
     return render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={ initialEntries }>
             <QueryClientProvider client={ queryClient }>
                 <MapViewProvider>
                     <FieldCreatePage />
@@ -179,6 +179,24 @@ describe('FieldCreatePage basemap behavior', () => {
 
         expect(screen.getByText(/Unsupported Esri basemap usage model "per-request"/)).toBeTruthy();
         expect(screen.queryByTestId('map-layer-manager')).toBeNull();
+    });
+
+    it('fails gracefully instead of crashing when the save response is missing a field id', async () => {
+        vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+        vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
+        state.config = config('session');
+        state.createField.mockResolvedValue(undefined as never);
+
+        renderPage(['/monitoring/field-create?mode=draw&seasonId=season-1']);
+
+        fireEvent.click(screen.getByTestId('complete-field-draw'));
+        fireEvent.click(screen.getByRole('button', { name: 'Save 1 field' }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Field was saved but no valid ID was returned/i)).toBeTruthy();
+        });
+        expect(screen.getByRole('heading', { name: 'Add field' })).toBeTruthy();
+        expect(window.location.pathname).not.toContain('/monitoring/field-analytics');
     });
 
     it('lands in Global View after saving a drawn field', async () => {

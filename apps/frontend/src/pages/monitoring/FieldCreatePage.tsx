@@ -486,6 +486,9 @@ export default function FieldCreatePage() {
           seasonIds: [selectedSeasonId],
           vegetationData: pf.vegetationData.length > 0 ? pf.vegetationData : undefined,
         });
+        if (!created?.id) {
+          throw new Error('Field was saved but no valid ID was returned');
+        }
         createdFields.push(created);
       }
 

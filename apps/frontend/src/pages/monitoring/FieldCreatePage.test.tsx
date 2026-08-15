@@ -200,6 +200,8 @@ describe('FieldCreatePage basemap behavior', () => {
     });
 
     it('lands in Global View after saving a drawn field', async () => {
+        vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+        vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
         state.config = config('session');
         state.createField.mockResolvedValue({
             id: 'field-new-1',

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 
 revision = "20260814_0008"
 down_revision = "20260724_0007"
@@ -15,32 +16,46 @@ branch_labels = None
 depends_on = None
 
 SCHEMA = "akasha"
+COLUMN = "optical_cloud_threshold_percent"
+CONSTRAINT = "users_optical_cloud_threshold_percent_chk"
+
+
+def _column_exists() -> bool:
+    inspector = inspect(op.get_bind())
+    return COLUMN in {column["name"] for column in inspector.get_columns("users", schema=SCHEMA)}
+
+
+def _constraint_exists() -> bool:
+    inspector = inspect(op.get_bind())
+    return any(
+        constraint.get("name") == CONSTRAINT
+        for constraint in inspector.get_check_constraints("users", schema=SCHEMA)
+    )
 
 
 def upgrade() -> None:
-    op.add_column(
-        "users",
-        sa.Column(
-            "optical_cloud_threshold_percent",
-            sa.Integer(),
-            nullable=False,
-            server_default=sa.text("20"),
-        ),
-        schema=SCHEMA,
-    )
-    op.create_check_constraint(
-        "users_optical_cloud_threshold_percent_chk",
-        "users",
-        "optical_cloud_threshold_percent BETWEEN 0 AND 70",
-        schema=SCHEMA,
-    )
+    if not _column_exists():
+        op.add_column(
+            "users",
+            sa.Column(
+                COLUMN,
+                sa.Integer(),
+                nullable=False,
+                server_default=sa.text("20"),
+            ),
+            schema=SCHEMA,
+        )
+    if not _constraint_exists():
+        op.create_check_constraint(
+            CONSTRAINT,
+            "users",
+            f"{COLUMN} BETWEEN 0 AND 70",
+            schema=SCHEMA,
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "users_optical_cloud_threshold_percent_chk",
-        "users",
-        schema=SCHEMA,
-        type_="check",
-    )
-    op.drop_column("users", "optical_cloud_threshold_percent", schema=SCHEMA)
+    if _constraint_exists():
+        op.drop_constraint(CONSTRAINT, "users", schema=SCHEMA, type_="check")
+    if _column_exists():
+        op.drop_column("users", COLUMN, schema=SCHEMA)

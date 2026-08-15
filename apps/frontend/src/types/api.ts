@@ -613,6 +613,16 @@ export interface SceneDate {
   coveragePercent: number | null;
   shadowPercent?: number | null;
   obscuredPercent?: number | null;
+  /** Combined cloud + shadow/obscured share when supplied by the BFF. */
+  combinedCloudShadowPercent?: number | null;
+  /** Effective combined cloud + cirrus + shadow limit used for this acquisition. */
+  appliedCloudThresholdPercent?: number | null;
+  /** Legacy alias accepted only when normalizing older BFF responses. */
+  appliedThresholdPercent?: number | null;
+  /** Availability state from the catalog/field-date evaluator. */
+  availabilityStatus?: string | null;
+  /** Explicit selection state; absent on older BFF responses. */
+  selectable?: boolean;
   isLatestUsable: boolean;
   metricsProvisional: boolean;
   tileAvailable: boolean;
@@ -708,6 +718,10 @@ export interface DefaultLayer {
   coveragePercent: number | null;
   metricsProvisional: boolean;
   tileAvailable: boolean;
+  selectable?: boolean;
+  availabilityStatus?: string | null;
+  appliedCloudThresholdPercent?: number | null;
+  appliedThresholdPercent?: number | null;
   unavailableReason?: string | null;
 }
 
@@ -1475,6 +1489,18 @@ export interface AccountMe {
   currentTeam: { id: string; name: string; role: string };
   memberships: Array<{ teamId: string; teamName: string; role: string }>;
   authMode: string;
+}
+
+export interface AccountSettings {
+  teamId?: string;
+  safeLocalDev?: boolean;
+  /** Maximum accepted optical cloud percentage for imagery dates. */
+  opticalCloudThresholdPercent?: number | null;
+  [key: string]: unknown;
+}
+
+export interface UpdateAccountSettingsPayload {
+  opticalCloudThresholdPercent: number;
 }
 
 export interface SignupPayload {

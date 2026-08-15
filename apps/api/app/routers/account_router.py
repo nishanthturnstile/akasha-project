@@ -20,9 +20,17 @@ from ..auth import (
     new_api_key,
     require_role,
 )
+from ..optical_cloud import optical_cloud_threshold, set_optical_cloud_threshold
 from ..raster.errors import AkashaError, not_found, plots_backend_unavailable
 from ..repositories import account_repo, auth_repo
-from ..schemas.account import AccountMe, ApiKeyCreate, ApiKeyPublic, AssistantStatus, Notification
+from ..schemas.account import (
+    AccountMe,
+    AccountSettingsUpdate,
+    ApiKeyCreate,
+    ApiKeyPublic,
+    AssistantStatus,
+    Notification,
+)
 
 logger = logging.getLogger("akasha.api.account")
 router = APIRouter(prefix="/api", tags=["account"])
@@ -108,8 +116,42 @@ async def switch_team(team: CurrentTeam = Depends(get_current_team)) -> dict[str
 
 
 @router.get("/account/settings", response_model=dict[str, Any], response_model_by_alias=True)
-async def account_settings(team: CurrentTeam = Depends(get_current_team)) -> dict[str, Any]:
-    return {"teamId": team.id, "safeLocalDev": team.id.startswith("00000000")}
+async def account_settings(
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(get_current_team),
+) -> dict[str, Any]:
+    return {
+        "teamId": team.id,
+        "safeLocalDev": team.id.startswith("00000000"),
+        "opticalCloudThresholdPercent": optical_cloud_threshold(user),
+    }
+
+
+@router.patch("/account/settings", response_model=dict[str, Any], response_model_by_alias=True)
+async def update_account_settings(
+    payload: AccountSettingsUpdate,
+    user: CurrentUser = Depends(get_current_user),
+    team: CurrentTeam = Depends(get_current_team),
+) -> dict[str, Any]:
+    threshold = payload.optical_cloud_threshold_percent
+    if _use_preview_storage(team):
+        # Disabled-auth local preview mode has no persisted user row. Keep its
+        # preference process-local, while authenticated deployments always read
+        # the database-backed value from the session context.
+        set_optical_cloud_threshold(user.id, threshold)
+    else:
+        changed = await _run_blocking(
+            auth_repo.update_optical_cloud_threshold,
+            user.id,
+            threshold,
+        )
+        if not changed:
+            raise not_found("User not found.", code="USER_NOT_FOUND")
+    return {
+        "teamId": team.id,
+        "safeLocalDev": team.id.startswith("00000000"),
+        "opticalCloudThresholdPercent": threshold,
+    }
 
 
 @router.get(

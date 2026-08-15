@@ -120,7 +120,7 @@ docker builder prune -af
 - Run full stack:
   - `make up` (from repo root)
 - Rebuild specific service (example: ingestion-sar):
-  - `docker compose -f infra/docker/docker-compose.yml build --no-cache ingestion-sar`
+  - `docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml build --no-cache ingestion-sar`
 - View logs:
   - `docker compose -f infra/docker/docker-compose.yml logs -f` or `logs -f <service>`
 - List running containers:

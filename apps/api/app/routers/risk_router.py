@@ -12,8 +12,9 @@ import anyio
 from fastapi import APIRouter, Depends, Query
 
 from ..api_models import CloudMaskOptions
-from ..auth import CurrentTeam, get_current_team
+from ..auth import CurrentTeam, CurrentUser, get_current_team, get_current_user
 from ..config import settings
+from ..optical_cloud import DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT, optical_cloud_threshold
 from ..raster import catalog_resolver as catalog
 from ..raster.errors import AkashaError, bad_request, not_found, plots_backend_unavailable
 from ..raster.indices import DEFAULT_INDEX, get_index
@@ -159,16 +160,18 @@ def _validate_index(source_id: str, index_type: str) -> str:
     return normalized
 
 
-def _is_usable(stats) -> bool:
+def _is_usable(
+    stats, optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT
+) -> bool:
     s = stats.statistics
-    threshold = settings.usable_pixel_threshold_percent
     if s.mean is None:
         return False
     if bool(stats.metadata.get("metricsProvisional", False)):
         return False
-    if s.validPixelPercent < threshold:
-        return False
-    if s.cloudMaskedPercent is not None and s.cloudMaskedPercent > (100 - threshold):
+    if (
+        s.cloudMaskedPercent is not None
+        and s.cloudMaskedPercent > optical_cloud_threshold_percent
+    ):
         return False
     return True
 
@@ -179,6 +182,7 @@ def _latest_usable_points(
     source_id: str,
     index_type: str,
     dates: list[str],
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> list[UsablePoint]:
     points: list[UsablePoint] = []
     for acquisition_date in dates:
@@ -193,7 +197,7 @@ def _latest_usable_points(
             )
         except AkashaError:
             continue
-        if not _is_usable(stats):
+        if not _is_usable(stats, optical_cloud_threshold_percent):
             continue
         points.append(
             UsablePoint(
@@ -402,6 +406,7 @@ async def get_field_risk_summary(
     lookbackDays: int = Query(default=DEFAULT_LOOKBACK_DAYS),
     sceneScanLimit: int = Query(default=DEFAULT_SCENE_SCAN_LIMIT),
     team: CurrentTeam = Depends(get_current_team),
+    user: CurrentUser = Depends(get_current_user),
 ) -> FieldRiskSummaryResponse:
     plot = await _run_blocking(plots_repo.get_plot, plot_id, team.id)
     if plot is None:
@@ -411,7 +416,15 @@ async def get_field_risk_summary(
     dates = _scene_dates(sourceId, start, end, sceneScanLimit)
     try:
         points = await asyncio.wait_for(
-            _run_blocking(_latest_usable_points, plot_id, plot, sourceId, index_type, dates),
+            _run_blocking(
+                _latest_usable_points,
+                plot_id,
+                plot,
+                sourceId,
+                index_type,
+                dates,
+                optical_cloud_threshold(user),
+            ),
             timeout=settings.index_request_timeout_seconds,
         )
     except Exception as exc:  # noqa: BLE001

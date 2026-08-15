@@ -3,19 +3,24 @@
 # Emergent sandbox); the validate/smoke/format targets run anywhere.
 
 COMPOSE := docker compose -f infra/docker/docker-compose.yml
-COMPOSE_DEV := docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml
+COMPOSE_DEV := docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml -f infra/docker/docker-compose.ingestion-local.yml
+COMPOSE_PRODUCT_DEV := docker compose -p akasha-product-dev -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.dev.yml -f infra/docker/docker-compose.product-dev.yml
 
-.PHONY: help dev backend frontend backend-rebuild backend-logs up down logs build validate smoke fmt lint test reset db-upgrade db-current db-heads db-check db-revision db-merge-heads
+.PHONY: help dev dev-remote backend frontend backend-remote frontend-remote backend-rebuild backend-logs up down down-remote logs logs-remote build validate smoke fmt lint test reset db-upgrade db-current db-heads db-check db-revision db-merge-heads
 
 help:
 	@echo "Akasha monorepo — make targets"
 	@echo "  make dev      - start Docker backend + hot-reload Vite frontend"
+	@echo "  make dev-remote - start product app with remote akasha-staging ingestion"
 	@echo "  make backend  - start Docker backend/gateway with FastAPI hot reload"
 	@echo "  make frontend - start only the hot-reload Vite frontend (backend must be running)"
+	@echo "  make backend-remote - start product backend with remote akasha-staging ingestion"
 	@echo "  make up       - start/prepare Docker backend + gateway only"
 	@echo "  make down     - stop the local stack"
+	@echo "  make down-remote - stop the remote-backed product-dev stack"
 	@echo "  make reset    - stop the stack and delete local volumes"
 	@echo "  make logs     - tail logs for all services"
+	@echo "  make logs-remote - tail remote-backed product-dev logs"
 	@echo "  make backend-logs - tail only API backend logs"
 	@echo "  make backend-rebuild - rebuild API image after dependency/Dockerfile changes"
 	@echo "  make build    - build all service images"
@@ -30,11 +35,20 @@ help:
 dev:
 	bash scripts/dev-local.sh
 
+dev-remote:
+	bash scripts/dev-local.sh --remote-ingestion
+
 backend:
 	bash scripts/dev-local.sh --backend-only
 
+backend-remote:
+	bash scripts/dev-local.sh --backend-only --remote-ingestion
+
 frontend:
 	bash scripts/dev-local.sh --frontend-only
+
+frontend-remote:
+	bash scripts/dev-local.sh --frontend-only --remote-ingestion
 
 up:
 	bash scripts/dev-local.sh --backend-only
@@ -42,11 +56,17 @@ up:
 down:
 	$(COMPOSE_DEV) down
 
+down-remote:
+	$(COMPOSE_PRODUCT_DEV) down
+
 reset:
 	$(COMPOSE_DEV) down -v
 
 logs:
 	$(COMPOSE_DEV) logs -f
+
+logs-remote:
+	$(COMPOSE_PRODUCT_DEV) logs -f
 
 backend-logs:
 	$(COMPOSE_DEV) logs -f api

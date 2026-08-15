@@ -1,0 +1,19 @@
+name: akasha-product-dev
+
+# Remote-backed product development mode. This file is composed with the
+# product-only base and dev overlay. It deliberately does not define or
+# include ingestion-worker/ingestion-sar; those runtimes belong to the
+# standalone akasha-staging deployment.
+
+services:
+  api:
+    environment:
+      INGESTION_API_URL: "${INGESTION_API_URL:-http://10.10.2.4:18080}"
+      INGESTION_API_KEY: "${INGESTION_API_KEY:-}"
+      INGESTION_SIGNED_URL_ALLOWED_PREFIX: "${INGESTION_SIGNED_URL_ALLOWED_PREFIX:-http://10.10.2.4:18080}"
+      INGESTION_SIGNED_URL_FETCH_PREFIX: "${INGESTION_SIGNED_URL_FETCH_PREFIX:-http://10.10.2.4:18080}"
+      INGESTION_READINESS_ENABLED: "true"
+      INGESTION_FIELD_INDEX_ENABLED: "true"
+      INGESTION_RESOURCESAT_CUTOVER_ENABLED: "true"
+      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa,resourcesat-2a-liss4-mx70-l2,resourcesat-2a-awifs-boa}"
+      ADMIN_INGESTION_LIVE_TRIGGER_ENABLED: "false"

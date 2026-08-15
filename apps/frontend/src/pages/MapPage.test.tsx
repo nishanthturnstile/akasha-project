@@ -985,6 +985,35 @@ describe('MapPage native source behavior', () => {
 });
 
 describe('MapPage selected-field native analytics', () => {
+  it('loads four months by default and expands to the rolling one-year history on demand', async () => {
+    stubAkashaFetch({ plots: [FIELD_PLOT] });
+
+    renderMapPage({ selectedPlotId: 'plot-1' });
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls.map(([input]) => String(input));
+      expect(calls.some((input) => (
+        input.startsWith('/api/fields/plot-1/dates?')
+        && input.includes('lookbackDays=122')
+      ))).toBe(true);
+    });
+
+    fireEvent.click(await screen.findByTestId('timeline-show-history'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as unknown as {
+        mock: { calls: Array<[RequestInfo | URL, RequestInit | undefined]> };
+      }).mock.calls.map(([input]) => String(input));
+      expect(calls.some((input) => (
+        input.startsWith('/api/fields/plot-1/dates?')
+        && input.includes('lookbackDays=365')
+      ))).toBe(true);
+    });
+    expect(screen.queryByTestId('timeline-show-history')).toBeNull();
+  });
+
   it('uses only field-filtered dates and omits unavailable global dates', async () => {
     stubAkashaFetch({
       plots: [FIELD_PLOT],

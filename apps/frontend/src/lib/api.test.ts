@@ -22,6 +22,10 @@ import {
   getAccountMe,
   getAssistantStatus,
   getDates,
+  getAccountSettings,
+  normalizeSceneDate,
+  normalizeSceneDates,
+  updateAccountSettings,
   getFieldLeaderboard,
   getFieldRiskSummary,
   getFieldStatistics,
@@ -99,6 +103,46 @@ describe('api client error mapping', () => {
       '/api/fields/field%201/dates?sourceId=sentinel-2-l2a&indexType=NDVI&pageSize=120',
       expect.anything(),
     );
+  });
+
+  it('normalizes availability fields and uses newest selectable as the legacy latest fallback', () => {
+    const normalized = normalizeSceneDate({
+      acquisitionDate: '2026-05-11',
+      selectable: false,
+      tileAvailable: true,
+      availabilityStatus: 'rejected',
+      appliedCloudThresholdPercent: 20,
+      cloudMaskedPercent: 31,
+      shadowPercent: 4,
+      obscuredPercent: 2,
+      unavailableReason: 'Combined field cloud threshold exceeded.',
+    });
+    expect(normalized.selectable).toBe(false);
+    expect(normalized.tileAvailable).toBe(true);
+    expect(normalized.appliedCloudThresholdPercent).toBe(20);
+    expect(normalized.shadowPercent).toBe(4);
+    expect(normalized.obscuredPercent).toBe(2);
+
+    const dates = normalizeSceneDates([
+      { acquisitionDate: '2026-05-01', usablePixelPercent: 95, tileAvailable: true },
+      { acquisitionDate: '2026-05-11', usablePixelPercent: 5, tileAvailable: true },
+    ]);
+    expect(dates.find((date) => date.isLatestUsable)?.acquisitionDate).toBe('2026-05-11');
+  });
+
+  it('gets and patches the exact optical cloud threshold setting', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ opticalCloudThresholdPercent: 20 }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ opticalCloudThresholdPercent: 35 }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getAccountSettings();
+    await updateAccountSettings({ opticalCloudThresholdPercent: 35 });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/account/settings', expect.objectContaining({ method: 'GET' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/account/settings', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ opticalCloudThresholdPercent: 35 }),
+    }));
   });
 
   it('requests default-layer metadata for the selected source', async () => {

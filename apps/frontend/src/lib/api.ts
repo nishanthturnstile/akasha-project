@@ -36,6 +36,8 @@ import type {
   ConnectionStatus,
   FieldRiskSummaryResponse,
   AccountMe,
+  AccountSettings,
+  UpdateAccountSettingsPayload,
   ApiKeyMetadata,
   NotificationItem,
   AssistantStatus,
@@ -381,6 +383,114 @@ export const getConfig = (): Promise<AppConfig> => request<AppConfig>('/api/conf
 
 export const getSources = (): Promise<Source[]> => request<Source[]>('/api/sources');
 
+function numericValue(...values: unknown[]): number | null {
+  const value = values.find((candidate) => typeof candidate === 'number' && Number.isFinite(candidate));
+  return typeof value === 'number' ? value : null;
+}
+
+/**
+ * Keep the browser contract stable while field-date responses roll from the
+ * original catalog shape to the richer availability projection. Older payloads
+ * did not include selectable/status fields, so they remain selectable unless
+ * the server explicitly says otherwise.
+ */
+export function normalizeSceneDate(raw: unknown): SceneDate {
+  const value = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const acquisitionDate = String(value.acquisitionDate ?? value.acquisition_date ?? '');
+  const availabilityStatus = typeof value.availabilityStatus === 'string'
+    ? value.availabilityStatus
+    : typeof value.availability_status === 'string'
+      ? value.availability_status
+      : null;
+  const unavailableReason = typeof value.unavailableReason === 'string'
+    ? value.unavailableReason
+    : typeof value.unavailable_reason === 'string'
+      ? value.unavailable_reason
+      : typeof value.reason === 'string'
+        ? value.reason
+        : null;
+  const explicitSelectable = typeof value.selectable === 'boolean'
+    ? value.selectable
+    : typeof value.isSelectable === 'boolean'
+      ? value.isSelectable
+      : undefined;
+  const explicitTileAvailable = typeof value.tileAvailable === 'boolean'
+    ? value.tileAvailable
+    : typeof value.tile_available === 'boolean'
+      ? value.tile_available
+      : undefined;
+  const statusUnavailable = availabilityStatus != null
+    && /^(rejected|unavailable|missing|processing|coverage[_-]?missing)$/i.test(availabilityStatus);
+  const tileAvailable = explicitTileAvailable ?? explicitSelectable ?? !statusUnavailable;
+  const selectable = explicitSelectable ?? tileAvailable;
+  const quality = value.quality && typeof value.quality === 'object'
+    ? value.quality as Record<string, unknown>
+    : {};
+  const appliedCloudThresholdPercent = numericValue(
+    value.appliedCloudThresholdPercent,
+    value.applied_cloud_threshold_percent,
+    value.appliedThresholdPercent,
+    value.applied_threshold_percent,
+    value.appliedThreshold,
+    value.applied_threshold,
+    value.usablePixelThresholdPercent,
+    value.usable_pixel_threshold_percent,
+    quality.appliedThresholdPercent,
+    quality.appliedThreshold,
+  );
+  const cloudMaskedPercent = numericValue(
+    value.cloudMaskedPercent,
+    value.cloud_masked_percent,
+    value.cloudPercentage,
+    value.cloud_percentage,
+    value.cloudPercent,
+    value.cloud_percent,
+  );
+  const shadowPercent = numericValue(value.shadowPercent, value.shadow_percentage);
+  const obscuredPercent = numericValue(value.obscuredPercent, value.obscured_percentage);
+  const combinedCloudShadowPercent = numericValue(
+    value.combinedCloudShadowPercent,
+    value.combined_cloud_shadow_percent,
+    value.combinedPercent,
+    value.combined_percentage,
+  );
+
+  return {
+    acquisitionDate,
+    datetime: String(value.datetime ?? value.acquisitionDatetime ?? value.acquisition_datetime ?? `${acquisitionDate}T00:00:00Z`),
+    usablePixelPercent: numericValue(value.usablePixelPercent, value.usable_pixel_percent, value.usablePixelPercentage),
+    cloudMaskedPercent,
+    coveragePercent: numericValue(value.coveragePercent, value.coverage_percent, value.fieldCoveragePercentage),
+    shadowPercent,
+    obscuredPercent,
+    combinedCloudShadowPercent,
+    appliedCloudThresholdPercent,
+    availabilityStatus: availabilityStatus ?? (selectable ? 'available' : 'unavailable'),
+    selectable,
+    isLatestUsable: Boolean(value.isLatestUsable ?? value.is_latest_usable ?? false),
+    metricsProvisional: Boolean(value.metricsProvisional ?? value.metrics_provisional ?? false),
+    tileAvailable,
+    unavailableReason,
+    sceneCount: typeof value.sceneCount === 'number' ? value.sceneCount : undefined,
+    bounds: Array.isArray(value.bounds) ? value.bounds as SceneDate['bounds'] : undefined,
+    sensor: typeof value.sensor === 'string' ? value.sensor : null,
+    provenanceLabel: typeof value.provenanceLabel === 'string' ? value.provenanceLabel : null,
+    resolvedSourceId: typeof value.resolvedSourceId === 'string' ? value.resolvedSourceId : null,
+  };
+}
+
+export function normalizeSceneDates(raw: unknown): SceneDate[] {
+  const dates = Array.isArray(raw) ? raw.map(normalizeSceneDate) : [];
+  if (dates.length === 0 || dates.some((date) => date.isLatestUsable)) return dates;
+  const candidate = [...dates]
+    .filter((date) => date.selectable)
+    .sort((a, b) => b.acquisitionDate.localeCompare(a.acquisitionDate))[0];
+  if (!candidate) return dates;
+  return dates.map((date) => date.acquisitionDate === candidate.acquisitionDate
+    ? { ...date, isLatestUsable: true }
+    : date);
+}
+
 export const getDates = (
   sourceId: string,
   options: { fieldId?: string; indexType?: string; lookbackDays?: number } = {},
@@ -401,11 +511,11 @@ export const getDates = (
           `/api/fields/${encodeURIComponent(fieldId)}/dates?${params.toString()}`,
         );
         if (Array.isArray(response)) {
-          dates.push(...response);
+          dates.push(...normalizeSceneDates(response));
           break;
         }
         const page = response;
-        dates.push(...page.items);
+        dates.push(...normalizeSceneDates(page.items));
         cursor = page.nextCursor;
       } while (cursor);
       return dates;
@@ -414,9 +524,9 @@ export const getDates = (
   const params = new URLSearchParams();
   if (options.lookbackDays) params.set('lookbackDays', String(options.lookbackDays));
   const query = params.toString();
-  return request<SceneDate[]>(
+  return request<unknown>(
     `/api/sources/${encodeURIComponent(sourceId)}/dates${query ? `?${query}` : ''}`,
-  );
+  ).then(normalizeSceneDates);
 };
 
 export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringResponse> =>
@@ -425,7 +535,13 @@ export const getImagerySourceMonitoring = (): Promise<ImagerySourceMonitoringRes
 export const getDefaultLayer = (sourceId: string): Promise<DefaultLayer> =>
   request<DefaultLayer>(
     `/api/layers/default?sourceId=${encodeURIComponent(sourceId)}`,
-  );
+  ).then((layer) => ({
+    ...layer,
+    tileAvailable: typeof layer.tileAvailable === 'boolean' ? layer.tileAvailable : true,
+    selectable: layer.selectable ?? layer.tileAvailable ?? true,
+    availabilityStatus: layer.availabilityStatus ?? (layer.tileAvailable === false ? 'unavailable' : 'available'),
+    appliedCloudThresholdPercent: layer.appliedCloudThresholdPercent ?? layer.appliedThresholdPercent ?? null,
+  }));
 
 export const getBestObservations = (params: BestObservationsParams = {}): Promise<BestObservationsResponse> => {
   const p = new URLSearchParams();
@@ -945,8 +1061,13 @@ export const changePassword = (payload: {
 export const completeOnboarding = (): Promise<AccountMe> =>
   request<AccountMe>('/api/account/onboarding-complete', { method: 'POST' });
 
-export const getAccountSettings = (): Promise<Record<string, unknown>> =>
-  request<Record<string, unknown>>('/api/account/settings');
+export const getAccountSettings = (): Promise<AccountSettings> =>
+  request<AccountSettings>('/api/account/settings');
+
+export const updateAccountSettings = (
+  payload: UpdateAccountSettingsPayload,
+): Promise<AccountSettings> =>
+  request<AccountSettings>('/api/account/settings', { method: 'PATCH', body: payload });
 
 export const listApiKeys = (): Promise<ApiKeyMetadata[]> =>
   request<ApiKeyMetadata[]>('/api/account/api-keys');

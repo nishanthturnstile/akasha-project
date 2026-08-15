@@ -39,12 +39,12 @@ describe('selectDefaultDate', () => {
     expect(selectDefaultDate(dates, 70)?.acquisitionDate).toBe('2025-09-14');
   });
 
-  it('falls back to the newest date when none qualify', () => {
+  it('returns no selection when none qualify', () => {
     const dates = [
       makeDate({ acquisitionDate: '2025-09-20', usablePixelPercent: 10 }),
       makeDate({ acquisitionDate: '2025-09-14', usablePixelPercent: 20 }),
     ];
-    expect(selectDefaultDate(dates, 70)?.acquisitionDate).toBe('2025-09-20');
+    expect(selectDefaultDate(dates, 70)).toBeNull();
   });
 
   it('does not depend on the API returning dates newest-first', () => {

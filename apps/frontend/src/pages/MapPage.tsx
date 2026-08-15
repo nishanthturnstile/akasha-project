@@ -82,6 +82,9 @@ import type {
   ViewerSelection,
 } from '@/types/api';
 
+const RECENT_TIMELINE_LOOKBACK_DAYS = 122;
+const MAX_TIMELINE_LOOKBACK_DAYS = 365;
+
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
@@ -442,17 +445,36 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     () => sourcesQ.data?.find((s) => s.id === effectiveSourceId),
     [sourcesQ.data, effectiveSourceId],
   );
+  const historyContextKey = `${selectedPlotId ?? 'none'}:${effectiveSourceId ?? 'none'}`;
+  const rightHistoryContextKey = `${selectedPlotId ?? 'none'}:${rightEffectiveSourceId ?? 'none'}`;
+  const [expandedHistoryKey, setExpandedHistoryKey] = useState<string | null>(null);
+  const [rightExpandedHistoryKey, setRightExpandedHistoryKey] = useState<string | null>(null);
+  // Expansion belongs to the current field/source key, so switching context starts
+  // directly in the lightweight four-month window without an intermediate request.
+  const historyExpanded = expandedHistoryKey === historyContextKey;
+  const rightHistoryExpanded = rightExpandedHistoryKey === rightHistoryContextKey;
+
+  const showHistory = useCallback(() => {
+    view.setPeriod(null, null);
+    setExpandedHistoryKey(historyContextKey);
+  }, [historyContextKey, view]);
+  const showRightHistory = useCallback(() => {
+    view.setRightPeriod(null, null);
+    setRightExpandedHistoryKey(rightHistoryContextKey);
+  }, [rightHistoryContextKey, view]);
 
   // Best-available observations query (only active in best mode).
   const bestObservationIndexType = displayModeOverride ?? configQ.data?.defaultIndex ?? undefined;
   const bestObsParams = useMemo(() => ({
-    ...(periodFrom ? { startDate: periodFrom } : { lookbackDays: 92 }),
+    ...(periodFrom
+      ? { startDate: periodFrom }
+      : { lookbackDays: historyExpanded ? MAX_TIMELINE_LOOKBACK_DAYS : RECENT_TIMELINE_LOOKBACK_DAYS }),
     ...(periodTo ? { endDate: periodTo } : {}),
     ...(bestObservationIndexType ? { indexType: bestObservationIndexType } : {}),
     useCase: 'field' as const,
     allowCoarse: false,
     maxCandidates: 30,
-  }), [periodFrom, periodTo, bestObservationIndexType]);
+  }), [historyExpanded, periodFrom, periodTo, bestObservationIndexType]);
   const bestObsQ = useBestObservations(bestObsParams, {
     enabled: bestMode && Boolean(selectedPlotId),
   });
@@ -491,7 +513,7 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     enabled: !bestMode && Boolean(selectedPlot),
     fieldId: selectedPlot?.id,
     indexType: requestedTimelineIndex,
-    lookbackDays: 1827,
+    lookbackDays: historyExpanded ? MAX_TIMELINE_LOOKBACK_DAYS : RECENT_TIMELINE_LOOKBACK_DAYS,
   });
   const rightSource = useMemo(
     () => sourcesQ.data?.find((source) => source.id === rightEffectiveSourceId),
@@ -506,7 +528,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
     enabled: splitEnabled && Boolean(selectedPlot),
     fieldId: selectedPlot?.id,
     indexType: rightIndex,
-    lookbackDays: 1827,
+    lookbackDays: rightHistoryExpanded
+      ? MAX_TIMELINE_LOOKBACK_DAYS
+      : RECENT_TIMELINE_LOOKBACK_DAYS,
   });
   const rightAvailableDates = useMemo(
     () => rightDatesQ.data?.filter((item) => (
@@ -907,7 +931,9 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
   // so we never call setState inside an effect.
   const selectedDate = useMemo<string | null>(() => {
     if (!activeTimelineDates || !configQ.data) return null;
-    if (dateOverride && activeTimelineDates.some((d) => d.acquisitionDate === dateOverride)) {
+    if (dateOverride && activeTimelineDates.some((d) => (
+      d.acquisitionDate === dateOverride && (d.selectable ?? d.tileAvailable !== false)
+    ))) {
       return dateOverride;
     }
     const def = selectDefaultDate(activeTimelineDates, configQ.data.usablePixelThresholdPercent, {
@@ -1232,20 +1258,16 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
       : null
   ), [preferHighRes, rightCloudMask, rightEffectiveSourceId, rightIndex, rightRenderProfile, rightSelectedDate]);
 
-  // Marginal/empty signal: no date meets the usability threshold.
+  // Empty signal: the server-side personal cloud policy rejected every date.
   const marginalNote = useMemo<string | null>(() => {
-    if (!activeTimelineDates || activeTimelineDates.length === 0 || !configQ.data) return null;
+    if (!activeTimelineDates || activeTimelineDates.length === 0) return null;
     if (activeSourceKind === 'sar') return null;
-    const threshold = configQ.data.usablePixelThresholdPercent;
     const qualifies = activeTimelineDates.some(
-      (d) => d.isLatestUsable || (d.usablePixelPercent != null && d.usablePixelPercent >= threshold),
+      (d) => d.selectable ?? d.tileAvailable !== false,
     );
     if (qualifies) return null;
-    const newest = [...activeTimelineDates].sort((a, b) =>
-      b.acquisitionDate.localeCompare(a.acquisitionDate),
-    )[0];
-    return `No usable optical scene in range. Showing the most recent attempt (${newest.acquisitionDate}).`;
-  }, [activeTimelineDates, configQ.data, activeSourceKind]);
+    return `No qualifying optical scene in range. Select a date after changing the imagery quality limit.`;
+  }, [activeTimelineDates, activeSourceKind]);
 
   // Nearest radar pass note (SAR), shown when the active pass isn't the canonical one.
   const nearestPassNote = useMemo<string | null>(() => {
@@ -1480,6 +1502,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
                 periodFrom={ periodFrom }
                 periodTo={ periodTo }
                 onPeriodChange={ view.setPeriod }
+                historyExpanded={ historyExpanded }
+                onShowHistory={ showHistory }
                 compact
               />
             </div>
@@ -1533,6 +1557,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
                 periodFrom={ rightPeriodFrom }
                 periodTo={ rightPeriodTo }
                 onPeriodChange={ view.setRightPeriod }
+                historyExpanded={ rightHistoryExpanded }
+                onShowHistory={ showRightHistory }
                 compact
               />
             </div>
@@ -1840,6 +1866,8 @@ export default function MapPage({ hidePlotToolbar, simplifiedMapControls, topLef
             periodFrom={ periodFrom }
             periodTo={ periodTo }
             onPeriodChange={ view.setPeriod }
+            historyExpanded={ historyExpanded }
+            onShowHistory={ showHistory }
             bestMode={ bestMode }
             onBestModeChange={ view.setBestMode }
             compact

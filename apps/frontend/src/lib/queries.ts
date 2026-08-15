@@ -21,6 +21,7 @@ import {
   changePassword,
   getAccountMe,
   getAccountSettings,
+  updateAccountSettings,
   getAssistantStatus,
   getNotificationUnreadCount,
   getFieldLeaderboard,
@@ -107,6 +108,7 @@ import type {
   TriggerIngestionJobRequest,
   BestObservationsParams,
   DiscoveryFilters,
+  UpdateAccountSettingsPayload,
 } from '@/types/api';
 
 export const queryKeys = {
@@ -693,6 +695,23 @@ export function useCompleteOnboarding() {
 
 export function useAccountSettings() {
   return useQuery({ queryKey: queryKeys.accountSettings, queryFn: getAccountSettings });
+}
+
+/** Persist the account imagery-quality limit and refresh every derived imagery result. */
+export function useUpdateAccountSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateAccountSettingsPayload) => updateAccountSettings(payload),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(queryKeys.accountSettings, settings);
+      void queryClient.invalidateQueries({ queryKey: ['dates'] });
+      void queryClient.invalidateQueries({ queryKey: ['layers', 'default'] });
+      // Field statistics, trend, overlay and monitoring-evidence queries share the
+      // fields namespace; invalidating it also covers newly added derived imagery keys.
+      void queryClient.invalidateQueries({ queryKey: ['fields'] });
+      void queryClient.invalidateQueries({ queryKey: ['observations', 'best'] });
+    },
+  });
 }
 
 export function useApiKeys() {

@@ -1,15 +1,17 @@
 name: akasha
 
-# Akasha — local development topology (Slice 0).
+# Akasha — local product-app topology.
 #
-# Mirrors the deployed services so the same architecture is portable to
-# Docker Compose / on-prem. Only `web` publishes a host port; every other
-# service is private to the `akasha` network. Persistent volumes back postgis
-# and minio (never store state in ephemeral container filesystems).
+# Mirrors the product services so the same architecture is portable to Docker
+# Compose / on-prem. Only `web` publishes a host port; every other service is
+# private to the Compose network. Persistent volumes back the app's PostGIS
+# and MinIO only. The optional local ingestion runtimes live in
+# docker-compose.ingestion-local.yml and are never part of the remote-backed
+# product development mode.
 #
 # Usage:
 #   cp .env.example .env   # then edit secrets
-#   docker compose up --build
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 #   open http://localhost:${WEB_PORT:-8080}/health
 #
 # NOTE: This Compose file is the LOCAL DEV / on-prem portability artifact.
@@ -88,7 +90,10 @@ services:
       INGESTION_API_KEY: "${INGESTION_API_KEY:-}"
       INGESTION_REQUEST_TIMEOUT_SECONDS: "${INGESTION_REQUEST_TIMEOUT_SECONDS:-30}"
       INGESTION_FIELD_INDEX_ENABLED: "${INGESTION_FIELD_INDEX_ENABLED:-false}"
+      INGESTION_FIELD_INDEX_SOURCE_ID: "${INGESTION_FIELD_INDEX_SOURCE_ID:-sentinel-2-l2a}"
       INGESTION_READINESS_ENABLED: "${INGESTION_READINESS_ENABLED:-false}"
+      INGESTION_RESOURCESAT_CUTOVER_ENABLED: "${INGESTION_RESOURCESAT_CUTOVER_ENABLED:-false}"
+      INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS: "${INGESTION_RESOURCESAT_CUTOVER_SOURCE_IDS:-resourcesat-2a-liss3-boa}"
       INGESTION_EOS04_CUTOVER_ENABLED: "${INGESTION_EOS04_CUTOVER_ENABLED:-false}"
       EOS04_PRODUCT_ENABLED: "${EOS04_PRODUCT_ENABLED:-false}"
       EOS04_FIELD_SUPPORT_ENABLED: "${EOS04_FIELD_SUPPORT_ENABLED:-false}"
@@ -118,9 +123,7 @@ services:
       SOURCE_FRESHNESS_STALE_DAYS: "45"
       SOURCE_COVERAGE_THRESHOLD_PERCENT: "95"
       MAX_REQUEST_BODY_BYTES: "1048576"
-      BHOONIDHI_LEDGER_PATH: "/app/data/work/bhoonidhi/ledger.sqlite"
       CORS_ALLOWED_ORIGINS: "http://localhost:${FRONTEND_PORT:-5173},http://127.0.0.1:${FRONTEND_PORT:-5173},http://localhost:${WEB_PORT:-8080},http://127.0.0.1:${WEB_PORT:-8080}"
-      INGESTION_FIELD_INDEX_SOURCE_ID: "${INGESTION_FIELD_INDEX_SOURCE_ID:-sentinel-2-l2a}"
       INGESTION_FRESHNESS_MAX_AGE_HOURS: "${INGESTION_FRESHNESS_MAX_AGE_HOURS:-}"
       INGESTION_PIPELINE_TILE_LAYER_ENABLED: "${INGESTION_PIPELINE_TILE_LAYER_ENABLED:-false}"
       INGESTION_PIPELINE_PROXY_TTL_SECONDS: "${INGESTION_PIPELINE_PROXY_TTL_SECONDS:-3600}"
@@ -139,7 +142,6 @@ services:
     volumes:
       - ../../data/seed:/app/data/seed:ro
       - ../../scripts/data:/app/data/reference:ro
-      - ../../data/work/bhoonidhi:/app/data/work/bhoonidhi:ro
       - ../../data/work/ingestion-inbox:/srv/akasha/ingestion-inbox
     depends_on:
       postgis:
@@ -271,78 +273,6 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  ingestion-worker:
-    platform: linux/amd64
-    build:
-      context: ../..
-      dockerfile: services/ingestion/Dockerfile
-    image: akasha-ingestion:slice1
-    environment:
-      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
-      STAC_API_URL: "http://stac-api:8080"
-      S3_ENDPOINT_URL: "http://minio:9000"
-      S3_ACCESS_KEY: "${MINIO_ROOT_USER}"
-      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
-      S3_REGION: "us-east-1"
-      AKASHA_COG_BUCKET: "akasha-cogs"
-      AKASHA_COLLECTION_ID: "resourcesat-2a-liss3-boa"
-      SEED_DATA_DIR: "/app/data/seed"
-      AOI_CONFIG_PATH: "/app/data/seed/bangalore-60km-aoi.geojson"
-      AOI_CONFIG_DIR: ""
-      BHOONIDHI_API_BASE: "https://bhoonidhi-api.nrsc.gov.in"
-      BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
-      BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
-      BHOONIDHI_SEARCH_RPS: "${BHOONIDHI_SEARCH_RPS:-3}"
-      BHOONIDHI_DOWNLOAD_CONCURRENCY: "${BHOONIDHI_DOWNLOAD_CONCURRENCY:-3}"
-      BHOONIDHI_RAW_ROOT: "/app/data/raw/bhoonidhi"
-      BHOONIDHI_TEMP_ROOT: "/app/data/work/bhoonidhi"
-      BHOONIDHI_LEDGER_PATH: "/app/data/work/bhoonidhi/ledger.sqlite"
-    volumes:
-      # Local Slice 2 raster prep needs ignored raw SAFE ZIPs and writes ignored COGs.
-      - ../../data:/app/data
-      - ../../scripts:/app/scripts:ro
-    depends_on:
-      postgis:
-        condition: service_healthy
-      minio:
-        condition: service_started
-    healthcheck:
-      disable: true
-    # One-shot: prints config and exits. Run seeding/verify on demand, e.g.:
-    #   docker compose run --rm ingestion-worker python worker.py seed
-    #   docker compose run --rm ingestion-worker python worker.py verify
-    #   docker compose run --rm ingestion-worker python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km
-    restart: "no"
-
-  ingestion-sar:
-    platform: linux/amd64
-    build:
-      context: ../..
-      dockerfile: services/ingestion-sar/Dockerfile
-    image: akasha-ingestion-sar:s1
-    environment:
-      PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      SNAP_USER_DIR: "/snap-cache"
-      SNAP_CACHE_SIZE: "${SNAP_CACHE_SIZE:-8G}"
-      SNAP_PARALLELISM: "${SNAP_PARALLELISM:-4}"
-      JAVA_TOOL_OPTIONS: "-Xmx${SNAP_JAVA_MAX_HEAP:-12g}"
-      AKASHA_S1_DEM_SOURCE: "${AKASHA_S1_DEM_SOURCE:-Copernicus 30m Global DEM}"
-      AKASHA_S1_FALLBACK_DEM_SOURCE: "${AKASHA_S1_FALLBACK_DEM_SOURCE:-SRTM 1Sec HGT}"
-      AKASHA_S1_TARGET_CRS: "${AKASHA_S1_TARGET_CRS:-EPSG:4326}"
-      AKASHA_S1_PIXEL_SPACING_METERS: "${AKASHA_S1_PIXEL_SPACING_METERS:-10}"
-      AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
-      AKASHA_S1_VH_RESCALE: "${AKASHA_S1_VH_RESCALE:--30,-5}"
-    volumes:
-      - ../../data:/app/data
-      - ../../scripts:/app/scripts:ro
-      - snap_cache:/snap-cache
-    healthcheck:
-      disable: true
-    # One-shot SAR preprocessing runtime. Example:
-    #   docker compose run --rm ingestion-sar python scripts/prepare_sentinel1_grd_cogs.py --selection-manifest data/raw/sentinel-1-grd/coverage_manifest.json --overwrite
-    restart: "no"
-
 volumes:
   postgis_data:
   minio_data:
-  snap_cache:

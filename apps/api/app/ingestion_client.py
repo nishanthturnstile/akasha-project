@@ -12,7 +12,7 @@ from threading import Lock
 from typing import Any, Generic, Literal, Self, TypeVar
 
 import httpx
-from pydantic import Field, ValidationError, model_validator
+from pydantic import AliasChoices, Field, ValidationError, model_validator
 
 from .api_models import ApiModel
 from .config import Settings, settings
@@ -23,7 +23,7 @@ T = TypeVar("T")
 FIELD_INDEX_PATH = "/api/v1/analytics/field-index"
 FIELD_DATES_PATH = "/api/v1/analytics/field-dates"
 FIELD_SAR_PATH = "/api/v1/analytics/field-sar"
-FIELD_DATES_MAX_CLOUD_PERCENTAGE = 20.0
+FIELD_DATES_MAX_CLOUD_PERCENTAGE = 70.0
 FIELD_DATES_MAX_BATCH_SIZE = 64
 READINESS_PATH = "/api/v1/analytics/readiness"
 SOURCE_DATES_PATH = "/api/v1/sources/{source_id}/dates"
@@ -107,7 +107,7 @@ class FieldDatesRequest(ApiModel):
     index: str
     dates: list[date] = Field(min_length=1, max_length=FIELD_DATES_MAX_BATCH_SIZE)
     max_cloud_percentage: float = Field(
-        default=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+        default=20.0,
         ge=0,
         le=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
     )
@@ -127,16 +127,33 @@ class FieldDateAvailability(ApiModel):
     cloud_percentage: float | None = Field(
         default=None,
         ge=0,
-        le=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+        le=100,
     )
     field_coverage_percentage: float | None = Field(default=None, ge=0, le=100)
     shadow_percentage: float | None = Field(default=None, ge=0, le=100)
     obscured_percentage: float | None = Field(default=None, ge=0, le=100)
     valid_pixel_count: int = Field(default=0, ge=0)
     reason: str | None = None
+    tile_available: bool | None = None
+    availability_status: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("availabilityStatus", "status"),
+        serialization_alias="availabilityStatus",
+    )
+    applied_cloud_threshold_percent: float | None = Field(default=None, ge=0, le=70)
+    cloud_masked_percent: float | None = Field(default=None, ge=0, le=100)
+    unavailable_reason: str | None = None
 
     @model_validator(mode="after")
     def validate_availability(self) -> Self:
+        if (
+            self.available
+            and self.cloud_percentage is not None
+            and self.cloud_percentage > 20
+            and self.availability_status is None
+            and self.applied_cloud_threshold_percent is None
+        ):
+            raise ValueError("legacy field dates cannot exceed the default cloud threshold")
         if self.available:
             if self.selected_scene_date != self.acquisition_date:
                 raise ValueError("available field dates must select the exact acquisition date")
@@ -154,6 +171,23 @@ class FieldDateAvailability(ApiModel):
                 raise ValueError("available field dates require field quality percentages")
             if self.reason is not None:
                 raise ValueError("available field dates cannot include an unavailable reason")
+            return self
+        typed_status = (self.availability_status or "").upper()
+        if typed_status and typed_status not in {
+            "UNAVAILABLE",
+            "NO_DATA",
+            "QUALITY_LIMITED",
+        }:
+            if self.selected_scene_date not in {None, self.acquisition_date}:
+                raise ValueError(
+                    "unavailable field dates must reference the exact acquisition date"
+                )
+            if not self.reason or not self.reason.strip():
+                raise ValueError("unavailable field dates require a reason")
+            # New ingestion contracts deliberately retain field-clipped quality
+            # evidence for rejected acquisitions.  Processing and intersection
+            # failures may report zero-valued metrics; cloud rejections report
+            # the measured cloud/shadow/obscured percentages.
             return self
         if self.selected_scene_date is not None or self.usable_pixel_percentage is not None:
             raise ValueError("unavailable field dates cannot include selected-scene metrics")
@@ -174,6 +208,29 @@ class FieldDatesResponse(ApiModel):
     source_id: str
     index: str
     dates: list[FieldDateAvailability] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_dates(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("dates") is not None:
+            return value
+        available = {str(item) for item in value.get("availableDates") or []}
+        requested = [str(item) for item in value.get("requestedDates") or available]
+        if not requested:
+            return value
+        value = dict(value)
+        value["dates"] = [
+            {
+                "acquisitionDate": item,
+                "available": item in available,
+                "selectedSceneDate": item if item in available else None,
+                "reason": None
+                if item in available
+                else "The acquisition is not selectable for this field.",
+            }
+            for item in requested
+        ]
+        return value
 
 
 class FieldSarRequest(ApiModel):
@@ -621,6 +678,14 @@ class IngestionClient:
             json=payload.model_dump(mode="json", by_alias=True, exclude_none=True),
             request_id=request_id,
         )
+        if isinstance(data, dict):
+            # Older ingestion deployments returned only ``availableDates`` and
+            # omitted the request identity. Supply it locally so the normalized
+            # response can retain unavailable acquisitions as well.
+            data = dict(data)
+            data.setdefault("sourceId", payload.source_id)
+            data.setdefault("index", payload.index)
+            data.setdefault("requestedDates", [item.isoformat() for item in payload.dates])
         try:
             response = FieldDatesResponse.model_validate(data)
         except ValidationError as exc:

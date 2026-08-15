@@ -1,0 +1,74 @@
+name: akasha
+
+# Optional local ingestion runtimes. This file is intentionally separate from
+# the product-app Compose definition. Use it only for legacy/local catalog
+# seeding or explicitly requested raster work; remote-backed product mode does
+# not include this file.
+
+services:
+  ingestion-worker:
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: services/ingestion/Dockerfile
+    image: akasha-ingestion:slice1
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}"
+      STAC_API_URL: "http://stac-api:8080"
+      S3_ENDPOINT_URL: "http://minio:9000"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
+      S3_REGION: "us-east-1"
+      AKASHA_COG_BUCKET: "akasha-cogs"
+      AKASHA_COLLECTION_ID: "resourcesat-2a-liss3-boa"
+      SEED_DATA_DIR: "/app/data/seed"
+      AOI_CONFIG_PATH: "/app/data/seed/bangalore-60km-aoi.geojson"
+      AOI_CONFIG_DIR: ""
+      BHOONIDHI_API_BASE: "https://bhoonidhi-api.nrsc.gov.in"
+      BHOONIDHI_USER_ID: "${BHOONIDHI_USER_ID:-}"
+      BHOONIDHI_PASSWORD: "${BHOONIDHI_PASSWORD:-}"
+      BHOONIDHI_SEARCH_RPS: "${BHOONIDHI_SEARCH_RPS:-3}"
+      BHOONIDHI_DOWNLOAD_CONCURRENCY: "${BHOONIDHI_DOWNLOAD_CONCURRENCY:-3}"
+      BHOONIDHI_RAW_ROOT: "/app/data/raw/bhoonidhi"
+      BHOONIDHI_TEMP_ROOT: "/app/data/work/bhoonidhi"
+      BHOONIDHI_LEDGER_PATH: "/app/data/work/bhoonidhi/ledger.sqlite"
+    volumes:
+      - ../../data:/app/data
+      - ../../scripts:/app/scripts:ro
+    depends_on:
+      postgis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  ingestion-sar:
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: services/ingestion-sar/Dockerfile
+    image: akasha-ingestion-sar:s1
+    environment:
+      PATH: "/opt/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      SNAP_USER_DIR: "/snap-cache"
+      SNAP_CACHE_SIZE: "${SNAP_CACHE_SIZE:-8G}"
+      SNAP_PARALLELISM: "${SNAP_PARALLELISM:-4}"
+      JAVA_TOOL_OPTIONS: "-Xmx${SNAP_JAVA_MAX_HEAP:-12g}"
+      AKASHA_S1_DEM_SOURCE: "${AKASHA_S1_DEM_SOURCE:-Copernicus 30m Global DEM}"
+      AKASHA_S1_FALLBACK_DEM_SOURCE: "${AKASHA_S1_FALLBACK_DEM_SOURCE:-SRTM 1Sec HGT}"
+      AKASHA_S1_TARGET_CRS: "${AKASHA_S1_TARGET_CRS:-EPSG:4326}"
+      AKASHA_S1_PIXEL_SPACING_METERS: "${AKASHA_S1_PIXEL_SPACING_METERS:-10}"
+      AKASHA_S1_VV_RESCALE: "${AKASHA_S1_VV_RESCALE:--25,5}"
+      AKASHA_S1_VH_RESCALE: "${AKASHA_S1_VH_RESCALE:--30,-5}"
+    volumes:
+      - ../../data:/app/data
+      - ../../scripts:/app/scripts:ro
+      - snap_cache:/snap-cache
+    healthcheck:
+      disable: true
+    restart: "no"
+
+volumes:
+  snap_cache:

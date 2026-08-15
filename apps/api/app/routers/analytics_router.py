@@ -31,13 +31,17 @@ from ..config import settings
 from ..ingestion_adapters import field_index_to_statistics_response, field_index_to_trend_point
 from ..ingestion_client import (
     FIELD_DATES_MAX_BATCH_SIZE,
-    FIELD_DATES_MAX_CLOUD_PERCENTAGE,
     fetch_signed_ingestion_binary,
     get_readiness,
     request_field_dates,
     request_field_index,
     request_field_index_point,
     request_field_sar,
+)
+from ..optical_cloud import (
+    DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
+    normalize_field_date,
+    optical_cloud_threshold,
 )
 from ..raster import catalog_resolver as catalog
 from ..raster import tiles
@@ -90,10 +94,26 @@ router = APIRouter(
 )
 
 MAX_TREND_DAYS = 365
-MAX_FIELD_HISTORY_DAYS = 1827
+MAX_FIELD_HISTORY_DAYS = 365
 EOS04_SOURCE_ID = "eos-04-sar-mrs-l2b"
 NISAR_SOURCE_ID = "nisar-ssar-beta-gcov"
 RADAR_SELECTION_POLICY_VERSION = "radar-support-selection-v1"
+
+
+def _bounded_field_history_window(
+    *,
+    start_date: date | None,
+    end_date: date | None,
+    lookback_days: int | None,
+    today: date | None = None,
+) -> tuple[date, date]:
+    """Clamp field timelines to a rolling 365-day product window."""
+    window_end = end_date or today or datetime.now(UTC).date()
+    earliest_allowed = window_end - timedelta(days=MAX_FIELD_HISTORY_DAYS - 1)
+    if start_date is not None:
+        return max(start_date, earliest_allowed), window_end
+    requested_days = min(lookback_days or MAX_FIELD_HISTORY_DAYS, MAX_FIELD_HISTORY_DAYS)
+    return window_end - timedelta(days=requested_days - 1), window_end
 
 
 def _render_legend_labels(
@@ -104,7 +124,8 @@ def _render_legend_labels(
         return []
     labels = [f"≤ {formatted[0]}"]
     labels.extend(
-        f"> {lower} to ≤ {upper}" for lower, upper in zip(formatted, formatted[1:])
+        f"> {lower} to ≤ {upper}"
+        for lower, upper in zip(formatted, formatted[1:])  # noqa: B905
     )
     labels.append(f"> {formatted[-1]}")
     return labels
@@ -273,6 +294,7 @@ def _pipeline_statistics_response(
     acquisition_date: str | None,
     index_type: str,
     cloud_mask: CloudMaskOptions,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> FieldStatisticsResponse:
     _ensure_pipeline_index_supported(source_id, index_type)
     selected_date = _pipeline_acquisition_date(
@@ -287,7 +309,7 @@ def _pipeline_statistics_response(
         source_id=source_id,
         index_type=index_type,
         acquisition_date=selected_date,
-        max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+        max_cloud_percentage=float(optical_cloud_threshold_percent),
     )
     return field_index_to_statistics_response(
         result,
@@ -307,6 +329,7 @@ def _field_dates_response(
     end_date: date | None,
     lookback_days: int | None,
     timeout_seconds: float | None = None,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> list[dict[str, Any]] | dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
 
@@ -350,40 +373,49 @@ def _field_dates_response(
             source_id=source_id,
             index_type=index_type,
             acquisition_dates=acquisition_dates[offset : offset + FIELD_DATES_MAX_BATCH_SIZE],
-            max_cloud_percentage=FIELD_DATES_MAX_CLOUD_PERCENTAGE,
+            max_cloud_percentage=float(optical_cloud_threshold_percent),
             timeout_seconds=remaining_timeout(),
         )
-        availability_dates.extend(availability.get("dates", []))
+        returned_dates = availability.get("dates")
+        if not returned_dates and availability.get("availableDates") is not None:
+            available_dates = {str(value) for value in availability.get("availableDates") or []}
+            returned_dates = [
+                {
+                    "acquisitionDate": acquisition_date,
+                    "available": acquisition_date in available_dates,
+                    "selectedSceneDate": (
+                        acquisition_date if acquisition_date in available_dates else None
+                    ),
+                    "reason": (
+                        None
+                        if acquisition_date in available_dates
+                        else "The acquisition is not selectable for this field."
+                    ),
+                }
+                for acquisition_date in acquisition_dates[
+                    offset : offset + FIELD_DATES_MAX_BATCH_SIZE
+                ]
+            ]
+        availability_dates.extend(returned_dates or [])
     by_date = {
         str(item.get("acquisitionDate")): item
         for item in availability_dates
-        if item.get("available") is True
+        if item.get("acquisitionDate")
     }
     filtered: list[dict[str, Any]] = []
     for item in windowed_dates:
         field_date = by_date.get(str(item.get("acquisitionDate")))
-        if field_date is None:
-            continue
-        usable = field_date.get("usablePixelPercentage")
-        cloud_percentage = field_date.get("cloudPercentage")
-        field_coverage = field_date.get("fieldCoveragePercentage")
-        shadow_percentage = field_date.get("shadowPercentage")
-        obscured_percentage = field_date.get("obscuredPercentage")
-        filtered.append(
-            {
-                **item,
-                "usablePixelPercent": usable,
-                "cloudMaskedPercent": cloud_percentage,
-                "coveragePercent": field_coverage,
-                "shadowPercent": shadow_percentage,
-                "obscuredPercent": obscured_percentage,
-                "isLatestUsable": False,
-            }
+        normalized = normalize_field_date(
+            field_date or {},
+            fallback=item,
+            threshold_percent=optical_cloud_threshold_percent,
         )
+        filtered.append({**item, **normalized, "isLatestUsable": False})
     if filtered:
-        newest = max(str(item["acquisitionDate"]) for item in filtered)
+        usable = [item for item in filtered if item.get("selectable")]
+        newest = max((str(item["acquisitionDate"]) for item in usable), default=None)
         for item in filtered:
-            item["isLatestUsable"] = item["acquisitionDate"] == newest
+            item["isLatestUsable"] = newest is not None and item["acquisitionDate"] == newest
     return filtered
 
 
@@ -397,6 +429,7 @@ def _field_monitoring_evidence(
     optical_stale_days: int,
     sar_window_days: int,
     include_radar: bool,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> dict[str, Any]:
     source = catalog.get_source(source_id)
     if source.get("kind") != "optical":
@@ -421,6 +454,7 @@ def _field_monitoring_evidence(
         end_date=target_date,
         lookback_days=None,
         timeout_seconds=float(settings.index_request_timeout_seconds),
+        optical_cloud_threshold_percent=optical_cloud_threshold_percent,
     )
     global_dates = (
         _pipeline_dates(
@@ -438,7 +472,7 @@ def _field_monitoring_evidence(
     qualifying_dates = sorted(
         date.fromisoformat(str(item["acquisitionDate"]))
         for item in field_dates
-        if item.get("acquisitionDate")
+        if item.get("acquisitionDate") and item.get("selectable", item.get("available", True))
     )
     latest_candidate = candidate_dates[-1] if candidate_dates else None
     latest_qualifying = qualifying_dates[-1] if qualifying_dates else None
@@ -610,6 +644,7 @@ def _pipeline_trend_response(
     date_end: date,
     cloud_mask: CloudMaskOptions,
     max_cloud_cover_in_aoi: float | None = None,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> FieldTrendResponse:
     _ensure_pipeline_index_supported(source_id, index_type)
 
@@ -637,7 +672,7 @@ def _pipeline_trend_response(
                 source_id=source_id,
                 index_type=index_type,
                 acquisition_date=requested_date.isoformat(),
-                max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+                max_cloud_percentage=float(optical_cloud_threshold_percent),
                 timeout_seconds=per_date_timeout,
             )
             point = field_index_to_trend_point(result)
@@ -683,6 +718,7 @@ def _pipeline_trend_response(
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
             "rangeLimitDays": MAX_TREND_DAYS,
             "maxCloudCoverInAoi": max_cloud_cover_in_aoi,
+            "appliedCloudThresholdPercent": optical_cloud_threshold_percent,
             "maxDates": max_dates,
             "perDateTimeoutSeconds": per_date_timeout,
             "sideEffect": "field-index requests create ingestion query records and tile layers.",
@@ -728,6 +764,7 @@ def _field_statistics(
     index_type: str,
     cloud_mask: CloudMaskOptions,
     prefer_high_res: bool = True,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> FieldStatisticsResponse:
     resolution = catalog.resolve_best_resolution_source(
         primary_source_id=source_id,
@@ -769,7 +806,9 @@ def _field_statistics(
             resolution_meters=primary_source.get("resolutionMeters"),
             enhanced=False,
             basis_date=None,
-            provenance_note="High-resolution enhancement unavailable; served from the primary source.",
+            provenance_note=(
+                "High-resolution enhancement unavailable; served from the primary source."
+            ),
         )
         computed, mask_mapping = _compute_for_resolution(resolution)
 
@@ -780,6 +819,7 @@ def _field_statistics(
             "scope": "field",
             "cloudMaskOptions": cloud_mask.model_dump(by_alias=True),
             "cloudMaskMapping": mask_mapping.model_dump(by_alias=True),
+            "appliedCloudThresholdPercent": optical_cloud_threshold_percent,
         }
     )
     return FieldStatisticsResponse(
@@ -1148,6 +1188,7 @@ def _pipeline_index_overlay_response(
     acquisition_date: str,
     index_type: str,
     render_profile: str = "standard",
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> tuple[bytes, str, dict[str, str]]:
     _ensure_pipeline_index_supported(source_id, index_type)
     result = request_field_index(
@@ -1157,7 +1198,7 @@ def _pipeline_index_overlay_response(
         source_id=source_id,
         index_type=index_type,
         acquisition_date=acquisition_date,
-        max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+        max_cloud_percentage=float(optical_cloud_threshold_percent),
         render_profile="contrast" if render_profile == "contrast" else "standard",
     )
     if result.get("status") != "AVAILABLE" or not result.get("overlayUrl"):
@@ -1295,6 +1336,11 @@ async def get_field_dates(
 ) -> list[dict[str, Any]] | dict[str, Any]:
     _enforce_index_rate_limit(request)
     plot = await _get_field_or_404(plot_id, user.id)
+    bounded_start, bounded_end = _bounded_field_history_window(
+        start_date=startDate,
+        end_date=endDate,
+        lookback_days=lookbackDays,
+    )
     if _uses_natural_pipeline(sourceId):
         try:
             natural_dates = await asyncio.wait_for(
@@ -1308,9 +1354,9 @@ async def get_field_dates(
             ) from exc
         dates = _filter_source_dates(
             natural_dates or [],
-            start_date=startDate,
-            end_date=endDate,
-            lookback_days=lookbackDays,
+            start_date=bounded_start,
+            end_date=bounded_end,
+            lookback_days=None,
         )
     else:
         index_type = _normalize_index(indexType)
@@ -1321,10 +1367,11 @@ async def get_field_dates(
                     plot=plot,
                     source_id=sourceId,
                     index_type=index_type,
-                    start_date=startDate,
-                    end_date=endDate,
-                    lookback_days=lookbackDays,
+                    start_date=bounded_start,
+                    end_date=bounded_end,
+                    lookback_days=None,
                     timeout_seconds=float(settings.index_request_timeout_seconds),
+                    optical_cloud_threshold_percent=optical_cloud_threshold(user),
                 ),
                 timeout=settings.index_request_timeout_seconds,
             )
@@ -1377,6 +1424,7 @@ async def get_field_monitoring_evidence(
                 optical_stale_days=opticalStaleDays,
                 sar_window_days=sarWindowDays,
                 include_radar=includeRadar,
+                optical_cloud_threshold_percent=optical_cloud_threshold(user),
             ),
             timeout=settings.index_request_timeout_seconds,
         )
@@ -1463,6 +1511,7 @@ async def post_field_index_statistics(
                     acquisition_date=payload.acquisition_date,
                     index_type=index_type,
                     cloud_mask=payload.cloud_mask,
+                    optical_cloud_threshold_percent=optical_cloud_threshold(user),
                 ),
                 timeout=settings.index_request_timeout_seconds,
             )
@@ -1481,6 +1530,7 @@ async def post_field_index_statistics(
             index_type=index_type,
             cloud_mask=payload.cloud_mask,
             prefer_high_res=payload.prefer_high_res,
+            optical_cloud_threshold_percent=optical_cloud_threshold(user),
         )
 
     try:
@@ -1538,6 +1588,7 @@ async def get_field_analytics_trend(
                     date_end=date_end,
                     cloud_mask=cloud_mask,
                     max_cloud_cover_in_aoi=maxCloudCoverInAoi,
+                    optical_cloud_threshold_percent=optical_cloud_threshold(user),
                 ),
                 timeout=_pipeline_trend_timeout_budget(),
             )
@@ -1562,7 +1613,11 @@ async def get_field_analytics_trend(
 
 
 def _render_profile_for_selection(
-    *, plot_id: str, plot: dict[str, Any], selection: ViewerSelection
+    *,
+    plot_id: str,
+    plot: dict[str, Any],
+    selection: ViewerSelection,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> IndexRenderProfile:
     normalized_index = _normalize_index(selection.index_type)
     if _uses_pipeline(selection.source_id):
@@ -1573,7 +1628,7 @@ def _render_profile_for_selection(
             source_id=selection.source_id,
             index_type=normalized_index,
             acquisition_date=selection.acquisition_date,
-            max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+            max_cloud_percentage=float(optical_cloud_threshold_percent),
             render_profile=selection.render_profile,
         )
         visualization = result.get("visualization") or {}
@@ -1592,6 +1647,7 @@ def _render_profile_for_selection(
             index_type=normalized_index,
             cloud_mask=selection.cloud_mask,
             prefer_high_res=selection.prefer_high_res,
+            optical_cloud_threshold_percent=optical_cloud_threshold_percent,
         )
         descriptor = resolve_render_descriptor(
             selection.render_profile,
@@ -1644,7 +1700,11 @@ async def get_index_render_profile(
 ) -> IndexRenderProfile:
     plot = await _get_field_or_404(plot_id, user.id)
     return await _run_blocking(
-        _render_profile_for_selection, plot_id=plot_id, plot=plot, selection=selection
+        _render_profile_for_selection,
+        plot_id=plot_id,
+        plot=plot,
+        selection=selection,
+        optical_cloud_threshold_percent=optical_cloud_threshold(user),
     )
 
 
@@ -1672,6 +1732,7 @@ async def get_field_index_overlay(
             acquisition_date=acquisitionDate,
             index_type=normalized_index,
             render_profile=renderProfile,
+            optical_cloud_threshold_percent=optical_cloud_threshold(user),
         )
     else:
         body, content_type, headers = await _run_blocking(
@@ -1718,7 +1779,7 @@ async def get_field_index_point(
                     acquisition_date=acquisitionDate,
                     lng=lng,
                     lat=lat,
-                    max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+                    max_cloud_percentage=float(optical_cloud_threshold(user)),
                 ),
                 timeout=settings.index_request_timeout_seconds,
             )
@@ -1756,6 +1817,7 @@ def _sample_selection(
     selection: ViewerSelection,
     lng: float,
     lat: float,
+    optical_cloud_threshold_percent: int = DEFAULT_OPTICAL_CLOUD_THRESHOLD_PERCENT,
 ) -> RasterSample:
     index_type = _normalize_index(selection.index_type)
     if _uses_pipeline(selection.source_id):
@@ -1768,7 +1830,7 @@ def _sample_selection(
             acquisition_date=selection.acquisition_date,
             lng=lng,
             lat=lat,
-            max_cloud_percentage=float(settings.sar_support_cloud_threshold_percent),
+            max_cloud_percentage=float(optical_cloud_threshold_percent),
         )
         point = _pipeline_point_response(
             plot_id=plot_id,
@@ -1791,7 +1853,12 @@ def _sample_selection(
             prefer_high_res=selection.prefer_high_res,
             cloud_mask=selection.cloud_mask,
         )
-    profile = _render_profile_for_selection(plot_id=plot_id, plot=plot, selection=selection)
+    profile = _render_profile_for_selection(
+        plot_id=plot_id,
+        plot=plot,
+        selection=selection,
+        optical_cloud_threshold_percent=optical_cloud_threshold_percent,
+    )
     return RasterSample(
         status="ok",
         value=point.get("value"),
@@ -1818,6 +1885,7 @@ async def sample_comparison(
                 selection=selection,
                 lng=payload.lng,
                 lat=payload.lat,
+                optical_cloud_threshold_percent=optical_cloud_threshold(user),
             )
         except Exception:  # noqa: BLE001 - partial side failure is the response contract
             logger.warning("comparison sample side failed", exc_info=True)

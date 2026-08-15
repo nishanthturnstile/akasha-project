@@ -31,10 +31,15 @@ curl http://localhost:8080/api/_skeleton/services
 | stac-api | no | 8080 | `GET /_mgmt/ping` | — |
 | postgis | no | 5432 | `pg_isready` | `postgis_data` |
 | minio | no | 9000/9001 | `/minio/health/live` | `minio_data` |
-| ingestion-worker | no | — | one-shot CLI | — |
+| ingestion-worker / ingestion-sar | no | — | optional local overlay only | — |
 
 Only `web` publishes a host port; everything else is private to the `akasha`
 network.
+
+The base Compose file is product-only. Local ingestion runtimes are defined in
+`docker-compose.ingestion-local.yml` and are used by the normal `make dev` helper
+for local catalog seeding. Remote-backed development uses
+`docker-compose.product-dev.yml` and never includes either runtime.
 
 ## Reset local volumes (one command)
 

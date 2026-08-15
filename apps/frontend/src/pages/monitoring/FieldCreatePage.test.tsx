@@ -119,12 +119,12 @@ function config(usageModel: string) {
     };
 }
 
-function renderPage() {
+function renderPage(initialEntries = ['/monitoring/field-create']) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
     return render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={ initialEntries }>
             <QueryClientProvider client={ queryClient }>
                 <MapViewProvider>
                     <FieldCreatePage />
@@ -187,7 +187,7 @@ describe('FieldCreatePage basemap behavior', () => {
         state.config = config('session');
         state.createField.mockResolvedValue(undefined as never);
 
-        renderPage();
+        renderPage(['/monitoring/field-create?mode=draw&seasonId=season-1']);
 
         fireEvent.click(screen.getByTestId('complete-field-draw'));
         fireEvent.click(screen.getByRole('button', { name: 'Save 1 field' }));
@@ -200,6 +200,8 @@ describe('FieldCreatePage basemap behavior', () => {
     });
 
     it('lands in Global View after saving a drawn field', async () => {
+        vi.stubEnv('VITE_BASEMAP_PROVIDER', 'esri');
+        vi.stubEnv('VITE_ESRI_API_KEY', 'AAPK_TEST_BASEMAP_KEY');
         state.config = config('session');
         state.createField.mockResolvedValue({
             id: 'field-new-1',

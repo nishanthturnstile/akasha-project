@@ -16,7 +16,7 @@ export const Slider = React.forwardRef<
     </SliderPrimitive.Track>
     <SliderPrimitive.Thumb
       className="block h-4 w-4 rounded-pill border-2 border-primary bg-card shadow-e1 transition-transform duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:scale-110 disabled:pointer-events-none disabled:opacity-50"
-      aria-label="Opacity"
+      aria-label={ props['aria-label'] ?? 'Opacity' }
     />
   </SliderPrimitive.Root>
 ));

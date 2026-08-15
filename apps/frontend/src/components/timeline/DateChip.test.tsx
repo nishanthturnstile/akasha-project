@@ -57,14 +57,14 @@ describe('DateChip — timeline chip behavior', () => {
         expect(queryByTestId('date-chip-cloud-2026-05-11')).toBeNull();
     });
 
-    it('never renders the cloud icon or sensor badge on SAR chips', () => {
+    it('renders the sensor badge on SAR chips while omitting optical cloud status', () => {
         const { queryByTestId } = renderChip({
             sourceKind: 'sar',
             sensorBadge: 'S1',
             date: makeDate({ cloudMaskedPercent: 80 }),
         });
         expect(queryByTestId('date-chip-cloud-2026-05-11')).toBeNull();
-        expect(queryByTestId('date-chip-sensor-2026-05-11')).toBeNull();
+        expect(queryByTestId('date-chip-sensor-2026-05-11')).toBeTruthy();
     });
 
     it('uses coverage semantics for context chips', () => {
@@ -89,7 +89,7 @@ describe('DateChip — timeline chip behavior', () => {
         const button = getByRole('option', {
             name: /Required raster assets are missing for this date: mask\./,
         });
-        expect((button as HTMLButtonElement).disabled).toBe(true);
+        expect(button.getAttribute('aria-disabled')).toBe('true');
         expect(button.getAttribute('title')).toBe(
             'Required raster assets are missing for this date: mask.',
         );

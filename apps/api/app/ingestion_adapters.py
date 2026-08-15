@@ -72,7 +72,12 @@ def _index_statistics_model(stats: dict[str, Any]) -> IndexStatisticsModel:
         mean=_float_or_none(stats.get("mean")),
         stddev=_float_or_none(stats.get("stdDev")),
         validPixelPercent=_float_or_default(stats.get("usablePixelPercentage")),
-        cloudMaskedPercent=_float_or_default(stats.get("cloudPercentage")),
+        # The personal optical limit is defined over the combined field-clipped
+        # cloud, cirrus, and shadow mask. Keep the established product field
+        # name while preferring ingestion's combined obscured metric.
+        cloudMaskedPercent=_float_or_default(
+            stats.get("obscuredPercentage", stats.get("cloudPercentage"))
+        ),
         coveragePercent=_float_or_default(stats.get("fieldCoveragePercentage")),
     )
 
@@ -161,7 +166,9 @@ def field_index_to_trend_point(result: dict[str, Any]) -> FieldTrendPoint:
         max=_float_or_none(stats.get("max")),
         stddev=_float_or_none(stats.get("stdDev")),
         valid_pixel_percent=_float_or_none(stats.get("usablePixelPercentage")),
-        cloud_masked_percent=_float_or_none(stats.get("cloudPercentage")),
+        cloud_masked_percent=_float_or_none(
+            stats.get("obscuredPercentage", stats.get("cloudPercentage"))
+        ),
         coverage_percent=_float_or_none(stats.get("fieldCoveragePercentage")),
         cloud_percent=_float_or_none(stats.get("cloudPercentage")),
         metrics_provisional=False,

@@ -29,25 +29,25 @@ AKASHA_SMOKE_USERNAME=<username> AKASHA_SMOKE_PASSWORD=<password> \
   python scripts/smoke-test.py https://<web-public-domain> --login --require-monitoring-clean
 
 # Search Bhoonidhi for ResourceSat LISS-3 BOA products for the configured AOI.
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python worker.py bhoonidhi-search --source resourcesat-2a-liss3-boa --aoi bangalore-60km
 
 # Download products selected by the Bhoonidhi coverage manifest.
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python worker.py bhoonidhi-download --source resourcesat-2a-liss3-boa
 
 # Build ResourceSat LISS-3 analytic + provisional mask COGs.
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python scripts/prepare_resourcesat_liss3_boa_cogs.py \
   --selection-manifest data/work/bhoonidhi/resourcesat-2a-liss3-boa/download_manifest.json \
   --overwrite
 
 # Upload/register prepared COGs and verify object-store metadata.
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python worker.py ingest-manifest --method upsert
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python worker.py verify-manifest-cogs
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python worker.py verify-composite --source resourcesat-2a-liss3-boa --aoi bangalore-60km --require-catalog-item
 
 # Pull the latest final staging composite into local dev and prepopulate local MinIO/pgSTAC.
@@ -68,13 +68,13 @@ python scripts/sync_staging_raster_bundle.py \
   --verify-local
 
 # Prepare and register a licensed manual Cartosat/context GeoTIFF.
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python worker.py prepare-context-cog \
   --source cartosat-3-gated \
   --input /srv/akasha/data/raw/cartosat/CARTOSAT3_ORDER_42.tif \
   --product-id CARTOSAT3_ORDER_42 \
   --acquisition-datetime 2026-04-16T05:30:00Z
-docker compose -f infra/docker/docker-compose.yml run --rm ingestion-worker \
+docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.ingestion-local.yml run --rm ingestion-worker \
   python worker.py ingest-manifest --collection-id cartosat-3-gated --method upsert
 ```
 

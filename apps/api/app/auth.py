@@ -34,6 +34,7 @@ class CurrentUser:
     username: str | None = None
     role: str = "owner"
     onboarding_completed: bool = False
+    optical_cloud_threshold_percent: int = 20
     current_team_id: str | None = None
     session_token_hash: str | None = None
     session_remember_me: bool = False
@@ -223,6 +224,7 @@ def get_current_user(request: Request) -> CurrentUser:
         username=user.get("username"),
         role=selected.role,
         onboarding_completed=bool(user.get("onboardingCompleted", False)),
+        optical_cloud_threshold_percent=int(user.get("opticalCloudThresholdPercent", 20)),
         current_team_id=selected.id,
         session_token_hash=token_hash,
         session_remember_me=bool(context.get("rememberMe", False)),

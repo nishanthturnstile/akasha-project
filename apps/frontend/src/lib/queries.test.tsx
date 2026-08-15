@@ -18,6 +18,7 @@ import {
   useTriggerIngestionJob,
   useUpdateReportTemplate,
   useUpdatePlot,
+  useUpdateAccountSettings,
 } from '@/lib/queries';
 import type { Plot, PlotGeometry } from '@/types/api';
 
@@ -93,6 +94,23 @@ describe('date query keys', () => {
       '/api/fields/field-1/dates?sourceId=sentinel-2-l2a&indexType=NDVI&pageSize=120',
       '/api/fields/field-2/dates?sourceId=sentinel-2-l2a&indexType=NDMI&pageSize=120',
     ]);
+  });
+});
+
+describe('account imagery settings', () => {
+  it('persists the exact setting and invalidates all imagery-derived queries', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ opticalCloudThresholdPercent: 35 }),
+    ));
+    const { Provider, invalidateSpy } = wrapper();
+    const update = renderHook(() => useUpdateAccountSettings(), { wrapper: Provider });
+
+    await update.result.current.mutateAsync({ opticalCloudThresholdPercent: 35 });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['dates'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['layers', 'default'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['fields'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['observations', 'best'] });
   });
 });
 afterEach(() => {
